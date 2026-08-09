@@ -91,3 +91,9 @@ backup/
 
 # Claude Code local settings
 .claude/
+
+# Pinned third-party checkouts (fetched by tools/get-webview.ps1, never committed)
+deps/
+
+# Local build output
+build/

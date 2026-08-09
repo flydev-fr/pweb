@@ -1,0 +1,165 @@
+# CAP-1 minimal Windows CI (phase-plan.md: starts at Phase 1, not Phase 11).
+#
+# Invariants honoured here:
+# - The upstream fetch is the EXACT pinned SHA from webview.lock, checksum
+#   cross-checked (tools/get-webview.ps1). No branch, tag, or floating ref of
+#   webview/webview appears anywhere in this workflow.
+# - ABI tests run at full strength: the C probe (pinned headers, MSVC) and
+#   the Pascal probe (committed binding, FPC) must emit byte-identical
+#   reports, and all 17 pinned entry points must be exported by a DLL built
+#   from the pinned source.
+# - Binding regeneration itself (chet-cli) is a LOCAL gate: ChetCLI is a
+#   host-installed tool not redistributed in this repo. CI instead proves the
+#   committed binding against the pinned headers (probe diff + symbol
+#   coverage + surface check), which fails on any drift a regeneration would
+#   reveal.
+# - The GUI smoke RUN is a documented human/local gate; CI compiles it and
+#   attempts an auto-closing run without letting an absent desktop session
+#   fail the build.
+
+name: CI
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout (full history for freeze diff against baseline)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch pinned webview/webview (exact SHA, checksum verified)
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/get-webview.ps1
+
+      - name: Guard - no floating upstream ref in fetch path
+        shell: pwsh
+        run: |
+          # The fetch script may only ever pass the 40-char SHA from
+          # webview.lock to git; any branch/tag/HEAD reference is a violation.
+          # (Regex sources below cannot literally match themselves.)
+          $bad = 'refs/(heads|tags)|fetch[^\r\n]*origin[^\r\n]*(mas' + 'ter|HEAD|main)'
+          if (Select-String tools/get-webview.ps1 -Pattern $bad) {
+            throw 'fetch script references a floating upstream ref'
+          }
+          $lock = Get-Content webview.lock -Raw
+          if ($lock -notmatch 'commit\s*=\s*[0-9a-f]{40}') {
+            throw 'webview.lock does not pin a full 40-char SHA'
+          }
+
+      - name: Install FPC (Lazarus 3.4 ships FPC 3.2.2)
+        uses: gcarreno/setup-lazarus@v3
+        with:
+          lazarus-version: "3.4"
+
+      - name: Assert FPC 3.2.2
+        shell: pwsh
+        run: |
+          $v = (fpc -iV).Trim()
+          Write-Host "fpc version: $v"
+          if ($v -ne '3.2.2') { throw "expected FPC 3.2.2, got $v" }
+
+      - name: MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build webview.dll from pinned source (cmake + MSVC)
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/build-webview-dll.ps1
+
+      - name: Compile binding units (FPC, ObjFPC mode)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/fpc | Out-Null
+          fpc -MObjFPC -Sh -B -FUbuild/fpc -Fusrc/lib src/lib/pweb.lib.webview.pas
+          if ($LASTEXITCODE -ne 0) { throw 'core unit failed' }
+          fpc -MObjFPC -Sh -FUbuild/fpc -Fusrc/lib src/lib/pweb.lib.webview.types.pas
+          if ($LASTEXITCODE -ne 0) { throw 'types unit failed' }
+          fpc -MObjFPC -Sh -FUbuild/fpc -Fusrc/lib src/lib/pweb.lib.webview.errors.pas
+          if ($LASTEXITCODE -ne 0) { throw 'errors unit failed' }
+
+      - name: ABI probe - Pascal side (committed binding)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/test | Out-Null
+          fpc -MObjFPC -Sh -FUbuild/fpc -Fusrc/lib -FEbuild/test test/core/abi_probe.pas
+          if ($LASTEXITCODE -ne 0) { throw 'pascal probe compile failed' }
+          & build/test/abi_probe.exe > build/test/abi_pascal.txt
+          Get-Content build/test/abi_pascal.txt
+
+      - name: ABI probe - C side (pinned headers, MSVC)
+        shell: cmd
+        run: |
+          cl /nologo /W4 /WX /Ideps\webview\core\include test\core\abi_probe.c /Fobuild\test\ /Febuild\test\abi_probe_c.exe
+          if errorlevel 1 exit /b 1
+          build\test\abi_probe_c.exe > build\test\abi_c.txt
+          type build\test\abi_c.txt
+
+      - name: ABI probe - compare (any diff is a blocker)
+        shell: pwsh
+        run: |
+          # Strict, order-sensitive, line-by-line comparison.
+          $c = @(Get-Content build/test/abi_c.txt)
+          $p = @(Get-Content build/test/abi_pascal.txt)
+          if ($c.Count -ne $p.Count) { throw "ABI probe mismatch: $($c.Count) vs $($p.Count) lines" }
+          $bad = 0
+          for ($i = 0; $i -lt $c.Count; $i++) {
+            if ($c[$i] -cne $p[$i]) { Write-Host "MISMATCH line $($i+1): C='$($c[$i])' Pas='$($p[$i])'"; $bad++ }
+          }
+          if ($bad) { throw "ABI probe mismatch: $bad line(s)" }
+          Write-Host "ABI probes identical: $($c.Count) facts"
+
+      - name: Symbol coverage (17/17 exports of the pinned DLL)
+        shell: pwsh
+        run: |
+          fpc -MObjFPC -Sh -FUbuild/fpc -Fusrc/lib -FEbuild/test test/core/symbol_coverage.pas
+          if ($LASTEXITCODE -ne 0) { throw 'symbol test compile failed' }
+          & build/test/symbol_coverage.exe build/webview-dist/webview.dll
+          if ($LASTEXITCODE -ne 0) { throw 'symbol coverage failed' }
+
+      - name: Binding surface + freeze-isolation sweeps
+        shell: pwsh
+        run: pwsh -NoProfile -File test/core/check_binding_surface.ps1
+
+      - name: Freeze sweep - RTL-only compile of isolation-critical intf units
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/freeze | Out-Null
+          # pweb.rpc.intf.pas must compile with the bare RTL: proves no
+          # webview/platform unit crept into the scheduler contract.
+          fpc -MObjFPC -Sh -B -FUbuild/freeze src/rpc/pweb.rpc.intf.pas
+          if ($LASTEXITCODE -ne 0) { throw 'pweb.rpc.intf.pas is not RTL-only' }
+          fpc -MObjFPC -Sh -B -FUbuild/freeze src/webview/pweb.webview.intf.pas
+          if ($LASTEXITCODE -ne 0) { throw 'pweb.webview.intf.pas failed RTL-only compile' }
+
+      - name: Freeze sweep - frozen contracts byte-identical to Phase-0 baseline
+        shell: pwsh
+        run: |
+          git diff --exit-code b2f04dc4c478c72b1699a954dd52e76b207e918b -- `
+            src/rpc/pweb.rpc.intf.pas `
+            src/webview/pweb.webview.intf.pas `
+            src/assets/pweb.assets.intf.pas
+          if ($LASTEXITCODE -ne 0) { throw 'frozen Phase-0 contract units were modified' }
+
+      - name: Compile smoke example
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/example | Out-Null
+          fpc -MObjFPC -Sh -FUbuild/fpc -Fusrc/lib -FEbuild/example examples/01-hello/hello.pas
+          if ($LASTEXITCODE -ne 0) { throw 'smoke example failed to compile' }
+
+      # The real smoke RUN (window visible, marker rendered, clean exit) is a
+      # documented human/local gate; this best-effort attempt runs it with
+      # auto-close where the runner image has WebView2 + a desktop session,
+      # but its failure does not fail the build.
+      - name: Smoke run (best effort - authoritative gate is local)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          Copy-Item build/webview-dist/webview.dll build/example/
+          $env:PWEB_SMOKE_AUTOCLOSE_MS = '8000'
+          & build/example/hello.exe
+          if ($LASTEXITCODE -ne 0) { throw "smoke run exited $LASTEXITCODE" }

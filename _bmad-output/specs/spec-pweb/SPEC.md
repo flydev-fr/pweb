@@ -24,7 +24,7 @@ A vision to realize, with an opportunity attached. Pascal developers who want a 
 
 - **CAP-1**
   - **intent:** Pascal code opens a native system WebView window and renders HTML in it.
-  - **success:** A Windows x64 sample creates the view, sets title and HTML, runs, and closes cleanly with no evident leak; all 14 upstream C entry points (see `core-interfaces.md`) are bound and their error paths checked; **and a Windows CI runner compiles the binding and executes its tests on every push from this phase onward.**
+  - **success:** A Windows x64 sample creates the view, sets title and HTML, runs, and closes cleanly with no evident leak; the complete public C ABI of the pinned upstream commit `cbbdee44afff22867de9fd88a9fc8350d9bdd399` — 17 entry points (see `core-interfaces.md`) — is bound and its error paths checked; **and a Windows CI runner compiles the binding and executes its tests on every push from this phase onward.**
 - **CAP-2**
   - **intent:** Frontend JavaScript can invoke a named Pascal handler with arguments and await its result.
   - **success:** A `pweb.echo` round-trip returns the argument object to a resolved JS promise; a Pascal-side failure rejects the promise instead of hanging it; the work runs off the GUI thread and the result comes back through `webview_return()` (see `threading-model.md`).

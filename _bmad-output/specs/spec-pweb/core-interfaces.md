@@ -80,14 +80,19 @@ That separation is what lets a QuickJS plugin or a native client consume the sam
 
 ## Upstream C ABI surface (CAP-1)
 
-All 14 entry points are bound with zero mORMot abstraction in `src/lib/`:
+The complete public C ABI of the pinned upstream commit
+`cbbdee44afff22867de9fd88a9fc8350d9bdd399` (`core/include/webview/api.h` plus
+its public C includes) is bound with zero mORMot abstraction in `src/lib/`.
+At that pin the surface is these 17 entry points, verified mechanically after
+fetch:
 
 ```
 webview_create        webview_destroy       webview_run
-webview_terminate     webview_dispatch      webview_set_title
+webview_terminate     webview_dispatch      webview_get_window
+webview_get_native_handle                   webview_set_title
 webview_set_size      webview_navigate      webview_set_html
-webview_eval          webview_bind          webview_unbind
-webview_return        webview_get_native_handle
+webview_init          webview_eval          webview_bind
+webview_unbind        webview_return        webview_version
 ```
 
 CAP-1 smoke path:
