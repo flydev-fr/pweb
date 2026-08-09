@@ -41,7 +41,7 @@ uses
   Classes,
   SyncObjs,
   pweb.rpc.intf,
-  pweb.rpc.scheduler;
+  pweb.rpc.support; // neutral helpers only - no concrete-scheduler coupling
 
 const
   PWEB_DUMMY_METHOD_ECHO  = PWEB_METHOD_ECHO; // 'pweb.echo'
@@ -174,7 +174,9 @@ begin
   begin
     if (Token <> nil) and Token.IsCancelled then
       exit(True); // cooperative: stop early, nothing forcibly aborted
-    if AGated and (FGateOpen <> 0) then
+    // atomic read (Item-6 idiom): the gate is opened from another
+    // thread; a stale plain load could stall the poll on weak targets
+    if AGated and (PWebAtomicRead(FGateOpen) <> 0) then
       exit(False);
     Sleep(5);
     Inc(waited, 5);
@@ -225,7 +227,7 @@ begin
     begin
       if WaitObservingToken(Token, PWEB_DUMMY_BLOCK_CAP_MS, {gated=}True) then
         Result := PWebDefaultErrorResult(pecCancelled)
-      else if FGateOpen = 0 then
+      else if PWebAtomicRead(FGateOpen) = 0 then // Item-6 atomic read
         // the 30s safety cap expired without OpenGate: fail LOUDLY so a
         // test that forgot to release the gate cannot pass slowly
         Result := PWebErrorResult(pecServiceError,

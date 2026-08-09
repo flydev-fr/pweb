@@ -2,12 +2,12 @@
   pweb.rpc.scheduler - IInvocationScheduler / IInvocationSource pool
   implementation (Phase 2 / CAP-2).
 
-  RTL-only by ratified constraint: this unit uses classes/syncobjs and
-  pweb.rpc.intf ONLY. It never references any pweb.webview.* unit - the
-  scheduler is defined over invocation sources, and an embedding binding
-  is only one source (threading-model.md "Invocation sources, not
-  WebViews"). CI compiles this unit with no src/webview unit path to
-  prove it.
+  RTL-only by ratified constraint: this unit uses classes/syncobjs,
+  pweb.rpc.intf and the neutral pweb.rpc.support helpers ONLY. It never
+  references any pweb.webview.* unit - the scheduler is defined over
+  invocation sources, and an embedding binding is only one source
+  (threading-model.md "Invocation sources, not WebViews"). CI compiles
+  this unit with no src/webview unit path to prove it.
 
   Semantics implemented here, all ratified before CAP-2:
   - TryEnqueue is the single RPC method validation/canonicalization
@@ -51,33 +51,12 @@ uses
   SysUtils,
   Classes,
   SyncObjs,
-  pweb.rpc.intf;
+  pweb.rpc.intf,
+  pweb.rpc.support;
 
 const
-  { Upper bound of the canonical method spelling, in bytes. The wire
-    grammar mandates a bounded length (wire-semantics.md "Request
-    grammar and limits"); the bound itself is an implementation choice
-    of this gate, not wire protocol. }
-  PWEB_METHOD_MAX_BYTES = 256;
-
   { Default number of pool workers when the caller does not choose. }
   PWEB_DEFAULT_WORKER_COUNT = 4;
-
-  { Default human-readable message per error code. No native detail
-    ever appears here (wire-semantics.md error contract). These are
-    implementation defaults, not frozen wire data - the sole normative
-    discriminator stays the `code` member. }
-  PWEB_DEFAULT_ERROR_MESSAGE: array[TPWebErrorCode] of Utf8String = (
-    'Invalid request',            // pecInvalidRequest
-    'Method not found',           // pecMethodNotFound
-    'Invocation is not allowed',  // pecForbidden
-    'Runtime is busy',            // pecBusy
-    'Invocation was cancelled',   // pecCancelled
-    'Service error',              // pecServiceError
-    'Internal error',             // pecInternalError
-    'Runtime is closed',          // pecRuntimeClosed
-    'Protocol mismatch'           // pecProtocolMismatch
-  );
 
 type
   /// raised at the RegisterSource call site for invalid limits, per the
@@ -136,147 +115,18 @@ type
       out AQueued, AActive: Integer): Boolean;
   end;
 
-{ Single canonicalization gate helpers (also used by tests). The
-  canonical method grammar accepted here: 1..PWEB_METHOD_MAX_BYTES
-  bytes, characters [A-Za-z0-9_.] only, at least two non-empty
-  dot-separated segments (Service.Method application form; the
-  runtime-reserved pweb.* form has the same shape). Case is preserved
-  exactly - matching is case-sensitive downstream. }
-function PWebValidMethod(const AMethod: Utf8String): Boolean;
-
-{ Args grammar at the enqueue gate: a serialized JSON object or the
-  PWEB_JSON_NULL literal - never the empty string, never an array
-  (named arguments only in protocol v1). Structural check only: full
-  JSON validation is the transport parser's duty. }
-function PWebValidArgs(const AArgs: TPWebJson): Boolean;
-
-{ Immutable deep-copy snapshot of a context: plain record assignment
-  would share the Capabilities dynamic array reference (frozen
-  TInvocationContext comment mandates Copy()). }
-function PWebCopyContext(const AContext: TInvocationContext): TInvocationContext;
-
-{ Frozen identity invariants of TInvocationContext: pkWindow implies
-  WindowId <> ''; pkPlugin implies PluginId <> ''. }
-function PWebValidContext(const AContext: TInvocationContext): Boolean;
-
-{ Result constructors shared by scheduler, bridges and bindings. }
-function PWebSuccessResult(const AValue: TPWebJson): TPWebInvocationResult;
-function PWebErrorResult(ACode: TPWebErrorCode;
-  const AMessage: Utf8String; const AData: TPWebJson = PWEB_JSON_NULL): TPWebInvocationResult;
-function PWebDefaultErrorResult(ACode: TPWebErrorCode): TPWebInvocationResult;
+{ The generic enqueue-gate grammar predicates (PWebValidMethod,
+  PWebValidArgs) and helpers (PWebCopyContext, PWebValidContext, the
+  result constructors and the default-message table) live in
+  pweb.rpc.support - a neutral RTL unit over pweb.rpc.intf alone,
+  shared with bridges, bindings and tests. Moving them there did NOT
+  move the gate: production RPC admission calls them exclusively from
+  TryEnqueue below. }
 
 implementation
 
 const
   WORKER_POLL_MS = 50; // lost-wakeup safety net under the auto-reset event
-
-{ ---------------- helpers ---------------- }
-
-function PWebValidMethod(const AMethod: Utf8String): Boolean;
-var
-  i, len, dots: Integer;
-  prevDot: Boolean;
-  c: AnsiChar;
-begin
-  Result := False;
-  len := Length(AMethod);
-  if (len < 3) or (len > PWEB_METHOD_MAX_BYTES) then
-    exit; // shortest possible Service.Method is 'a.b'
-  dots := 0;
-  prevDot := True; // a leading dot must fail like an empty segment
-  for i := 1 to len do
-  begin
-    c := AnsiChar(AMethod[i]);
-    if c = '.' then
-    begin
-      if prevDot then
-        exit; // empty segment ('..' or leading '.')
-      Inc(dots);
-      prevDot := True;
-    end
-    else if c in ['A'..'Z', 'a'..'z', '0'..'9', '_'] then
-      prevDot := False
-    else
-      exit; // NUL, slash, space, non-ASCII... - not canonical grammar
-  end;
-  if prevDot then
-    exit; // trailing dot
-  Result := dots >= 1; // at least Service.Method
-end;
-
-function PWebValidArgs(const AArgs: TPWebJson): Boolean;
-var
-  a, b: Integer;
-begin
-  // trim FIRST so equivalent spellings are treated consistently:
-  // ' null ' and '{ }' are as acceptable as their unpadded forms
-  a := 1;
-  b := Length(AArgs);
-  while (a <= b) and (AArgs[a] in [#9, #10, #13, ' ']) do
-    Inc(a);
-  while (b >= a) and (AArgs[b] in [#9, #10, #13, ' ']) do
-    Dec(b);
-  if b < a then
-    exit(False); // empty or whitespace-only is never a valid TPWebJson
-  if (b - a + 1 = Length(PWEB_JSON_NULL)) and
-     (Copy(AArgs, a, Length(PWEB_JSON_NULL)) = PWEB_JSON_NULL) then
-    exit(True);
-  Result := (a < b) and (AArgs[a] = '{') and (AArgs[b] = '}');
-end;
-
-function PWebCopyContext(const AContext: TInvocationContext): TInvocationContext;
-begin
-  Result := AContext;
-  Result.Capabilities := Copy(AContext.Capabilities);
-  // force unique heap copies of the strings as well: the snapshot must
-  // stay valid even if the caller mutates its own record afterwards
-  UniqueString(Result.WindowId);
-  UniqueString(Result.PrincipalId);
-  UniqueString(Result.PluginId);
-end;
-
-function PWebValidContext(const AContext: TInvocationContext): Boolean;
-begin
-  case AContext.PrincipalKind of
-    pkWindow:
-      Result := AContext.WindowId <> '';
-    pkPlugin:
-      Result := AContext.PluginId <> '';
-  else
-    Result := True;
-  end;
-end;
-
-function PWebSuccessResult(const AValue: TPWebJson): TPWebInvocationResult;
-begin
-  Result := Default(TPWebInvocationResult);
-  Result.Kind := prkSuccess;
-  if AValue = '' then
-    Result.Value := PWEB_JSON_NULL // '' would surface as JS undefined
-  else
-    Result.Value := AValue;
-end;
-
-function PWebErrorResult(ACode: TPWebErrorCode;
-  const AMessage: Utf8String; const AData: TPWebJson): TPWebInvocationResult;
-begin
-  Result := Default(TPWebInvocationResult);
-  Result.Kind := prkError;
-  Result.Error.Code := ACode;
-  if AMessage = '' then
-    Result.Error.Message := PWEB_DEFAULT_ERROR_MESSAGE[ACode]
-  else
-    Result.Error.Message := AMessage;
-  if AData = '' then
-    Result.Error.Data := PWEB_JSON_NULL
-  else
-    Result.Error.Data := AData;
-end;
-
-function PWebDefaultErrorResult(ACode: TPWebErrorCode): TPWebInvocationResult;
-begin
-  Result := PWebErrorResult(ACode, PWEB_DEFAULT_ERROR_MESSAGE[ACode]);
-end;
 
 { ---------------- internal types ---------------- }
 
@@ -357,7 +207,10 @@ type
 
 function TSchedulerToken.IsCancelled: Boolean;
 begin
-  Result := FCancelled <> 0;
+  // atomic read: the flag is polled from worker threads while Cancel
+  // runs on another; a stale plain load on a weakly-ordered target
+  // could delay cancellation observation indefinitely
+  Result := PWebAtomicRead(FCancelled) <> 0;
 end;
 
 procedure TSchedulerToken.Cancel;
@@ -432,6 +285,9 @@ function TSchedulerSource.TryEnqueue(const Context: TInvocationContext;
 var
   item: TSchedulerItem;
 begin
+  // ADVISORY plain read: an early-out fast path only. Correctness does
+  // not depend on it - the authoritative state check is re-done under
+  // FLock right before the queue insert below.
   if FState <> Ord(pssRunning) then
     exit(perClosed);
   // the single method canonicalization/validation gate - shared by all
@@ -615,7 +471,10 @@ end;
 
 function TSchedulerSource.State: TPWebSourceState;
 begin
-  Result := TPWebSourceState(FState); // advisory snapshot per contract
+  // advisory snapshot per the frozen contract, but read atomically so
+  // the returned value is at least a real (never torn/stale-forever)
+  // state on weakly-ordered targets
+  Result := TPWebSourceState(PWebAtomicRead(FState));
 end;
 
 { ---------------- TSchedulerWorker ---------------- }
@@ -722,6 +581,9 @@ begin
     raise EPWebSchedulerError.CreateFmt(
       'RegisterSource: invalid limits (MaxConcurrent=%d, MaxQueueSize=%d); both must be >= 1',
       [Limits.MaxConcurrent, Limits.MaxQueueSize]);
+  // ADVISORY plain read fast path: the authoritative FShuttingDown
+  // check is re-done under FLock below, so a stale value here can only
+  // take the (correct either way) slow path
   if FShuttingDown <> 0 then
   begin
     // fail-closed: a source already in pssClosed; its enqueues report

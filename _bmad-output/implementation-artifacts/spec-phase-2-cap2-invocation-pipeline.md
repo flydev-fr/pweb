@@ -87,6 +87,12 @@ context:
 
 ## Spec Change Log
 
+- 2026-08-09 — Corrective review applied on the branch; findings, resolutions and the full six-item contract live in `spec-phase-2-cap2-corrective-review.md` (single source, not restated here). Summary: (1) BLOCKER fixed — bind entries are registry-owned before native bind and freed only on CONFIRMED detach (OK/NOT_FOUND); failed unbind/Close is retryable, never a false Closed, destructor quarantines instead of freeing; (2) oversize rejected via bounded scan BEFORE copy, 16 MiB implementation ceiling; (3) method grammar tightened to exactly `dots = 1`; (4) generic helpers moved to neutral `src/rpc/pweb.rpc.support.pas`; (5) shutdown wording corrected below; (6) atomic-read idiom on lease/cancellation/lifecycle flags, advisory reads documented. Suite 510 → 582 assertions; all gates green.
+
+## Known Limitations
+
+- **Shutdown semantics (corrected wording).** Source teardown is non-blocking: `Quiesce`/`Close` never wait for drain; native destruction is gated on the handle-use lease drain, deferred onto the GUI loop. Whole-runtime `IInvocationScheduler.Shutdown` is an off-GUI worker-pool drain that MAY BLOCK on a non-cooperative bridge — it is NOT required to be bounded, and no watchdog exists or is planned; the Phase-3 mORMot bridge must observe cooperative cancellation where feasible. Frozen signatures unchanged; the frozen-block phrase "shutdown bounded" refers to *source* teardown, which stays true.
+
 ## Design Notes
 
 - Headless testability is the load-bearing design move: `TWebViewBinding` takes the native bind/return/unbind entry points as injectable `cdecl`-compatible function pointers (production default = raw ABI). Tests 17/18 then drive real destroy/return races against a recording fake without a desktop session. Internal constructor detail — not a public contract change.

@@ -22,7 +22,15 @@
     once closed a late completion is swallowed silently without ever
     touching the native handle;
   - the bind/unbind userdata lifetime, strictly enclosed by the
-    binding's own lifetime.
+    binding's own lifetime. OWNERSHIP INVARIANT (corrective pass):
+    once native C can possibly hold an entry pointer, some Pascal
+    owner holds it until the detach is CONFIRMED (webview_unbind
+    returned WEBVIEW_ERROR_OK or WEBVIEW_ERROR_NOT_FOUND) or the
+    native view is destroyed. The registry acquires the entry BEFORE
+    the native bind (rolled back if the native bind fails); a failed
+    native unbind keeps the entry tracked and fails the Pascal call at
+    the GUI boundary, retryably - there is NO path from a C arg to a
+    freed TPWebBindEntry.
 
   Lifecycle delegates to the SINGLE scheduler-registered
   IInvocationSource this binding fronts, so binding state and source
@@ -32,8 +40,13 @@
   Quiescing) -> source Close (still-running in-flight invocations
   complete cancelled; their late worker results die at the
   exactly-once gate) -> lease shutter (no new leases; the native
-  handle is out of reach). Actual native destruction stays the owning
-  IWebView's deferred concern, after ActiveLeases has drained.
+  handle is out of reach). If ANY JS-side unbind fails to confirm
+  detach, Close stops there: the source stays Quiescing, the lease
+  stays open, the failure is raised at the (GUI-affine) call site,
+  and a later Close retries only the remaining entries - Closed is
+  never reported past a failed unbind. Actual native destruction
+  stays the owning IWebView's deferred concern, after ActiveLeases
+  has drained.
 
   Headless testability: the native bind/unbind/return entry points are
   injectable cdecl-compatible function pointers defaulting to the real
@@ -58,7 +71,7 @@ uses
   mormot.core.text,
   mormot.core.json,
   pweb.rpc.intf,
-  pweb.rpc.scheduler,
+  pweb.rpc.support, // neutral helpers - no concrete-scheduler coupling
   pweb.webview.intf,
   pweb.lib.webview,
   pweb.lib.webview.errors;
@@ -68,6 +81,24 @@ const
     with an absolute security ceiling - configured on the source
     implementation in v1, per the frozen TPWebSourceLimits note) }
   PWEB_BINDING_DEFAULT_MAX_REQUEST_BYTES = 1 shl 20;
+
+  { IMPLEMENTATION-ONLY hard safety ceiling for the request size:
+    16 MiB. NOT a protocol-v1 wire constant - purely a defensive
+    implementation limit of this binding. The effective limit is
+    min(configured MaxRequestBytes, this ceiling); configuration can
+    never bypass it. It bounds the C-string length scan performed on
+    attacker-controlled request bytes in the raw callback, so no
+    unbounded StrLen ever runs there. }
+  PWEB_BINDING_HARD_MAX_REQUEST_BYTES = 16 shl 20;
+
+  { IMPLEMENTATION-ONLY cap on the native correlation id length: 4 KiB.
+    At the pinned upstream the bind id is parsed from the JSON message
+    the PAGE posts to the internal bridge, so a hostile page influences
+    it - the id gets the same bounded-scan discipline as the request.
+    Real upstream ids are tiny sequence numbers; an id over this cap
+    (or absent/empty) carries no usable correlation and the invocation
+    is dropped inertly - nothing could ever be delivered for it. }
+  PWEB_BINDING_MAX_ID_BYTES = 4096;
 
 type
   /// raised at Bind/Unbind/Create call sites on the GUI thread - never
@@ -98,13 +129,18 @@ type
   TWebViewBinding = class;
 
   { userdata behind webview_bind: owned by the binding, lifetime
-    strictly enclosing the interval from Bind through Unbind/destroy
-    (threading-model.md "Ownership at the C boundary"). Holds a plain
-    object reference to its owner - the owner outlives every entry by
-    construction. }
+    strictly enclosing the interval from Bind through CONFIRMED
+    native detach (threading-model.md "Ownership at the C boundary").
+    Holds a plain object reference to its owner - the owner outlives
+    every entry it still tracks by construction. An entry whose native
+    detach could not be confirmed by the time the binding dies is
+    QUARANTINED instead of freed (Owner set to nil, entry leaked for
+    the process lifetime - the documented leak-by-choice): the raw
+    callback treats a nil Owner as inert, so even a callback firing on
+    a quarantined entry is memory-safe. }
   TPWebBindEntry = class
   public
-    Owner: TWebViewBinding;
+    Owner: TWebViewBinding; // nil once quarantined - checked by the callback
     Handler: IWebViewInvocationHandler;
     Name: Utf8String;
   end;
@@ -123,9 +159,29 @@ type
     FEntries: TList;          // of TPWebBindEntry
     FLeaseCount: LongInt;
     FLeaseClosed: LongInt;    // nonzero once close began: no new leases
+    { the GUI-affine thread (the creating thread by convention): every
+      ownership argument in this unit rests on Bind/Unbind/Close being
+      called there, so debug builds ($C+/-Sa) assert it - a single
+      off-thread call silently voids every proof. No release cost:
+      Assert compiles to nothing with assertions off. }
+    FAffinityThread: TThreadID;
     function FindEntryLocked(const AName: Utf8String): Integer;
-    procedure NativeUnbindAndFree(AEntry: TPWebBindEntry);
-    procedure UnbindAllForClose;
+    { native unbind with detach confirmation: True ONLY for
+      WEBVIEW_ERROR_OK / WEBVIEW_ERROR_NOT_FOUND (the two confirmed-
+      detached results); any other code means native C may still hold
+      the entry pointer, so the caller must NOT free it }
+    function TryNativeDetach(AEntry: TPWebBindEntry;
+      out AErr: webview_error_t): Boolean;
+    { detach every tracked entry without popping; entries whose detach
+      is confirmed are removed+freed, failed ones stay tracked for a
+      retry. True when no entry remains. }
+    function UnbindAllForClose: Boolean;
+    { last-resort ownership transfer for entries the destructor could
+      not confirm-detach: Owner nil'ed (callback becomes inert),
+      Handler released, entry moved to the process-lifetime quarantine
+      list - deliberately leaked rather than ever freed under a live C
+      reference }
+    procedure QuarantineRemainingEntries;
   public
     constructor Create(AHandle: webview_t; const ASource: IInvocationSource;
       const AOptions: TPWebWebViewBindingOptions);
@@ -145,6 +201,9 @@ type
     /// outstanding short leases; the owner defers native destruction
     // until this has drained to zero after Close
     function ActiveLeases: Integer;
+    /// the request-size limit actually enforced:
+    // min(configured MaxRequestBytes, PWEB_BINDING_HARD_MAX_REQUEST_BYTES)
+    function EffectiveMaxRequestBytes: Integer;
     /// perform one webview_return under a handle-use lease; silently
     // swallowed once close has begun - the handle is never touched
     procedure NativeReturnUnderLease(const AId: RawUtf8; AStatus: Integer;
@@ -192,7 +251,74 @@ function PWebResultEnvelope(const AResult: TPWebInvocationResult;
 function PWebParseInvocationEnvelope(const ARequest: TPWebJson;
   out AMethod: Utf8String; out AArgs: TPWebJson): Boolean;
 
+/// bounded C-string length scan for attacker-controlled request bytes:
+// scans at most AMaxScan bytes; returns the length when a NUL was
+// found within the bound, -1 when not (i.e. the string is LONGER than
+// AMaxScan - 1 bytes: with AMaxScan = limit + 1 that means oversize),
+// and 0 for nil. Never reads past AMaxScan bytes. A degenerate
+// AMaxScan <= 0 also reports -1: nothing can be proven NUL-terminated
+// within an empty bound, so a zero bound never misreports validity.
+function PWebBoundedStrLen(P: PAnsiChar; AMaxScan: PtrInt): PtrInt;
+
+/// number of quarantined (leaked-by-choice) bind entries alive in this
+// process - internal diagnostics/test surface, not a frozen contract
+function PWebQuarantinedEntryCount: Integer;
+
 implementation
+
+{ ---------------- bounded scan + entry quarantine ---------------- }
+
+function PWebBoundedStrLen(P: PAnsiChar; AMaxScan: PtrInt): PtrInt;
+var
+  i: PtrInt;
+begin
+  if P = nil then
+    exit(0);
+  if AMaxScan <= 0 then
+    exit(-1); // empty bound: nothing provable, report as over-bound
+  i := 0;
+  while (i < AMaxScan) and (P[i] <> #0) do
+    Inc(i);
+  if i >= AMaxScan then
+    Result := -1 // no NUL within the bound: longer than AMaxScan-1 bytes
+  else
+    Result := i;
+end;
+
+var
+  { process-lifetime quarantine of bind entries whose native detach was
+    never confirmed while their binding died: retaining them (Owner nil,
+    callback inert) is a deliberate, documented leak-by-choice - freeing
+    memory that native C may still pass back as callback userdata would
+    be a use-after-free }
+  QuarantineLock: TCriticalSection;
+  QuarantinedEntries: TList; // of TPWebBindEntry - NEVER freed
+
+procedure QuarantineEntry(AEntry: TPWebBindEntry);
+begin
+  AEntry.Owner := nil;   // the raw callback treats nil Owner as inert
+  AEntry.Handler := nil; // do not pin the pipeline from a leaked entry
+  if QuarantineLock = nil then
+    exit; // unit already finalized: the entry still leaks, inert, safely
+  QuarantineLock.Enter;
+  try
+    QuarantinedEntries.Add(AEntry);
+  finally
+    QuarantineLock.Leave;
+  end;
+end;
+
+function PWebQuarantinedEntryCount: Integer;
+begin
+  if QuarantineLock = nil then
+    exit(0);
+  QuarantineLock.Enter;
+  try
+    Result := QuarantinedEntries.Count;
+  finally
+    QuarantineLock.Leave;
+  end;
+end;
 
 { ---------------- envelope helpers ---------------- }
 
@@ -365,28 +491,57 @@ procedure PWebBindingRawCallback(const id: PAnsiChar; const req: PAnsiChar;
   arg: Pointer); cdecl;
 var
   entry: TPWebBindEntry;
+  owner: TWebViewBinding;
+  handler: IWebViewInvocationHandler;
   idCopy: RawUtf8;
   reqCopy: RawUtf8;
   sink: IInvocationCompletion;
+  limit: Integer;
+  idLen, reqLen: PtrInt;
 begin
   if arg = nil then
     exit;
   entry := TPWebBindEntry(arg);
+  // capture BOTH fields into locals: quarantine nils them, and a
+  // quarantined entry (detach never confirmed) must be inert here
+  owner := entry.Owner;
+  handler := entry.Handler;
+  if (owner = nil) or (handler = nil) then
+    exit; // inert, memory-safe
   idCopy := '';
   sink := nil;
   try
-    if id <> nil then
-      FastSetString(idCopy, id, StrLen(id));
-    if req <> nil then
-      FastSetString(reqCopy, req, StrLen(req))
+    // the id is copied FIRST, for correlation - but with the SAME
+    // bounded-scan discipline as the request: at the pinned upstream
+    // the id is parsed from the JSON message the page posts to the
+    // internal bridge, so a hostile page influences it. Absent, empty
+    // or over-cap ids carry no usable correlation: nothing enqueued
+    // for them could ever deliver, so they are dropped inertly.
+    idLen := PWebBoundedStrLen(id, PWEB_BINDING_MAX_ID_BYTES + 1);
+    if idLen <= 0 then
+      exit; // nil/empty (0) or over the id cap (-1): no correlation
+    FastSetString(idCopy, id, idLen);
+    sink := TPWebWebViewCompletion.Create(owner, idCopy);
+    // request size is determined with a BOUNDED scan and oversize is
+    // rejected BEFORE any full copy/allocation of the request: never an
+    // unbounded StrLen over attacker-controlled bytes (the ratified
+    // "validate size" callback duty, hardened)
+    limit := owner.EffectiveMaxRequestBytes;
+    if req = nil then
+      reqLen := 0
+    else
+      reqLen := PWebBoundedStrLen(req, PtrInt(limit) + 1);
+    if (reqLen < 0) or (reqLen > limit) then
+    begin
+      // ratified synchronous pre-queue rejection: never enqueued
+      sink.Complete(PWebErrorResult(pecInvalidRequest, 'Request too large'));
+      exit;
+    end;
+    if reqLen > 0 then
+      FastSetString(reqCopy, req, reqLen)
     else
       reqCopy := '';
-    // an empty/absent native id means no correlation: nothing enqueued
-    // here could ever deliver its result, so reject early and silently
-    if idCopy = '' then
-      exit;
-    sink := TPWebWebViewCompletion.Create(entry.Owner, idCopy);
-    entry.Owner.HandleRawInvocation(entry.Handler, TPWebJson(reqCopy), sink);
+    owner.HandleRawInvocation(handler, TPWebJson(reqCopy), sink);
   except
     try
       if sink <> nil then
@@ -395,7 +550,7 @@ begin
       else if idCopy <> '' then
         // sink construction itself failed: no delivery can have
         // happened for this id, a direct return is safe and unique
-        entry.Owner.NativeReturnUnderLease(idCopy, 1, PWebErrorEnvelopeJson(
+        owner.NativeReturnUnderLease(idCopy, 1, PWebErrorEnvelopeJson(
           PWebDefaultErrorResult(pecInternalError).Error));
     except
       // swallow: the barrier is absolute
@@ -421,6 +576,9 @@ begin
   FMaxRequestBytes := AOptions.MaxRequestBytes;
   if FMaxRequestBytes <= 0 then
     FMaxRequestBytes := PWEB_BINDING_DEFAULT_MAX_REQUEST_BYTES;
+  if FMaxRequestBytes > PWEB_BINDING_HARD_MAX_REQUEST_BYTES then
+    // the implementation safety ceiling: configuration cannot bypass it
+    FMaxRequestBytes := PWEB_BINDING_HARD_MAX_REQUEST_BYTES;
   FNativeBind := AOptions.NativeBind;
   if not Assigned(FNativeBind) then
     FNativeBind := webview_bind;
@@ -432,18 +590,63 @@ begin
     FNativeReturn := webview_return;
   FLock := TCriticalSection.Create;
   FEntries := TList.Create;
+  FAffinityThread := GetCurrentThreadId; // see the field comment
 end;
 
 destructor TWebViewBinding.Destroy;
+var
+  i: Integer;
 begin
   if FSource <> nil then
+  begin
     try
       Close; // safety net: normally the owner drove Close already
     except
+      // Close failed (typically an unconfirmed native unbind): fall
+      // through to the quarantine below - a native-unbind failure must
+      // never become dangling userdata just because this Pascal object
+      // is released
     end;
+    // any entry still tracked here has NO confirmed detach: quarantine
+    // it (leak-by-choice) instead of freeing memory native C may still
+    // hand back as callback userdata
+    QuarantineRemainingEntries;
+    // the binding object disappears: close the source (idempotent) and
+    // shutter the lease so nothing can reach the handle through the
+    // dying binding - this is the last-resort path, not a claim that
+    // teardown succeeded
+    try
+      FSource.Close;
+    except
+    end;
+    InterlockedExchange(FLeaseClosed, 1);
+  end
+  else if FEntries <> nil then
+    // construction never completed: no native bind can have happened,
+    // entries (if any) are safe to free normally
+    for i := 0 to FEntries.Count - 1 do
+      TPWebBindEntry(FEntries[i]).Free;
   FEntries.Free;
   FLock.Free;
   inherited Destroy;
+end;
+
+procedure TWebViewBinding.QuarantineRemainingEntries;
+var
+  remaining: array of TPWebBindEntry;
+  i: Integer;
+begin
+  FLock.Enter;
+  try
+    SetLength(remaining, FEntries.Count);
+    for i := 0 to FEntries.Count - 1 do
+      remaining[i] := TPWebBindEntry(FEntries[i]);
+    FEntries.Clear;
+  finally
+    FLock.Leave;
+  end;
+  for i := 0 to High(remaining) do
+    QuarantineEntry(remaining[i]);
 end;
 
 function TWebViewBinding.FindEntryLocked(const AName: Utf8String): Integer;
@@ -462,6 +665,8 @@ var
   entry: TPWebBindEntry;
   err: webview_error_t;
 begin
+  Assert(GetCurrentThreadId = FAffinityThread,
+    'Bind called off the GUI-affine thread'); // debug builds only
   // Name is the JS global binding name - an internal implementation
   // detail, NOT a PWeb RPC Service.Method (frozen contract note)
   if (Name = '') or (Pos(#0, Name) > 0) then
@@ -485,47 +690,72 @@ begin
       entry.Owner := Self;
       entry.Handler := Handler;
       entry.Name := Name;
-      err := FNativeBind(FHandle, PAnsiChar(pointer(entry.Name)),
-        PWebBindingRawCallback, entry);
-      if err = WEBVIEW_ERROR_DUPLICATE then
-        raise EPWebBindingError.CreateFmt(
-          'Bind: "%s" is already bound upstream', [string(Name)]);
-      WebViewCheck(err, 'webview_bind');
+      // OWNERSHIP ORDER (corrective invariant): the registry acquires
+      // the entry BEFORE the native bind. If the bookkeeping fails the
+      // native side has never seen the pointer and the free below is
+      // trivially safe; if the native bind fails we roll the registry
+      // back - never an unchecked native cleanup call, and never a
+      // window where C holds an unowned pointer.
+      FEntries.Add(entry);
       try
-        FEntries.Add(entry);
+        err := FNativeBind(FHandle, PAnsiChar(pointer(entry.Name)),
+          PWebBindingRawCallback, entry);
       except
-        // the native side already holds entry as callback userdata:
-        // detach it there BEFORE the finally frees it, or the callback
-        // would fire on a dangling pointer
-        FNativeUnbind(FHandle, PAnsiChar(pointer(entry.Name)));
+        // an injected native-bind implementation may raise (fakes):
+        // unregister BEFORE the exception propagates, so the finally
+        // below never frees an entry that is still tracked
+        FEntries.Remove(entry);
         raise;
       end;
-      entry := nil; // owned by FEntries now
+      if err <> WEBVIEW_ERROR_OK then
+      begin
+        // ANY non-OK result is a refusal - including POSITIVE
+        // informational codes: native did not register the callback,
+        // so a tracked entry would be a phantom. At the pinned commit
+        // a refused webview_bind retains no callback/userdata, so
+        // rolling back the registry and freeing the entry is safe -
+        // no userdata visible to native code is ever freed.
+        FEntries.Remove(entry);
+        if err = WEBVIEW_ERROR_DUPLICATE then
+          raise EPWebBindingError.CreateFmt(
+            'Bind: "%s" is already bound upstream', [string(Name)]);
+        WebViewCheck(err, 'webview_bind'); // raises EWebViewError on < 0
+        raise EPWebBindingError.CreateFmt(
+          'Bind: "%s" refused by native bind (%s)',
+          [string(Name), WebViewErrorName(err)]);
+      end;
+      entry := nil; // bound and registry-owned: nothing left to free
     finally
-      entry.Free; // only on the refusal paths above
+      entry.Free; // only on the refusal/rollback paths above
     end;
   finally
     FLock.Leave;
   end;
 end;
 
-{ Shared teardown of one binding entry, already removed from FEntries.
-  Order matters: native unbind FIRST, free the userdata AFTER. This is
-  safe because of the frozen GUI-affinity convention: the bind callback,
-  Bind, Unbind and Close all run on the GUI thread, so no callback can
-  be executing inside AEntry while this routine frees it. }
-procedure TWebViewBinding.NativeUnbindAndFree(AEntry: TPWebBindEntry);
+{ Detach one entry natively and CONFIRM the detach. True only for
+  WEBVIEW_ERROR_OK and WEBVIEW_ERROR_NOT_FOUND - the two results that
+  guarantee native C no longer holds the entry pointer; any other code
+  means the callback may still fire with this userdata, so the entry
+  must stay alive and tracked. Free-after-confirm is safe because of
+  the frozen GUI-affinity convention: the bind callback, Bind, Unbind
+  and Close all run on the GUI thread, so no callback can be executing
+  inside AEntry while the caller frees it. }
+function TWebViewBinding.TryNativeDetach(AEntry: TPWebBindEntry;
+  out AErr: webview_error_t): Boolean;
 begin
-  // best-effort native unbind: WEBVIEW_ERROR_NOT_FOUND is informational
-  FNativeUnbind(FHandle, PAnsiChar(pointer(AEntry.Name)));
-  AEntry.Free; // userdata lifetime ends with the binding entry
+  AErr := FNativeUnbind(FHandle, PAnsiChar(pointer(AEntry.Name)));
+  Result := (AErr = WEBVIEW_ERROR_OK) or (AErr = WEBVIEW_ERROR_NOT_FOUND);
 end;
 
 procedure TWebViewBinding.Unbind(const Name: Utf8String);
 var
   idx: Integer;
   entry: TPWebBindEntry;
+  err: webview_error_t;
 begin
+  Assert(GetCurrentThreadId = FAffinityThread,
+    'Unbind called off the GUI-affine thread'); // debug builds only
   if FSource.State = pssClosed then
     exit; // no-op once pssClosed per contract
   FLock.Enter;
@@ -534,35 +764,67 @@ begin
     if idx < 0 then
       exit; // unknown Name is a no-op
     entry := TPWebBindEntry(FEntries[idx]);
-    FEntries.Delete(idx);
   finally
     FLock.Leave;
   end;
-  // GUI-thread by frozen convention (see NativeUnbindAndFree)
-  NativeUnbindAndFree(entry);
-end;
-
-procedure TWebViewBinding.UnbindAllForClose;
-var
-  entry: TPWebBindEntry;
-begin
-  // the ratified teardown window: GUI thread, source Quiescing
-  repeat
-    entry := nil;
+  // GUI-thread by frozen convention (see TryNativeDetach). The entry
+  // is NOT removed from the registry until the detach is confirmed:
+  // a failed native unbind leaves it tracked and fully functional, the
+  // failure is raised here at the GUI boundary, and a later Unbind (or
+  // Close) retries the detach.
+  if TryNativeDetach(entry, err) then
+  begin
     FLock.Enter;
     try
-      if FEntries.Count > 0 then
-      begin
-        entry := TPWebBindEntry(FEntries[FEntries.Count - 1]);
-        FEntries.Delete(FEntries.Count - 1);
-      end;
+      FEntries.Remove(entry);
     finally
       FLock.Leave;
     end;
-    if entry = nil then
-      break;
-    NativeUnbindAndFree(entry);
-  until False;
+    entry.Free; // confirmed detached: exactly one free, exactly here
+  end
+  else
+    raise EPWebBindingError.CreateFmt(
+      'Unbind: native unbind of "%s" failed (%s); the binding stays ' +
+      'registered and memory-safe - retry Unbind/Close later',
+      [string(Name), WebViewErrorName(err)]);
+end;
+
+function TWebViewBinding.UnbindAllForClose: Boolean;
+var
+  snapshot: array of TPWebBindEntry;
+  entry: TPWebBindEntry;
+  i: Integer;
+  err: webview_error_t;
+begin
+  // the ratified teardown window: GUI thread, source Quiescing.
+  // Iterate WITHOUT popping: an entry leaves the registry only once
+  // its native detach is confirmed; failed ones stay tracked so a
+  // later Close can retry exactly the remainder.
+  FLock.Enter;
+  try
+    SetLength(snapshot, FEntries.Count);
+    for i := 0 to FEntries.Count - 1 do
+      snapshot[i] := TPWebBindEntry(FEntries[i]);
+  finally
+    FLock.Leave;
+  end;
+  Result := True;
+  for i := 0 to High(snapshot) do
+  begin
+    entry := snapshot[i];
+    if TryNativeDetach(entry, err) then
+    begin
+      FLock.Enter;
+      try
+        FEntries.Remove(entry);
+      finally
+        FLock.Leave;
+      end;
+      entry.Free; // confirmed detached
+    end
+    else
+      Result := False; // stays alive and tracked; teardown is retryable
+  end;
 end;
 
 procedure TWebViewBinding.Quiesce;
@@ -573,13 +835,23 @@ end;
 
 procedure TWebViewBinding.Close;
 begin
+  Assert(GetCurrentThreadId = FAffinityThread,
+    'Close called off the GUI-affine thread'); // debug builds only
   // 1) full Quiesce semantics first (there is no Running -> Closed):
   //    refuse new invocations, complete queued ones as cancelled -
   //    those completions still deliver, the lease is still open
   FSource.Quiesce;
   // 2) the ratified teardown window: JS-side unbind on the GUI thread
-  //    while the source is Quiescing, before destroy
-  UnbindAllForClose;
+  //    while the source is Quiescing, before destroy. If ANY detach
+  //    fails to confirm, teardown STOPS here in a safe, retryable
+  //    state: the source stays Quiescing, the lease stays open, no
+  //    falsely successful Closed is ever entered, and the failure is
+  //    raised at this (GUI-affine) call site - a later Close retries
+  //    only the remaining entries.
+  if not UnbindAllForClose then
+    raise EPWebBindingError.Create(
+      'Close: a native unbind failed to confirm detach; the source ' +
+      'stays Quiescing and the entries stay tracked - retry Close');
   // 3) close the source: still-running in-flight invocations complete
   //    as cancelled (still deliverable), late worker results will die
   //    at the exactly-once gate
@@ -597,11 +869,14 @@ end;
 
 function TWebViewBinding.TryAcquireLease: Boolean;
 begin
+  // correctness DEPENDS on concurrent visibility of the shutter flag
+  // here (worker threads vs the closing GUI thread), so both reads are
+  // atomic - a plain load could stay stale on a weakly-ordered target
   Result := False;
-  if FLeaseClosed <> 0 then
+  if PWebAtomicRead(FLeaseClosed) <> 0 then
     exit; // no new leases once the close transition began
   InterlockedIncrement(FLeaseCount);
-  if FLeaseClosed <> 0 then
+  if PWebAtomicRead(FLeaseClosed) <> 0 then
   begin
     InterlockedDecrement(FLeaseCount); // close raced us: back out
     exit;
@@ -616,7 +891,15 @@ end;
 
 function TWebViewBinding.ActiveLeases: Integer;
 begin
-  Result := FLeaseCount;
+  // atomic read: the owner polls this from another thread to gate the
+  // deferred native destruction on the lease drain
+  Result := PWebAtomicRead(FLeaseCount);
+end;
+
+function TWebViewBinding.EffectiveMaxRequestBytes: Integer;
+begin
+  // already clamped at construction: min(configured, hard ceiling)
+  Result := FMaxRequestBytes;
 end;
 
 procedure TWebViewBinding.NativeReturnUnderLease(const AId: RawUtf8;
@@ -648,7 +931,9 @@ procedure TWebViewBinding.HandleRawInvocation(
 var
   ctx: TInvocationContext;
 begin
-  // ratified callback duty: validate size (sync pre-queue rejection)
+  // defense-in-depth size check (the raw callback already rejected
+  // oversize with a bounded scan BEFORE copying; this guards any other
+  // caller of this internal entry point)
   if Length(ARequest) > FMaxRequestBytes then
   begin
     ACompletion.Complete(PWebErrorResult(pecInvalidRequest, 'Request too large'));
@@ -693,5 +978,15 @@ begin
     // the callback thread, mapped by the frozen shared table
     Completion.Complete(PWebDefaultErrorResult(PWEB_ENQUEUE_ERROR[outcome]));
 end;
+
+initialization
+  QuarantineLock := TCriticalSection.Create;
+  QuarantinedEntries := TList.Create;
+
+{ deliberately NO finalization for the quarantine machinery: the lock
+  and the list follow the same process-lifetime leak-by-choice policy
+  as the entries they guard - freeing (or nil'ing) a lock that another
+  late thread may just be entering during shutdown would trade a tiny
+  bounded leak for a teardown race }
 
 end.

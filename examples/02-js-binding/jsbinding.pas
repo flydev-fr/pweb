@@ -38,6 +38,7 @@ uses
   pweb.lib.webview.types,
   pweb.lib.webview.errors,
   pweb.rpc.intf,
+  pweb.rpc.support, // generic helpers (PWebSuccessResult & co)
   pweb.rpc.scheduler,
   pweb.rpc.bridge.dummy,
   pweb.capabilities,
@@ -183,6 +184,8 @@ var
   CloserHandle: TThreadID;
   CloserStarted: Boolean;
   SafeToDestroy: Boolean;
+  CloseAttempt: Integer;
+  BindingClosed: Boolean;
 begin
   ExitCode := 0;
   CloserStarted := False;
@@ -255,13 +258,30 @@ begin
       // lease shutter), then scheduler drain, then native destroy.
       // Each step is fenced: a failure in one must never skip the next
       // (in particular webview_destroy must always be attempted).
-      try
-        if Binding <> nil then
-          Binding.Close;
-      except
-        on E: Exception do
+      // binding Close may FAIL retryably when a native unbind does not
+      // confirm the detach (corrective ownership rules): retry a
+      // bounded number of times; if it still fails, the binding's
+      // destructor quarantines the undetached entries (leak-by-choice,
+      // never a use-after-free) when its last reference drops below
+      if Binding <> nil then
+      begin
+        BindingClosed := False;
+        for CloseAttempt := 1 to 2 do
         begin
-          WriteLn(StdErr, 'FAIL: binding Close: ', E.Message);
+          try
+            Binding.Close;
+            BindingClosed := True;
+            break;
+          except
+            on E: Exception do
+              WriteLn(StdErr, 'warning: binding Close attempt ',
+                CloseAttempt, ' failed: ', E.Message);
+          end;
+        end;
+        if not BindingClosed then
+        begin
+          WriteLn(StdErr, 'FAIL: binding Close failed after retries; ' +
+            'undetached entries will be quarantined at release');
           ExitCode := 1;
         end;
       end;

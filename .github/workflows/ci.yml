@@ -118,6 +118,11 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force build/fpc-rpc, build/fpc-cap2 | Out-Null
+          # the neutral support unit must stay RTL-only over pweb.rpc.intf
+          # alone: compiled with -Fusrc/rpc ONLY so any webview/mORMot/
+          # platform dependency creeping in fails this gate
+          fpc -MObjFPC -Sh -B -FUbuild/fpc-rpc -Fusrc/rpc src/rpc/pweb.rpc.support.pas
+          if ($LASTEXITCODE -ne 0) { throw 'pweb.rpc.support.pas failed its RTL-only intf-only compile' }
           fpc -MObjFPC -Sh -B -FUbuild/fpc-rpc -Fusrc/rpc src/rpc/pweb.rpc.scheduler.pas
           if ($LASTEXITCODE -ne 0) { throw 'pweb.rpc.scheduler.pas failed its webview-free RTL-only compile' }
           fpc -MObjFPC -Sh -FUbuild/fpc-rpc -Fusrc/rpc src/rpc/pweb.rpc.bridge.dummy.pas

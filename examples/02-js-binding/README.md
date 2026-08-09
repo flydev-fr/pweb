@@ -21,9 +21,16 @@ New-Item -ItemType Directory -Force build/fpc2, build/example2 | Out-Null
 fpc -Sh -FUbuild/fpc2 -Fusrc/lib -Fusrc/rpc -Fusrc/security -Fusrc/webview `
   -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
   -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net `
+  -Fldeps/mormot2/static/x86_64-win64 `
   -FEbuild/example2 examples/02-js-binding/jsbinding.pas
 Copy-Item build/webview-dist/webview.dll build/example2/
 ```
+
+`-Fldeps/mormot2/static/x86_64-win64` matters on local FPC installs
+whose `fpc.cfg` ships no Win64 import libraries: the pinned mORMot
+statics bundle provides `libkernel32.a` and friends, and linking
+`pwebtests.pas` needs the same flag. (CI runner images resolve these
+without it.)
 
 ## Run
 
@@ -65,3 +72,13 @@ the process exit code reflects what actually happened in the page:
 Closing the window manually before the page finishes (no auto-close
 set) prints a warning instead of failing — the human saw the page, the
 tally simply never arrived.
+
+## Teardown
+
+`Binding.Close` can fail *retryably* if a native `webview_unbind` does
+not confirm the detach (the corrective ownership rules never free
+userdata the native side may still hold). The example retries Close
+once; if it still fails it reports `FAIL` (exit 1) and the binding's
+destructor quarantines the undetached entries — a deliberate bounded
+leak, never a use-after-free. Scheduler shutdown and `webview_destroy`
+still run regardless.

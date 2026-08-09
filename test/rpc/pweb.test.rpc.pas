@@ -23,6 +23,9 @@ unit pweb.test.rpc;
 interface
 
 uses
+  {$ifdef OSWINDOWS}
+  windows, // VirtualAlloc/VirtualProtect for the guard-page scan test
+  {$endif OSWINDOWS}
   sysutils,
   classes,
   syncobjs,
@@ -31,12 +34,14 @@ uses
   mormot.core.text,
   mormot.core.test,
   pweb.rpc.intf,
+  pweb.rpc.support,
   pweb.rpc.scheduler,
   pweb.rpc.bridge.dummy,
   pweb.capabilities,
   pweb.webview.intf,
   pweb.webview.binding,
-  pweb.lib.webview;
+  pweb.lib.webview,
+  pweb.lib.webview.errors; // EWebViewError for the bind-rollback case
 
 type
   /// allow-all policy that records the canonical method and a deep copy
@@ -120,6 +125,13 @@ type
     procedure CallbackDoesNoSynchronousServiceExecution;
     procedure LateCompletionAfterClosedTouchesNothing;
     procedure LeasePreventsDestroyReturnRace;
+    // corrective-review fault-injection cases (scenarios A-D + size)
+    procedure UnbindFailureKeepsUserdataSafe;
+    procedure CloseRetryAfterUnbindFailure;
+    procedure DestroyQuarantinesUndetachedEntry;
+    procedure BindRollbackOnNativeFailure;
+    procedure RequestSizeLimitsAndCeiling;
+    procedure BoundedScanGuardPage;
   end;
 
 implementation
@@ -351,6 +363,21 @@ var
   FakeReturnBlock: Boolean;
   FakeReturnGateOpen: LongInt;  // released by the test (polled flag)
   FakeReturnEntered: LongInt;   // set when a blocked return is inside
+  { scriptable native results for the corrective fault-injection cases.
+    Unbind failures are keyed by NAME (never by call order, so tests do
+    not depend on registry iteration order) and are persistent until
+    cleared; a scripted unbind result ALWAYS leaves the fake registry
+    untouched - a failure means the native side still holds the
+    callback userdata, and a non-failure code (e.g. NOT_FOUND) merely
+    claims a state without performing any registry effect. To simulate
+    a genuinely-absent native binding use RemoveFakeBinding, which
+    detaches the fake registry record itself - a later unbind then
+    reports NOT_FOUND naturally. Bind results are a FIFO queue: a
+    scripted non-OK bind registers nothing and retains nothing. }
+  FakeUnbindFailName: RawUtf8;              // '' = no scripted unbind result
+  FakeUnbindFailCode: webview_error_t;
+  FakeBindScript: array of webview_error_t;
+  FakeBindScriptIdx: Integer;
 
 procedure ResetFakes;
 begin
@@ -361,11 +388,69 @@ begin
     FakeSeq := 0;
     FakeUnbinds := 0;
     FakeReturnBlock := False;
+    FakeUnbindFailName := '';
+    FakeUnbindFailCode := WEBVIEW_ERROR_OK;
+    SetLength(FakeBindScript, 0);
+    FakeBindScriptIdx := 0;
   finally
     FakeLock.Leave;
   end;
   InterlockedExchange(FakeReturnGateOpen, 0);
   InterlockedExchange(FakeReturnEntered, 0);
+end;
+
+procedure ScriptUnbindFailureFor(const AName: RawUtf8;
+  ACode: webview_error_t);
+begin
+  FakeLock.Enter;
+  try
+    FakeUnbindFailName := AName;
+    FakeUnbindFailCode := ACode;
+  finally
+    FakeLock.Leave;
+  end;
+end;
+
+procedure ClearUnbindFailure;
+begin
+  ScriptUnbindFailureFor('', WEBVIEW_ERROR_OK);
+end;
+
+{ simulate a native side that genuinely no longer holds AName (e.g. it
+  was dropped upstream): the fake registry record disappears WITHOUT
+  any Pascal-side effect, so the next unbind reports NOT_FOUND }
+procedure RemoveFakeBinding(const AName: RawUtf8);
+var
+  i, j: Integer;
+begin
+  FakeLock.Enter;
+  try
+    for i := 0 to High(FakeBindings) do
+      if FakeBindings[i].Name = AName then
+      begin
+        for j := i to High(FakeBindings) - 1 do
+          FakeBindings[j] := FakeBindings[j + 1];
+        SetLength(FakeBindings, Length(FakeBindings) - 1);
+        break;
+      end;
+  finally
+    FakeLock.Leave;
+  end;
+end;
+
+procedure ScriptBindResults(const ACodes: array of webview_error_t);
+var
+  i: Integer;
+begin
+  FakeLock.Enter;
+  try
+    SetLength(FakeBindScript, Length(ACodes));
+    for i := 0 to High(ACodes) do
+      FakeBindScript[i] := ACodes[i];
+    FakeBindScriptIdx := 0;
+  finally
+    FakeLock.Leave;
+  end;
 end;
 
 function FakeNativeBind(w: webview_t; const name: PAnsiChar;
@@ -377,6 +462,13 @@ begin
   FastSetString(nm, name, StrLen(name));
   FakeLock.Enter;
   try
+    if FakeBindScriptIdx < Length(FakeBindScript) then
+    begin
+      Result := FakeBindScript[FakeBindScriptIdx];
+      Inc(FakeBindScriptIdx);
+      if Result <> WEBVIEW_ERROR_OK then
+        exit; // scripted refusal: nothing registered, arg NOT retained
+    end;
     for i := 0 to High(FakeBindings) do
       if FakeBindings[i].Name = nm then
         exit(WEBVIEW_ERROR_DUPLICATE);
@@ -401,6 +493,11 @@ begin
   FakeLock.Enter;
   try
     Inc(FakeUnbinds);
+    if (FakeUnbindFailName <> '') and (nm = FakeUnbindFailName) then
+      // scripted result for THIS name: report the code and leave the
+      // registry untouched - the native side keeps the callback (a
+      // genuinely-absent binding is simulated via RemoveFakeBinding)
+      exit(FakeUnbindFailCode);
     for i := 0 to High(FakeBindings) do
       if FakeBindings[i].Name = nm then
       begin
@@ -516,8 +613,9 @@ begin
   FakeLock.Leave;
 end;
 
-{ invoke a recorded bound callback exactly as upstream JS would }
-procedure FireBound(const AName, AId, AReq: RawUtf8);
+{ invoke a recorded bound callback with a RAW request pointer - the
+  guard-page test needs full control over the request memory layout }
+procedure FireBoundPtr(const AName, AId: RawUtf8; AReq: PAnsiChar);
 var
   i: Integer;
   fn: webview_bind_fn;
@@ -538,7 +636,13 @@ begin
     FakeLock.Leave;
   end;
   if Assigned(fn) then
-    fn(PAnsiChar(pointer(AId)), PAnsiChar(pointer(AReq)), arg);
+    fn(PAnsiChar(pointer(AId)), AReq, arg);
+end;
+
+{ invoke a recorded bound callback exactly as upstream JS would }
+procedure FireBound(const AName, AId, AReq: RawUtf8);
+begin
+  FireBoundPtr(AName, AId, PAnsiChar(pointer(AReq)));
 end;
 
 { crude "code" member extractor for envelope assertions }
@@ -652,6 +756,18 @@ var
   longMethod: Utf8String;
 begin
   NewPipeline(2, 8);
+  // the exact grammar predicate (corrective Item 3): EXACTLY two
+  // non-empty case-preserved segments - never more, never fewer
+  Check(PWebValidMethod('A.B'), 'A.B is canonical');
+  Check(PWebValidMethod('pweb.echo'), 'pweb.echo is canonical');
+  Check(not PWebValidMethod('A.B.C'), 'A.B.C rejected: dots must equal 1');
+  Check(not PWebValidMethod('a.b.c.d'), 'a.b.c.d rejected');
+  Check(not PWebValidMethod('.A'), '.A rejected');
+  Check(not PWebValidMethod('A.'), 'A. rejected');
+  Check(not PWebValidMethod('A..B'), 'A..B rejected');
+  Check(not PWebValidMethod('A/B'), 'A/B rejected');
+  Check(not PWebValidMethod('A B'), 'A B rejected');
+  Check(not PWebValidMethod(''), 'empty rejected');
   sink := TTestCompletion.Create;
   sinkRef := sink;
   // TryEnqueue is the single method grammar gate: every rejection is
@@ -661,6 +777,10 @@ begin
   Check(FSource.TryEnqueue(Ctx, '.echo', '{}', sinkRef) = perInvalidRequest, 'leading dot');
   Check(FSource.TryEnqueue(Ctx, 'pweb.', '{}', sinkRef) = perInvalidRequest, 'trailing dot');
   Check(FSource.TryEnqueue(Ctx, 'a..b', '{}', sinkRef) = perInvalidRequest, 'empty segment');
+  Check(FSource.TryEnqueue(Ctx, 'A.B.C', '{}', sinkRef) = perInvalidRequest,
+    'three segments rejected at the gate: exactly Service.Method');
+  Check(FSource.TryEnqueue(Ctx, 'a.b.c.d', '{}', sinkRef) = perInvalidRequest,
+    'four segments rejected at the gate');
   Check(FSource.TryEnqueue(Ctx, '/root/UserService.Get', '{}', sinkRef) = perInvalidRequest,
     'raw mORMot route form is rejected');
   Check(FSource.TryEnqueue(Ctx, 'user service.get', '{}', sinkRef) = perInvalidRequest, 'space');
@@ -682,6 +802,14 @@ begin
   Check(sink.WaitDone(5000), 'mixed-case invocation completes');
   CheckEqual(FBridge.RecordedInvoke(0).Method, 'MixedCase.Method_1',
     'exact spelling preserved unchanged through the gate');
+  // minimal two-segment form travels intact as well
+  sink := TTestCompletion.Create;
+  sinkRef := sink;
+  Check(FSource.TryEnqueue(Ctx, 'A.B', '{}', sinkRef) = perAccepted,
+    'minimal A.B accepted at the gate');
+  Check(sink.WaitDone(5000), 'A.B invocation completes');
+  CheckEqual(FBridge.RecordedInvoke(1).Method, 'A.B',
+    'A.B spelling preserved through the gate');
   // whitespace-padded spellings are treated consistently (trim first):
   // ' null ' and '{ }' are as valid as their unpadded forms
   sink := TTestCompletion.Create;
@@ -1561,6 +1689,283 @@ begin
   Check(FakeLastReturn('r1', status, payload));
   CheckEqual(status, 0);
   CheckEqual(payload, '{"x":1}');
+  EndBindingPipeline;
+end;
+
+procedure TTestWebViewBinding.UnbindFailureKeepsUserdataSafe; // corrective A + B
+var
+  status, unbindsBefore: Integer;
+  payload: RawUtf8;
+  raised: Boolean;
+begin
+  NewBindingPipeline(2, 8, 0);
+  FBinding.Bind('temp', TPWebEnvelopeHandler.Create(FSource));
+  // scenario A: the native unbind FAILS - the Pascal call must fail at
+  // the GUI boundary, the entry must stay owned and tracked, and the
+  // callback native C still holds must stay fully memory-safe
+  ScriptUnbindFailureFor('temp', WEBVIEW_ERROR_INVALID_STATE);
+  unbindsBefore := FakeUnbinds;
+  raised := False;
+  try
+    FBinding.Unbind('temp');
+  except
+    on E: EPWebBindingError do
+      raised := True;
+  end;
+  Check(raised, 'failed native unbind surfaces at the GUI call site');
+  CheckEqual(FakeUnbinds, unbindsBefore + 1, 'native unbind was attempted');
+  Check(FakeHasBinding('temp'), 'native side still holds the binding');
+  // fire the callback through the retained userdata: it must work end
+  // to end - the entry was never freed
+  FireBound('temp', 'uf1', '["pweb.echo",{"alive":true}]');
+  Check(WaitReturnCount('uf1', 1, 5000), 'callback on retained entry still works');
+  Check(FakeLastReturn('uf1', status, payload));
+  CheckEqual(status, 0, 'retained entry resolves normally');
+  CheckEqual(payload, '{"alive":true}');
+  // retry after the fault clears: detaches and frees exactly once
+  ClearUnbindFailure;
+  FBinding.Unbind('temp');
+  Check(not FakeHasBinding('temp'), 'retried Unbind detached the binding');
+  // an unbound name is a synchronous no-op: assert immediately
+  FireBound('temp', 'uf2', '["pweb.echo",{}]');
+  CheckEqual(FakeReturnCount('uf2'), 0, 'detached name is inert');
+  // scenario B: a genuinely-absent native binding (registry record
+  // dropped upstream) reports NOT_FOUND - a CONFIRMED detach: no
+  // error, entry freed exactly once, name released Pascal-side
+  FBinding.Bind('nf', TPWebEnvelopeHandler.Create(FSource));
+  RemoveFakeBinding('nf'); // native no longer holds it
+  FBinding.Unbind('nf');   // fake reports NOT_FOUND naturally; no raise
+  Check(not FakeHasBinding('nf'), 'nothing native-side after the detach');
+  // the registry released the name: a re-bind works cleanly
+  FBinding.Bind('nf', TPWebEnvelopeHandler.Create(FSource));
+  FireBound('nf', 'nf1', '["pweb.echo",{"n":1}]');
+  Check(WaitReturnCount('nf1', 1, 5000), 're-bound after NOT_FOUND detach works');
+  EndBindingPipeline;
+end;
+
+procedure TTestWebViewBinding.CloseRetryAfterUnbindFailure; // corrective C
+var
+  raised: Boolean;
+  status: Integer;
+  payload: RawUtf8;
+begin
+  NewBindingPipeline(2, 8, 0);
+  FBinding.Bind('other', TPWebEnvelopeHandler.Create(FSource));
+  // the failure is aimed BY NAME (not by call order, so the test does
+  // not depend on registry iteration order): '__pweb_invoke' cannot
+  // detach, 'other' can
+  ScriptUnbindFailureFor('__pweb_invoke', WEBVIEW_ERROR_INVALID_STATE);
+  raised := False;
+  try
+    FBinding.Close;
+  except
+    on E: EPWebBindingError do
+      raised := True;
+  end;
+  Check(raised, 'failed unbind fails Close at the call site');
+  Check(FBinding.State = pssQuiescing, 'no falsely successful Closed');
+  Check(FakeHasBinding('__pweb_invoke'), 'undetached entry stays native-side');
+  Check(not FakeHasBinding('other'), 'the confirmable entry WAS detached');
+  Check(FBinding.TryAcquireLease, 'lease NOT shuttered past a failed unbind');
+  FBinding.ReleaseLease;
+  // the still-bound callback stays memory-safe while quiescing: fired,
+  // it is rejected runtime_closed pre-queue - never a crash
+  FireBound('__pweb_invoke', 'cq1', '["pweb.echo",{}]');
+  CheckEqual(FakeReturnCount('cq1'), 1, 'quiescing rejection still delivered');
+  Check(FakeLastReturn('cq1', status, payload));
+  CheckEqual(PayloadCode(payload), 'runtime_closed');
+  // retry completes the teardown once the fault clears; Closed is
+  // reached exactly once
+  ClearUnbindFailure;
+  FBinding.Close;
+  Check(FBinding.State = pssClosed, 'retried Close reached Closed');
+  Check(not FakeHasBinding('__pweb_invoke'), 'remaining entry detached on retry');
+  Check(not FBinding.TryAcquireLease, 'lease shuttered after successful Close');
+  FBinding.Close; // idempotent once Closed
+  Check(FBinding.State = pssClosed, 'Close stays idempotent');
+  EndBindingPipeline;
+end;
+
+procedure TTestWebViewBinding.DestroyQuarantinesUndetachedEntry; // corrective: release after failed detach
+var
+  qBefore, seqBefore: Integer;
+begin
+  NewBindingPipeline(2, 8, 0);
+  qBefore := PWebQuarantinedEntryCount;
+  // '__pweb_invoke' can never confirm its detach (persistent, keyed by
+  // name): the destructor's Close safety net fails, so releasing the
+  // binding must QUARANTINE the entry (leak-by-choice) - never free
+  // memory that native C still hands back as callback userdata
+  ScriptUnbindFailureFor('__pweb_invoke', WEBVIEW_ERROR_INVALID_STATE);
+  EndBindingPipeline; // shutdown + release: destructor quarantines
+  CheckEqual(PWebQuarantinedEntryCount, qBefore + 1,
+    'undetached entry was quarantined, not freed');
+  Check(FakeHasBinding('__pweb_invoke'),
+    'native side still holds the never-detached binding');
+  seqBefore := FakeMaxSeq;
+  // native C can still fire the callback with the quarantined entry as
+  // userdata: it must be perfectly inert - no UAF, no native call (the
+  // fire is synchronous, so the assertions follow immediately)
+  FireBound('__pweb_invoke', 'q1', '["pweb.echo",{}]');
+  CheckEqual(FakeMaxSeq, seqBefore, 'quarantined callback made no native call');
+  CheckEqual(FakeReturnCount('q1'), 0, 'quarantined callback returned nothing');
+end;
+
+procedure TTestWebViewBinding.BindRollbackOnNativeFailure; // corrective D
+var
+  raised: Boolean;
+  status: Integer;
+  payload: RawUtf8;
+begin
+  NewBindingPipeline(2, 8, 0);
+  // native bind refusal: the registry (which acquired the entry BEFORE
+  // the native call) rolls back and Bind raises at the call site; a
+  // refused bind retains nothing native-side, so nothing C can see is
+  // ever freed
+  ScriptBindResults([WEBVIEW_ERROR_INVALID_STATE]);
+  raised := False;
+  try
+    FBinding.Bind('roll', TPWebEnvelopeHandler.Create(FSource));
+  except
+    on E: EWebViewError do
+      raised := True;
+  end;
+  Check(raised, 'failed native bind raises at the call site');
+  Check(not FakeHasBinding('roll'), 'nothing registered native-side');
+  // the registry rolled back: the same name binds cleanly afterwards
+  FBinding.Bind('roll', TPWebEnvelopeHandler.Create(FSource));
+  FireBound('roll', 'rb1', '["pweb.echo",{"r":1}]');
+  Check(WaitReturnCount('rb1', 1, 5000), 'rolled-back name rebinds and works');
+  Check(FakeLastReturn('rb1', status, payload));
+  CheckEqual(status, 0);
+  CheckEqual(payload, '{"r":1}');
+  // upstream duplicate refusal rolls back identically
+  ScriptBindResults([WEBVIEW_ERROR_DUPLICATE]);
+  raised := False;
+  try
+    FBinding.Bind('dup2', TPWebEnvelopeHandler.Create(FSource));
+  except
+    on E: EPWebBindingError do
+      raised := True;
+  end;
+  Check(raised, 'upstream duplicate refusal raises EPWebBindingError');
+  Check(not FakeHasBinding('dup2'), 'duplicate refusal registered nothing');
+  EndBindingPipeline;
+end;
+
+procedure TTestWebViewBinding.RequestSizeLimitsAndCeiling; // corrective size matrix
+var
+  req, big, payload: RawUtf8;
+  limit, status, invokesBefore: Integer;
+begin
+  // the bounded scan primitive itself: never reads past its bound
+  CheckEqual(PWebBoundedStrLen(nil, 10), 0, 'nil scans to 0');
+  CheckEqual(PWebBoundedStrLen(PAnsiChar(RawUtf8('abc')), 10), 3, 'plain length');
+  CheckEqual(PWebBoundedStrLen(PAnsiChar(RawUtf8('abc')), 4), 3,
+    'NUL found exactly at the last scanned byte');
+  CheckEqual(PWebBoundedStrLen(PAnsiChar(RawUtf8('abc')), 3), -1,
+    'no NUL within the bound reports oversize (-1)');
+  CheckEqual(PWebBoundedStrLen(PAnsiChar(RawUtf8('abc')), 1), -1);
+  CheckEqual(PWebBoundedStrLen(PAnsiChar(RawUtf8('abc')), 0), -1,
+    'degenerate bound 0 reports -1, never a false validity');
+  CheckEqual(PWebBoundedStrLen(nil, 0), 0, 'nil wins over the bound');
+  // the default path of the size clamp: MaxRequestBytes = 0 falls back
+  // to the documented default cap
+  NewBindingPipeline(2, 8, 0);
+  CheckEqual(FBinding.EffectiveMaxRequestBytes,
+    PWEB_BINDING_DEFAULT_MAX_REQUEST_BYTES,
+    'MaxRequestBytes=0 yields the default cap');
+  EndBindingPipeline;
+  // a request exactly AT the effective limit is accepted and enqueued
+  req := '["pweb.echo",{"p":"xy"}]';
+  limit := Length(req);
+  NewBindingPipeline(2, 8, limit);
+  CheckEqual(FBinding.EffectiveMaxRequestBytes, limit,
+    'small configured limit is the effective limit');
+  FireBound('__pweb_invoke', 's1', req);
+  Check(WaitReturnCount('s1', 1, 5000), 'request AT the limit accepted');
+  Check(FakeLastReturn('s1', status, payload));
+  CheckEqual(status, 0, 'at-limit request resolved');
+  CheckEqual(payload, '{"p":"xy"}');
+  CheckEqual(FBridge.InvokeCount, 1, 'at-limit request reached the bridge');
+  invokesBefore := FBridge.InvokeCount;
+  // one byte over: rejected synchronously in the raw callback - before
+  // the handler, before TryEnqueue, without a full copy (the bounded
+  // scan stops at limit + 1 bytes)
+  FireBound('__pweb_invoke', 's2', '["pweb.echo",{"p":"xyz"}]');
+  CheckEqual(FakeReturnCount('s2'), 1, 'limit+1 rejected synchronously');
+  Check(FakeLastReturn('s2', status, payload));
+  CheckNotEqual(status, 0, 'reject arm');
+  CheckEqual(PayloadCode(payload), 'invalid_request');
+  CheckEqual(FBridge.InvokeCount, invokesBefore, 'oversize never reached the bridge');
+  CheckEqual(FRecPolicy.SeenCount, 1, 'oversize never reached the policy');
+  EndBindingPipeline;
+  // configuration CANNOT bypass the 16 MiB implementation ceiling
+  NewBindingPipeline(2, 8, PWEB_BINDING_HARD_MAX_REQUEST_BYTES * 2);
+  CheckEqual(FBinding.EffectiveMaxRequestBytes,
+    PWEB_BINDING_HARD_MAX_REQUEST_BYTES,
+    'effective limit clamped to the hard ceiling');
+  SetLength(big, PWEB_BINDING_HARD_MAX_REQUEST_BYTES + 64);
+  FillChar(pointer(big)^, Length(big), Ord('x'));
+  big[1] := '['; // plausible prefix; bytes past the scan bound never read
+  FireBound('__pweb_invoke', 'c1', big);
+  CheckEqual(FakeReturnCount('c1'), 1, 'over-ceiling rejected synchronously');
+  Check(FakeLastReturn('c1', status, payload));
+  CheckEqual(PayloadCode(payload), 'invalid_request');
+  CheckEqual(FBridge.InvokeCount, 0, 'over-ceiling never reached the bridge');
+  EndBindingPipeline;
+end;
+
+procedure TTestWebViewBinding.BoundedScanGuardPage; // corrective re-review C1 + C2
+var
+  si: TSystemInfo;
+  base: Pointer;
+  pageSize: PtrUInt;
+  req: PAnsiChar;
+  window: PtrInt;
+  status, seqBefore: Integer;
+  payload: RawUtf8;
+  old: DWORD;
+  bigId: RawUtf8;
+begin
+  NewBindingPipeline(2, 8, 64); // effective limit 64 -> scan window 65
+  // C2: an id over the implementation cap carries no correlation and
+  // must be dropped inertly by the bounded id scan - no enqueue, no
+  // native call of any kind (the fire is synchronous)
+  SetLength(bigId, PWEB_BINDING_MAX_ID_BYTES + 10);
+  FillChar(pointer(bigId)^, Length(bigId), Ord('i'));
+  seqBefore := FakeMaxSeq;
+  FireBound('__pweb_invoke', bigId, '["pweb.echo",{}]');
+  CheckEqual(FakeMaxSeq, seqBefore, 'oversize id produced no native call');
+  CheckEqual(FBridge.InvokeCount, 0, 'oversize id was never enqueued');
+  // C1: guard-page proof of the bounded-scan/copy-after-check property.
+  // The request bytes end flush against a PAGE_NOACCESS page with no
+  // NUL anywhere accessible: an unbounded StrLen - or a full copy
+  // before the size check - reads into the guard page and faults
+  // loudly (surfacing as internal_error at best, a crash at worst);
+  // ONLY the bounded scan (limit + 1 bytes, all accessible) passes
+  // and rejects invalid_request without ever touching the guard.
+  GetSystemInfo(si);
+  pageSize := si.dwPageSize;
+  window := 65; // exactly limit + 1 accessible bytes, none of them NUL
+  base := VirtualAlloc(nil, pageSize * 2, MEM_COMMIT or MEM_RESERVE,
+    PAGE_READWRITE);
+  Check(base <> nil, 'VirtualAlloc succeeded');
+  if base <> nil then
+  try
+    Check(VirtualProtect(Pointer(PtrUInt(base) + pageSize), pageSize,
+      PAGE_NOACCESS, @old), 'guard page protected');
+    req := PAnsiChar(PtrUInt(base) + pageSize - PtrUInt(window));
+    FillChar(req^, window, Ord('x'));
+    FireBoundPtr('__pweb_invoke', 'gp1', req);
+    CheckEqual(FakeReturnCount('gp1'), 1, 'guarded oversize rejected synchronously');
+    Check(FakeLastReturn('gp1', status, payload));
+    CheckEqual(PayloadCode(payload), 'invalid_request',
+      'bounded scan rejected without touching the guard page');
+    CheckEqual(FBridge.InvokeCount, 0, 'guarded request never reached the bridge');
+  finally
+    VirtualFree(base, 0, MEM_RELEASE);
+  end;
   EndBindingPipeline;
 end;
 
