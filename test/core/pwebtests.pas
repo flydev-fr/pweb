@@ -18,7 +18,9 @@ uses
   {$I mormot.uses.inc}
   mormot.core.test,
   pweb.test.core,
-  pweb.test.rpc;
+  pweb.test.scheduler,
+  pweb.test.binding,
+  pweb.test.lifecycle;
 
 type
   TPWebTests = class(TSynTests)
@@ -34,10 +36,12 @@ end;
 
 procedure TPWebTests.InvocationPipeline;
 begin
-  // CAP-2: scheduler + policy call site + dummy bridge (headless,
-  // non-WebView source), then the WebView binding over fake native
-  // functions - no window, no webview.dll required for these cases
-  AddCase([TTestInvocationScheduler, TTestWebViewBinding]);
+  // CAP-2, sharded by domain: scheduler + policy call site + dummy
+  // bridge (headless, non-WebView source), the WebView binding over
+  // fake native functions, then the lifecycle/teardown cases of both
+  // domains - no window, no webview.dll required for these cases
+  AddCase([TTestInvocationScheduler, TTestWebViewBinding,
+    TTestSourceLifecycle, TTestBindingLifecycle]);
 end;
 
 begin
