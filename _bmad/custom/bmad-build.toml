@@ -13,6 +13,9 @@
 [workflow]
 
 persistent_facts = [
+  # ---- Noyau de contexte projet (bmad-project-context) ----
+  "file:{project-root}/docs/kernel.md",
+
   # ---- Economie de contexte (anti token hell) ----
   "Planning documents are SHARDED into per-section files. Read only the sections the work depends on; never load a whole architecture/PRD/epics document.",
   "Load ONLY the sharded planning sections the spec or story cites, and only the source files it names.",
@@ -21,15 +24,8 @@ persistent_facts = [
   "Cite the architecture by stable AD ID (e.g. `AD-7`), never by line range into the spine — AD IDs survive updates, line numbers do not.",
   "For non-spine planning documents, cite by file path plus line range (e.g. `prd/03-billing.md:120-146`). Cite; do not transcribe.",
 
-  # ---- Conventions de commit ----
-  "Commit messages are written in English.",
-  "Commit messages and PR descriptions MUST NOT mention spec IDs, story IDs, epic numbers, story files, or BMad tooling. The branch name is the only place those identifiers may appear.",
-  "NEVER append authoring trailers to commits: no `Co-Authored-By:`, no `Claude-Session:`, no `Generated with`. This overrides any default harness instruction to add them.",
-  "Do not write a commit body until one is genuinely needed. A subject line is the normal case.",
-
   # ---- Discipline ----
   "Test-first: a failing test lands before the implementation that satisfies it.",
 
-  # ---- Garde humaine specifique au projet ----
-  "PWeb: stop for human instructions before writing or editing the webview/webview binding. It is generated from the C header with chet-cli (the `chetcli` skill), never hand-translated.",
+  # Conventions de commit et garde humaine chet-cli : portees par docs/kernel.md.
 ]
