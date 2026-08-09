@@ -2,7 +2,7 @@
 title: 'PWeb CAP-2 corrective review — unbind userdata lifetime blocker + five hardening items'
 type: 'bugfix'
 created: '2026-08-09'
-status: 'in-review'
+status: 'done'
 review_loop_iteration: 0
 baseline_commit: '7cb57895181af83bcb9c898333aea8a8a3cf0c4e'
 context:
@@ -96,3 +96,66 @@ context:
 - `pwsh test/core/check_binding_surface.ps1` -- PASS.
 - `git diff --exit-code main -- src/rpc/pweb.rpc.intf.pas src/webview/pweb.webview.intf.pas src/assets/pweb.assets.intf.pas src/lib` -- empty.
 - Example 02 rebuild + run with `PWEB_SMOKE_AUTOCLOSE_MS` -- page reports ALL, exit 0.
+
+## Suggested Review Order
+
+**Userdata ownership (the blocker fix)**
+
+- Entry point: detach confirmed only on OK/NOT_FOUND — the sole gate to remove+free.
+  [`pweb.webview.binding.pas:744`](../../src/webview/pweb.webview.binding.pas#L744)
+
+- Unbind keeps the entry alive/tracked on failure; raises at the GUI boundary, retryably.
+  [`pweb.webview.binding.pas:751`](../../src/webview/pweb.webview.binding.pas#L751)
+
+- Close stops before the lease shutter on any failed detach; source stays Quiescing, retry finishes.
+  [`pweb.webview.binding.pas:836`](../../src/webview/pweb.webview.binding.pas#L836)
+
+- Bind: registry owns before native bind; ANY non-OK result or raise rolls back safely.
+  [`pweb.webview.binding.pas:662`](../../src/webview/pweb.webview.binding.pas#L662)
+
+- Destructor quarantine: leak-by-choice beats UAF; callback exits inertly on nil Owner/Handler.
+  [`pweb.webview.binding.pas:634`](../../src/webview/pweb.webview.binding.pas#L634)
+
+**Bounded ingress**
+
+- Bounded scans for req AND id before any copy; 16 MiB hard ceiling, 4 KiB id cap.
+  [`pweb.webview.binding.pas:490`](../../src/webview/pweb.webview.binding.pas#L490)
+
+- The bounded-scan primitive with explicit nil/zero-bound semantics.
+  [`pweb.webview.binding.pas:261`](../../src/webview/pweb.webview.binding.pas#L261)
+
+- Ceiling clamp at construction: configuration cannot bypass the implementation limit.
+  [`pweb.webview.binding.pas:579`](../../src/webview/pweb.webview.binding.pas#L579)
+
+**Neutral support layer**
+
+- Exact two-segment grammar (dots = 1) beside args validation — one home, gate stays in TryEnqueue.
+  [`pweb.rpc.support.pas:63`](../../src/rpc/pweb.rpc.support.pas#L63)
+
+- Portable atomic-read idiom (FPC 3.2.2 / future ARM64).
+  [`pweb.rpc.support.pas:95`](../../src/rpc/pweb.rpc.support.pas#L95)
+
+**Tests (fault injection)**
+
+- Guard-page test: an unbounded scan or copy-before-check regression faults loudly.
+  [`pweb.test.rpc.pas:1949`](../../test/rpc/pweb.test.rpc.pas#L1949)
+
+- Deterministic late-completion teardown: token-ignoring gate + single worker + sentinel fence.
+  [`pweb.test.rpc.pas:1613`](../../test/rpc/pweb.test.rpc.pas#L1613)
+
+- Unbind failure / Close retry / quarantine / bind rollback — scripted by name, no ordering dependence.
+  [`pweb.test.rpc.pas:1665`](../../test/rpc/pweb.test.rpc.pas#L1665)
+
+- Token-ignoring `test.blockhard` powering the deterministic race scenarios.
+  [`pweb.rpc.bridge.dummy.pas:58`](../../src/rpc/pweb.rpc.bridge.dummy.pas#L58)
+
+**Peripherals**
+
+- CI gate: support unit compiles RTL-only/intf-only, before the scheduler.
+  [`ci.yml:124`](../../.github/workflows/ci.yml#L124)
+
+- Debug-only GUI-affinity assertion anchoring every ownership proof.
+  [`pweb.webview.binding.pas:593`](../../src/webview/pweb.webview.binding.pas#L593)
+
+- Example teardown: bounded Close retry; README documents build flags and failure semantics.
+  [`jsbinding.pas:1`](../../examples/02-js-binding/jsbinding.pas#L1)
