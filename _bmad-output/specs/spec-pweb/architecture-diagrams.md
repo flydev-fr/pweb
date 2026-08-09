@@ -14,7 +14,8 @@ flowchart TD
     React --> WV[System WebView]
     Pas2JS --> WV
     WV --> LIB["webview/webview binding"]
-    LIB -- webview_bind --> IB[Invocation Bridge]
+    LIB -- webview_bind --> SCHED[Invocation Scheduler]
+    SCHED --> IB[Invocation Bridge]
 
     NC --> SOA[mORMot2 SOA]
     SOA --> URI["TRestServer.Uri()"]
@@ -62,7 +63,8 @@ flowchart LR
 flowchart TD
     FE["Pas2JS / React"] --> NI["nativeInvoke()"]
     NI --> WB[webview_bind]
-    WB --> BR[TWebViewInvocationBridge]
+    WB --> SCH["IInvocationScheduler — worker pool"]
+    SCH --> BR[TWebViewInvocationBridge]
     BR --> P[TRestUriParams]
     P --> U["TRestServer.Uri()"]
     U --> SOA[mORMot2 SOA]
@@ -84,14 +86,17 @@ flowchart LR
 ```mermaid
 flowchart TD
     RUN["webview_run() — GUI thread"] --> BIND["webview_bind() callback"]
-    BIND -->|"validate, copy, capture context, enqueue"| POOL[Worker pool]
+    BIND -->|"validate, copy, capture context snapshot, enqueue (non-blocking)"| POOL[Worker pool]
+    BIND -.->|"pre-queue reject: invalid_request / busy / runtime_closed"| RET
     POOL --> CAPS[capabilities]
     CAPS --> URI["TRestServer.Uri()"]
-    URI --> RET["webview_return() — thread-safe"]
+    URI --> RET["webview_return() — thread-safe, via handle-use lease"]
     RET --> P[JS Promise]
     POOL -.->|"GUI-affine commands only"| DISP["webview_dispatch()"]
     DISP --> GUI[GUI operation]
 ```
+
+Completion is exactly-once through an idempotent sink; backpressure slots release at completion. Details and the lease/token mechanics: `threading-model.md`, `wire-semantics.md`.
 
 ## Control plane vs data plane (CAP-12)
 
@@ -141,12 +146,16 @@ flowchart LR
 flowchart TD
     UI[WebView UI] --> RP["React / Pas2JS"]
     UI --> QJ[QuickJS plugin]
-    RP --> IB[InvocationBridge]
-    QJ --> IB
+    RP --> B[IWebViewBinding]
+    B --> SCH[IInvocationScheduler]
+    QJ --> SCH
+    SCH --> IB[IInvocationBridge]
     IB --> CP[ICapabilityPolicy]
     CP --> U["TRestServer.Uri()"]
     U --> M[mORMot2]
 ```
+
+Every invocation source — WebView binding or QuickJS host — goes through `IInvocationScheduler`; none calls `IInvocationBridge` directly.
 
 ## Build pipeline (CAP-6, CAP-10)
 

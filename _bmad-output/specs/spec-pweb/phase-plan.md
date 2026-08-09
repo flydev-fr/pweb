@@ -49,22 +49,37 @@ This is the architectural lock taken before anything else. After it, `webview/we
 
 **Phase 0 exit criteria** — the decomposition alone is not the freeze:
 
-1. Concrete method signatures written and ratified for all seven contracts. Today only `IAssetStore` has one, and it is under review (RAM materialisation vs. stream).
-2. Error contract decided (`wire-semantics.md`) — it changes `IInvocationBridge`.
-3. Lifecycle/cancellation decided (`wire-semantics.md`) — it changes `IInvocationScheduler`.
-4. `PWEB_PROTOCOL_VERSION` and the handshake payload in place.
+1. Seven architectural boundaries frozen; concrete method sets written and ratified for **six** contracts: `IWebView`, `IWebViewBinding`, `IInvocationBridge`, `IInvocationScheduler`, `IAssetStore` (already on record), `ICapabilityPolicy`.
+2. Blob boundary and invariants frozen; the concrete method sets of `IBlobStore`/`IBlobReader`/`IBlobWriter` are deliberately ratified at **Phase 4b entry**, before any blob implementation, so real `Range`/upload/resource-handler integration informs the streaming API (invariants fixed in `core-interfaces.md`).
+3. Error contract **DECIDED** (`wire-semantics.md`) — it shapes `IInvocationBridge`: discriminated Success/Error result, nine stable codes, `service_error.data` domain channel.
+4. Lifecycle/cancellation **DECIDED** (`wire-semantics.md`) — it shapes `IInvocationScheduler`: source lifecycle, exactly-once completion sink, cancellation tokens plus handle-use leases.
+5. `PWEB_PROTOCOL_VERSION`, the `pweb.handshake` payload, and the bundle load predicate (SemVer rules) in place.
 
-Deciding 2 and 3 after CAP-2 would mean reopening the frozen core, which is the one thing this lock exists to prevent.
+Deciding 3 and 4 after CAP-2 would have meant reopening the frozen core, which is the one thing this lock exists to prevent.
 
 **Phase 1 — raw binding. HUMAN GATE FIRST.** Stop and take instructions before writing the binding: it is generated from the C header with `chet-cli` (the `chetcli` skill), not hand-translated. Files under `src/lib/`. Zero mORMot abstraction at this layer. Gate: Windows x64 · window opens · HTML renders · clean shutdown · errors checked · no evident leak · **CI green**.
 
 **Minimal CI starts here, not at Phase 11.** A Windows runner compiles the binding and runs its tests on every push from this phase onward. The binding is the most ABI-sensitive component in the project; it does not get to live ten phases without a guard rail.
 
-**Phase 2 — JS ↔ Pascal.** Files under `src/webview/`. The bind callback only enqueues; work runs on the pool and returns via `webview_return()` (`threading-model.md`). `native.invoke()` is already the real generic pipeline here, so the `ICapabilityPolicy` call site is wired in now with `TAllowAllCapabilityPolicy` — `echo` travels the same road every later call will. Gate: JS → Pascal → resolved JS promise, off the GUI thread, with backpressure limits in place, the error envelope honoured, and the `Running → Quiescing → Closed` transitions exercised. Until this is rock solid, no mORMot code is written.
+**Phase 1 ABI checklist** — "errors checked" in the gate means explicit tests/checks for each of these, and the suite is later reused by the CAP-11 upstream watcher:
+
+- enum width and signedness (`webview_error_t` is a 4-byte signed C int; codes are negative)
+- calling conventions, for the API **and** the callback typedefs
+- callback signatures against the pinned header
+- `const char*` lifetime: bind-callback `id`/`req` are valid only during the callback — copy immediately, proven by test
+- `webview_return` result-string ownership/copy semantics verified against the pinned upstream (poisoned-buffer test)
+- dispatch userdata cleanup when a dispatched closure never executes (terminate path)
+- embedded-NUL handling at every `char*` conversion boundary
+- Pascal exception barriers on all C callbacks — a deliberately raising callback must not cross the C frame
+- opaque typing of native handles (`webview_get_native_handle` kinds differ per platform)
+- WebView2 COM/STA expectations on the GUI thread — what upstream initialises vs what the host app must
+- error-code mapping for every entry point's failure path
+
+**Phase 2 — JS ↔ Pascal.** Files under `src/webview/`. The bind callback only enqueues (non-blocking; pre-queue rejections excepted); work runs on the pool and returns via `webview_return()` under a handle-use lease (`threading-model.md`). `native.invoke()` is already the real generic pipeline here, so the `ICapabilityPolicy` call site is wired in now with `TAllowAllCapabilityPolicy` — `pweb.echo` travels the same road every later call will, and obeys the same wire grammar. Gate: JS → Pascal → resolved JS promise, off the GUI thread, with backpressure limits in place, the error envelope honoured, exactly-once completion demonstrated (cancel-then-late-result), and the `Running → Quiescing → Closed` transitions exercised. Until this is rock solid, no mORMot code is written.
 
 **Phase 3 — first real milestone.** `TWebViewInvocationBridge` → `ICapabilityPolicy` (still allow-all) → `TRestUriParams` → `TRestServer.Uri()`. The policy call site already exists from Phase 2, so Phase 8 only swaps an implementation. When `await CalculatorService.add(20, 22)` returns `42` with no HTTP server, the framework concept is proven.
 
-**Phase 4 — assets.** `TFolderAssetStore` gives easy development over `frontend/dist/`; `TZipAssetStore` validates packaging over `app.zip`. Requires a small per-platform resource handler; start Windows/WebView2 only, generalize later. **Phase 4b — off the critical path.** It extends the same handler to `pweb://blob` with `Range` support (`core-interfaces.md`) because the infrastructure is already there, but it does **not** gate Phase 5 and the MVP does not require it. Streaming, `Range`, JS→native upload, and the WebKit/WebView2/WKWebView differences are rich enough to consume a week with great enthusiasm; that week must not sit on the path to the first end-to-end `getInfo()`.
+**Phase 4 — assets.** `TFolderAssetStore` gives easy development over `frontend/dist/`; `TZipAssetStore` validates packaging over `app.zip`. Requires a small per-platform resource handler; start Windows/WebView2 only, generalize later. **Phase 4b — off the critical path.** **Entry gate:** ratify the concrete method sets of `IBlobStore`/`IBlobReader`/`IBlobWriter` against the invariants fixed in `core-interfaces.md` (owner-scoped blobs, handle entropy, logical release with reader refcounting, positioned reads, auto-release on principal teardown, SDK `native.blobs.release`) **before any blob implementation**. It then extends the same handler to `pweb://blob` with `Range` support (`core-interfaces.md`) because the infrastructure is already there, but it does **not** gate Phase 5 and the MVP does not require it. Streaming, `Range`, JS→native upload, and the WebKit/WebView2/WKWebView differences are rich enough to consume a week with great enthusiasm; that week must not sit on the path to the first end-to-end `getInfo()`.
 
 **Phase 5 — both SDKs.** No special path for Pas2JS.
 

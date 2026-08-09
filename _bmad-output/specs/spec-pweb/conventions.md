@@ -69,13 +69,15 @@ pweb/
 - Units are `pweb.<area>[.<role>].pas` — area matches the directory (`lib`, `webview`, `rpc`, `assets`, `security`, `script`).
 - Phase 1 splits the raw binding into `pweb.lib.webview.pas`, `pweb.lib.webview.types.pas`, `pweb.lib.webview.errors.pas`.
 - Interface units carry the `.intf` suffix; the mORMot-specific RPC implementation is `pweb.rpc.mormot.pas`, keeping mORMot out of `pweb.rpc.intf.pas`. `IInvocationScheduler` lives in `pweb.rpc.intf.pas` with its pool implementation in `pweb.rpc.scheduler.pas`. `IBlobStore` and friends sit beside the asset units because both deal in stored content addressed by an identifier — **not** because they share a URI scheme; `IBlobStore` is deliberately URI-free, and `TWebViewBlobProtocol` (under `src/webview/`) is what maps `pweb://blob/{handle}` onto it.
-- Platform asset handlers are named for their engine: `pweb.asset.webview2.pas` (Windows), `pweb.asset.webkit.pas` (macOS), `pweb.asset.webkitgtk.pas` (Linux).
+- Units under `platform/<os>/` use the `platform` area with the engine as role, matching the `pweb.<area>.<role>.pas` rule: `pweb.platform.webview2.pas` (Windows), `pweb.platform.webkit.pas` (macOS), `pweb.platform.webkitgtk.pas` (Linux) — the per-engine asset/resource handlers.
+- `pweb.rpc.intf.pas` must remain independent of every `pweb.webview.*` unit: `IInvocationScheduler` and `IInvocationBridge` are defined over invocation sources, and the WebView binding is only one source (`threading-model.md`).
 - Examples are numbered in the order they become buildable, matching the phase order.
 
 ## Toolchain
 
 - **FPC 3.2.2 minimum.** The dev host currently runs 3.2.3.
 - A known bug/regression affects **mORMot variants** on that line. Not a blocker, but code touching variant-typed mORMot paths is written with it in mind rather than assuming it away.
+- **Compatibility promise:** PWeb v1 promises **source-level API compatibility** for its Pascal contracts, not binary ABI compatibility between separately compiled PWeb framework versions. Frozen record types (e.g. `TAssetResponse`) may grow additively at source level; that is not claimed to preserve binary ABI.
 
 ## Bindings
 

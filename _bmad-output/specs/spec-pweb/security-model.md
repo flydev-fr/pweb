@@ -4,7 +4,7 @@ Companion to `SPEC.md`. Invariant 4: **capability is contextual.** Frozen at Pha
 
 ## The hook lands early, the policy lands late
 
-Every invocation passes through `ICapabilityPolicy` from the **first bridge, in Phase 2** — long before this model is implemented. By Phase 2 `native.invoke()` is already the real generic pipeline, so `echo` simply travels through `TAllowAllCapabilityPolicy`.
+Every invocation passes through `ICapabilityPolicy` from the **first bridge, in Phase 2** — long before this model is implemented. By Phase 2 `native.invoke()` is already the real generic pipeline, so `pweb.echo` simply travels through `TAllowAllCapabilityPolicy`.
 
 Phase 8 then swaps the policy implementation. It never touches the RPC plumbing:
 
@@ -25,6 +25,14 @@ Retrofitting an authorization call site into a working RPC path is exactly the s
 **Exact matching only.** No wildcards, no regex, no implicit inheritance. `parking.read` authorises `parking.read` and nothing else — it does not imply `parking.read.details`, and `parking.*` is not a thing.
 
 The authorization engine must be as unimaginative as possible: every clever matching rule is a future privilege-escalation bug wearing a convenience costume.
+
+## What the policy receives — DECIDED
+
+`ICapabilityPolicy` receives the **native invocation context plus the canonical method** — the same canonicalized value the router receives, produced by the single parse/validate/canonicalize point (`wire-semantics.md`). The method→capability mapping lives inside the policy implementation and its trusted configuration source; it never appears on the wire. Rules:
+
+- **Unknown/unmapped method ⇒ deny.** Fail closed, always.
+- **The policy runs before routing.** A refusal never touches the SOA layer; `forbidden` outranks `method_not_found`.
+- The capability grammar above governs the vocabulary of the policy's configuration, not the wire's method syntax.
 
 ## Two levels, not one
 
@@ -49,6 +57,14 @@ EffectiveCapabilities =
 ```
 
 The manifest can only ever take rights away from what a principal is granted — it never grants.
+
+**Intersection defaults — DECIDED:**
+
+- An absent/unconfigured optional factor means **unrestricted** (the full set — no additional restriction).
+- An explicitly configured **empty** set means **no rights**.
+- `AppMaximum` is mandatory and explicit — an app without a ceiling has no capabilities.
+
+**`AppMaximum` is a native trust anchor.** It comes from the executable, or from configuration at the same trust level as the executable. It is **never** granted or enlarged by `app.pwb`: the updatable bundle declares compatibility metadata only and cannot grant itself capabilities — otherwise whoever swaps the bundle both supplies the JavaScript and raises its own ceiling.
 
 ## Worked example
 
@@ -111,7 +127,7 @@ Pascal believing a JS-supplied origin would be security in the style of a "do no
 
 ```pascal
 TInvocationContext
-  WindowId
+  WindowId       // optional / not-applicable for non-window principals (QuickJS, system)
   PrincipalId
   PrincipalKind
   Capabilities
@@ -119,7 +135,7 @@ TInvocationContext
   TrustedContent
 ```
 
-It is attached to the bridge instance, not carried in the payload:
+It is built natively and attached at the binding, never carried in the payload. **Each enqueued invocation captures an immutable snapshot of it that stays alive until the invocation completes** — a worker never reads window-owned mutable state (see `threading-model.md`):
 
 ```
 TWebView
@@ -143,7 +159,7 @@ pweb://app/...
 
 `https:` and `mailto:` links open in the system browser. An external page therefore never executes inside a WebView that owns the privileged bridge.
 
-**Open before Phase 10 — the dev-mode hole.** `pweb dev` runs Vite HMR on `127.0.0.1:<ephemeral>`, which the rule above would refuse. Two candidate models: trust that origin explicitly in dev builds only, or proxy the Vite assets behind `pweb://app` so the privileged origin never changes. Not urgent to implement, but the trust model is written down before the CLI ships — a dev mode that quietly relaxes the origin rule is how the rule dies.
+**DECIDED — dev-mode trust model (implementation lands with Phase 10).** The privileged origin is `pweb://app` in development and production alike: `pweb dev` proxies/serves the Vite assets **behind `pweb://app`** rather than re-pointing the privileged origin at `127.0.0.1:<ephemeral>`. Vite HMR may use a narrowly scoped, development-only WebSocket connection (`ws://127.0.0.1:<selected-port>`) — a dev-only **transport** exception, never a privileged-**origin** exception. Production builds contain no localhost/WebSocket HMR allowance of any kind. Recorded now, implemented at Phase 10 — a dev mode that quietly relaxes the origin rule is how the rule dies.
 
 If embedded external content is ever needed:
 
@@ -167,20 +183,24 @@ pkQuickJS
 Plugins are first-class principals, so QuickJS (CAP-9) reuses this system unchanged:
 
 ```
-React MainWindow
-        │
-        ├──────────┐
-        │          │
-QuickJS Plugin A   │
-        │          │
-        ▼          ▼
-   InvocationContext
+React MainWindow      QuickJS Plugin A
+        │                  │
+        ▼                  ▼
+   InvocationContext (immutable snapshot per invocation)
           │
           ▼
-   CapabilityPolicy
+   IInvocationScheduler
+          │
+          ▼
+   IInvocationBridge
+          │
+          ▼
+   ICapabilityPolicy
           │
           ▼
      TRestServer.Uri()
 ```
+
+Every principal — WebView window or QuickJS plugin — enters through `IInvocationScheduler`; no principal calls `IInvocationBridge` directly.
 
 The point of doing this now is to avoid two incompatible permission systems later — a thing humanity loves to build the moment it has two spare weeks of planning.
