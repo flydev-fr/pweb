@@ -1,0 +1,3 @@
+- source_spec: `_bmad-output/implementation-artifacts/spec-phase-0-contracts.md`
+  summary: Phase 1 CI must include the Phase 0 freeze gate — isolation compile of pweb.rpc.intf.pas with zero unit paths, compile of all three contract units, the banned-identifier grep sweep, and the blob-interface-absence check.
+  evidence: Verification-gap review confirmed the freeze invariants (RTL-only isolation, frozen wire tables, dependency bans) are currently verified only by one-shot manual runs; nothing committed re-verifies them. CI is ratified to start at Phase 1 (phase-plan.md), so the committed re-runnable gate lands there rather than adding Phase 0 tooling outside the frozen layout.
