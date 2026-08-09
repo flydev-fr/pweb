@@ -1,4 +1,8 @@
-# CAP-1 minimal Windows CI (phase-plan.md: starts at Phase 1, not Phase 11).
+# CAP-1 minimal Windows CI (phase-plan.md: starts at Phase 1, not Phase 11),
+# extended by CAP-2: every CAP-1 gate is kept verbatim; CAP-2 adds the
+# webview-free scheduler compile, the headless invocation-pipeline test cases
+# inside pwebtests, and the JS-binding example compile (gating) with a
+# best-effort non-gating run, mirroring the CAP-1 smoke policy.
 #
 # Invariants honoured here:
 # - The upstream fetch is the EXACT pinned SHA from webview.lock, checksum
@@ -106,6 +110,27 @@ jobs:
           fpc -MObjFPC -Sh -FUbuild/fpc -Fusrc/lib src/lib/pweb.lib.webview.errors.pas
           if ($LASTEXITCODE -ne 0) { throw 'errors unit failed' }
 
+      # CAP-2: the scheduler MUST compile with no src/webview unit path and
+      # no mORMot path - proving it is source-generic and RTL-only, per the
+      # frozen "defined over invocation sources" rule. The other new units
+      # compile with exactly the dependencies the layering allows them.
+      - name: Compile CAP-2 units (scheduler proven webview-free)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/fpc-rpc, build/fpc-cap2 | Out-Null
+          fpc -MObjFPC -Sh -B -FUbuild/fpc-rpc -Fusrc/rpc src/rpc/pweb.rpc.scheduler.pas
+          if ($LASTEXITCODE -ne 0) { throw 'pweb.rpc.scheduler.pas failed its webview-free RTL-only compile' }
+          fpc -MObjFPC -Sh -FUbuild/fpc-rpc -Fusrc/rpc src/rpc/pweb.rpc.bridge.dummy.pas
+          if ($LASTEXITCODE -ne 0) { throw 'pweb.rpc.bridge.dummy.pas failed' }
+          fpc -MObjFPC -Sh -FUbuild/fpc-rpc -Fusrc/rpc -Fusrc/security src/security/pweb.capabilities.pas
+          if ($LASTEXITCODE -ne 0) { throw 'pweb.capabilities.pas failed' }
+          # the binding may use pinned mORMot2 core units (project include
+          # pattern); src/lib alone stays mORMot-free
+          fpc -Sh -B -FUbuild/fpc-cap2 -Fusrc/lib -Fusrc/rpc -Fusrc/webview `
+            -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+            src/webview/pweb.webview.binding.pas
+          if ($LASTEXITCODE -ne 0) { throw 'pweb.webview.binding.pas failed' }
+
       - name: Signature pin (compile-only gate over all 17 prototypes)
         shell: pwsh
         run: |
@@ -147,17 +172,22 @@ jobs:
           if ($bad) { throw "ABI probe mismatch: $bad line(s)" }
           Write-Host "ABI probes identical: $($c.Count) facts"
 
-      # mormot.core.test suite: error-helper runtime contract + 17/17 symbol
-      # coverage of the pinned DLL. /noenter skips the interactive ENTER wait;
+      # mormot.core.test suite: CAP-1 (error helpers + 17/17 symbol coverage)
+      # plus the twenty CAP-2 invocation-pipeline cases, all headless (the
+      # binding cases run against injected fake native functions - no window;
+      # the DLL is staged only because the binding unit's production defaults
+      # import it at load time). /noenter skips the interactive ENTER wait;
       # the suite sets a nonzero exit code on any failed assertion.
       - name: PWeb test suite (mormot.core.test)
         shell: pwsh
         run: |
-          fpc -Sh -FUbuild/fpc -Fusrc/lib -Futest/core -Fideps/mormot2/src `
+          fpc -Sh -FUbuild/fpc -Fusrc/lib -Fusrc/rpc -Fusrc/security `
+            -Fusrc/webview -Futest/core -Futest/rpc -Fideps/mormot2/src `
             -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
             -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net `
             -FEbuild/test test/core/pwebtests.pas
           if ($LASTEXITCODE -ne 0) { throw 'pwebtests compile failed' }
+          Copy-Item build/webview-dist/webview.dll build/test/
           $env:PWEB_WEBVIEW_DLL = (Resolve-Path build/webview-dist/webview.dll).Path
           & build/test/pwebtests.exe /noenter
           if ($LASTEXITCODE -ne 0) { throw 'pwebtests suite FAILED' }
@@ -220,6 +250,44 @@ jobs:
           }
           "### Smoke run (non-gating)`n$verdict" | Out-File -Append $env:GITHUB_STEP_SUMMARY
           Write-Host "smoke verdict: $verdict"
+          if ($verdict.StartsWith('FAIL')) { exit 1 }
+
+      - name: Compile JS-binding example (CAP-2) and stage its DLL
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/example2 | Out-Null
+          fpc -Sh -FUbuild/fpc -Fusrc/lib -Fusrc/rpc -Fusrc/security `
+            -Fusrc/webview -Fideps/mormot2/src `
+            -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+            -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net `
+            -FEbuild/example2 examples/02-js-binding/jsbinding.pas
+          if ($LASTEXITCODE -ne 0) { throw 'JS-binding example failed to compile' }
+          Copy-Item build/webview-dist/webview.dll build/example2/
+
+      # Same policy as the CAP-1 smoke: the authoritative RUN (window visible,
+      # concurrent JS invocations resolving) is a documented human/local gate;
+      # CI attempts an auto-closing run without letting an absent desktop
+      # session fail the build. Non-gating per spec.
+      - name: JS-binding example run (best effort - authoritative gate is local)
+        shell: pwsh
+        continue-on-error: true
+        timeout-minutes: 5
+        run: |
+          $env:PWEB_SMOKE_AUTOCLOSE_MS = '8000'
+          $out = & build/example2/jsbinding.exe 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Write-Host $out
+          if ($code -eq 0) {
+            $verdict = 'PASS - JS binding example ran and exited cleanly'
+          }
+          elseif ($out -match 'webview_create \(returned nil') {
+            $verdict = "SKIP - no usable WebView2 runtime/desktop session on this runner (exit $code)"
+          }
+          else {
+            $verdict = "FAIL - exit $code (see log)"
+          }
+          "### JS-binding example run (non-gating)`n$verdict" | Out-File -Append $env:GITHUB_STEP_SUMMARY
+          Write-Host "jsbinding verdict: $verdict"
           if ($verdict.StartsWith('FAIL')) { exit 1 }
 
       - name: Upload diagnostics on failure
