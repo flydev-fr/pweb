@@ -18,9 +18,10 @@ program abi_probe;
   - the split view units re-export the same types (type identity, not
     lookalikes). }
 
-{$MODE OBJFPC}{$H+}
+{$I mormot.defines.inc}
 
 uses
+  {$I mormot.uses.inc}
   pweb.lib.webview,
   pweb.lib.webview.types,
   pweb.lib.webview.errors;
@@ -37,9 +38,11 @@ begin
 end;
 
 const
-  { assignment fails to compile if signature or calling convention drifts }
-  CheckDispatchFn: webview_dispatch_fn = @ProbeDispatchCb;
-  CheckBindFn: webview_bind_fn = @ProbeBindCb;
+  { assignment fails to compile if signature or calling convention drifts;
+    deliberately WITHOUT @: mormot.defines.inc sets $T- and under it a
+    Delphi-mode @proc is an untyped pointer that would skip this check }
+  CheckDispatchFn: webview_dispatch_fn = ProbeDispatchCb;
+  CheckBindFn: webview_bind_fn = ProbeBindCb;
 
   { type identity between core unit and split views: these initializations
     only compile if the aliases resolve to the very same types/values }
@@ -75,8 +78,8 @@ var
 
 begin
   { silence "unused" hints without affecting output }
-  if CheckDispatchFn = nil then Halt(100);
-  if CheckBindFn = nil then Halt(100);
+  if not Assigned(CheckDispatchFn) then Halt(100);
+  if not Assigned(CheckBindFn) then Halt(100);
   if CheckErrType <> WEBVIEW_ERROR_OK then Halt(100);
   if CheckHintType <> WEBVIEW_HINT_NONE then Halt(100);
 

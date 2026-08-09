@@ -5,6 +5,10 @@
 #   cross-checked (tools/get-webview.ps1). No branch, tag, or floating ref of
 #   webview/webview appears anywhere in this workflow, and a guard step scans
 #   the fetch/build scripts and this file for floating-ref forms.
+# - mORMot2 (test/app layer ONLY -- src/lib stays mORMot-free) is pinned the
+#   same way: exact SHA + sha256-pinned statics archive in mormot.lock,
+#   fetched by tools/get-mormot.ps1. The test suite pwebtests.pas runs on
+#   mormot.core.test with /noenter.
 # - Third-party actions are pinned to full commit SHAs (tag in comment).
 # - ABI tests run at full strength: the C probe (pinned headers, MSVC) and
 #   the Pascal probe (committed binding, FPC) must emit byte-identical
@@ -41,6 +45,10 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File tools/get-webview.ps1
 
+      - name: Fetch pinned mORMot2 (exact SHA + sha256-pinned statics)
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/get-mormot.ps1
+
       - name: Guard - no floating upstream ref in fetch/build path
         shell: pwsh
         run: |
@@ -52,17 +60,19 @@ jobs:
                  '|refs/(he' + 'ads|ta' + 'gs)' +
                  '|fetch[^\r\n]*origin[^\r\n]*\b(mas' + 'ter|HE' + 'AD|ma' + 'in)\b' +
                  '|webview/web' + 'view@'
-          $files = 'tools/get-webview.ps1', 'tools/build-webview-dll.ps1',
-                   '.github/workflows/ci.yml'
+          $files = 'tools/get-webview.ps1', 'tools/get-mormot.ps1',
+                   'tools/build-webview-dll.ps1', '.github/workflows/ci.yml'
           $bad = @()
           foreach ($f in $files) {
             $hit = Select-String -Path $f -Pattern $pat
             if ($hit) { $bad += "${f}: $($hit[0].Line.Trim())" }
           }
           if ($bad) { $bad | ForEach-Object { Write-Host "VIOLATION: $_" }; throw 'floating upstream ref detected' }
-          $lock = Get-Content webview.lock -Raw
-          if ($lock -notmatch 'commit\s*=\s*[0-9a-f]{40}') {
-            throw 'webview.lock does not pin a full 40-char SHA'
+          foreach ($lf in 'webview.lock', 'mormot.lock') {
+            $lock = Get-Content $lf -Raw
+            if ($lock -notmatch 'commit\s*=\s*[0-9a-f]{40}') {
+              throw "$lf does not pin a full 40-char SHA"
+            }
           }
           Write-Host 'guard: no floating upstream ref'
 
@@ -100,21 +110,13 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force build/test | Out-Null
-          fpc -MObjFPC -Sh -FUbuild/fpc -Fusrc/lib -FEbuild/test test/core/signature_pin.pas
+          fpc -Sh -FUbuild/fpc -Fusrc/lib -Fideps/mormot2/src -FEbuild/test test/core/signature_pin.pas
           if ($LASTEXITCODE -ne 0) { throw 'signature pin failed: binding signatures drifted' }
-
-      - name: Error helper runtime test
-        shell: pwsh
-        run: |
-          fpc -MObjFPC -Sh -FUbuild/fpc -Fusrc/lib -FEbuild/test test/core/error_helper_test.pas
-          if ($LASTEXITCODE -ne 0) { throw 'error helper test compile failed' }
-          & build/test/error_helper_test.exe
-          if ($LASTEXITCODE -ne 0) { throw 'error helper test FAILED' }
 
       - name: ABI probe - Pascal side (committed binding)
         shell: pwsh
         run: |
-          fpc -MObjFPC -Sh -FUbuild/fpc -Fusrc/lib -FEbuild/test test/core/abi_probe.pas
+          fpc -Sh -FUbuild/fpc -Fusrc/lib -Fideps/mormot2/src -FEbuild/test test/core/abi_probe.pas
           if ($LASTEXITCODE -ne 0) { throw 'pascal probe compile failed' }
           & build/test/abi_probe.exe > build/test/abi_pascal.txt
           if ($LASTEXITCODE -ne 0) { throw "pascal probe exited $LASTEXITCODE" }
@@ -145,13 +147,20 @@ jobs:
           if ($bad) { throw "ABI probe mismatch: $bad line(s)" }
           Write-Host "ABI probes identical: $($c.Count) facts"
 
-      - name: Symbol coverage (17/17 exports of the pinned DLL)
+      # mormot.core.test suite: error-helper runtime contract + 17/17 symbol
+      # coverage of the pinned DLL. /noenter skips the interactive ENTER wait;
+      # the suite sets a nonzero exit code on any failed assertion.
+      - name: PWeb test suite (mormot.core.test)
         shell: pwsh
         run: |
-          fpc -MObjFPC -Sh -FUbuild/fpc -Fusrc/lib -FEbuild/test test/core/symbol_coverage.pas
-          if ($LASTEXITCODE -ne 0) { throw 'symbol test compile failed' }
-          & build/test/symbol_coverage.exe build/webview-dist/webview.dll
-          if ($LASTEXITCODE -ne 0) { throw 'symbol coverage failed' }
+          fpc -Sh -FUbuild/fpc -Fusrc/lib -Futest/core -Fideps/mormot2/src `
+            -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+            -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net `
+            -FEbuild/test test/core/pwebtests.pas
+          if ($LASTEXITCODE -ne 0) { throw 'pwebtests compile failed' }
+          $env:PWEB_WEBVIEW_DLL = (Resolve-Path build/webview-dist/webview.dll).Path
+          & build/test/pwebtests.exe /noenter
+          if ($LASTEXITCODE -ne 0) { throw 'pwebtests suite FAILED' }
 
       - name: Binding surface + freeze-isolation sweeps
         shell: pwsh
