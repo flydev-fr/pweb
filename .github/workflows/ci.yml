@@ -3,32 +3,37 @@
 # Invariants honoured here:
 # - The upstream fetch is the EXACT pinned SHA from webview.lock, checksum
 #   cross-checked (tools/get-webview.ps1). No branch, tag, or floating ref of
-#   webview/webview appears anywhere in this workflow.
+#   webview/webview appears anywhere in this workflow, and a guard step scans
+#   the fetch/build scripts and this file for floating-ref forms.
+# - Third-party actions are pinned to full commit SHAs (tag in comment).
 # - ABI tests run at full strength: the C probe (pinned headers, MSVC) and
 #   the Pascal probe (committed binding, FPC) must emit byte-identical
 #   reports, and all 17 pinned entry points must be exported by a DLL built
 #   from the pinned source.
 # - Binding regeneration itself (chet-cli) is a LOCAL gate: ChetCLI is a
-#   host-installed tool not redistributed in this repo. CI instead proves the
-#   committed binding against the pinned headers (probe diff + symbol
-#   coverage + surface check), which fails on any drift a regeneration would
-#   reveal.
+#   host-installed tool not redistributed in this repo; the committed
+#   pipeline is tools/regen-webview-binding.ps1. CI instead proves the
+#   committed binding against the pinned headers (probe diff + signature-pin
+#   compile + symbol coverage + surface check), which fails on any drift a
+#   regeneration would reveal.
 # - The GUI smoke RUN is a documented human/local gate; CI compiles it and
 #   attempts an auto-closing run without letting an absent desktop session
-#   fail the build.
+#   fail the build, recording the outcome in the step summary.
 
 name: CI
 
 on:
   push:
+  pull_request:
   workflow_dispatch:
 
 jobs:
   windows:
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout (full history for freeze diff against baseline)
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
@@ -36,23 +41,33 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File tools/get-webview.ps1
 
-      - name: Guard - no floating upstream ref in fetch path
+      - name: Guard - no floating upstream ref in fetch/build path
         shell: pwsh
         run: |
-          # The fetch script may only ever pass the 40-char SHA from
-          # webview.lock to git; any branch/tag/HEAD reference is a violation.
-          # (Regex sources below cannot literally match themselves.)
-          $bad = 'refs/(heads|tags)|fetch[^\r\n]*origin[^\r\n]*(mas' + 'ter|HEAD|main)'
-          if (Select-String tools/get-webview.ps1 -Pattern $bad) {
-            throw 'fetch script references a floating upstream ref'
+          # Any git form that could follow a moving ref is a violation in the
+          # scripts that touch upstream, and in this workflow itself.
+          # (Patterns are concatenated so they cannot literally match their
+          # own source in this file.)
+          $pat = 'git\s+(cl' + 'one|pu' + 'll|ls-rem' + 'ote)' +
+                 '|refs/(he' + 'ads|ta' + 'gs)' +
+                 '|fetch[^\r\n]*origin[^\r\n]*\b(mas' + 'ter|HE' + 'AD|ma' + 'in)\b' +
+                 '|webview/web' + 'view@'
+          $files = 'tools/get-webview.ps1', 'tools/build-webview-dll.ps1',
+                   '.github/workflows/ci.yml'
+          $bad = @()
+          foreach ($f in $files) {
+            $hit = Select-String -Path $f -Pattern $pat
+            if ($hit) { $bad += "${f}: $($hit[0].Line.Trim())" }
           }
+          if ($bad) { $bad | ForEach-Object { Write-Host "VIOLATION: $_" }; throw 'floating upstream ref detected' }
           $lock = Get-Content webview.lock -Raw
           if ($lock -notmatch 'commit\s*=\s*[0-9a-f]{40}') {
             throw 'webview.lock does not pin a full 40-char SHA'
           }
+          Write-Host 'guard: no floating upstream ref'
 
       - name: Install FPC (Lazarus 3.4 ships FPC 3.2.2)
-        uses: gcarreno/setup-lazarus@v3
+        uses: gcarreno/setup-lazarus@d633fa79b45e29794ab46ec31f7543e44e02efef # v3
         with:
           lazarus-version: "3.4"
 
@@ -64,7 +79,7 @@ jobs:
           if ($v -ne '3.2.2') { throw "expected FPC 3.2.2, got $v" }
 
       - name: MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
 
       - name: Build webview.dll from pinned source (cmake + MSVC)
         shell: pwsh
@@ -81,13 +96,28 @@ jobs:
           fpc -MObjFPC -Sh -FUbuild/fpc -Fusrc/lib src/lib/pweb.lib.webview.errors.pas
           if ($LASTEXITCODE -ne 0) { throw 'errors unit failed' }
 
-      - name: ABI probe - Pascal side (committed binding)
+      - name: Signature pin (compile-only gate over all 17 prototypes)
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force build/test | Out-Null
+          fpc -MObjFPC -Sh -FUbuild/fpc -Fusrc/lib -FEbuild/test test/core/signature_pin.pas
+          if ($LASTEXITCODE -ne 0) { throw 'signature pin failed: binding signatures drifted' }
+
+      - name: Error helper runtime test
+        shell: pwsh
+        run: |
+          fpc -MObjFPC -Sh -FUbuild/fpc -Fusrc/lib -FEbuild/test test/core/error_helper_test.pas
+          if ($LASTEXITCODE -ne 0) { throw 'error helper test compile failed' }
+          & build/test/error_helper_test.exe
+          if ($LASTEXITCODE -ne 0) { throw 'error helper test FAILED' }
+
+      - name: ABI probe - Pascal side (committed binding)
+        shell: pwsh
+        run: |
           fpc -MObjFPC -Sh -FUbuild/fpc -Fusrc/lib -FEbuild/test test/core/abi_probe.pas
           if ($LASTEXITCODE -ne 0) { throw 'pascal probe compile failed' }
           & build/test/abi_probe.exe > build/test/abi_pascal.txt
+          if ($LASTEXITCODE -ne 0) { throw "pascal probe exited $LASTEXITCODE" }
           Get-Content build/test/abi_pascal.txt
 
       - name: ABI probe - C side (pinned headers, MSVC)
@@ -96,14 +126,17 @@ jobs:
           cl /nologo /W4 /WX /Ideps\webview\core\include test\core\abi_probe.c /Fobuild\test\ /Febuild\test\abi_probe_c.exe
           if errorlevel 1 exit /b 1
           build\test\abi_probe_c.exe > build\test\abi_c.txt
+          if errorlevel 1 exit /b 1
           type build\test\abi_c.txt
 
       - name: ABI probe - compare (any diff is a blocker)
         shell: pwsh
         run: |
-          # Strict, order-sensitive, line-by-line comparison.
+          # Strict, order-sensitive, line-by-line comparison; a suspiciously
+          # small fact count (e.g. empty-vs-empty) is itself a failure.
           $c = @(Get-Content build/test/abi_c.txt)
           $p = @(Get-Content build/test/abi_pascal.txt)
+          if ($c.Count -lt 30) { throw "C probe emitted only $($c.Count) facts -- expected >= 30" }
           if ($c.Count -ne $p.Count) { throw "ABI probe mismatch: $($c.Count) vs $($p.Count) lines" }
           $bad = 0
           for ($i = 0; $i -lt $c.Count; $i++) {
@@ -144,22 +177,50 @@ jobs:
             src/assets/pweb.assets.intf.pas
           if ($LASTEXITCODE -ne 0) { throw 'frozen Phase-0 contract units were modified' }
 
-      - name: Compile smoke example
+      - name: Compile smoke example and stage its DLL
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force build/example | Out-Null
           fpc -MObjFPC -Sh -FUbuild/fpc -Fusrc/lib -FEbuild/example examples/01-hello/hello.pas
           if ($LASTEXITCODE -ne 0) { throw 'smoke example failed to compile' }
+          Copy-Item build/webview-dist/webview.dll build/example/
 
       # The real smoke RUN (window visible, marker rendered, clean exit) is a
       # documented human/local gate; this best-effort attempt runs it with
-      # auto-close where the runner image has WebView2 + a desktop session,
-      # but its failure does not fail the build.
+      # auto-close where the runner image has WebView2 + a desktop session.
+      # Outcome is recorded in the step summary; a SKIP (no usable
+      # session/runtime -> webview_create returns nil) is distinguished from
+      # a genuine failure. Non-gating per spec.
       - name: Smoke run (best effort - authoritative gate is local)
         shell: pwsh
         continue-on-error: true
+        timeout-minutes: 5
         run: |
-          Copy-Item build/webview-dist/webview.dll build/example/
           $env:PWEB_SMOKE_AUTOCLOSE_MS = '8000'
-          & build/example/hello.exe
-          if ($LASTEXITCODE -ne 0) { throw "smoke run exited $LASTEXITCODE" }
+          $out = & build/example/hello.exe 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Write-Host $out
+          if ($code -eq 0) {
+            $verdict = 'PASS - window ran and exited cleanly'
+          }
+          elseif ($out -match 'webview_create \(returned nil') {
+            $verdict = "SKIP - no usable WebView2 runtime/desktop session on this runner (exit $code)"
+          }
+          else {
+            $verdict = "FAIL - exit $code (see log)"
+          }
+          "### Smoke run (non-gating)`n$verdict" | Out-File -Append $env:GITHUB_STEP_SUMMARY
+          Write-Host "smoke verdict: $verdict"
+          if ($verdict.StartsWith('FAIL')) { exit 1 }
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap1-diagnostics
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            build/test/abi_c.txt
+            build/test/abi_pascal.txt
+            build/webview-dist/webview.dll

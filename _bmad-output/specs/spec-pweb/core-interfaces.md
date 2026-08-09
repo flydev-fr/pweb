@@ -95,6 +95,12 @@ webview_init          webview_eval          webview_bind
 webview_unbind        webview_return        webview_version
 ```
 
+Scope note: "complete public C ABI" means `api.h` and the public C headers it
+includes (`errors.h`, `types.h`, `macros.h`). `version.h` at this pin contains
+compile-time version macros only, is not included by `api.h`, and defines no
+ABI entry point or type — its exclusion from the binding is deliberate and
+correct.
+
 CAP-1 smoke path:
 
 ```pascal

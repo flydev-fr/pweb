@@ -7,6 +7,12 @@ references into the pinned tree (`deps/webview/...` after
 upstream is more permissive than our frozen threading model, the frozen model
 still governs (`_bmad-output/specs/spec-pweb/threading-model.md`).
 
+Scope of "complete public C ABI": `api.h` plus the public C headers it
+includes (`errors.h`, `types.h`, `macros.h`) — 17 entry points at this pin.
+`version.h` contains compile-time version macros only, is not included by
+`api.h`, and defines no ABI entry point or type; its exclusion from the
+generated binding is deliberate (the macros would add surface without ABI).
+
 These notes exist because the generated binding (`src/lib/`) intentionally
 carries no upstream comments: `chet-cli`'s comment passthrough produces
 Pascal that FPC rejects (dangling section keywords), so comments are stripped

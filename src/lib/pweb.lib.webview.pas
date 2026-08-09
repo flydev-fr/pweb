@@ -4,7 +4,13 @@ unit pweb.lib.webview;
   Based on Chet by Erik van Bilsen:
     https://github.com/neslib/Chet }
 
+{ Generated from webview/webview @ cbbdee44afff22867de9fd88a9fc8350d9bdd399
+  (pin recorded in webview.lock; regenerate ONLY via
+  tools/regen-webview-binding.ps1 -- never edit by hand). }
+
+{$MODE OBJFPC}{$H+}
 {$MINENUMSIZE 4}
+{$PACKRECORDS C}
 
 interface
 

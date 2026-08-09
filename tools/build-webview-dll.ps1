@@ -33,13 +33,20 @@ if ($LASTEXITCODE -ne 0) { throw 'cmake configure failed' }
 cmake --build $BuildDir --target webview_core_shared --config Release
 if ($LASTEXITCODE -ne 0) { throw 'cmake build failed' }
 
-$Dll = Get-ChildItem -Recurse $BuildDir -Filter 'webview.dll' | Select-Object -First 1
-if (-not $Dll) { throw 'webview.dll not found in build output' }
+# Exact expected output path for the VS generator, Release config -- never a
+# recursive first-match, which could silently pick a stale or debug DLL.
+$Dll = Join-Path $BuildDir 'core\Release\webview.dll'
+if (-not (Test-Path $Dll)) { throw "expected DLL not found: $Dll" }
 
 New-Item -ItemType Directory -Force $DistDir | Out-Null
-Copy-Item $Dll.FullName (Join-Path $DistDir 'webview.dll') -Force
+Copy-Item $Dll (Join-Path $DistDir 'webview.dll') -Force
 
-# Ship the upstream MIT license next to any distributed binary.
+# Ship the upstream MIT license next to any distributed binary, and the
+# WebView2 SDK license (the DLL embeds upstream's WebView2 loader built
+# against the SDK; its license requires the notice with binary distribution).
 Copy-Item (Join-Path $Src 'LICENSE') (Join-Path $DistDir 'LICENSE.webview') -Force
+$SdkLicense = Join-Path $BuildDir '_deps\microsoft_web_webview2-src\LICENSE.txt'
+if (-not (Test-Path $SdkLicense)) { throw "WebView2 SDK license not found: $SdkLicense" }
+Copy-Item $SdkLicense (Join-Path $DistDir 'LICENSE.webview2sdk') -Force
 
 Write-Host "webview.dll -> $DistDir\webview.dll"

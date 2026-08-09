@@ -2,7 +2,7 @@
 title: 'PWeb Phase 1 / CAP-1 — raw webview C ABI binding, ABI probe, Windows smoke, minimal CI'
 type: 'feature'
 created: '2026-08-09'
-status: 'in-progress'
+status: 'in-review'
 review_loop_iteration: 0
 baseline_commit: 'b2f04dc4c478c72b1699a954dd52e76b207e918b'
 context:
@@ -89,7 +89,7 @@ context:
 ## Verification
 
 **Commands:**
-- `chetcli run <project.chet>` -- expected: exit 0, no parse errors, stable output (run twice, diff empty).
+- `pwsh tools/regen-webview-binding.ps1` (committed pipeline: `chetcli run src/lib/webview.chet` + committed post-process) -- expected: exit 0, no parse errors, stable output (run twice, diff empty).
 - `fpc.exe -MObjFPC -Sh -B` each `src/lib/` unit + test programs -- expected: compile clean, FPC 3.2.2-compatible.
 - C probe exe vs Pascal probe exe -- expected: identical ABI report lines (diff empty).
 - `grep -ri "mormot\|TRest\|react\|pas2js\|quickjs\|synlz" src/lib/` -- expected: no hits.

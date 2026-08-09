@@ -37,8 +37,16 @@ const
     '<p>CAP-1 smoke: raw webview/webview binding driven from FPC.</p>' +
     '</body></html>';
 
+const
+  { keep unattended runs bounded: cap the requested auto-close delay }
+  MAX_AUTOCLOSE_MS = 60000;
+  { wait margin for the closer thread beyond its own sleep }
+  CLOSER_WAIT_MARGIN_MS = 10000;
+
 var
-  AutoCloseHandle: webview_t = nil;
+  { written once before the closer starts; claimed exactly once via
+    InterlockedExchange (fetch-and-clear) so nil-check and use cannot race }
+  AutoCloseHandle: Pointer = nil;
 
 { Runs on the GUI thread (scheduled by webview_dispatch). Exception barrier:
   nothing may escape into the C frame. }
@@ -55,13 +63,17 @@ end;
 function AutoCloseThread(Param: Pointer): PtrInt;
 var
   Ms: Integer;
+  H: Pointer;
 begin
   Result := 0;
   Ms := PtrInt(Param);
   Sleep(Ms);
+  { atomically claim the handle; the main thread clears it the same way
+    before destroy, so a dispatch on a dying handle is impossible }
+  H := InterlockedExchange(AutoCloseHandle, nil);
   { error deliberately only logged -- the run loop may already have ended }
-  if AutoCloseHandle <> nil then
-    if WebViewFailed(webview_dispatch(AutoCloseHandle,
+  if H <> nil then
+    if WebViewFailed(webview_dispatch(webview_t(H),
         @TerminateOnGuiThread, nil)) then
       WriteLn(StdErr, 'warning: webview_dispatch failed in auto-close');
 end;
@@ -70,15 +82,19 @@ var
   W: webview_t;
   AutoCloseMs: Integer;
   CloserId: TThreadID;
+  CloserHandle: TThreadID; { BeginThread return: the waitable value on Windows }
   CloserStarted: Boolean;
+  SafeToDestroy: Boolean;
 begin
   ExitCode := 0;
   CloserStarted := False;
   CloserId := TThreadID(0);
+  CloserHandle := TThreadID(0);
+  SafeToDestroy := True;
   try
     W := WebViewCheckCreated(webview_create(0, nil));
     try
-      AutoCloseHandle := W;
+      AutoCloseHandle := Pointer(W);
 
       WebViewCheck(webview_set_title(W, 'PWeb'), 'webview_set_title');
       WebViewCheck(webview_set_size(W, 800, 600, WEBVIEW_HINT_NONE),
@@ -87,21 +103,52 @@ begin
         'webview_set_html');
 
       AutoCloseMs := StrToIntDef(GetEnvironmentVariable('PWEB_SMOKE_AUTOCLOSE_MS'), 0);
+      if AutoCloseMs > MAX_AUTOCLOSE_MS then
+        AutoCloseMs := MAX_AUTOCLOSE_MS;
       if AutoCloseMs > 0 then
       begin
-        BeginThread(@AutoCloseThread, Pointer(PtrInt(AutoCloseMs)), CloserId);
-        CloserStarted := True;
+        CloserHandle := BeginThread(@AutoCloseThread,
+          Pointer(PtrInt(AutoCloseMs)), CloserId);
+        CloserStarted := CloserHandle <> TThreadID(0);
+        if not CloserStarted then
+          WriteLn(StdErr, 'warning: BeginThread failed; auto-close disabled');
       end;
 
       WebViewCheck(webview_run(W), 'webview_run');
     finally
-      { the closer thread holds the handle: let it finish before destroy }
+      { the closer thread may still hold the handle: it must finish (or the
+        handle must be reclaimed) before destroy. Wait is bounded relative to
+        the closer's own sleep. }
       if CloserStarted then
-        WaitForThreadTerminate(CloserId, 30000);
-      AutoCloseHandle := nil;
-      WebViewCheck(webview_destroy(W), 'webview_destroy');
+      begin
+        if WaitForThreadTerminate(CloserHandle,
+             AutoCloseMs + CLOSER_WAIT_MARGIN_MS) <> 0 then
+        begin
+          { closer did not finish: it could still dispatch on the handle.
+            Destroying now would risk use-after-free -- fail loudly instead. }
+          WriteLn(StdErr,
+            'FAIL: auto-close thread did not terminate in time; ' +
+            'skipping webview_destroy to avoid use-after-free');
+          SafeToDestroy := False;
+          ExitCode := 1;
+        end;
+        CloseThread(CloserHandle);
+      end;
+      InterlockedExchange(AutoCloseHandle, nil);
+      if SafeToDestroy then
+        try
+          WebViewCheck(webview_destroy(W), 'webview_destroy');
+        except
+          { do not mask an in-flight exception with a destroy failure }
+          on E: Exception do
+          begin
+            WriteLn(StdErr, 'FAIL: webview_destroy: ', E.Message);
+            ExitCode := 1;
+          end;
+        end;
     end;
-    WriteLn('hello: clean exit');
+    if ExitCode = 0 then
+      WriteLn('hello: clean exit');
   except
     on E: EWebViewError do
     begin

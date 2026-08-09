@@ -122,6 +122,23 @@ begin
   WriteLn('offset.webview_version_t.patch=',
     PtrUInt(@VersionRec.patch) - PtrUInt(@VersionRec));
 
+  { per-field signedness, measured identically to the C side: fill the
+    record with $FF, then an unsigned field reads as a huge positive value
+    while a signed one reads negative }
+  FillChar(VersionRec, SizeOf(VersionRec), $FF);
+  if VersionRec.major > 0 then
+    WriteLn('signed.webview_version_t.major=0')
+  else
+    WriteLn('signed.webview_version_t.major=1');
+  if VersionRec.minor > 0 then
+    WriteLn('signed.webview_version_t.minor=0')
+  else
+    WriteLn('signed.webview_version_t.minor=1');
+  if VersionRec.patch > 0 then
+    WriteLn('signed.webview_version_t.patch=0')
+  else
+    WriteLn('signed.webview_version_t.patch=1');
+
   PSize('webview_version_info_t', SizeOf(webview_version_info_t));
   WriteLn('offset.webview_version_info_t.version=',
     PtrUInt(@InfoRec.version) - PtrUInt(@InfoRec));

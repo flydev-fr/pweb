@@ -93,7 +93,8 @@ backup/
 .claude/
 
 # Pinned third-party checkouts (fetched by tools/get-webview.ps1, never committed)
-deps/
+# Anchored to the repo root so nested dirs of the same name elsewhere are kept.
+/deps/
 
-# Local build output
-build/
+# Local build output (repo root only)
+/build/
