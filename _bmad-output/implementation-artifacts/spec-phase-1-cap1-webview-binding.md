@@ -2,7 +2,7 @@
 title: 'PWeb Phase 1 / CAP-1 — raw webview C ABI binding, ABI probe, Windows smoke, minimal CI'
 type: 'feature'
 created: '2026-08-09'
-status: 'in-review'
+status: 'done'
 review_loop_iteration: 0
 baseline_commit: 'b2f04dc4c478c72b1699a954dd52e76b207e918b'
 context:
@@ -95,3 +95,88 @@ context:
 - `grep -ri "mormot\|TRest\|react\|pas2js\|quickjs\|synlz" src/lib/` -- expected: no hits.
 - `git diff --stat phase/0-contracts -- src/rpc src/webview src/assets` -- expected: empty (freeze intact).
 - Smoke: run `examples/01-hello` binary locally -- expected: window opens, marker visible, clean shutdown (human-visible check).
+
+## Suggested Review Order
+
+**Raw ABI binding (the deliverable's core)**
+
+- Entry point: generated unit header — pin provenance, `{$PACKRECORDS C}`, `{$MINENUMSIZE 4}`, regenerate-only warning.
+  [`pweb.lib.webview.pas:13`](../../src/lib/pweb.lib.webview.pas#L13)
+
+- All 17 cdecl externals begin here; opaque `webview_t`, `PAnsiChar` for `const char*`.
+  [`pweb.lib.webview.pas:78`](../../src/lib/pweb.lib.webview.pas#L78)
+
+- Callback typedefs for dispatch/bind — cdecl + `Pointer` userdata, exception-barrier-wrappable later.
+  [`pweb.lib.webview.pas:91`](../../src/lib/pweb.lib.webview.pas#L91)
+
+- Version structs as C-packed records with fixed `AnsiChar` arrays.
+  [`pweb.lib.webview.pas:69`](../../src/lib/pweb.lib.webview.pas#L69)
+
+**Regeneration pipeline & pin reproducibility**
+
+- Canonical regen: chetcli run + deterministic post-process; refuses double-processing.
+  [`regen-webview-binding.ps1:5`](../../tools/regen-webview-binding.ps1#L5)
+
+- Committed chetcli project — the sole translation configuration.
+  [`webview.chet:1`](../../src/lib/webview.chet#L1)
+
+- Single source of pin truth: SHA + six header checksums.
+  [`webview.lock:4`](../../webview.lock#L4)
+
+- Exact-SHA fetch; dirty-tree force-restore; vacuous-checksum guard.
+  [`get-webview.ps1:37`](../../tools/get-webview.ps1#L37)
+
+**ABI validation (measured, not reasoned)**
+
+- C probe: all 17 prototypes re-declared — header drift breaks the MSVC compile.
+  [`abi_probe.c:20`](../../test/core/abi_probe.c#L20)
+
+- Pascal probe mirrors 36 facts (sizes, offsets, enum values, per-field signedness).
+  [`abi_probe.pas:1`](../../test/core/abi_probe.pas#L1)
+
+- Typed procedural consts pin every Pascal external signature at compile time.
+  [`signature_pin.pas:6`](../../test/core/signature_pin.pas#L6)
+
+- Mechanical surface extraction from pinned api.h vs list vs declared externals.
+  [`check_binding_surface.ps1:3`](../../test/core/check_binding_surface.ps1#L3)
+
+- Dynamic 17/17 export coverage against the pinned-source DLL.
+  [`symbol_coverage.pas:1`](../../test/core/symbol_coverage.pas#L1)
+
+**Error layer**
+
+- `WebViewCheck` raises only on negative codes, preserves the original code; nil-create handled.
+  [`pweb.lib.webview.errors.pas:65`](../../src/lib/pweb.lib.webview.errors.pas#L65)
+
+- Runtime helper behavior locked by 36 assertions.
+  [`error_helper_test.pas:1`](../../test/core/error_helper_test.pas#L1)
+
+**Smoke example**
+
+- Dispatch-routed terminate — required at this pin (`PostQuitMessage` posts to the calling thread).
+  [`hello.pas:15`](../../examples/01-hello/hello.pas#L15)
+
+- Interlocked fetch-and-clear closes the auto-close race; bounded wait, no destroy-after-timeout.
+  [`hello.pas:73`](../../examples/01-hello/hello.pas#L73)
+
+**CI**
+
+- Floating-ref guard over fetch/build scripts and the workflow itself.
+  [`ci.yml:44`](../../.github/workflows/ci.yml#L44)
+
+- Freeze-isolation sweeps: surface check, RTL-only compiles, byte-diff against baseline.
+  [`ci.yml:156`](../../.github/workflows/ci.yml#L156)
+
+- Best-effort smoke run — PASS/SKIP/FAIL visible, authoritative gate stays local.
+  [`ci.yml:194`](../../.github/workflows/ci.yml#L194)
+
+**Docs & peripherals**
+
+- Measured upstream semantics at the pin, incl. the terminate pitfall.
+  [`webview-upstream-semantics.md:27`](../../docs/webview-upstream-semantics.md#L27)
+
+- MIT + WebView2 SDK license preservation.
+  [`third-party-licenses.md:1`](../../docs/third-party-licenses.md#L1)
+
+- CAP-1 wording corrected from "14 entry points" to pinned complete C ABI.
+  [`core-interfaces.md:83`](../specs/spec-pweb/core-interfaces.md#L83)
