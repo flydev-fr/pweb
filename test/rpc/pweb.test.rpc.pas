@@ -110,7 +110,7 @@ type
     FBinding: TWebViewBinding;
     FBindingRef: IWebViewBinding;
     procedure NewBindingPipeline(AMaxConcurrent, AMaxQueue,
-      AMaxRequestBytes: Integer);
+      AMaxRequestBytes: Integer; AWorkers: Integer = 4);
     procedure EndBindingPipeline;
     function WaitBridgeCurrent(AValue, ATimeoutMs: Integer): Boolean;
     function WaitReturnCount(const AId: RawUtf8;
@@ -1274,7 +1274,7 @@ end;
 { ---------------- TTestWebViewBinding ---------------- }
 
 procedure TTestWebViewBinding.NewBindingPipeline(AMaxConcurrent, AMaxQueue,
-  AMaxRequestBytes: Integer);
+  AMaxRequestBytes: Integer; AWorkers: Integer);
 var
   lim: TPWebSourceLimits;
   opts: TPWebWebViewBindingOptions;
@@ -1286,7 +1286,7 @@ begin
   // verify the native context/canonical method that reached it
   FRecPolicy := TRecordingAllowPolicy.Create;
   FPolicyRef := FRecPolicy;
-  FScheduler := TInvocationScheduler.Create(FPolicyRef, FBridgeRef, 4);
+  FScheduler := TInvocationScheduler.Create(FPolicyRef, FBridgeRef, AWorkers);
   FSchedulerRef := FScheduler;
   lim.MaxConcurrent := AMaxConcurrent;
   lim.MaxQueueSize := AMaxQueue;
@@ -1614,27 +1614,57 @@ procedure TTestWebViewBinding.LateCompletionAfterClosedTouchesNothing; // mandat
 var
   status, seqAtClose: Integer;
   payload: RawUtf8;
+  lim: TPWebSourceLimits;
+  sentinelSrc: IInvocationSource;
+  sentinel: TTestCompletion;
+  sentinelRef: IInvocationCompletion;
 begin
-  NewBindingPipeline(1, 4, 0);
+  // ONE worker: the sentinel invocation below can then only execute
+  // after that worker has fully finished the late1 item - INCLUDING
+  // its late CompleteOnce attempt, the last step of ExecuteItem -
+  // giving the trailing negative assertions positive synchronization
+  // instead of a sleep
+  NewBindingPipeline(1, 4, 0, {AWorkers=}1);
   FBridge.CloseGate;
-  FireBound('__pweb_invoke', 'late1', '["test.block",{}]');
+  // test.blockhard deliberately IGNORES the cancellation token: the
+  // in-flight bridge call must NOT complete early on Quiesce, so the
+  // terminal cancelled completion is deterministically delivered by
+  // Close itself (lease still open) and the worker's own completion
+  // attempt is deterministically LATE. (The token-observing test.block
+  // raced Close here: the worker's early-cancelled completion could
+  // win the exactly-once gate first, and its delivery then died -
+  // correctly, per the documented post-close lease rule - at the
+  // shutter, leaving no return at all: the scenario premise diverged.)
+  FireBound('__pweb_invoke', 'late1', '["test.blockhard",{}]');
   Check(WaitBridgeCurrent(1, 5000), 'invocation in flight');
   FBinding.Close; // quiesce -> unbind -> source close -> lease shutter
   Check(FBinding.State = pssClosed, 'binding closed');
   Check(FakeUnbinds > 0, 'JS-side unbind happened during teardown');
   // the in-flight invocation was completed (cancelled) on the way to
-  // Closed, while the sink could still deliver
+  // Closed, while the sink could still deliver - deterministic: the
+  // worker is still gated inside the bridge and cannot compete
   CheckEqual(FakeReturnCount('late1'), 1, 'terminal cancelled return delivered');
   Check(FakeLastReturn('late1', status, payload));
   CheckEqual(PayloadCode(payload), 'cancelled');
   seqAtClose := FakeMaxSeq;
-  // now release the still-running bridge: its late completion attempt
-  // must not touch the native handle in any way
+  // sentinel fence on a SECOND, still-running source of the same
+  // scheduler: enqueued while the single worker is still blocked, it
+  // can only complete after the worker finished late1's ExecuteItem -
+  // whose final step is exactly the late completion attempt under test
+  lim.MaxConcurrent := 1;
+  lim.MaxQueueSize := 4;
+  sentinelSrc := FScheduler.RegisterSource(lim);
+  sentinel := TTestCompletion.Create;
+  sentinelRef := sentinel;
+  Check(sentinelSrc.TryEnqueue(TestContext, 'pweb.echo', '{}', sentinelRef) = perAccepted,
+    'sentinel enqueued behind the blocked worker');
+  // release the still-running bridge: its late completion attempt must
+  // die at the exactly-once gate without touching the native handle
   FBridge.OpenGate;
-  Sleep(300);
-  CheckEqual(FakeMaxSeq, seqAtClose,
-    'no native call of any kind after Closed');
+  Check(sentinel.WaitDone(5000), 'sentinel completed: the late attempt already ran');
+  CheckEqual(FakeMaxSeq, seqAtClose, 'no native call of any kind after Closed');
   CheckEqual(FakeReturnCount('late1'), 1, 'still exactly one return');
+  sentinelSrc.Close;
   EndBindingPipeline;
 end;
 

@@ -23,6 +23,12 @@
                   worker slots deterministically. If the 30s safety cap
                   expires without OpenGate it fails loudly with a
                   scripted service_error (domainCode block_timeout).
+    test.blockhard - blocks until OpenGate, deliberately IGNORING the
+                  cancellation token: teardown-race tests need an
+                  in-flight bridge call that cannot complete early on
+                  Quiesce, so the test alone decides - via OpenGate -
+                  when the late completion attempt fires relative to
+                  Close. Same 30s cap, same loud failure.
     anything else -> method_not_found (routing is the bridge's duty;
                   policy ran before it, so forbidden outranks this).
 
@@ -49,6 +55,7 @@ const
   PWEB_DUMMY_METHOD_RAISE = 'test.raise';
   PWEB_DUMMY_METHOD_DELAY = 'test.delay';
   PWEB_DUMMY_METHOD_BLOCK = 'test.block';
+  PWEB_DUMMY_METHOD_BLOCK_HARD = 'test.blockhard';
 
   { upper bound of a test.block wait so a broken test cannot hang a
     worker forever; cancellation or OpenGate normally ends it long
@@ -220,6 +227,20 @@ begin
     begin
       if WaitObservingToken(Token, FDelayMs, {gated=}False) then
         Result := PWebDefaultErrorResult(pecCancelled)
+      else
+        Result := PWebSuccessResult(Args);
+    end
+    else if Method = PWEB_DUMMY_METHOD_BLOCK_HARD then
+    begin
+      // token deliberately NOT observed (see unit header): only
+      // OpenGate - or the loud safety cap - ends this wait, so a
+      // teardown test fully controls when the late completion
+      // attempt fires relative to Close
+      WaitObservingToken(nil, PWEB_DUMMY_BLOCK_CAP_MS, {gated=}True);
+      if PWebAtomicRead(FGateOpen) = 0 then
+        Result := PWebErrorResult(pecServiceError,
+          'dummy bridge test.blockhard cap expired without OpenGate',
+          '{"domainCode":"block_timeout"}')
       else
         Result := PWebSuccessResult(Args);
     end
