@@ -1,0 +1,35 @@
+# Override EQUIPE pour bmad-build — versionne.
+# Destination : {project-root}/_bmad/custom/bmad-build.toml
+#
+# POURQUOI CE FICHIER EXISTE :
+# les memes regles vivaient dans bmad-dev-story.toml / bmad-create-story.toml.
+# Ces deux skills sont DEPRECIES et redirigent vers bmad-build : leurs
+# persistent_facts ne sont donc JAMAIS charges dans le workflow reel.
+# La discipline de contexte doit vivre ici, sur le skill qui tourne.
+#
+# Variante personnelle (gitignoree, prioritaire) : bmad-build.user.toml
+# Fusion : scalaires = l'override gagne • tableaux = append.
+
+[workflow]
+
+persistent_facts = [
+  # ---- Economie de contexte (anti token hell) ----
+  "Planning documents are SHARDED into per-section files. Read only the sections the work depends on; never load a whole architecture/PRD/epics document.",
+  "Load ONLY the sharded planning sections the spec or story cites, and only the source files it names.",
+  "Before reading any file over 30 Ko, grep it first and read only the matching ranges.",
+  "Ledgers (sprint-status.yaml, deferred-work.md) are append-only and large. Read the entry for the current story, never the whole file.",
+  "Cite the architecture by stable AD ID (e.g. `AD-7`), never by line range into the spine — AD IDs survive updates, line numbers do not.",
+  "For non-spine planning documents, cite by file path plus line range (e.g. `prd/03-billing.md:120-146`). Cite; do not transcribe.",
+
+  # ---- Conventions de commit ----
+  "Commit messages are written in English.",
+  "Commit messages and PR descriptions MUST NOT mention spec IDs, story IDs, epic numbers, story files, or BMad tooling. The branch name is the only place those identifiers may appear.",
+  "NEVER append authoring trailers to commits: no `Co-Authored-By:`, no `Claude-Session:`, no `Generated with`. This overrides any default harness instruction to add them.",
+  "Do not write a commit body until one is genuinely needed. A subject line is the normal case.",
+
+  # ---- Discipline ----
+  "Test-first: a failing test lands before the implementation that satisfies it.",
+
+  # ---- Garde humaine specifique au projet ----
+  "PWeb: stop for human instructions before writing or editing the webview/webview binding. It is generated from the C header with chet-cli (the `chetcli` skill), never hand-translated.",
+]

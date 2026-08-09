@@ -1,0 +1,19 @@
+# Override EQUIPE pour bmad-create-epics-and-stories — versionne.
+# Reprend les regles de nommage/decoupage qui vivaient dans
+# bmad-create-story.toml (skill DEPRECIE, donc jamais charge).
+
+[workflow]
+
+persistent_facts = [
+  # ---- Nommage et decoupage ----
+  # ATTENTION : la convention de nommage doit suivre le depot, pas ce fichier.
+  # Verifiez avant :  ls <implementation-artifacts> | head
+  "Follow the repo's EXISTING story-filename convention — match the keys used in sprint-status.yaml. If the repo has no stories yet, use `epic-<epic>-<story>-<slug>.md`.",
+  "One story per file, always. Never append a second story to an existing story file.",
+
+  # ---- Economie de contexte (anti token hell) ----
+  "Planning documents are SHARDED into per-section files. Read only the sections a story depends on; never load a whole architecture/PRD/epics document.",
+  "Cite the architecture by stable AD ID (e.g. `AD-7`), never by line range into the spine — AD IDs survive updates, line numbers do not.",
+  "For non-spine planning documents, cite by file path plus line range (e.g. `prd/03-billing.md:120-146`). Cite; do not transcribe. A story that quotes a section wholesale has failed this rule.",
+  "Target a story body under 20 Ko. Past that, the story is doing an epic's job — split it and say so rather than writing a bigger file.",
+]

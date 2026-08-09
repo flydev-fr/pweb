@@ -1,0 +1,14 @@
+{
+  "_comment": "Budgets de taille documentaire, en octets. Lus par scripts/check-doc-size.py via le hook PostToolUse. Deposez ce fichier dans {project-root}/_bmad/doc-budgets.json. Supprimez-le pour revenir aux defauts du script.",
+  "_categories": {
+    "story": "fichiers epic-*.md et tout ce qui est sous implementation-artifacts/",
+    "planning": "architecture.md, prd.md, epics.md, product-brief.md, et planning-artifacts/",
+    "ledger": "sprint-status.yaml, deferred-work.md (registres append-only)",
+    "default": "tout autre .md / .yaml suivi"
+  },
+
+  "story":    { "warn": 20480, "hard": 30720 },
+  "planning": { "warn": 40960, "hard": 61440 },
+  "ledger":   { "warn": 51200, "hard": 81920 },
+  "default":  { "warn": 51200, "hard": 102400 }
+}

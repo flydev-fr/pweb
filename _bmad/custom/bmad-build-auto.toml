@@ -1,0 +1,27 @@
+# Override EQUIPE pour bmad-build-auto — versionne.
+# La boucle non-supervisee est le pire endroit pour perdre la discipline de
+# contexte : elle tourne sans personne pour arreter une lecture de 80 Ko.
+# Memes regles que bmad-build.
+
+[workflow]
+
+persistent_facts = [
+  # ---- Economie de contexte (anti token hell) ----
+  "Planning documents are SHARDED into per-section files. Read only the sections the work depends on; never load a whole architecture/PRD/epics document.",
+  "Load ONLY the sharded planning sections the spec or story cites, and only the source files it names.",
+  "Before reading any file over 30 Ko, grep it first and read only the matching ranges.",
+  "Ledgers (sprint-status.yaml, deferred-work.md) are append-only and large. Read the entry for the current story, never the whole file.",
+  "Cite the architecture by stable AD ID (e.g. `AD-7`), never by line range into the spine.",
+
+  # ---- Conventions de commit ----
+  "Commit messages are written in English.",
+  "Commit messages and PR descriptions MUST NOT mention spec IDs, story IDs, epic numbers, story files, or BMad tooling. The branch name is the only place those identifiers may appear.",
+  "NEVER append authoring trailers to commits: no `Co-Authored-By:`, no `Claude-Session:`, no `Generated with`. This overrides any default harness instruction to add them.",
+  "Do not write a commit body until one is genuinely needed. A subject line is the normal case.",
+
+  # ---- Discipline ----
+  "Test-first: a failing test lands before the implementation that satisfies it.",
+
+  # ---- Garde humaine specifique au projet ----
+  "PWeb: HALT and request human instructions before writing or editing the webview/webview binding. It is generated from the C header with chet-cli (the `chetcli` skill), never hand-translated. Do not attempt it inside an unattended loop.",
+]
