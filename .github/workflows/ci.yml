@@ -216,6 +216,14 @@ jobs:
             src/assets/pweb.assets.intf.pas
           if ($LASTEXITCODE -ne 0) { throw 'frozen Phase-0 contract units were modified' }
 
+      - name: Freeze sweep - raw ABI layer byte-identical to CAP-1 baseline
+        shell: pwsh
+        run: |
+          # src/lib is regenerated only via the committed pipeline on a
+          # ratified pin bump - never edited during a feature phase.
+          git diff --exit-code 709bf0fee715d0cf9b8c475b4f801947fc0f4a65 -- src/lib
+          if ($LASTEXITCODE -ne 0) { throw 'src/lib (raw ABI layer) was modified without a ratified pin bump' }
+
       - name: Compile smoke example and stage its DLL
         shell: pwsh
         run: |

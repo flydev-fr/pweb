@@ -85,9 +85,11 @@ const
     '  }));' +
     '  Promise.allSettled(jobs).then(function (rs) {' +
     '    var ok = rs.filter(function (r) { return r.status === "fulfilled"; }).length;' +
+    '    var verdict = ok === rs.length ? "ALL" : "FAILED";' +
     '    document.getElementById("status").textContent =' +
-    '      ok === rs.length ? "ALL " + rs.length + " concurrent invocations completed correctly"' +
-    '                       : "FAILED: " + (rs.length - ok) + " of " + rs.length + " invocations misbehaved";' +
+    '      verdict === "ALL" ? "ALL " + rs.length + " concurrent invocations completed correctly"' +
+    '                        : "FAILED: " + (rs.length - ok) + " of " + rs.length + " invocations misbehaved";' +
+    '    invoke("example.report", { verdict: verdict, ok: ok, total: rs.length });' +
     '  });' +
     '});' +
     '</script></body></html>';
@@ -98,6 +100,47 @@ const
 
 var
   AutoCloseHandle: Pointer = nil;
+
+  { page verdict, delivered through the pipeline itself:
+    0 = never received, 1 = ALL invocations correct, 2 = FAILED }
+  ReportState: LongInt = 0;
+
+type
+  { decorates the dummy bridge: intercepts the page's final
+    example.report invocation so the PROCESS can turn the page verdict
+    into an exit code (the human/CI gate observes the invocations, not
+    just a clean window teardown); every other method passes through }
+  TReportingBridge = class(TInterfacedObject, IInvocationBridge)
+  private
+    FInner: IInvocationBridge;
+  public
+    constructor Create(const AInner: IInvocationBridge);
+    function Invoke(const Context: TInvocationContext;
+      const Method: Utf8String; const Args: TPWebJson;
+      const Token: ICancellationToken): TPWebInvocationResult;
+  end;
+
+constructor TReportingBridge.Create(const AInner: IInvocationBridge);
+begin
+  inherited Create;
+  FInner := AInner;
+end;
+
+function TReportingBridge.Invoke(const Context: TInvocationContext;
+  const Method: Utf8String; const Args: TPWebJson;
+  const Token: ICancellationToken): TPWebInvocationResult;
+begin
+  if Method = 'example.report' then
+  begin
+    if Pos('"verdict":"ALL"', Args) > 0 then
+      InterlockedExchange(ReportState, 1)
+    else
+      InterlockedExchange(ReportState, 2);
+    Result := PWebSuccessResult(PWEB_JSON_NULL);
+  end
+  else
+    Result := FInner.Invoke(Context, Method, Args, Token);
+end;
 
 { Runs on the GUI thread (scheduled by webview_dispatch). Exception
   barrier: nothing may escape into the C frame. }
@@ -151,7 +194,8 @@ begin
     //   source -> scheduler -> policy -> bridge
     // with the explicit Phase-2 allow-all policy IN the path
     Scheduler := TInvocationScheduler.Create(
-      TAllowAllCapabilityPolicy.Create, TDummyInvocationBridge.Create, 4);
+      TAllowAllCapabilityPolicy.Create,
+      TReportingBridge.Create(TDummyInvocationBridge.Create), 4);
     SchedulerRef := Scheduler;
     Limits.MaxConcurrent := 4;
     Limits.MaxQueueSize := 64;
@@ -208,11 +252,29 @@ begin
       end;
       InterlockedExchange(AutoCloseHandle, nil);
       // teardown order: binding first (quiesce -> unbind -> close ->
-      // lease shutter), then scheduler drain, then native destroy
-      if Binding <> nil then
-        Binding.Close;
-      if SchedulerRef <> nil then
-        SchedulerRef.Shutdown; // may block; the GUI loop already exited
+      // lease shutter), then scheduler drain, then native destroy.
+      // Each step is fenced: a failure in one must never skip the next
+      // (in particular webview_destroy must always be attempted).
+      try
+        if Binding <> nil then
+          Binding.Close;
+      except
+        on E: Exception do
+        begin
+          WriteLn(StdErr, 'FAIL: binding Close: ', E.Message);
+          ExitCode := 1;
+        end;
+      end;
+      try
+        if SchedulerRef <> nil then
+          SchedulerRef.Shutdown; // may block; the GUI loop already exited
+      except
+        on E: Exception do
+        begin
+          WriteLn(StdErr, 'FAIL: scheduler Shutdown: ', E.Message);
+          ExitCode := 1;
+        end;
+      end;
       if SafeToDestroy then
         try
           WebViewCheck(webview_destroy(W), 'webview_destroy');
@@ -223,6 +285,26 @@ begin
             ExitCode := 1;
           end;
         end;
+    end;
+    // the page's own verdict, transported through the pipeline itself
+    case ReportState of
+      1:
+        WriteLn('jsbinding: page reported ALL invocations completed correctly');
+      2:
+        begin
+          WriteLn(StdErr, 'FAIL: page reported FAILED invocations');
+          ExitCode := 1;
+        end;
+    else
+      if AutoCloseMs > 0 then
+      begin
+        // an unattended run had ample time: no verdict is a failure
+        WriteLn(StdErr, 'FAIL: no page verdict received before auto-close');
+        ExitCode := 1;
+      end
+      else
+        WriteLn(StdErr,
+          'warning: no page verdict received (window closed before the page finished?)');
     end;
     if ExitCode = 0 then
       WriteLn('jsbinding: clean exit');
@@ -238,4 +320,12 @@ begin
       ExitCode := 1;
     end;
   end;
+  // safety net: if setup failed before the inner try/finally (e.g.
+  // webview_create raised), the scheduler still drains its workers;
+  // Shutdown is idempotent so a second call here is a cheap no-op
+  if SchedulerRef <> nil then
+    try
+      SchedulerRef.Shutdown;
+    except
+    end;
 end.

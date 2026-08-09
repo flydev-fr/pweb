@@ -6,8 +6,12 @@
   pweb.webview.* unit (proving source-genericity at runtime, on top of
   the CI webview-free compile of pweb.rpc.scheduler.pas), and the
   binding cases drive real enqueue/complete/close/destroy races against
-  injectable recording fake native functions - no window, no
-  webview.dll needed.
+  injectable recording fake native functions - no window, and no real
+  native entry point is ever CALLED by these cases. Note the loader
+  still requires webview.dll BESIDE the test executable: this unit
+  statically imports pweb.lib.webview (the binding's production
+  defaults), so the DLL must be staged even though it stays idle - CI
+  copies it next to pwebtests.exe.
 
   The twenty mandated CAP-2 tests map onto the published methods below;
   each method's header comment carries its number(s). }
@@ -35,6 +39,23 @@ uses
   pweb.lib.webview;
 
 type
+  /// allow-all policy that records the canonical method and a deep copy
+  // of the native context it received, for pipeline-integrity checks
+  TRecordingAllowPolicy = class(TInterfacedObject, ICapabilityPolicy)
+  private
+    FLock: TCriticalSection;
+    FMethods: array of Utf8String;
+    FContexts: array of TInvocationContext; // deep copies
+  public
+    constructor Create;
+    destructor Destroy; override;
+    function IsAllowed(const Context: TInvocationContext;
+      const Method: Utf8String): Boolean;
+    function SeenCount: Integer;
+    function Seen(AIndex: Integer): Utf8String;
+    function SeenContext(AIndex: Integer): TInvocationContext;
+  end;
+
   /// scheduler + policy call site + dummy bridge, over a plain
   // non-WebView test source (mandated tests 2..16 and 20)
   TTestInvocationScheduler = class(TSynTestCase)
@@ -67,6 +88,7 @@ type
     procedure QuiesceCancelsQueued;
     procedure CloseWhileRunningQuiescesFirst;
     procedure NonWebViewTestSource;
+    procedure ContextSnapshotIndependence;
   end;
 
   /// TWebViewBinding over injectable fake native functions
@@ -75,6 +97,7 @@ type
   private
     FBridge: TDummyInvocationBridge;
     FBridgeRef: IInvocationBridge;
+    FRecPolicy: TRecordingAllowPolicy;
     FPolicyRef: ICapabilityPolicy;
     FScheduler: TInvocationScheduler;
     FSchedulerRef: IInvocationScheduler;
@@ -91,6 +114,9 @@ type
     procedure MalformedEnvelopeRejectedPreEnqueue;
     procedure PreQueueSyncRejectionMapping;
     procedure BindRefusals;
+    procedure UnbindLifecycle;
+    procedure RaisingHandlerBarrier;
+    procedure ContextReachesPolicyAndBridge;
     procedure CallbackDoesNoSynchronousServiceExecution;
     procedure LateCompletionAfterClosedTouchesNothing;
     procedure LeasePreventsDestroyReturnRace;
@@ -130,17 +156,17 @@ type
       const Method: Utf8String): Boolean;
   end;
 
-  TRecordingAllowPolicy = class(TInterfacedObject, ICapabilityPolicy)
-  private
-    FLock: TCriticalSection;
-    FMethods: array of Utf8String;
+  { deviant handlers for the C-callback exception-barrier tests }
+  TRaisingHandler = class(TInterfacedObject, IWebViewInvocationHandler)
   public
-    constructor Create;
-    destructor Destroy; override;
-    function IsAllowed(const Context: TInvocationContext;
-      const Method: Utf8String): Boolean;
-    function SeenCount: Integer;
-    function Seen(AIndex: Integer): Utf8String;
+    procedure HandleInvocation(const Context: TInvocationContext;
+      const Request: TPWebJson; const Completion: IInvocationCompletion);
+  end;
+
+  TCompleteThenRaiseHandler = class(TInterfacedObject, IWebViewInvocationHandler)
+  public
+    procedure HandleInvocation(const Context: TInvocationContext;
+      const Request: TPWebJson; const Completion: IInvocationCompletion);
   end;
 
   { deliberately deviant handler for the lease race test: captures the
@@ -239,6 +265,8 @@ begin
     SetLength(FMethods, n + 1);
     FMethods[n] := Method;
     UniqueString(FMethods[n]);
+    SetLength(FContexts, n + 1);
+    FContexts[n] := PWebCopyContext(Context);
   finally
     FLock.Leave;
   end;
@@ -263,6 +291,33 @@ begin
   finally
     FLock.Leave;
   end;
+end;
+
+function TRecordingAllowPolicy.SeenContext(AIndex: Integer): TInvocationContext;
+begin
+  FLock.Enter;
+  try
+    if (AIndex >= 0) and (AIndex < Length(FContexts)) then
+      Result := PWebCopyContext(FContexts[AIndex])
+    else
+      Result := Default(TInvocationContext);
+  finally
+    FLock.Leave;
+  end;
+end;
+
+procedure TRaisingHandler.HandleInvocation(const Context: TInvocationContext;
+  const Request: TPWebJson; const Completion: IInvocationCompletion);
+begin
+  raise Exception.Create('handler raise marker');
+end;
+
+procedure TCompleteThenRaiseHandler.HandleInvocation(
+  const Context: TInvocationContext; const Request: TPWebJson;
+  const Completion: IInvocationCompletion);
+begin
+  Completion.Complete(PWebSuccessResult('{"first":"delivery"}'));
+  raise Exception.Create('handler raise-after-complete marker');
 end;
 
 procedure TCapturingHandler.HandleInvocation(const Context: TInvocationContext;
@@ -439,6 +494,21 @@ begin
   FakeLock.Leave;
 end;
 
+function FakeHasBinding(const AName: RawUtf8): Boolean;
+var
+  i: Integer;
+begin
+  Result := False;
+  FakeLock.Enter;
+  try
+    for i := 0 to High(FakeBindings) do
+      if FakeBindings[i].Name = AName then
+        exit(True);
+  finally
+    FakeLock.Leave;
+  end;
+end;
+
 procedure SetFakeReturnBlock(AValue: Boolean);
 begin
   FakeLock.Enter;
@@ -612,6 +682,20 @@ begin
   Check(sink.WaitDone(5000), 'mixed-case invocation completes');
   CheckEqual(FBridge.RecordedInvoke(0).Method, 'MixedCase.Method_1',
     'exact spelling preserved unchanged through the gate');
+  // whitespace-padded spellings are treated consistently (trim first):
+  // ' null ' and '{ }' are as valid as their unpadded forms
+  sink := TTestCompletion.Create;
+  sinkRef := sink;
+  Check(FSource.TryEnqueue(Ctx, 'pweb.echo', ' null ', sinkRef) = perAccepted,
+    'padded null args accepted');
+  Check(sink.WaitDone(5000), 'padded-null invocation completes');
+  sink := TTestCompletion.Create;
+  sinkRef := sink;
+  Check(FSource.TryEnqueue(Ctx, 'pweb.echo', '{ }', sinkRef) = perAccepted,
+    'padded empty object args accepted');
+  Check(sink.WaitDone(5000), 'padded-object invocation completes');
+  Check(FSource.TryEnqueue(Ctx, 'pweb.echo', '   ', sinkRef) = perInvalidRequest,
+    'whitespace-only args still rejected');
   EndPipeline;
 end;
 
@@ -806,21 +890,21 @@ begin
   sinkRef := sink;
   Check(FSource.TryEnqueue(Ctx, 'test.block', '{}', sinkRef) = perAccepted);
   Check(WaitBridgeCurrent(1, 5000), 'invocation in flight');
+  Check(FScheduler.TryGetSourceCounts(FSource, q, act), 'counts available');
+  CheckEqual(q, 0, 'nothing queued while blocked');
+  CheckEqual(act, 1, 'one active slot occupied');
   FSource.Close; // completes the in-flight invocation as cancelled NOW
   Check(sink.WaitDone(5000), 'cancelled completion delivered');
   Check(sink.First.Kind = prkError);
   Check(sink.First.Error.Code = pecCancelled, 'close cancels in-flight');
-  Check(FScheduler.TryGetSourceCounts(FSource, q, act), 'counts available');
-  CheckEqual(q, 0, 'no queued after close');
-  CheckEqual(act, 0, 'slot released exactly once at completion');
+  // tracking ends at pssClosed: the scheduler released its references
+  Check(not FScheduler.TryGetSourceCounts(FSource, q, act),
+    'closed source no longer tracked (cycle broken at Close)');
   // now let the blocked bridge finish: its late completion attempt must
-  // die at the gate WITHOUT touching the already-released slot
+  // die at the gate WITHOUT double-releasing anything
   FBridge.OpenGate;
   Sleep(200);
   CheckEqual(sink.CompleteCount, 1, 'late result died at the gate');
-  Check(FScheduler.TryGetSourceCounts(FSource, q, act));
-  CheckEqual(q, 0, 'queued count still consistent');
-  CheckEqual(act, 0, 'active count not double-released (never negative)');
   EndPipeline;
 end;
 
@@ -939,8 +1023,8 @@ begin
   Sleep(200); // late bridge results die at the gate
   CheckEqual(a.CompleteCount, 1, 'A completed exactly once');
   CheckEqual(b.CompleteCount, 1, 'B completed exactly once');
-  Check(FScheduler.TryGetSourceCounts(FSource, q, act));
-  CheckEqual(q + act, 0, 'no slots leaked');
+  Check(not FScheduler.TryGetSourceCounts(FSource, q, act),
+    'tracking released once Closed');
   FSource.Close; // idempotent
   Check(FSource.State = pssClosed);
   EndPipeline;
@@ -996,6 +1080,69 @@ begin
   EndPipeline;
 end;
 
+procedure TTestInvocationScheduler.ContextSnapshotIndependence;
+var
+  pol: TRecordingAllowPolicy;
+  polRef: ICapabilityPolicy;
+  blocker, sink: TTestCompletion;
+  blockerRef, sinkRef: IInvocationCompletion;
+  snapCtx, seen: TInvocationContext;
+  rec: TPWebDummyInvokeRecord;
+begin
+  pol := TRecordingAllowPolicy.Create;
+  polRef := pol;
+  NewPipeline(1, 5, polRef);
+  FBridge.CloseGate;
+  blocker := TTestCompletion.Create;
+  blockerRef := blocker;
+  Check(FSource.TryEnqueue(Ctx, 'test.block', '{}', blockerRef) = perAccepted);
+  Check(WaitBridgeCurrent(1, 5000), 'blocker holds the only slot');
+  // caller-owned context, enqueued BEHIND the blocker so it is still
+  // queued when the caller mutates its own record afterwards
+  snapCtx := Default(TInvocationContext);
+  snapCtx.WindowId := 'w-snap';
+  snapCtx.PrincipalId := 'window:w-snap';
+  snapCtx.PrincipalKind := pkWindow;
+  snapCtx.TrustedContent := True;
+  SetLength(snapCtx.Capabilities, 2);
+  snapCtx.Capabilities[0] := 'cap.alpha';
+  snapCtx.Capabilities[1] := 'cap.beta';
+  sink := TTestCompletion.Create;
+  sinkRef := sink;
+  Check(FSource.TryEnqueue(snapCtx, 'pweb.echo', '{"snap":1}', sinkRef) = perAccepted);
+  // mutate the caller's record AND its Capabilities array in place: the
+  // worker must still observe the immutable deep-copied snapshot
+  snapCtx.WindowId := 'mutated';
+  snapCtx.PrincipalId := 'mutated';
+  snapCtx.TrustedContent := False;
+  snapCtx.Capabilities[0] := 'cap.evil';
+  SetLength(snapCtx.Capabilities, 1);
+  FBridge.OpenGate;
+  Check(blocker.WaitDone(5000), 'blocker completed');
+  Check(sink.WaitDone(5000), 'snapshot invocation completed');
+  // policy saw the original values (record 0 is the blocker)
+  CheckEqual(pol.SeenCount, 2, 'policy called for both invocations');
+  seen := pol.SeenContext(1);
+  CheckEqual(seen.WindowId, 'w-snap', 'policy saw the snapshot WindowId');
+  CheckEqual(seen.PrincipalId, 'window:w-snap', 'snapshot PrincipalId');
+  Check(seen.PrincipalKind = pkWindow, 'kind intact at the policy');
+  Check(seen.TrustedContent, 'TrustedContent intact at the policy');
+  CheckEqual(Length(seen.Capabilities), 2, 'capabilities were deep-copied');
+  CheckEqual(seen.Capabilities[0], 'cap.alpha', 'array mutation did not leak');
+  CheckEqual(seen.Capabilities[1], 'cap.beta');
+  // the bridge saw the identical snapshot
+  CheckEqual(FBridge.InvokeCount, 2);
+  rec := FBridge.RecordedInvoke(1);
+  CheckEqual(rec.Context.WindowId, 'w-snap', 'bridge saw the snapshot');
+  CheckEqual(rec.Context.PrincipalId, 'window:w-snap');
+  Check(rec.Context.PrincipalKind = pkWindow, 'kind intact at the bridge');
+  Check(rec.Context.TrustedContent, 'TrustedContent intact at the bridge');
+  CheckEqual(Length(rec.Context.Capabilities), 2);
+  CheckEqual(rec.Context.Capabilities[0], 'cap.alpha');
+  CheckEqual(rec.Context.Capabilities[1], 'cap.beta');
+  EndPipeline;
+end;
+
 { ---------------- TTestWebViewBinding ---------------- }
 
 procedure TTestWebViewBinding.NewBindingPipeline(AMaxConcurrent, AMaxQueue,
@@ -1007,7 +1154,10 @@ begin
   ResetFakes;
   FBridge := TDummyInvocationBridge.Create;
   FBridgeRef := FBridge;
-  FPolicyRef := TAllowAllCapabilityPolicy.Create;
+  // a recording allow-policy: behaves as allow-all AND lets the tests
+  // verify the native context/canonical method that reached it
+  FRecPolicy := TRecordingAllowPolicy.Create;
+  FPolicyRef := FRecPolicy;
   FScheduler := TInvocationScheduler.Create(FPolicyRef, FBridgeRef, 4);
   FSchedulerRef := FScheduler;
   lim.MaxConcurrent := AMaxConcurrent;
@@ -1015,6 +1165,9 @@ begin
   FSource := FScheduler.RegisterSource(lim);
   opts := Default(TPWebWebViewBindingOptions);
   opts.ContextTemplate := TestContext;
+  SetLength(opts.ContextTemplate.Capabilities, 2);
+  opts.ContextTemplate.Capabilities[0] := 'cap.read';
+  opts.ContextTemplate.Capabilities[1] := 'cap.write';
   opts.MaxRequestBytes := AMaxRequestBytes;
   opts.NativeBind := FakeNativeBind;
   opts.NativeUnbind := FakeNativeUnbind;
@@ -1037,6 +1190,7 @@ begin
   FSchedulerRef := nil;
   FScheduler := nil;
   FPolicyRef := nil;
+  FRecPolicy := nil;
   FBridgeRef := nil;
   FBridge := nil;
 end;
@@ -1071,7 +1225,7 @@ end;
 
 procedure TTestWebViewBinding.MalformedEnvelopeRejectedPreEnqueue; // mandated test 1
 var
-  status: Integer;
+  status, seqBefore, countBefore: Integer;
   payload: RawUtf8;
   big: RawUtf8;
 begin
@@ -1110,6 +1264,15 @@ begin
   Check(FakeLastReturn('ok1', status, payload));
   CheckEqual(status, 0, 'success arm');
   CheckEqual(payload, '{"k":1}', 'echoed payload verbatim');
+  // an empty/absent native id means no correlation: dropped BEFORE any
+  // enqueue - nothing new reaches the bridge, nothing is returned
+  seqBefore := FakeMaxSeq;
+  countBefore := FBridge.InvokeCount;
+  FireBound('__pweb_invoke', '', '["pweb.echo",{"k":2}]');
+  Sleep(100);
+  CheckEqual(FakeMaxSeq, seqBefore, 'no native return for an id-less call');
+  CheckEqual(FBridge.InvokeCount, countBefore,
+    'id-less call was never enqueued');
   EndBindingPipeline;
   // oversize request: size validated in the callback, pre-queue
   NewBindingPipeline(2, 8, 64);
@@ -1197,6 +1360,98 @@ begin
       raised := True;
   end;
   Check(raised, 'bind outside pssRunning refused');
+  EndBindingPipeline;
+end;
+
+procedure TTestWebViewBinding.UnbindLifecycle;
+var
+  unbindsBefore, seqBefore, status: Integer;
+  payload: RawUtf8;
+begin
+  NewBindingPipeline(2, 8, 0);
+  FBinding.Bind('temp', TPWebEnvelopeHandler.Create(FSource));
+  FireBound('temp', 'u1', '["pweb.echo",{"via":"temp"}]');
+  Check(WaitReturnCount('u1', 1, 5000), 'bound name works before unbind');
+  unbindsBefore := FakeUnbinds;
+  FBinding.Unbind('temp');
+  CheckEqual(FakeUnbinds, unbindsBefore + 1, 'native unbind was performed');
+  Check(not FakeHasBinding('temp'), 'name is gone from the native side');
+  // firing the old (unbound) callback is inert
+  seqBefore := FakeMaxSeq;
+  FireBound('temp', 'u2', '["pweb.echo",{}]');
+  Sleep(100);
+  CheckEqual(FakeMaxSeq, seqBefore, 'unbound name produced no native call');
+  CheckEqual(FakeReturnCount('u2'), 0, 'no return for the unbound name');
+  // re-bind of the same name succeeds after unbind
+  FBinding.Bind('temp', TPWebEnvelopeHandler.Create(FSource));
+  FireBound('temp', 'u3', '["pweb.echo",{"again":true}]');
+  Check(WaitReturnCount('u3', 1, 5000), 're-bound name works');
+  Check(FakeLastReturn('u3', status, payload));
+  CheckEqual(status, 0, 're-bound invocation resolved');
+  CheckEqual(payload, '{"again":true}');
+  EndBindingPipeline;
+end;
+
+procedure TTestWebViewBinding.RaisingHandlerBarrier;
+var
+  status: Integer;
+  payload: RawUtf8;
+begin
+  NewBindingPipeline(2, 8, 0);
+  FBinding.Bind('raiser', TRaisingHandler.Create);
+  FBinding.Bind('completethenraise', TCompleteThenRaiseHandler.Create);
+  // a raising handler: the C-callback barrier maps the failure to
+  // EXACTLY ONE internal_error return; nothing crosses the C frame
+  FireBound('raiser', 'rh1', '["pweb.echo",{}]');
+  CheckEqual(FakeReturnCount('rh1'), 1, 'exactly one return for the raise');
+  Check(FakeLastReturn('rh1', status, payload));
+  CheckNotEqual(status, 0, 'reject arm');
+  CheckEqual(PayloadCode(payload), 'internal_error');
+  CheckEqual(Pos(RawUtf8('marker'), payload), 0, 'no exception detail leaks');
+  Sleep(100);
+  CheckEqual(FakeReturnCount('rh1'), 1, 'still exactly one return');
+  // the handler completes the sink FIRST and then raises: the sink's
+  // idempotent gate must drop the barrier's internal_error attempt -
+  // the first delivery stands alone (double-return regression test)
+  FireBound('completethenraise', 'rh2', '["pweb.echo",{}]');
+  CheckEqual(FakeReturnCount('rh2'), 1,
+    'exactly one return despite raise-after-complete');
+  Check(FakeLastReturn('rh2', status, payload));
+  CheckEqual(status, 0, 'the first (success) delivery won');
+  CheckEqual(payload, '{"first":"delivery"}');
+  Sleep(100);
+  CheckEqual(FakeReturnCount('rh2'), 1, 'no second return ever arrives');
+  EndBindingPipeline;
+end;
+
+procedure TTestWebViewBinding.ContextReachesPolicyAndBridge;
+var
+  seen: TInvocationContext;
+  rec: TPWebDummyInvokeRecord;
+begin
+  NewBindingPipeline(2, 8, 0);
+  FireBound('__pweb_invoke', 'ctx1', '["pweb.echo",{"q":1}]');
+  Check(WaitReturnCount('ctx1', 1, 5000), 'invocation completed');
+  // the native template context - never anything JS-supplied - reached
+  // the policy call site field by field, capabilities included
+  CheckEqual(FRecPolicy.SeenCount, 1, 'policy called exactly once');
+  seen := FRecPolicy.SeenContext(0);
+  CheckEqual(seen.WindowId, 'w1', 'template WindowId at the policy');
+  CheckEqual(seen.PrincipalId, 'window:w1', 'template PrincipalId at the policy');
+  Check(seen.PrincipalKind = pkWindow, 'principal kind intact at the policy');
+  Check(seen.TrustedContent, 'TrustedContent intact at the policy');
+  CheckEqual(Length(seen.Capabilities), 2, 'capabilities travelled to the policy');
+  CheckEqual(seen.Capabilities[0], 'cap.read');
+  CheckEqual(seen.Capabilities[1], 'cap.write');
+  // ... and the identical snapshot reached the bridge
+  rec := FBridge.RecordedInvoke(0);
+  CheckEqual(rec.Context.WindowId, 'w1', 'template WindowId at the bridge');
+  CheckEqual(rec.Context.PrincipalId, 'window:w1');
+  Check(rec.Context.PrincipalKind = pkWindow, 'principal kind intact at the bridge');
+  Check(rec.Context.TrustedContent, 'TrustedContent intact at the bridge');
+  CheckEqual(Length(rec.Context.Capabilities), 2, 'capabilities at the bridge');
+  CheckEqual(rec.Context.Capabilities[0], 'cap.read');
+  CheckEqual(rec.Context.Capabilities[1], 'cap.write');
   EndBindingPipeline;
 end;
 

@@ -19,8 +19,10 @@
     test.delay  - sleeps DelayMs in small slices, observing the
                   cooperative cancellation token; cancelled -> Error
                   arm with pecCancelled, else Success echoing Args.
-    test.block  - blocks until OpenGate (or cancellation/timeout);
-                  used to hold worker slots deterministically.
+    test.block  - blocks until OpenGate or cancellation; used to hold
+                  worker slots deterministically. If the 30s safety cap
+                  expires without OpenGate it fails loudly with a
+                  scripted service_error (domainCode block_timeout).
     anything else -> method_not_found (routing is the bridge's duty;
                   policy ran before it, so forbidden outranks this).
 
@@ -55,10 +57,13 @@ const
 
 type
   /// one recorded bridge invocation, for test assertions
+  // - Context is a deep copy of what the worker handed the bridge, so
+  //   tests can verify the native snapshot travelled intact
   TPWebDummyInvokeRecord = record
     Method: Utf8String;
     Args: TPWebJson;
     ThreadId: TThreadID;
+    Context: TInvocationContext;
   end;
 
   /// deterministic scripted IInvocationBridge for tests and examples
@@ -197,6 +202,7 @@ begin
     FRecords[n].Method := Method;
     FRecords[n].Args := Args;
     FRecords[n].ThreadId := GetCurrentThreadId;
+    FRecords[n].Context := PWebCopyContext(Context);
   finally
     FLock.Leave;
   end;
@@ -219,6 +225,12 @@ begin
     begin
       if WaitObservingToken(Token, PWEB_DUMMY_BLOCK_CAP_MS, {gated=}True) then
         Result := PWebDefaultErrorResult(pecCancelled)
+      else if FGateOpen = 0 then
+        // the 30s safety cap expired without OpenGate: fail LOUDLY so a
+        // test that forgot to release the gate cannot pass slowly
+        Result := PWebErrorResult(pecServiceError,
+          'dummy bridge test.block cap expired without OpenGate',
+          '{"domainCode":"block_timeout"}')
       else
         Result := PWebSuccessResult(Args);
     end

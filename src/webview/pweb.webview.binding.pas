@@ -124,6 +124,7 @@ type
     FLeaseCount: LongInt;
     FLeaseClosed: LongInt;    // nonzero once close began: no new leases
     function FindEntryLocked(const AName: Utf8String): Integer;
+    procedure NativeUnbindAndFree(AEntry: TPWebBindEntry);
     procedure UnbindAllForClose;
   public
     constructor Create(AHandle: webview_t; const ASource: IInvocationSource;
@@ -148,10 +149,13 @@ type
     // swallowed once close has begun - the handle is never touched
     procedure NativeReturnUnderLease(const AId: RawUtf8; AStatus: Integer;
       const APayload: TPWebJson);
-    /// callback-thread duties for one raw invocation (already copied
-    // id/request); called from the exception-barriered C callback
+    /// callback-thread duties for one raw invocation (id/request were
+    // already copied and the per-invocation sink already exists);
+    // called from the exception-barriered C callback - once the sink
+    // exists, any failure completes THROUGH it (idempotent), never via
+    // a direct native return that could double-deliver the same id
     procedure HandleRawInvocation(const AHandler: IWebViewInvocationHandler;
-      const AId: RawUtf8; const ARequest: TPWebJson);
+      const ARequest: TPWebJson; const ACompletion: IInvocationCompletion);
   end;
 
   /// the standard envelope handler: parses the transport envelope far
@@ -220,19 +224,39 @@ end;
 
 function PWebResultEnvelope(const AResult: TPWebInvocationResult;
   out AStatus: Integer): TPWebJson;
+var
+  err: TPWebError;
 begin
   if AResult.Kind = prkSuccess then
   begin
-    AStatus := 0; // resolve arm
     if AResult.Value = '' then
-      Result := PWEB_JSON_NULL // '' would surface as JS undefined upstream
-    else
+    begin
+      AStatus := 0;
+      Result := PWEB_JSON_NULL; // '' would surface as JS undefined upstream
+      exit;
+    end;
+    // defensive: a bridge that produced unparseable JSON is an internal
+    // failure - never hand garbage to the page
+    if IsValidJson(RawUtf8(AResult.Value), {strict=}True) then
+    begin
+      AStatus := 0; // resolve arm
       Result := AResult.Value;
+      exit;
+    end;
+    AStatus := 1;
+    Result := PWebErrorEnvelopeJson(
+      PWebDefaultErrorResult(pecInternalError).Error);
   end
   else
   begin
     AStatus := 1; // any nonzero status rejects the JS promise
-    Result := PWebErrorEnvelopeJson(AResult.Error);
+    err := AResult.Error;
+    // defensive: invalid Data would corrupt the whole envelope; coerce
+    // to JSON null rather than shipping unparseable JSON
+    if (err.Data <> '') and (err.Data <> PWEB_JSON_NULL) and
+       not IsValidJson(RawUtf8(err.Data), {strict=}True) then
+      err.Data := PWEB_JSON_NULL;
+    Result := PWebErrorEnvelopeJson(err);
   end;
 end;
 
@@ -328,18 +352,28 @@ end;
 { Exception barrier: no Pascal exception may unwind through this C
   frame (threading-model.md "Ownership at the C boundary"). id/req are
   valid ONLY during the callback (measured at the pin) - they are
-  copied first, before anything else can fail. }
+  copied first, before anything else can fail.
+
+  Exactly-once discipline of the barrier: as soon as the per-invocation
+  sink exists, EVERY failure is mapped through sink.Complete - its
+  idempotent gate guarantees the native id can never receive a second
+  return (e.g. when something raises after a synchronous pre-queue
+  rejection already delivered). The direct native-return fallback runs
+  ONLY when no sink could have existed for that id, i.e. no delivery
+  can possibly have happened yet. }
 procedure PWebBindingRawCallback(const id: PAnsiChar; const req: PAnsiChar;
   arg: Pointer); cdecl;
 var
   entry: TPWebBindEntry;
   idCopy: RawUtf8;
   reqCopy: RawUtf8;
+  sink: IInvocationCompletion;
 begin
   if arg = nil then
     exit;
   entry := TPWebBindEntry(arg);
   idCopy := '';
+  sink := nil;
   try
     if id <> nil then
       FastSetString(idCopy, id, StrLen(id));
@@ -347,12 +381,20 @@ begin
       FastSetString(reqCopy, req, StrLen(req))
     else
       reqCopy := '';
-    entry.Owner.HandleRawInvocation(entry.Handler, idCopy, TPWebJson(reqCopy));
+    // an empty/absent native id means no correlation: nothing enqueued
+    // here could ever deliver its result, so reject early and silently
+    if idCopy = '' then
+      exit;
+    sink := TPWebWebViewCompletion.Create(entry.Owner, idCopy);
+    entry.Owner.HandleRawInvocation(entry.Handler, TPWebJson(reqCopy), sink);
   except
-    // map any failure to a safe terminal internal_error completion
-    // where possible; never let anything cross the C frame
     try
-      if idCopy <> '' then
+      if sink <> nil then
+        // idempotent: dropped if a completion was already delivered
+        sink.Complete(PWebDefaultErrorResult(pecInternalError))
+      else if idCopy <> '' then
+        // sink construction itself failed: no delivery can have
+        // happened for this id, a direct return is safe and unique
         entry.Owner.NativeReturnUnderLease(idCopy, 1, PWebErrorEnvelopeJson(
           PWebDefaultErrorResult(pecInternalError).Error));
     except
@@ -430,6 +472,11 @@ begin
     raise EPWebBindingError.Create('Bind: refused outside pssRunning');
   FLock.Enter;
   try
+    // re-check the state INSIDE the lock shared with the close path:
+    // UnbindAllForClose runs after the source left pssRunning, so no
+    // entry can be added behind an already-drained close
+    if FSource.State <> pssRunning then
+      raise EPWebBindingError.Create('Bind: refused outside pssRunning');
     if FindEntryLocked(Name) >= 0 then
       raise EPWebBindingError.CreateFmt('Bind: "%s" is already bound',
         [string(Name)]);
@@ -444,7 +491,15 @@ begin
         raise EPWebBindingError.CreateFmt(
           'Bind: "%s" is already bound upstream', [string(Name)]);
       WebViewCheck(err, 'webview_bind');
-      FEntries.Add(entry);
+      try
+        FEntries.Add(entry);
+      except
+        // the native side already holds entry as callback userdata:
+        // detach it there BEFORE the finally frees it, or the callback
+        // would fire on a dangling pointer
+        FNativeUnbind(FHandle, PAnsiChar(pointer(entry.Name)));
+        raise;
+      end;
       entry := nil; // owned by FEntries now
     finally
       entry.Free; // only on the refusal paths above
@@ -454,6 +509,18 @@ begin
   end;
 end;
 
+{ Shared teardown of one binding entry, already removed from FEntries.
+  Order matters: native unbind FIRST, free the userdata AFTER. This is
+  safe because of the frozen GUI-affinity convention: the bind callback,
+  Bind, Unbind and Close all run on the GUI thread, so no callback can
+  be executing inside AEntry while this routine frees it. }
+procedure TWebViewBinding.NativeUnbindAndFree(AEntry: TPWebBindEntry);
+begin
+  // best-effort native unbind: WEBVIEW_ERROR_NOT_FOUND is informational
+  FNativeUnbind(FHandle, PAnsiChar(pointer(AEntry.Name)));
+  AEntry.Free; // userdata lifetime ends with the binding entry
+end;
+
 procedure TWebViewBinding.Unbind(const Name: Utf8String);
 var
   idx: Integer;
@@ -461,7 +528,6 @@ var
 begin
   if FSource.State = pssClosed then
     exit; // no-op once pssClosed per contract
-  entry := nil;
   FLock.Enter;
   try
     idx := FindEntryLocked(Name);
@@ -472,15 +538,15 @@ begin
   finally
     FLock.Leave;
   end;
-  // best-effort native unbind: WEBVIEW_ERROR_NOT_FOUND is informational
-  FNativeUnbind(FHandle, PAnsiChar(pointer(entry.Name)));
-  entry.Free; // userdata lifetime ends with the binding entry
+  // GUI-thread by frozen convention (see NativeUnbindAndFree)
+  NativeUnbindAndFree(entry);
 end;
 
 procedure TWebViewBinding.UnbindAllForClose;
 var
   entry: TPWebBindEntry;
 begin
+  // the ratified teardown window: GUI thread, source Quiescing
   repeat
     entry := nil;
     FLock.Enter;
@@ -495,8 +561,7 @@ begin
     end;
     if entry = nil then
       break;
-    FNativeUnbind(FHandle, PAnsiChar(pointer(entry.Name)));
-    entry.Free;
+    NativeUnbindAndFree(entry);
   until False;
 end;
 
@@ -578,24 +643,21 @@ begin
 end;
 
 procedure TWebViewBinding.HandleRawInvocation(
-  const AHandler: IWebViewInvocationHandler; const AId: RawUtf8;
-  const ARequest: TPWebJson);
+  const AHandler: IWebViewInvocationHandler; const ARequest: TPWebJson;
+  const ACompletion: IInvocationCompletion);
 var
-  sink: IInvocationCompletion;
   ctx: TInvocationContext;
 begin
-  // one idempotent sink per invocation, correlation from the native id
-  sink := TPWebWebViewCompletion.Create(Self, AId);
   // ratified callback duty: validate size (sync pre-queue rejection)
   if Length(ARequest) > FMaxRequestBytes then
   begin
-    sink.Complete(PWebErrorResult(pecInvalidRequest, 'Request too large'));
+    ACompletion.Complete(PWebErrorResult(pecInvalidRequest, 'Request too large'));
     exit;
   end;
   // native immutable context snapshot - never from the JS payload
   ctx := PWebCopyContext(FContextTemplate);
   // envelope parsing + non-blocking enqueue are the handler's duties
-  AHandler.HandleInvocation(ctx, ARequest, sink);
+  AHandler.HandleInvocation(ctx, ARequest, ACompletion);
 end;
 
 { ---------------- TPWebEnvelopeHandler ---------------- }

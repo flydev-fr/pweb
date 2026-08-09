@@ -85,6 +85,16 @@ type
   EPWebSchedulerError = class(Exception);
 
   /// pool implementation of the frozen IInvocationScheduler contract
+  // - LIFETIME WARNING: releasing the LAST reference runs Destroy, and
+  //   Destroy performs Shutdown as a safety net - which MAY BLOCK on
+  //   worker drain. Per the frozen contract, Shutdown must never run on
+  //   the GUI thread: do not release the last scheduler reference on
+  //   the GUI thread either - call Shutdown and drop the reference
+  //   after the GUI loop has exited
+  // - a source is tracked only until it reaches pssClosed: at Close the
+  //   scheduler releases its tracking references, so closing every
+  //   source breaks the scheduler<->source reference cycle even if the
+  //   consumer never calls Shutdown
   TInvocationScheduler = class(TInterfacedObject, IInvocationScheduler)
   private
     FPolicy: ICapabilityPolicy;
@@ -106,6 +116,7 @@ type
     procedure SignalWork;
     function ClaimNext(out AItem: TObject): Boolean;
     procedure ExecuteItem(AItem: TObject);
+    procedure SourceClosed(ASource: TObject);
   public
     { APolicy and ABridge are the pipeline of every worker:
       policy -> bridge, with the identical canonical method. Both are
@@ -119,7 +130,8 @@ type
     procedure Shutdown;
     { Introspection for tests and owning runtimes - NOT part of the
       frozen contract. Returns False if ASource was not created by this
-      scheduler. Counts are an instantaneous snapshot. }
+      scheduler or is no longer tracked (tracking ends at pssClosed).
+      Counts are an instantaneous snapshot. }
     function TryGetSourceCounts(const ASource: IInvocationSource;
       out AQueued, AActive: Integer): Boolean;
   end;
@@ -196,14 +208,19 @@ function PWebValidArgs(const AArgs: TPWebJson): Boolean;
 var
   a, b: Integer;
 begin
-  if AArgs = PWEB_JSON_NULL then
-    exit(True);
+  // trim FIRST so equivalent spellings are treated consistently:
+  // ' null ' and '{ }' are as acceptable as their unpadded forms
   a := 1;
   b := Length(AArgs);
   while (a <= b) and (AArgs[a] in [#9, #10, #13, ' ']) do
     Inc(a);
   while (b >= a) and (AArgs[b] in [#9, #10, #13, ' ']) do
     Dec(b);
+  if b < a then
+    exit(False); // empty or whitespace-only is never a valid TPWebJson
+  if (b - a + 1 = Length(PWEB_JSON_NULL)) and
+     (Copy(AArgs, a, Length(PWEB_JSON_NULL)) = PWEB_JSON_NULL) then
+    exit(True);
   Result := (a < b) and (AArgs[a] = '{') and (AArgs[b] = '}');
 end;
 
@@ -438,30 +455,35 @@ begin
   item.Token := FTokenRef;
   item.Source := Self;
   item.SourceRef := Self; // pins this source until the item completes
-  FLock.Enter;
   try
-    if FState <> Ord(pssRunning) then
-    begin
+    FLock.Enter;
+    try
+      if FState <> Ord(pssRunning) then
+        Result := perClosed
+      else if FPending.Count >= FLimits.MaxQueueSize then
+        Result := perBusy // never blocks, never waits for capacity
+      else
+      begin
+        FPending.Add(item);
+        Result := perAccepted;
+      end;
+    finally
       FLock.Leave;
-      item.SourceRef := nil; // break the pin before dropping
-      item.Unref;
-      exit(perClosed);
     end;
-    if FPending.Count >= FLimits.MaxQueueSize then
-    begin
-      FLock.Leave;
-      item.SourceRef := nil;
-      item.Unref;
-      exit(perBusy); // never blocks, never waits for capacity
-    end;
-    FPending.Add(item);
   except
-    FLock.Leave;
+    // e.g. an out-of-memory in FPending.Add: never leak the item with
+    // its context snapshot, sink reference and source pin
+    item.SourceRef := nil;
+    item.Unref;
     raise;
   end;
-  FLock.Leave;
+  if Result <> perAccepted then
+  begin
+    item.SourceRef := nil; // break the pin before dropping
+    item.Unref;
+    exit;
+  end;
   FScheduler.SignalWork;
-  Result := perAccepted;
 end;
 
 function TSchedulerSource.TryClaim(out AItem: TSchedulerItem): Boolean;
@@ -520,9 +542,12 @@ end;
 procedure TSchedulerSource.GetCounts(out AQueued, AActive: Integer);
 begin
   FLock.Enter;
-  AQueued := FPending.Count;
-  AActive := FInFlight.Count;
-  FLock.Leave;
+  try
+    AQueued := FPending.Count;
+    AActive := FInFlight.Count;
+  finally
+    FLock.Leave;
+  end;
 end;
 
 procedure TSchedulerSource.Quiesce;
@@ -532,17 +557,17 @@ var
   r: TPWebInvocationResult;
 begin
   FLock.Enter;
-  if FState <> Ord(pssRunning) then
-  begin
-    FLock.Leave; // idempotent: no effect once past pssRunning
-    exit;
+  try
+    if FState <> Ord(pssRunning) then
+      exit; // idempotent: no effect once past pssRunning
+    InterlockedExchange(FState, Ord(pssQuiescing)); // refuse new invocations now
+    SetLength(cancelled, FPending.Count);
+    for i := 0 to FPending.Count - 1 do
+      cancelled[i] := TSchedulerItem(FPending[i]); // list ref transfers to the array
+    FPending.Clear;
+  finally
+    FLock.Leave;
   end;
-  InterlockedExchange(FState, Ord(pssQuiescing)); // refuse new invocations now
-  SetLength(cancelled, FPending.Count);
-  for i := 0 to FPending.Count - 1 do
-    cancelled[i] := TSchedulerItem(FPending[i]); // list ref transfers to the array
-  FPending.Clear;
-  FLock.Leave;
   FToken.Cancel; // cooperative cancellation for in-flight work, which may finish
   r := PWebDefaultErrorResult(pecCancelled);
   for i := 0 to High(cancelled) do
@@ -560,18 +585,18 @@ var
 begin
   Quiesce; // Running -> Quiescing first; there is no direct Running -> Closed
   FLock.Enter;
-  if FState = Ord(pssClosed) then
-  begin
-    FLock.Leave; // idempotent
-    exit;
+  try
+    if FState = Ord(pssClosed) then
+      exit; // idempotent
+    SetLength(inflight, FInFlight.Count);
+    for i := 0 to FInFlight.Count - 1 do
+    begin
+      inflight[i] := TSchedulerItem(FInFlight[i]);
+      inflight[i].Ref; // extra ref: CompleteOnce->ReleaseSlot removes the list ref
+    end;
+  finally
+    FLock.Leave;
   end;
-  SetLength(inflight, FInFlight.Count);
-  for i := 0 to FInFlight.Count - 1 do
-  begin
-    inflight[i] := TSchedulerItem(FInFlight[i]);
-    inflight[i].Ref; // extra ref: CompleteOnce->ReleaseSlot removes the list ref
-  end;
-  FLock.Leave;
   // complete still-uncompleted in-flight invocations as cancelled while
   // the transport can still deliver (state is pssQuiescing here); their
   // late worker results will die at the exactly-once gate
@@ -582,6 +607,10 @@ begin
     inflight[i].Unref;
   end;
   InterlockedExchange(FState, Ord(pssClosed));
+  // tracking ends at pssClosed (frozen contract): the scheduler drops
+  // its references so closed sources cannot keep the scheduler<->source
+  // cycle alive; in-flight items still pin this object via SourceRef
+  FScheduler.SourceClosed(Self);
 end;
 
 function TSchedulerSource.State: TPWebSourceState;
@@ -654,6 +683,11 @@ begin
     FWorkers[i] := TSchedulerWorker.Create(Self);
 end;
 
+{ WARNING: runs Shutdown as a safety net, which MAY BLOCK on worker
+  drain. Since Destroy runs when the LAST reference is released, the
+  last scheduler reference must never be released on the GUI thread -
+  the frozen contract forbids Shutdown there (the GUI thread never
+  waits synchronously for worker drain). }
 destructor TInvocationScheduler.Destroy;
 var
   i: Integer;
@@ -682,6 +716,7 @@ function TInvocationScheduler.RegisterSource(
 var
   src: TSchedulerSource;
   n: Integer;
+  raced: Boolean;
 begin
   if (Limits.MaxConcurrent < 1) or (Limits.MaxQueueSize < 1) then
     raise EPWebSchedulerError.CreateFmt(
@@ -696,25 +731,55 @@ begin
   end;
   src := TSchedulerSource.CreateSource(Self, Limits, {closed=}False);
   Result := src;
+  raced := False;
   FLock.Enter;
   try
     if FShuttingDown <> 0 then
+      raced := True // shutdown raced us: close before handing it out
+    else
     begin
-      // shutdown raced us: close the new source before handing it out
-      FLock.Leave;
-      src.Close;
-      exit;
+      n := Length(FSources);
+      SetLength(FSources, n + 1);
+      SetLength(FSourceRefs, n + 1);
+      FSources[n] := src;
+      FSourceRefs[n] := Result; // tracked until the source reaches pssClosed
     end;
-    n := Length(FSources);
-    SetLength(FSources, n + 1);
-    SetLength(FSourceRefs, n + 1);
-    FSources[n] := src;
-    FSourceRefs[n] := Result; // tracked until Shutdown
-  except
+  finally
     FLock.Leave;
-    raise;
   end;
-  FLock.Leave;
+  if raced then
+    src.Close;
+end;
+
+{ Called by a source when it transitions to pssClosed: tracking ends at
+  Closed (frozen contract), which also breaks the scheduler<->source
+  strong-reference cycle. Safe against concurrent worker scans: both
+  arrays only ever mutate under FLock, and source OBJECTS stay alive
+  past this point whenever in-flight items still pin them (each item
+  holds a SourceRef until its completion). }
+procedure TInvocationScheduler.SourceClosed(ASource: TObject);
+var
+  i, j, n: Integer;
+begin
+  FLock.Enter;
+  try
+    n := Length(FSources);
+    for i := 0 to n - 1 do
+      if FSources[i] = ASource then
+      begin
+        for j := i to n - 2 do
+        begin
+          FSources[j] := FSources[j + 1];
+          FSourceRefs[j] := FSourceRefs[j + 1];
+        end;
+        FSourceRefs[n - 1] := nil;
+        SetLength(FSources, n - 1);
+        SetLength(FSourceRefs, n - 1);
+        exit;
+      end;
+  finally
+    FLock.Leave;
+  end;
 end;
 
 function TInvocationScheduler.ClaimNext(out AItem: TObject): Boolean;
