@@ -2,7 +2,7 @@
 title: 'PWeb Phase 2 / CAP-2 — JS ↔ Pascal invocation pipeline: scheduler, webview_bind source, policy call site, dummy bridge'
 type: 'feature'
 created: '2026-08-09'
-status: 'in-review'
+status: 'done'
 review_loop_iteration: 0
 baseline_commit: '709bf0fee715d0cf9b8c475b4f801947fc0f4a65'
 context:
@@ -102,3 +102,83 @@ context:
 - `pwsh test/core/check_binding_surface.ps1` -- CAP-1 surface + isolation sweeps still green.
 - `git diff --exit-code main -- src/rpc/pweb.rpc.intf.pas src/webview/pweb.webview.intf.pas src/assets/pweb.assets.intf.pas src/lib` -- empty: freeze intact.
 - Example 02 built and run locally -- window opens, concurrent results render, clean exit (human-visible gate; CI best-effort only).
+
+## Suggested Review Order
+
+**Invocation pipeline core (scheduler)**
+
+- Entry point: the single method canonicalization/validation gate every source shares.
+  [`pweb.rpc.scheduler.pas:429`](../../src/rpc/pweb.rpc.scheduler.pas#L429)
+
+- Worker pipeline order: identical canonical method to policy, then bridge; exceptions ⇒ deny/internal_error.
+  [`pweb.rpc.scheduler.pas:827`](../../src/rpc/pweb.rpc.scheduler.pas#L827)
+
+- Exactly-once interlocked completion gate; slot release only at completion.
+  [`pweb.rpc.scheduler.pas:383`](../../src/rpc/pweb.rpc.scheduler.pas#L383)
+
+- Close hook: source unregisters itself at pssClosed, breaking the scheduler↔source ref cycle.
+  [`pweb.rpc.scheduler.pas:760`](../../src/rpc/pweb.rpc.scheduler.pas#L760)
+
+- Whole-runtime shutdown: quiesce all, drain workers, idempotent, never GUI-thread.
+  [`pweb.rpc.scheduler.pas:860`](../../src/rpc/pweb.rpc.scheduler.pas#L860)
+
+**WebView source (C boundary safety)**
+
+- The exception-barriered cdecl bind callback: copy id/req, sink-first, enqueue-only.
+  [`pweb.webview.binding.pas:364`](../../src/webview/pweb.webview.binding.pas#L364)
+
+- Per-invocation idempotent sink; failures after sink creation complete through its gate.
+  [`pweb.webview.binding.pas:315`](../../src/webview/pweb.webview.binding.pas#L315)
+
+- Envelope parse to Method+Args only; pre-queue sync rejections from the frozen tables.
+  [`pweb.webview.binding.pas:645`](../../src/webview/pweb.webview.binding.pas#L645)
+
+- webview_return under a short handle-use lease, straight from the worker, never dispatched.
+  [`pweb.webview.binding.pas:622`](../../src/webview/pweb.webview.binding.pas#L622)
+
+- Bind: state re-checked under the close-shared lock; native-unbind on the add-failure branch.
+  [`pweb.webview.binding.pas:459`](../../src/webview/pweb.webview.binding.pas#L459)
+
+- Single remove+unbind+free routine; GUI-affinity invariant documented at the call sites.
+  [`pweb.webview.binding.pas:517`](../../src/webview/pweb.webview.binding.pas#L517)
+
+- Close performs full Quiesce first; no new leases; state delegates to the one source.
+  [`pweb.webview.binding.pas:574`](../../src/webview/pweb.webview.binding.pas#L574)
+
+**Policy call site & bridge**
+
+- Explicit allow-all policy — the plumbing Phase 8 swaps, never bypassed.
+  [`pweb.capabilities.pas:35`](../../src/security/pweb.capabilities.pas#L35)
+
+- Deterministic dummy bridge: echo, scripted error, raise, delay, gated block with loud timeout.
+  [`pweb.rpc.bridge.dummy.pas:12`](../../src/rpc/pweb.rpc.bridge.dummy.pas#L12)
+
+**Runtime proof**
+
+- Page verdict travels back through the pipeline itself; process exit code reflects it.
+  [`jsbinding.pas:92`](../../examples/02-js-binding/jsbinding.pas#L92)
+
+- Reporting-bridge decorator capturing the verdict without touching the dummy bridge.
+  [`jsbinding.pas:113`](../../examples/02-js-binding/jsbinding.pas#L113)
+
+**Tests (the twenty mandated + review additions)**
+
+- Exactly-once under 60-iteration cancel/complete races — the freeze's core invariant.
+  [`pweb.test.rpc.pas:846`](../../test/rpc/pweb.test.rpc.pas#L846)
+
+- Context snapshot fidelity and independence at policy and bridge.
+  [`pweb.test.rpc.pas:1083`](../../test/rpc/pweb.test.rpc.pas#L1083)
+
+- Raising handler cannot cross the C frame; complete-then-raise still returns exactly once.
+  [`pweb.test.rpc.pas:1395`](../../test/rpc/pweb.test.rpc.pas#L1395)
+
+- Bound-name Unbind: native unbind recorded, callback inert, re-bind works.
+  [`pweb.test.rpc.pas:1366`](../../test/rpc/pweb.test.rpc.pas#L1366)
+
+**CI**
+
+- CAP-2 gates: webview-free scheduler compile proves source-genericity mechanically.
+  [`ci.yml:117`](../../.github/workflows/ci.yml#L117)
+
+- New src/lib freeze gate pinned to the CAP-2 baseline commit.
+  [`ci.yml:224`](../../.github/workflows/ci.yml#L224)
