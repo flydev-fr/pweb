@@ -22,6 +22,17 @@
   access is deliberately absent from IWebView for the same reason:
   platform resource-handler units access the concrete implementation,
   and the handle never enters the frozen contract.
+
+  Native ownership - ratified: IWebView is the native-view lifetime
+  OWNER. IWebViewBinding never independently owns or destroys the
+  native WebView; its binding/completion lease state keeps the owner's
+  lifetime state alive as long as a completion or native-handle use
+  can still exist, and native destruction happens only after binding
+  close AND handle-use lease drain.
+
+  Boundary note: IWebViewInvocationHandler is a supporting interface
+  belonging to the IWebViewBinding boundary - it is not an eighth
+  top-level contract (see pweb.rpc.intf boundary note).
 }
 unit pweb.webview.intf;
 
@@ -64,18 +75,19 @@ type
     otherwise. Cross-thread callers reach GUI-affine operations through
     Dispatch; the direction is worker -> Dispatch -> GUI operation.
 
-    Ownership and lifetime: the object owns the native window/view
-    handle from creation until Terminate completes and destruction has
-    been performed on the GUI loop. Destruction is deferred onto the
-    GUI loop and the GUI thread never waits synchronously for worker
-    drain (wire-semantics.md hard rule). }
+    Ownership and lifetime: IWebView is the native-view lifetime
+    OWNER - it owns the native window/view handle from creation until
+    Terminate completes and destruction has been performed on the GUI
+    loop. Destruction is deferred onto the GUI loop, runs only after
+    the binding has closed and its handle-use leases have drained, and
+    the GUI thread never waits synchronously for worker drain
+    (wire-semantics.md hard rule). }
   IWebView = interface
     ['{C16D2B67-026F-4A86-9D94-50CD26A94E06}']
     { Set the native window title. GUI-thread-affine. }
     procedure SetTitle(const Title: Utf8String);
 
-    { Set/constrain the window size per Hint. GUI-thread-affine.
-      Width/Height < 1 are invalid; implementations clamp to 1. }
+    { Set/constrain the window size per Hint. GUI-thread-affine. }
     procedure SetSize(Width, Height: Integer; Hint: TPWebSizeHint);
 
     { Navigate the view to Url. GUI-thread-affine. Policy reminder
@@ -147,7 +159,14 @@ type
       Request   : the raw serialized JSON request payload as received
                   from the page - method and arguments only.
       Completion: the per-invocation idempotent sink; first completion
-                  wins, later attempts are dropped. }
+                  wins, later attempts are dropped.
+
+      Parsing split - ratified: this handler parses the
+      transport-specific binding request envelope far enough to
+      extract Method + Args; malformed envelope JSON is rejected HERE,
+      pre-queue, as invalid_request - it never reaches TryEnqueue.
+      RPC method validation/canonicalization is NOT this handler's
+      job: that is IInvocationSource.TryEnqueue's single shared gate. }
     procedure HandleInvocation(const Context: TInvocationContext;
       const Request: TPWebJson; const Completion: IInvocationCompletion);
   end;
@@ -177,19 +196,23 @@ type
   IWebViewBinding = interface
     ['{E5B84DD4-3D1F-4C8D-9947-1446D28228DF}']
     { Register Handler under Name, making it callable from JS.
-      GUI-thread-affine. Bind registers the JS-callable entry-point
-      function Name - nominally one generic runtime invoke endpoint;
-      the wire method inside Request is orthogonal and routed
-      downstream. Name is NOT a per-method registration.
+      GUI-thread-affine.
 
-      Name obeys the ratified method grammar; names whose first
-      segment is PWEB_RESERVED_NAMESPACE are runtime-owned, and
-      application registration of such names is refused
-      (wire-semantics.md). Refusal - reserved name, grammar violation,
-      nil handler, or already-bound Name (duplicates are refused,
-      matching upstream) - surfaces as a Pascal exception at the Bind
-      call site on the GUI thread, never silently and never across a
-      C frame. Bind outside pssRunning is refused the same way. }
+      Name is a JAVASCRIPT GLOBAL BINDING NAME - the identifier of the
+      JS function injected into the page (nominally one generic
+      runtime invoke endpoint). It is NOT a PWeb RPC Service.Method:
+      RPC methods such as pweb.echo, pweb.handshake or UserService.Get
+      exist inside the invocation request payload and are routed
+      downstream - never as bind names. The Service.Method grammar and
+      the pweb.* namespace reservation of wire-semantics.md govern the
+      wire method, not this Name; binding-name validation is a
+      separate, transport-local concern.
+
+      Refusal - invalid/empty Name, nil handler, or already-bound Name
+      (duplicates are refused, matching upstream) - surfaces as a
+      Pascal exception at the Bind call site on the GUI thread, never
+      silently and never across a C frame. Bind outside pssRunning is
+      refused the same way. }
     procedure Bind(const Name: Utf8String;
       const Handler: IWebViewInvocationHandler);
 
@@ -210,10 +233,14 @@ type
 
     { Enter pssClosed: all use of the native handle is forbidden; late
       completion attempts die at the exactly-once gate without touching
-      the handle. Non-blocking and idempotent; actual native
-      destruction is deferred onto the GUI loop after internal
-      handle-use leases drain - a quiesce timeout never destroys a
-      handle while a lease is held. }
+      the handle. Calling Close while pssRunning implicitly performs
+      the full Quiesce semantics first - the only lifecycle progression
+      is pssRunning -> pssQuiescing -> pssClosed; there is no direct
+      pssRunning -> pssClosed transition. Non-blocking and idempotent;
+      actual native destruction is performed by the owning IWebView,
+      deferred onto the GUI loop after internal handle-use leases
+      drain - a quiesce timeout never destroys a handle while a lease
+      is held. }
     procedure Close;
 
     { Current lifecycle state of this source. Advisory snapshot; may

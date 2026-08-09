@@ -47,7 +47,7 @@ context:
 ## Code Map
 
 - `core-interfaces.md` -- verbatim `IAssetStore.TryRead` (`RawUtf8`, `out TAssetResponse`, Boolean); responsibility/must-not-reference table; blob deferral.
-- `wire-semantics.md` -- nine codes + status table (400,404,403,429,499,422,500,503,505); `PWEB_PROTOCOL_VERSION = 1`; discriminated result; lifecycle.
+- `wire-semantics.md` -- nine codes + status table (400,404,403,429,499,422,500,503,426); `PWEB_PROTOCOL_VERSION = 1`; discriminated result; lifecycle.
 - `threading-model.md` -- callback duties; sync pre-queue rejection; exactly-once sink; token vs lease; GUI-affine default.
 - `security-model.md` -- `TInvocationContext` fields (WindowId, PrincipalId, PrincipalKind, Capabilities, PluginId, TrustedContent); kinds `pkWindow pkPlugin pkSystem pkQuickJS`; policy input = context + canonical method.
 - mORMot2: `C:/Users/badb/Documents/Embarcadero/Studio/Libraries/mORMot2/src` (assets unit only). FPC: `C:\dev\IDE\lazarus\fpc\3.2.2\bin\x86_64-win64\fpc.exe`. No `src/` exists yet — all units new.
@@ -68,6 +68,8 @@ context:
 
 ## Spec Change Log
 
+- 2026-08-09 — human freeze review corrections (applied post-done, no interface shape changed): (1) `PWEB_JSON_NULL = 'null'` ratified — TPWebJson is always valid JSON; the empty string never stands for null because upstream `webview_return` delivers '' as JS *undefined*; all null-encoding comments updated. (2) `IWebViewBinding.Bind` Name re-scoped as a JavaScript global binding name — Service.Method grammar and `pweb.*` namespace rules removed from Bind; RPC methods live inside the request payload only. (3) Close-while-Running implicitly performs Quiesce first on both `IInvocationSource` and `IWebViewBinding` — no direct Running→Closed transition. (4) `{$J-}` added to `pweb.rpc.intf.pas` so the normative typed-constant tables are runtime-immutable. (5) Native ownership ratified in comments: `IWebView` owns the native view; the binding never independently destroys it; destruction only after binding close + lease drain. (6) Parsing split ratified: the WebView handler parses the transport envelope to extract Method+Args and rejects malformed envelope JSON pre-queue; `TryEnqueue` is the single RPC *method* canonicalization gate, not the envelope parser. Also: seven-TOP-LEVEL-boundary note added (supporting interfaces are not new boundaries); invented SetSize clamp removed; `protocol_mismatch` status changed 505→426 by explicit human choice — `wire-semantics.md` table amended with a dated note. KEEP: every interface method set, GUID, and signature exactly as frozen.
+
 ## Design Notes
 
 - Bridge = synchronous worker-thread function returning the discriminated result; completion routing stays scheduler-side — keeps every transport out of the bridge; QuickJS maps the same two arms itself.
@@ -87,49 +89,49 @@ context:
 **Invocation pipeline contract (the freeze's core)**
 
 - Entry point: the scheduler-issued source handle — non-blocking enqueue, lifecycle, the pre-queue rejection gate.
-  [`pweb.rpc.intf.pas:331`](../../src/rpc/pweb.rpc.intf.pas#L331)
+  [`pweb.rpc.intf.pas:358`](../../src/rpc/pweb.rpc.intf.pas#L358)
 
 - Bridge: synchronous discriminated Success|Error on a worker; no transport, no mORMot name in the signature.
-  [`pweb.rpc.intf.pas:306`](../../src/rpc/pweb.rpc.intf.pas#L306)
+  [`pweb.rpc.intf.pas:333`](../../src/rpc/pweb.rpc.intf.pas#L333)
 
 - Policy: fail-closed Boolean over native context + canonical method; exception ⇒ deny.
-  [`pweb.rpc.intf.pas:285`](../../src/rpc/pweb.rpc.intf.pas#L285)
+  [`pweb.rpc.intf.pas:312`](../../src/rpc/pweb.rpc.intf.pas#L312)
 
 - Exactly-once idempotent completion sink — the transport-specific reply mechanism kept out of the bridge.
-  [`pweb.rpc.intf.pas:258`](../../src/rpc/pweb.rpc.intf.pas#L258)
+  [`pweb.rpc.intf.pas:284`](../../src/rpc/pweb.rpc.intf.pas#L284)
 
 - Cooperative token; the handle-use lease is deliberately absent from public contracts.
-  [`pweb.rpc.intf.pas:233`](../../src/rpc/pweb.rpc.intf.pas#L233)
+  [`pweb.rpc.intf.pas:258`](../../src/rpc/pweb.rpc.intf.pas#L258)
 
 - Scheduler: RegisterSource + Shutdown only; defined over sources so QuickJS reuses it unchanged.
-  [`pweb.rpc.intf.pas:396`](../../src/rpc/pweb.rpc.intf.pas#L396)
+  [`pweb.rpc.intf.pas:432`](../../src/rpc/pweb.rpc.intf.pas#L432)
 
 **Wire data (normative tables)**
 
 - Nine-code taxonomy in ratified table order; `code` normative, `status` derived.
-  [`pweb.rpc.intf.pas:72`](../../src/rpc/pweb.rpc.intf.pas#L72)
+  [`pweb.rpc.intf.pas:92`](../../src/rpc/pweb.rpc.intf.pas#L92)
 
 - Frozen code-text/status/enqueue-rejection tables — machine-readable, shared by every transport.
-  [`pweb.rpc.intf.pas:427`](../../src/rpc/pweb.rpc.intf.pas#L427)
+  [`pweb.rpc.intf.pas:465`](../../src/rpc/pweb.rpc.intf.pas#L465)
 
 - Protocol constants: version, supported-set shape, reserved namespace, runtime methods.
-  [`pweb.rpc.intf.pas:39`](../../src/rpc/pweb.rpc.intf.pas#L39)
+  [`pweb.rpc.intf.pas:52`](../../src/rpc/pweb.rpc.intf.pas#L52)
 
 **Security identity**
 
 - TInvocationContext: ratified six fields, deep-copy snapshot rule, identity invariants.
-  [`pweb.rpc.intf.pas:162`](../../src/rpc/pweb.rpc.intf.pas#L162)
+  [`pweb.rpc.intf.pas:185`](../../src/rpc/pweb.rpc.intf.pas#L185)
 
 **WebView flavour of the source**
 
 - The binding: Bind/Unbind + lifecycle; sink, lease, userdata all internal; fronts one scheduler source.
-  [`pweb.webview.intf.pas:177`](../../src/webview/pweb.webview.intf.pas#L177)
+  [`pweb.webview.intf.pas:196`](../../src/webview/pweb.webview.intf.pas#L196)
 
 - Handler: the full ratified callback-thread contract (validate/copy/snapshot/enqueue/return; pre-queue exception).
-  [`pweb.webview.intf.pas:142`](../../src/webview/pweb.webview.intf.pas#L142)
+  [`pweb.webview.intf.pas:154`](../../src/webview/pweb.webview.intf.pas#L154)
 
 - IWebView: GUI-affine method set; Dispatch is the sole documented thread-safe exception.
-  [`pweb.webview.intf.pas:72`](../../src/webview/pweb.webview.intf.pas#L72)
+  [`pweb.webview.intf.pas:85`](../../src/webview/pweb.webview.intf.pas#L85)
 
 **Assets**
 

@@ -25,10 +25,23 @@
   unprefixed name from security-model.md (as TAssetResponse does from
   core-interfaces.md in the assets unit). Not an oversight - do not
   rename after freeze.
+
+  Boundary note: the ratified "seven interfaces" are seven TOP-LEVEL
+  architectural contracts. Supporting interfaces - ICancellationToken,
+  IInvocationCompletion, IInvocationSource here, and
+  IWebViewInvocationHandler in pweb.webview.intf - belong to those
+  boundaries (scheduler and binding respectively); they do not create
+  new top-level boundaries.
 }
 unit pweb.rpc.intf;
 
 {$mode ObjFPC}{$H+}
+
+{ Writeable typed constants disabled: the normative protocol tables
+  below (PWEB_ERROR_CODE_TEXT, PWEB_ERROR_STATUS, PWEB_ENQUEUE_ERROR,
+  PWEB_SUPPORTED_PROTOCOLS) are frozen wire data and must not be
+  modifiable at runtime. }
+{$J-}
 
 interface
 
@@ -57,12 +70,19 @@ const
   PWEB_METHOD_HANDSHAKE = 'pweb.handshake';
   PWEB_METHOD_ECHO = 'pweb.echo';
 
+  { JSON null, as serialized JSON text. TPWebJson values represent
+    JSON null with this literal - NEVER the empty Pascal string: the
+    upstream webview_return contract treats an empty result string as
+    JavaScript undefined, not JSON null. }
+  PWEB_JSON_NULL = 'null';
+
 type
   { JSON payload carrier on the Pascal side of the wire: a UTF-8 RTL
-    string alias holding either a serialized JSON value or, where a
-    contract documents it, the empty string standing for JSON null.
-    Arguments on the wire are a named-argument JSON object or null -
-    never a positional array (wire-semantics.md, protocol v1). }
+    string alias holding serialized VALID JSON. JSON null is the
+    literal PWEB_JSON_NULL ('null'); the empty string is not a valid
+    TPWebJson value and never stands for null. Arguments on the wire
+    are a named-argument JSON object or null - never a positional
+    array (wire-semantics.md, protocol v1). }
   TPWebJson = Utf8String;
 
   { The nine-code stable error set for protocol v1, in the exact order
@@ -78,14 +98,15 @@ type
     pecServiceError,     // service_error      / 422
     pecInternalError,    // internal_error     / 500
     pecRuntimeClosed,    // runtime_closed     / 503
-    pecProtocolMismatch  // protocol_mismatch  / 505
+    pecProtocolMismatch  // protocol_mismatch  / 426
   );
 
   { Canonical error envelope, native-side shape of the wire members
     "code", "message", "status", "data" (wire-semantics.md).
     Status is not stored: it is derived from PWEB_ERROR_STATUS, frozen
-    with protocol v1. Data is the serialized JSON `data` member; empty
-    means null. service_error.data is the only sanctioned
+    with protocol v1. Data is the serialized JSON `data` member; JSON
+    null is PWEB_JSON_NULL ('null'), never the empty string.
+    service_error.data is the only sanctioned
     application-defined domain-error channel; busy may carry
     data.retryAfterMs; every other code carries null data in release
     builds. Release builds never place exception class names, stack
@@ -99,7 +120,7 @@ type
   TPWebError = record
     Code: TPWebErrorCode;
     Message: Utf8String;  // human-readable message, no native detail leak
-    Data: TPWebJson;      // serialized JSON value; '' = null
+    Data: TPWebJson;      // serialized JSON value; null = PWEB_JSON_NULL
   end;
 
   { Discriminator of the ratified bridge result: Success | Error and
@@ -116,10 +137,12 @@ type
     Value is meaningful only when Kind = prkSuccess and holds any valid
     serialized JSON value; Error is meaningful only when
     Kind = prkError. Each source maps the two arms onto its own
-    transport semantics (wire-semantics.md). }
+    transport semantics (wire-semantics.md). A success null is
+    PWEB_JSON_NULL - never the empty string, which upstream
+    webview_return would deliver as JavaScript undefined. }
   TPWebInvocationResult = record
     Kind: TPWebResultKind;
-    Value: TPWebJson;   // valid iff Kind = prkSuccess; '' stands for JSON null
+    Value: TPWebJson;   // valid iff Kind = prkSuccess; null = PWEB_JSON_NULL
     Error: TPWebError;  // valid iff Kind = prkError
   end;
 
@@ -176,9 +199,11 @@ type
       pssQuiescing : refuses new invocations immediately; queued
                      invocations complete as cancelled; in-flight work
                      receives cooperative cancellation and may finish.
-      pssClosed    : all use of the source's native handle is
-                     forbidden; a late completion attempt is swallowed
-                     by the exactly-once gate. }
+      pssClosed    : all use of the source-specific transport
+                     resource, if any (a native handle for a WebView
+                     source; none for a script host), is forbidden; a
+                     late completion attempt is swallowed by the
+                     exactly-once gate. }
   TPWebSourceState = (
     pssRunning,
     pssQuiescing,
@@ -248,10 +273,11 @@ type
 
     Semantics: the FIRST Complete wins; any second or later Complete on
     the same sink is dropped silently (documented idempotency - a late
-    worker result dies at this gate and never touches a closed native
-    handle). Backpressure slots release at completion, not at worker
-    exit. Cancellation completes the invocation with pecCancelled
-    through this same sink.
+    worker result dies at this gate and never touches a closed
+    source-specific transport resource, such as a WebView source's
+    destroyed native handle). Backpressure slots release at completion,
+    not at worker exit. Cancellation completes the invocation with
+    pecCancelled through this same sink.
 
     Thread affinity: callable from any thread; implementations perform
     their own transport-safe delivery. }
@@ -266,7 +292,8 @@ type
     (core-interfaces.md responsibility table; security-model.md "What
     the policy receives"). Input is the native invocation context plus
     the canonical method - the identical canonical value the router
-    receives, produced by the single parse/validate/canonicalize point.
+    receives, produced by the single method canonicalization point
+    (IInvocationSource.TryEnqueue).
     The method-to-capability mapping lives inside the implementation
     and its trusted configuration; it never appears on the wire.
 
@@ -308,8 +335,8 @@ type
     { Execute Method with named Args under Context, observing Token
       cooperatively. Method is the canonical, case-sensitive,
       exact-match spelling from the single canonicalization point;
-      Args is a serialized JSON object or '' for null - named
-      arguments only in protocol v1. }
+      Args is a serialized JSON object or PWEB_JSON_NULL for null -
+      named arguments only in protocol v1, never the empty string. }
     function Invoke(const Context: TInvocationContext;
       const Method: Utf8String; const Args: TPWebJson;
       const Token: ICancellationToken): TPWebInvocationResult;
@@ -336,13 +363,17 @@ type
       the request, capture an immutable Context snapshot, enqueue,
       return (threading-model.md).
 
-      Canonicalization ownership: TryEnqueue is the single
-      parse/validate/canonicalize point of wire-semantics.md. Method
-      is validated and canonicalized exactly once here, at enqueue,
-      and the identical canonical value is what ICapabilityPolicy and
-      the IInvocationBridge router later receive. perInvalidRequest is
-      this gate's grammar/size verdict - every source shares one
-      canonicalization point instead of one per transport.
+      Canonicalization ownership: TryEnqueue is the single RPC METHOD
+      validation/canonicalization point of wire-semantics.md - NOT the
+      parser of any transport envelope. The transport's own handler
+      parses its binding request envelope far enough to extract
+      Method + Args and rejects malformed envelope JSON pre-queue as
+      invalid_request before ever calling TryEnqueue. Method/Args
+      canonical validation is shared here across all sources: Method
+      is validated and canonicalized exactly once, at enqueue, and the
+      identical canonical value is what ICapabilityPolicy and the
+      IInvocationBridge router later receive. perInvalidRequest is
+      this gate's method/args grammar and size verdict.
 
       Completion is the per-invocation transport sink. On perAccepted
       the scheduler guarantees exactly one eventual
@@ -367,11 +398,16 @@ type
       synchronously (wire-semantics.md hard rule). }
     procedure Quiesce;
 
-    { Transition to pssClosed: all use of the source's native handle
-      becomes forbidden; late completion attempts are swallowed by the
-      exactly-once gate. Idempotent and non-blocking - actual native
-      teardown is the transport's deferred concern, after its internal
-      handle-use leases drain. }
+    { Transition to pssClosed: all use of the source-specific
+      transport resource, if any, becomes forbidden; late completion
+      attempts are swallowed by the exactly-once gate. Calling Close
+      while pssRunning implicitly performs the full Quiesce semantics
+      first - the only lifecycle progression is
+      pssRunning -> pssQuiescing -> pssClosed; there is no direct
+      pssRunning -> pssClosed transition. Idempotent and non-blocking -
+      actual teardown of any transport resource is the transport's
+      deferred concern (for a WebView source, after its internal
+      handle-use leases drain; a script host has none). }
     procedure Close;
 
     { Current lifecycle state. Advisory snapshot: the state may advance
@@ -411,8 +447,10 @@ type
       caller release the service layer - so no worker can reach a
       freed service. Invocations that will never run are completed as
       cancelled by teardown and their captured contexts are freed by
-      the scheduler. Must not be called from, nor block, a GUI-affine
-      transport thread waiting on its own drain. Idempotent: a
+      the scheduler. MAY BLOCK until the worker pool has terminated,
+      and MUST NEVER be called from the GUI thread - call it after the
+      GUI loop has exited (the GUI thread never waits synchronously
+      for worker drain; wire-semantics.md hard rule). Idempotent: a
       concurrent second call is a no-op that may block until the
       first completes. }
     procedure Shutdown;
@@ -456,7 +494,8 @@ const
     422,  // service_error
     500,  // internal_error
     503,  // runtime_closed
-    505   // protocol_mismatch
+    426   // protocol_mismatch (Upgrade Required - human-ratified 2026-08-09,
+          //                    amended from 505 with wire-semantics.md)
   );
 
 implementation

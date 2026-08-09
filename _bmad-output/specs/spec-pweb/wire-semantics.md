@@ -117,7 +117,9 @@ internal_error      runtime_closed     protocol_mismatch
 | `service_error` | 422 |
 | `internal_error` | 500 |
 | `runtime_closed` | 503 |
-| `protocol_mismatch` | 505 |
+| `protocol_mismatch` | 426 |
+
+> Amendment (2026-08-09, human freeze review): `protocol_mismatch` status changed 505 → 426 (Upgrade Required) before any implementation shipped; protocol v1 freezes it at 426.
 
 Rules:
 
