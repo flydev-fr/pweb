@@ -1,0 +1,12 @@
+# Pinned upstream webview/webview. Immutable: fetch only this SHA, never a
+# branch, tag, or floating ref. Changing this pin is a deliberate, reviewed act.
+url = https://github.com/webview/webview
+commit = cbbdee44afff22867de9fd88a9fc8350d9bdd399
+
+# SHA256 of the public C API headers at the pinned commit (cross-check on fetch).
+sha256:core/include/webview/api.h = afd355232bd1828013f7e3b11448701b2bb8102e0e8cda67a98c7262c5dc3b1c
+sha256:core/include/webview/errors.h = 52a9b0ce3e435ed910222e8a00e1787a1606e1360e084a0cdb774b6a9218e2fe
+sha256:core/include/webview/types.h = f62e5f42faa110a68df845cea80517d270a966ed5a6a5951b31cad283ad25272
+sha256:core/include/webview/macros.h = e916b32175bd0da7b51144a8a962d994c6ce0ec89cfd019b9df1dcb114413a08
+sha256:core/include/webview/version.h = b0abe8334fec1c43769b9f4f0853f16847e2c40b2dbd77047c997a8ae8c2258c
+sha256:core/include/webview/webview.h = 8e73b67b52cd51a81d0ce826d238a0d3d5e3ab69ed08ab02e917f81242f02933

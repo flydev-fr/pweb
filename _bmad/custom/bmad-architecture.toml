@@ -1,0 +1,44 @@
+# Override EQUIPE pour bmad-architecture — versionne.
+# Destination : {project-root}/_bmad/custom/bmad-architecture.toml
+#
+# NOTE IMPORTANTE : le skill produit DEJA un dossier, pas un monolithe.
+# Defauts livres :
+#     spine_output_path  = "{planning_artifacts}/architecture"
+#     run_folder_pattern = "architecture-{project_name}-{date}"
+# Vous n'avez donc rien a faire pour eviter le fichier unique de 110 Ko —
+# c'est le comportement par defaut. Ce fichier sert aux reglages qui, eux,
+# ne sont PAS couverts par le defaut.
+
+[workflow]
+
+# ---------------------------------------------------------------------------
+# Altitude EPIC : decommentez si vous produisez une spine PAR EPIC.
+# Sans ca, deux runs d'epics differents le meme jour collident sur le meme
+# dossier (le pattern par defaut ne porte que le projet et la date).
+# {epic_id} est lie depuis la spec / le payload d'activation.
+# ---------------------------------------------------------------------------
+# run_folder_pattern = "architecture-epic-{epic_id}"
+
+# ---------------------------------------------------------------------------
+# Regles permanentes. Tableau => append : ces entrees s'AJOUTENT au defaut
+# ("file:{project-root}/**/project-context.md"), elles ne le remplacent pas.
+# ---------------------------------------------------------------------------
+persistent_facts = [
+  # Discipline anti-derive. Le skill porte deja ce principe ("record decisions,
+  # not rationale"); on le rend explicite pour ce projet.
+  "The spine holds invariants only. Rationale, alternatives weighed and discussion belong in the memlog, never in ARCHITECTURE-SPINE.md.",
+  "Downstream stories cite AD IDs (e.g. `AD-7`), not line ranges into the spine. AD IDs are stable across updates; line numbers are not.",
+
+  # Renseignez ici vos contraintes reelles, par exemple :
+  # "Our org is AWS-only -- do not propose GCP or Azure.",
+  # "file:{project-root}/docs/engineering-standards.md",
+]
+
+# ---------------------------------------------------------------------------
+# Relecteurs supplementaires au gate de finalisation (subagents paralleles).
+# Append : s'ajoutent aux deux lentilles livrees (verification web des versions,
+# attaque adversariale a la recherche de deux unites divergentes).
+# ---------------------------------------------------------------------------
+finalize_reviewers = [
+  "Check the spine against its own leanness contract: flag any section that records rationale, alternatives, history or narrative rather than a binding invariant. Those belong in the memlog. A spine that reads like a discussion document has failed.",
+]

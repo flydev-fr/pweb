@@ -1,0 +1,235 @@
+# CAP-1 minimal Windows CI (phase-plan.md: starts at Phase 1, not Phase 11).
+#
+# Invariants honoured here:
+# - The upstream fetch is the EXACT pinned SHA from webview.lock, checksum
+#   cross-checked (tools/get-webview.ps1). No branch, tag, or floating ref of
+#   webview/webview appears anywhere in this workflow, and a guard step scans
+#   the fetch/build scripts and this file for floating-ref forms.
+# - mORMot2 (test/app layer ONLY -- src/lib stays mORMot-free) is pinned the
+#   same way: exact SHA + sha256-pinned statics archive in mormot.lock,
+#   fetched by tools/get-mormot.ps1. The test suite pwebtests.pas runs on
+#   mormot.core.test with /noenter.
+# - Third-party actions are pinned to full commit SHAs (tag in comment).
+# - ABI tests run at full strength: the C probe (pinned headers, MSVC) and
+#   the Pascal probe (committed binding, FPC) must emit byte-identical
+#   reports, and all 17 pinned entry points must be exported by a DLL built
+#   from the pinned source.
+# - Binding regeneration itself (chet-cli) is a LOCAL gate: ChetCLI is a
+#   host-installed tool not redistributed in this repo; the committed
+#   pipeline is tools/regen-webview-binding.ps1. CI instead proves the
+#   committed binding against the pinned headers (probe diff + signature-pin
+#   compile + symbol coverage + surface check), which fails on any drift a
+#   regeneration would reveal.
+# - The GUI smoke RUN is a documented human/local gate; CI compiles it and
+#   attempts an auto-closing run without letting an absent desktop session
+#   fail the build, recording the outcome in the step summary.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout (full history for freeze diff against baseline)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch pinned webview/webview (exact SHA, checksum verified)
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/get-webview.ps1
+
+      - name: Fetch pinned mORMot2 (exact SHA + sha256-pinned statics)
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/get-mormot.ps1
+
+      - name: Guard - no floating upstream ref in fetch/build path
+        shell: pwsh
+        run: |
+          # Any git form that could follow a moving ref is a violation in the
+          # scripts that touch upstream, and in this workflow itself.
+          # (Patterns are concatenated so they cannot literally match their
+          # own source in this file.)
+          $pat = 'git\s+(cl' + 'one|pu' + 'll|ls-rem' + 'ote)' +
+                 '|refs/(he' + 'ads|ta' + 'gs)' +
+                 '|fetch[^\r\n]*origin[^\r\n]*\b(mas' + 'ter|HE' + 'AD|ma' + 'in)\b' +
+                 '|webview/web' + 'view@'
+          $files = 'tools/get-webview.ps1', 'tools/get-mormot.ps1',
+                   'tools/build-webview-dll.ps1', '.github/workflows/ci.yml'
+          $bad = @()
+          foreach ($f in $files) {
+            $hit = Select-String -Path $f -Pattern $pat
+            if ($hit) { $bad += "${f}: $($hit[0].Line.Trim())" }
+          }
+          if ($bad) { $bad | ForEach-Object { Write-Host "VIOLATION: $_" }; throw 'floating upstream ref detected' }
+          foreach ($lf in 'webview.lock', 'mormot.lock') {
+            $lock = Get-Content $lf -Raw
+            if ($lock -notmatch 'commit\s*=\s*[0-9a-f]{40}') {
+              throw "$lf does not pin a full 40-char SHA"
+            }
+          }
+          Write-Host 'guard: no floating upstream ref'
+
+      - name: Install FPC (Lazarus 3.4 ships FPC 3.2.2)
+        uses: gcarreno/setup-lazarus@d633fa79b45e29794ab46ec31f7543e44e02efef # v3
+        with:
+          lazarus-version: "3.4"
+
+      - name: Assert FPC 3.2.2
+        shell: pwsh
+        run: |
+          $v = (fpc -iV).Trim()
+          Write-Host "fpc version: $v"
+          if ($v -ne '3.2.2') { throw "expected FPC 3.2.2, got $v" }
+
+      - name: MSVC environment
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+
+      - name: Build webview.dll from pinned source (cmake + MSVC)
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/build-webview-dll.ps1
+
+      - name: Compile binding units (FPC, ObjFPC mode)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/fpc | Out-Null
+          fpc -MObjFPC -Sh -B -FUbuild/fpc -Fusrc/lib src/lib/pweb.lib.webview.pas
+          if ($LASTEXITCODE -ne 0) { throw 'core unit failed' }
+          fpc -MObjFPC -Sh -FUbuild/fpc -Fusrc/lib src/lib/pweb.lib.webview.types.pas
+          if ($LASTEXITCODE -ne 0) { throw 'types unit failed' }
+          fpc -MObjFPC -Sh -FUbuild/fpc -Fusrc/lib src/lib/pweb.lib.webview.errors.pas
+          if ($LASTEXITCODE -ne 0) { throw 'errors unit failed' }
+
+      - name: Signature pin (compile-only gate over all 17 prototypes)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/test | Out-Null
+          fpc -Sh -FUbuild/fpc -Fusrc/lib -Fideps/mormot2/src -FEbuild/test test/core/signature_pin.pas
+          if ($LASTEXITCODE -ne 0) { throw 'signature pin failed: binding signatures drifted' }
+
+      - name: ABI probe - Pascal side (committed binding)
+        shell: pwsh
+        run: |
+          fpc -Sh -FUbuild/fpc -Fusrc/lib -Fideps/mormot2/src -FEbuild/test test/core/abi_probe.pas
+          if ($LASTEXITCODE -ne 0) { throw 'pascal probe compile failed' }
+          & build/test/abi_probe.exe > build/test/abi_pascal.txt
+          if ($LASTEXITCODE -ne 0) { throw "pascal probe exited $LASTEXITCODE" }
+          Get-Content build/test/abi_pascal.txt
+
+      - name: ABI probe - C side (pinned headers, MSVC)
+        shell: cmd
+        run: |
+          cl /nologo /W4 /WX /Ideps\webview\core\include test\core\abi_probe.c /Fobuild\test\ /Febuild\test\abi_probe_c.exe
+          if errorlevel 1 exit /b 1
+          build\test\abi_probe_c.exe > build\test\abi_c.txt
+          if errorlevel 1 exit /b 1
+          type build\test\abi_c.txt
+
+      - name: ABI probe - compare (any diff is a blocker)
+        shell: pwsh
+        run: |
+          # Strict, order-sensitive, line-by-line comparison; a suspiciously
+          # small fact count (e.g. empty-vs-empty) is itself a failure.
+          $c = @(Get-Content build/test/abi_c.txt)
+          $p = @(Get-Content build/test/abi_pascal.txt)
+          if ($c.Count -lt 30) { throw "C probe emitted only $($c.Count) facts -- expected >= 30" }
+          if ($c.Count -ne $p.Count) { throw "ABI probe mismatch: $($c.Count) vs $($p.Count) lines" }
+          $bad = 0
+          for ($i = 0; $i -lt $c.Count; $i++) {
+            if ($c[$i] -cne $p[$i]) { Write-Host "MISMATCH line $($i+1): C='$($c[$i])' Pas='$($p[$i])'"; $bad++ }
+          }
+          if ($bad) { throw "ABI probe mismatch: $bad line(s)" }
+          Write-Host "ABI probes identical: $($c.Count) facts"
+
+      # mormot.core.test suite: error-helper runtime contract + 17/17 symbol
+      # coverage of the pinned DLL. /noenter skips the interactive ENTER wait;
+      # the suite sets a nonzero exit code on any failed assertion.
+      - name: PWeb test suite (mormot.core.test)
+        shell: pwsh
+        run: |
+          fpc -Sh -FUbuild/fpc -Fusrc/lib -Futest/core -Fideps/mormot2/src `
+            -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+            -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net `
+            -FEbuild/test test/core/pwebtests.pas
+          if ($LASTEXITCODE -ne 0) { throw 'pwebtests compile failed' }
+          $env:PWEB_WEBVIEW_DLL = (Resolve-Path build/webview-dist/webview.dll).Path
+          & build/test/pwebtests.exe /noenter
+          if ($LASTEXITCODE -ne 0) { throw 'pwebtests suite FAILED' }
+
+      - name: Binding surface + freeze-isolation sweeps
+        shell: pwsh
+        run: pwsh -NoProfile -File test/core/check_binding_surface.ps1
+
+      - name: Freeze sweep - RTL-only compile of isolation-critical intf units
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/freeze | Out-Null
+          # pweb.rpc.intf.pas must compile with the bare RTL: proves no
+          # webview/platform unit crept into the scheduler contract.
+          fpc -MObjFPC -Sh -B -FUbuild/freeze src/rpc/pweb.rpc.intf.pas
+          if ($LASTEXITCODE -ne 0) { throw 'pweb.rpc.intf.pas is not RTL-only' }
+          fpc -MObjFPC -Sh -B -FUbuild/freeze src/webview/pweb.webview.intf.pas
+          if ($LASTEXITCODE -ne 0) { throw 'pweb.webview.intf.pas failed RTL-only compile' }
+
+      - name: Freeze sweep - frozen contracts byte-identical to Phase-0 baseline
+        shell: pwsh
+        run: |
+          git diff --exit-code b2f04dc4c478c72b1699a954dd52e76b207e918b -- `
+            src/rpc/pweb.rpc.intf.pas `
+            src/webview/pweb.webview.intf.pas `
+            src/assets/pweb.assets.intf.pas
+          if ($LASTEXITCODE -ne 0) { throw 'frozen Phase-0 contract units were modified' }
+
+      - name: Compile smoke example and stage its DLL
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/example | Out-Null
+          fpc -MObjFPC -Sh -FUbuild/fpc -Fusrc/lib -FEbuild/example examples/01-hello/hello.pas
+          if ($LASTEXITCODE -ne 0) { throw 'smoke example failed to compile' }
+          Copy-Item build/webview-dist/webview.dll build/example/
+
+      # The real smoke RUN (window visible, marker rendered, clean exit) is a
+      # documented human/local gate; this best-effort attempt runs it with
+      # auto-close where the runner image has WebView2 + a desktop session.
+      # Outcome is recorded in the step summary; a SKIP (no usable
+      # session/runtime -> webview_create returns nil) is distinguished from
+      # a genuine failure. Non-gating per spec.
+      - name: Smoke run (best effort - authoritative gate is local)
+        shell: pwsh
+        continue-on-error: true
+        timeout-minutes: 5
+        run: |
+          $env:PWEB_SMOKE_AUTOCLOSE_MS = '8000'
+          $out = & build/example/hello.exe 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Write-Host $out
+          if ($code -eq 0) {
+            $verdict = 'PASS - window ran and exited cleanly'
+          }
+          elseif ($out -match 'webview_create \(returned nil') {
+            $verdict = "SKIP - no usable WebView2 runtime/desktop session on this runner (exit $code)"
+          }
+          else {
+            $verdict = "FAIL - exit $code (see log)"
+          }
+          "### Smoke run (non-gating)`n$verdict" | Out-File -Append $env:GITHUB_STEP_SUMMARY
+          Write-Host "smoke verdict: $verdict"
+          if ($verdict.StartsWith('FAIL')) { exit 1 }
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap1-diagnostics
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            build/test/abi_c.txt
+            build/test/abi_pascal.txt
+            build/webview-dist/webview.dll

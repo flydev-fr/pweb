@@ -1,0 +1,25 @@
+# Override EQUIPE pour bmad-build-auto — versionne.
+# La boucle non-supervisee est le pire endroit pour perdre la discipline de
+# contexte : elle tourne sans personne pour arreter une lecture de 80 Ko.
+# Memes regles que bmad-build.
+
+[workflow]
+
+persistent_facts = [
+  # ---- Noyau de contexte projet (bmad-project-context) ----
+  "file:{project-root}/docs/kernel.md",
+
+  # ---- Economie de contexte (anti token hell) ----
+  "Planning documents are SHARDED into per-section files. Read only the sections the work depends on; never load a whole architecture/PRD/epics document.",
+  "Load ONLY the sharded planning sections the spec or story cites, and only the source files it names.",
+  "Before reading any file over 30 Ko, grep it first and read only the matching ranges.",
+  "Ledgers (sprint-status.yaml, deferred-work.md) are append-only and large. Read the entry for the current story, never the whole file.",
+  "Cite the architecture by stable AD ID (e.g. `AD-7`), never by line range into the spine.",
+
+  # ---- Discipline ----
+  "Test-first: a failing test lands before the implementation that satisfies it.",
+
+  # ---- Garde humaine specifique au projet ----
+  # (Regle complete dans docs/kernel.md ; on garde ici le seul ajout propre a la boucle.)
+  "PWeb human gate: do not attempt the webview/webview binding inside an unattended loop.",
+]
