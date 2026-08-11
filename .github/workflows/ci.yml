@@ -1,9 +1,12 @@
 # CAP-1 minimal Windows CI (phase-plan.md: starts at Phase 1, not Phase 11),
-# extended by CAP-2 and CAP-3: every CAP-1 gate is kept verbatim; CAP-2 adds the
+# extended by CAP-2, CAP-3 and CAP-4W: every CAP-1 gate is kept verbatim; CAP-2 adds the
 # webview-free scheduler compile, the headless invocation-pipeline test cases
 # inside pwebtests, and the JS-binding example compile (gating) with a
 # best-effort non-gating run, mirroring the CAP-1 smoke policy. CAP-3 adds its
 # real in-process mORMot bridge gates while the CAP-3U trampoline is prepared.
+# CAP-4W adds the exact Windows dependency correction, unchanged-export proof,
+# and custom-scheme probe compilation; its GUI run follows the existing
+# best-effort hosted policy and never fabricates a runtime PASS.
 #
 # Invariants honoured here:
 # - The upstream fetch is the EXACT pinned SHA from webview.lock, checksum
@@ -50,6 +53,40 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File tools/get-webview.ps1
 
+      - name: CAP-4W - exact Windows patch apply, restore and reapply
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File tools/patch-cap4w-webview.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-4W first patch apply failed' }
+          pwsh -NoProfile -File tools/patch-cap4w-webview.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-4W idempotent apply failed' }
+          pwsh -NoProfile -File tools/patch-cap4w-webview.ps1 -Restore
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-4W restore failed' }
+          if (git -C deps/webview status --porcelain) {
+            throw 'CAP-4W restore left dependency changes'
+          }
+          pwsh -NoProfile -File tools/patch-cap4w-webview.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-4W final patch apply failed' }
+          $sentinel = 'deps/webview/cap4w-unknown-state-ci.tmp'
+          try {
+            New-Item -ItemType File -Path $sentinel -ErrorAction Stop | Out-Null
+            $unknown = & pwsh -NoProfile -File `
+              tools/patch-cap4w-webview.ps1 2>&1 | Out-String
+            $unknownCode = $LASTEXITCODE
+            Write-Host $unknown
+            if (($unknownCode -eq 0) -or
+                ($unknown -notmatch 'dependency has unknown changes')) {
+              throw 'CAP-4W patcher did not reject unknown dependency state'
+            }
+          }
+          finally {
+            if (Test-Path -LiteralPath $sentinel) {
+              Remove-Item -LiteralPath $sentinel -Force
+            }
+          }
+          pwsh -NoProfile -File tools/patch-cap4w-webview.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-4W exact state lost after rejection test' }
+
       - name: Fetch pinned mORMot2 (exact SHA + sha256-pinned statics)
         shell: pwsh
         run: pwsh -NoProfile -File tools/get-mormot.ps1
@@ -66,7 +103,9 @@ jobs:
                  '|fetch[^\r\n]*origin[^\r\n]*\b(mas' + 'ter|HE' + 'AD|ma' + 'in)\b' +
                  '|webview/web' + 'view@'
           $files = 'tools/get-webview.ps1', 'tools/get-mormot.ps1',
-                   'tools/build-webview-dll.ps1', '.github/workflows/ci.yml'
+                   'tools/build-webview-dll.ps1',
+                   'tools/patch-cap4w-webview.ps1',
+                   '.github/workflows/ci.yml'
           $bad = @()
           foreach ($f in $files) {
             $hit = Select-String -Path $f -Pattern $pat
@@ -273,6 +312,38 @@ jobs:
       - name: Build webview.dll from pinned source (cmake + MSVC)
         shell: pwsh
         run: pwsh -NoProfile -File tools/build-webview-dll.ps1
+
+      - name: CAP-4W - public DLL ABI remains exactly 17 exports
+        shell: pwsh
+        run: pwsh -NoProfile -File test/cap4w/check_webview_exports.ps1
+
+      - name: CAP-4W - headless loader boundary and compile resource probe
+        shell: pwsh
+        run: pwsh -NoProfile -File test/cap4w/check_cap4w.ps1 -CompileOnly
+
+      - name: CAP-4W - custom-scheme runtime (best effort, local gate authoritative)
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          $out = & pwsh -NoProfile -File test/cap4w/check_cap4w.ps1 `
+            -Cycles 3 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Write-Host $out
+          if (($code -eq 0) -and
+              ($out -match 'CAP4W_RENDERED_PASS cycles=3')) {
+            $verdict = 'PASS - pweb://app HTML/JS rendered for three clean cycles'
+          }
+          elseif (($out -match 'CAP4W_FAIL cycle=1 operation=webview_create') -and
+                  ($out -notmatch 'CAP4W_CYCLE_PASS')) {
+            $verdict = "SKIP - no usable WebView2 runtime/desktop session (exit $code)"
+          }
+          else {
+            $verdict = "FAIL - exit $code or missing rendered marker"
+          }
+          "### CAP-4W custom-scheme runtime (conditional hosted gate)`n$verdict" |
+            Out-File -Append $env:GITHUB_STEP_SUMMARY
+          Write-Host "CAP-4W hosted verdict: $verdict"
+          if ($verdict.StartsWith('FAIL')) { exit 1 }
 
       - name: Compile binding units (FPC, ObjFPC mode)
         shell: pwsh
@@ -537,6 +608,7 @@ jobs:
             build/test/abi_c.txt
             build/test/abi_pascal.txt
             build/webview-dist/webview.dll
+            build/cap4w/probe/Release/cap4w_probe.exe
             build/cap3u/compile.log
             build/cap3u/binary.log
             build/cap3u/runtime.log

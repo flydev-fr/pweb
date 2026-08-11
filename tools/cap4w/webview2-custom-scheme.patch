@@ -1,0 +1,82 @@
+diff --git a/core/include/webview/detail/backends/win32_edge.hh b/core/include/webview/detail/backends/win32_edge.hh
+index 316a9d5..55e6d5e 100644
+--- a/core/include/webview/detail/backends/win32_edge.hh
++++ b/core/include/webview/detail/backends/win32_edge.hh
+@@ -55,6 +55,8 @@
+ #include "../user_script.hh"
+ #include "../utility/string.hh"
+ 
++#include <WebView2EnvironmentOptions.h>
++
+ #include <atomic>
+ #include <cstdlib>
+ #include <functional>
+@@ -740,6 +742,43 @@ private:
+     wchar_t userDataFolder[MAX_PATH];
+     PathCombineW(userDataFolder, dataPath, currentExeName);
+ 
++    auto env_options =
++        Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
++    if (!env_options) {
++      return error_info{WEBVIEW_ERROR_UNSPECIFIED,
++                        "WebView2 environment options allocation failed"};
++    }
++    auto scheme_registration =
++        Microsoft::WRL::Make<CoreWebView2CustomSchemeRegistration>(L"pweb");
++    if (!scheme_registration) {
++      return error_info{WEBVIEW_ERROR_UNSPECIFIED,
++                        "WebView2 custom scheme allocation failed"};
++    }
++    auto options_res = scheme_registration->put_HasAuthorityComponent(TRUE);
++    if (FAILED(options_res)) {
++      return error_info{WEBVIEW_ERROR_UNSPECIFIED,
++                        "put_HasAuthorityComponent failed"};
++    }
++    options_res = scheme_registration->put_TreatAsSecure(TRUE);
++    if (FAILED(options_res)) {
++      return error_info{WEBVIEW_ERROR_UNSPECIFIED,
++                        "put_TreatAsSecure failed"};
++    }
++    Microsoft::WRL::ComPtr<ICoreWebView2EnvironmentOptions4> env_options4;
++    options_res = env_options.As(&env_options4);
++    if (FAILED(options_res)) {
++      return error_info{WEBVIEW_ERROR_UNSPECIFIED,
++                        "ICoreWebView2EnvironmentOptions4 unavailable"};
++    }
++    ICoreWebView2CustomSchemeRegistration *registrations[] = {
++        scheme_registration.Get()};
++    options_res =
++        env_options4->SetCustomSchemeRegistrations(1, registrations);
++    if (FAILED(options_res)) {
++      return error_info{WEBVIEW_ERROR_UNSPECIFIED,
++                        "SetCustomSchemeRegistrations failed"};
++    }
++
+     m_com_handler = new webview2_com_handler(
+         wnd, cb,
+         [&](ICoreWebView2Controller *controller, ICoreWebView2 *webview) {
+@@ -754,9 +793,9 @@ private:
+           flag.clear();
+         });
+ 
+-    m_com_handler->set_attempt_handler([&] {
++    m_com_handler->set_attempt_handler([&, env_options] {
+       return m_webview2_loader.create_environment_with_options(
+-          nullptr, userDataFolder, nullptr, m_com_handler);
++          nullptr, userDataFolder, env_options.Get(), m_com_handler);
+     });
+     m_com_handler->try_create_environment();
+ 
+diff --git a/core/include/webview/detail/platform/windows/webview2/loader.hh b/core/include/webview/detail/platform/windows/webview2/loader.hh
+index 085086b..1fd6b95 100644
+--- a/core/include/webview/detail/platform/windows/webview2/loader.hh
++++ b/core/include/webview/detail/platform/windows/webview2/loader.hh
+@@ -342,7 +342,7 @@ private:
+   // e.g. 1.0.1150.38. To be safe the SDK should have a number that is greater
+   // than or equal to this number. The Edge browser webview client must
+   // have a number greater than or equal to this number.
+-  static constexpr unsigned int api_version = 1150;
++  static constexpr unsigned int api_version = 1587;
+ 
+   static constexpr auto client_state_reg_sub_key =
+       L"SOFTWARE\\Microsoft\\EdgeUpdate\\ClientState\\";
