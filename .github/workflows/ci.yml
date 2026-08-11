@@ -95,6 +95,101 @@ jobs:
       - name: MSVC environment
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
 
+      - name: CAP-3U - FPC 3.2.2 Win64 CallMethod unwind and Currency ABI
+        shell: pwsh
+        run: |
+          # FPC 3.2.2 Win64 emits no unwind metadata for mORMot's private
+          # CallMethod assembler and returns Currency in RAX, unlike its
+          # Double/TDateTime XMM0 convention. Exercise the exact pinned fix
+          # before any mORMot PPU can mask the conditional replacement.
+          $stale = @(Get-ChildItem -Path . -Recurse `
+            -Filter mormot.core.interfaces.ppu -File -ErrorAction SilentlyContinue)
+          if ($stale) {
+            throw "stale mormot.core.interfaces.ppu before CAP-3U: $($stale.FullName -join '; ')"
+          }
+          $targetOs = (fpc -iTO).Trim().ToLowerInvariant()
+          $targetCpu = (fpc -iTP).Trim().ToLowerInvariant()
+          if (($targetOs -cne 'win64') -or ($targetCpu -cne 'x86_64')) {
+            throw "CAP-3U requires FPC target Win64/x86_64, got $targetOs/$targetCpu"
+          }
+          try {
+            foreach ($attempt in 1..2) {
+              pwsh -NoProfile -File tools/patch-cap3u.ps1
+              if ($LASTEXITCODE -ne 0) {
+                throw "CAP-3U preparation attempt $attempt failed"
+              }
+            }
+
+            New-Item -ItemType Directory -Force build/cap3u/fpc,
+              build/cap3u/bin | Out-Null
+            fpc -Sh -B -Xm -dPWEB_CALLMETHOD_UNWIND_PROBE `
+              -FUbuild/cap3u/fpc -FEbuild/cap3u/bin `
+              -Fideps/mormot2/src -Fudeps/mormot2/src/core `
+              -Fudeps/mormot2/src/lib -Fudeps/mormot2/src/crypt `
+              -Fudeps/mormot2/src/net -Fudeps/mormot2/src/db `
+              -Fudeps/mormot2/src/orm -Fudeps/mormot2/src/rest `
+              -Fudeps/mormot2/src/soa `
+              -Fldeps/mormot2/static/x86_64-win64 `
+              test/cap3u/cap3u_unwind.pas 2>&1 |
+              Tee-Object build/cap3u/compile.log
+            if ($LASTEXITCODE -ne 0) { throw 'CAP-3U compile failed' }
+
+            $compile = Get-Content build/cap3u/compile.log -Raw
+            if ($compile -notmatch
+                'Compiling .*deps[\\/]mormot2[\\/]src[\\/]core[\\/]mormot\.core\.interfaces\.pas') {
+              throw 'CAP-3U unit provenance did not compile repository mormot.core.interfaces'
+            }
+            $ppus = @(Get-ChildItem -Path . -Recurse `
+              -Filter mormot.core.interfaces.ppu -File)
+            $expectedPpu = (Resolve-Path `
+              build/cap3u/fpc/mormot.core.interfaces.ppu).Path
+            if (($ppus.Count -ne 1) -or ($ppus[0].FullName -cne $expectedPpu)) {
+              throw "CAP-3U unit provenance escaped dedicated -FU: $($ppus.FullName -join '; ')"
+            }
+
+            $binaryLines = @(pwsh -NoProfile -File `
+              test/cap3u/check_unwind.ps1 `
+                -ObjectPath deps/mormot2/src/core/x64callmethod.obj `
+                -ExecutablePath build/cap3u/bin/cap3u_unwind.exe `
+                -MapPath build/cap3u/bin/cap3u_unwind.map 2>&1)
+            $binaryCode = $LASTEXITCODE
+            $binaryLines | Tee-Object -FilePath build/cap3u/binary.log |
+              Write-Host
+            if ($binaryCode -ne 0) { throw 'CAP-3U final-PE unwind gate failed' }
+
+            $runtimeLines = @(& build/cap3u/bin/cap3u_unwind.exe 2>&1)
+            $runtimeCode = $LASTEXITCODE
+            $runtimeLines | Tee-Object -FilePath build/cap3u/runtime.log |
+              Write-Host
+            if (($runtimeCode -ne 0) -or
+                (($runtimeLines -join "`n") -notmatch 'CAP3U: 12/12 PASS')) {
+              throw 'CAP-3U runtime matrix failed'
+            }
+          }
+          finally {
+            $restoreFailures = @()
+            foreach ($attempt in 1..2) {
+              pwsh -NoProfile -File tools/patch-cap3u.ps1 -Restore
+              if ($LASTEXITCODE -ne 0) { $restoreFailures += $attempt }
+            }
+            if ($restoreFailures) {
+              throw "CAP-3U restore attempts failed: $($restoreFailures -join ', ')"
+            }
+          }
+          $lockedCommit = ((Select-String -Path mormot.lock `
+            -Pattern '^commit\s*=').Line -split '=', 2)[1].Trim()
+          $dependencyHead = (git -C deps/mormot2 rev-parse HEAD).Trim()
+          if (($LASTEXITCODE -ne 0) -or ($dependencyHead -cne $lockedCommit)) {
+            throw "mORMot HEAD $dependencyHead differs from lock $lockedCommit"
+          }
+          git -C deps/mormot2 diff --exit-code `
+            $dependencyHead -- `
+            src/core/mormot.core.interfaces.pas
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-3U source is not pristine after restore' }
+          if (Test-Path deps/mormot2/src/core/x64callmethod.obj) {
+            throw 'CAP-3U object survived restore'
+          }
+
       - name: Build webview.dll from pinned source (cmake + MSVC)
         shell: pwsh
         run: pwsh -NoProfile -File tools/build-webview-dll.ps1
@@ -314,3 +409,7 @@ jobs:
             build/test/abi_c.txt
             build/test/abi_pascal.txt
             build/webview-dist/webview.dll
+            build/cap3u/compile.log
+            build/cap3u/binary.log
+            build/cap3u/runtime.log
+            build/cap3u/bin/cap3u_unwind.map
