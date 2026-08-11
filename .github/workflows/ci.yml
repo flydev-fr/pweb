@@ -1,9 +1,17 @@
 # CAP-1 minimal Windows CI (phase-plan.md: starts at Phase 1, not Phase 11),
-# extended by CAP-2 and CAP-3: every CAP-1 gate is kept verbatim; CAP-2 adds the
+# extended by CAP-2, CAP-3 and CAP-4W: every CAP-1 gate is kept verbatim; CAP-2 adds the
 # webview-free scheduler compile, the headless invocation-pipeline test cases
 # inside pwebtests, and the JS-binding example compile (gating) with a
 # best-effort non-gating run, mirroring the CAP-1 smoke policy. CAP-3 adds its
 # real in-process mORMot bridge gates while the CAP-3U trampoline is prepared.
+# CAP-4W adds the exact Windows dependency correction, unchanged-export proof,
+# and custom-scheme probe compilation; its GUI run follows the existing
+# best-effort hosted policy and never fabricates a runtime PASS.
+# CAP-4 adds the asset system: isolation compiles of the Folder/ZIP stores
+# and the Windows pweb://app resource handler, the headless Folder/ZIP
+# parity cases inside pwebtests, a zero-HTTP source sweep over the new
+# units, the deterministic app.zip build, and the dual-mode (folder|zip)
+# runtime example under the same conditional hosted GUI policy.
 #
 # Invariants honoured here:
 # - The upstream fetch is the EXACT pinned SHA from webview.lock, checksum
@@ -50,6 +58,40 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File tools/get-webview.ps1
 
+      - name: CAP-4W - exact Windows patch apply, restore and reapply
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File tools/patch-cap4w-webview.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-4W first patch apply failed' }
+          pwsh -NoProfile -File tools/patch-cap4w-webview.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-4W idempotent apply failed' }
+          pwsh -NoProfile -File tools/patch-cap4w-webview.ps1 -Restore
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-4W restore failed' }
+          if (git -C deps/webview status --porcelain) {
+            throw 'CAP-4W restore left dependency changes'
+          }
+          pwsh -NoProfile -File tools/patch-cap4w-webview.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-4W final patch apply failed' }
+          $sentinel = 'deps/webview/cap4w-unknown-state-ci.tmp'
+          try {
+            New-Item -ItemType File -Path $sentinel -ErrorAction Stop | Out-Null
+            $unknown = & pwsh -NoProfile -File `
+              tools/patch-cap4w-webview.ps1 2>&1 | Out-String
+            $unknownCode = $LASTEXITCODE
+            Write-Host $unknown
+            if (($unknownCode -eq 0) -or
+                ($unknown -notmatch 'dependency has unknown changes')) {
+              throw 'CAP-4W patcher did not reject unknown dependency state'
+            }
+          }
+          finally {
+            if (Test-Path -LiteralPath $sentinel) {
+              Remove-Item -LiteralPath $sentinel -Force
+            }
+          }
+          pwsh -NoProfile -File tools/patch-cap4w-webview.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-4W exact state lost after rejection test' }
+
       - name: Fetch pinned mORMot2 (exact SHA + sha256-pinned statics)
         shell: pwsh
         run: pwsh -NoProfile -File tools/get-mormot.ps1
@@ -66,7 +108,9 @@ jobs:
                  '|fetch[^\r\n]*origin[^\r\n]*\b(mas' + 'ter|HE' + 'AD|ma' + 'in)\b' +
                  '|webview/web' + 'view@'
           $files = 'tools/get-webview.ps1', 'tools/get-mormot.ps1',
-                   'tools/build-webview-dll.ps1', '.github/workflows/ci.yml'
+                   'tools/build-webview-dll.ps1',
+                   'tools/patch-cap4w-webview.ps1',
+                   '.github/workflows/ci.yml'
           $bad = @()
           foreach ($f in $files) {
             $hit = Select-String -Path $f -Pattern $pat
@@ -221,6 +265,35 @@ jobs:
               examples/03-mormot-rpc/mormotrpc.pas
             if ($LASTEXITCODE -ne 0) { throw 'CAP-3 runtime example compile failed' }
 
+            # CAP-4 dual-mode runtime example: it reuses the real CAP-3
+            # bridge, so it compiles inside the same prepared trampoline
+            # window. Its best-effort GUI runs happen after webview.dll is
+            # staged below.
+            if (Test-Path build/cap4) {
+              Remove-Item -LiteralPath build/cap4 -Recurse -Force
+            }
+            New-Item -ItemType Directory -Force build/cap4/example-fpc,
+              build/cap4/tool-fpc, build/cap4/example | Out-Null
+            fpc -MObjFPC -Sh -B -Xm -dPWEB_CALLMETHOD_UNWIND_PROBE `
+              -FUbuild/cap4/example-fpc -FEbuild/cap4/example `
+              -Fusrc/lib -Fusrc/rpc -Fusrc/security -Fusrc/webview `
+              -Fusrc/assets -Fusrc/platform/windows `
+              -Fideps/mormot2/src -Fudeps/mormot2/src/core `
+              -Fudeps/mormot2/src/lib -Fudeps/mormot2/src/crypt `
+              -Fudeps/mormot2/src/net -Fudeps/mormot2/src/db `
+              -Fudeps/mormot2/src/orm -Fudeps/mormot2/src/rest `
+              -Fudeps/mormot2/src/soa `
+              -Fldeps/mormot2/static/x86_64-win64 `
+              examples/06-assets/assetsapp.pas
+            if ($LASTEXITCODE -ne 0) { throw 'CAP-4 runtime example compile failed' }
+            fpc -MObjFPC -Sh -B -Xm `
+              -FUbuild/cap4/tool-fpc -FEbuild/cap4/example `
+              -Fideps/mormot2/src -Fudeps/mormot2/src/core `
+              -Fudeps/mormot2/src/lib `
+              -Fldeps/mormot2/static/x86_64-win64 `
+              examples/06-assets/mkappzip.pas
+            if ($LASTEXITCODE -ne 0) { throw 'CAP-4 mkappzip compile failed' }
+
             # Source-level proof that CAP-3 introduced no HTTP client/server,
             # socket, loopback listener, or localhost transport. TRestServer
             # itself is intentionally allowed because Uri() is called directly.
@@ -274,6 +347,38 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File tools/build-webview-dll.ps1
 
+      - name: CAP-4W - public DLL ABI remains exactly 17 exports
+        shell: pwsh
+        run: pwsh -NoProfile -File test/cap4w/check_webview_exports.ps1
+
+      - name: CAP-4W - headless loader boundary and compile resource probe
+        shell: pwsh
+        run: pwsh -NoProfile -File test/cap4w/check_cap4w.ps1 -CompileOnly
+
+      - name: CAP-4W - custom-scheme runtime (best effort, local gate authoritative)
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          $out = & pwsh -NoProfile -File test/cap4w/check_cap4w.ps1 `
+            -Cycles 3 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Write-Host $out
+          if (($code -eq 0) -and
+              ($out -match 'CAP4W_RENDERED_PASS cycles=3')) {
+            $verdict = 'PASS - pweb://app HTML/JS rendered for three clean cycles'
+          }
+          elseif (($out -match 'CAP4W_FAIL cycle=1 operation=webview_create') -and
+                  ($out -notmatch 'CAP4W_CYCLE_PASS')) {
+            $verdict = "SKIP - no usable WebView2 runtime/desktop session (exit $code)"
+          }
+          else {
+            $verdict = "FAIL - exit $code or missing rendered marker"
+          }
+          "### CAP-4W custom-scheme runtime (conditional hosted gate)`n$verdict" |
+            Out-File -Append $env:GITHUB_STEP_SUMMARY
+          Write-Host "CAP-4W hosted verdict: $verdict"
+          if ($verdict.StartsWith('FAIL')) { exit 1 }
+
       - name: Compile binding units (FPC, ObjFPC mode)
         shell: pwsh
         run: |
@@ -310,6 +415,64 @@ jobs:
             -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
             src/webview/pweb.webview.binding.pas
           if ($LASTEXITCODE -ne 0) { throw 'pweb.webview.binding.pas failed' }
+
+      # CAP-4 layering proofs. The stores compile with src/assets alone plus
+      # the pinned mORMot core - any webview/rpc/platform dependency creeping
+      # into IAssetStore implementations fails here. The Windows handler adds
+      # only src/lib (raw ABI seam) on top of the stores - it must never pull
+      # the rpc scheduler or the CAP-2 binding into the resource path.
+      - name: Compile CAP-4 asset units (stores webview-free, handler rpc-free)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/fpc-assets | Out-Null
+          fpc -MObjFPC -Sh -B -FUbuild/fpc-assets -Fusrc/assets `
+            -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+            src/assets/pweb.assets.support.pas
+          if ($LASTEXITCODE -ne 0) { throw 'pweb.assets.support.pas failed its isolation compile' }
+          fpc -MObjFPC -Sh -FUbuild/fpc-assets -Fusrc/assets `
+            -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+            src/assets/pweb.assets.folder.pas
+          if ($LASTEXITCODE -ne 0) { throw 'pweb.assets.folder.pas failed its isolation compile' }
+          fpc -MObjFPC -Sh -FUbuild/fpc-assets -Fusrc/assets `
+            -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+            src/assets/pweb.assets.zip.pas
+          if ($LASTEXITCODE -ne 0) { throw 'pweb.assets.zip.pas failed its isolation compile' }
+          fpc -MObjFPC -Sh -FUbuild/fpc-assets -Fusrc/assets -Fusrc/lib `
+            -Fusrc/platform/windows `
+            -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+            src/platform/windows/pweb.platform.webview2.pas
+          if ($LASTEXITCODE -ne 0) { throw 'pweb.platform.webview2.pas failed its isolation compile' }
+
+      # Source-level proof that CAP-4 serves assets with no HTTP, localhost,
+      # socket, or file:// transport anywhere in its units, tests, example,
+      # or frontend fixture.
+      - name: CAP-4 zero-HTTP asset-serving source proof
+        shell: pwsh
+        run: |
+          $cap4Files = @(
+            'src/assets/pweb.assets.support.pas',
+            'src/assets/pweb.assets.folder.pas',
+            'src/assets/pweb.assets.zip.pas',
+            'src/platform/windows/pweb.platform.webview2.pas',
+            'test/assets/pweb.test.assets.pas',
+            'examples/06-assets/assetsapp.pas',
+            'examples/06-assets/mkappzip.pas',
+            'examples/06-assets/frontend/dist/index.html',
+            'examples/06-assets/frontend/dist/assets/app.js',
+            'examples/06-assets/frontend/dist/assets/app.css'
+          )
+          $forbidden = 'TRestHttpServer|THttpServer|mormot\.rest\.http|' +
+            'mormot\.net\.(server|client|http)|localhost|127\.0\.0\.1|' +
+            'socket|http://|file://'
+          $hits = @(Select-String -Path $cap4Files -Pattern $forbidden `
+            -CaseSensitive:$false)
+          if ($hits) {
+            $hits | ForEach-Object {
+              Write-Host "FORBIDDEN CAP-4 TRANSPORT PATTERN: $($_.Path):$($_.LineNumber): $($_.Line.Trim())"
+            }
+            throw 'CAP-4 zero-HTTP source proof failed'
+          }
+          Write-Host 'CAP-4 zero-HTTP source proof: PASS'
 
       - name: Signature pin (compile-only gate over all 17 prototypes)
         shell: pwsh
@@ -362,7 +525,8 @@ jobs:
         shell: pwsh
         run: |
           fpc -Sh -FUbuild/fpc -Fusrc/lib -Fusrc/rpc -Fusrc/security `
-            -Fusrc/webview -Futest/core -Futest/rpc -Fideps/mormot2/src `
+            -Fusrc/webview -Fusrc/assets -Futest/core -Futest/rpc `
+            -Futest/assets -Fideps/mormot2/src `
             -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
             -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net `
             -FEbuild/test test/core/pwebtests.pas
@@ -526,6 +690,57 @@ jobs:
           Write-Host "mormotrpc verdict: $verdict"
           if ($verdict.StartsWith('FAIL')) { exit 1 }
 
+      # CAP-4: deterministic test package built headlessly from the committed
+      # frontend fixture. This is gating - no GUI involved.
+      - name: CAP-4 build app.zip from frontend fixture
+        shell: pwsh
+        run: |
+          & build/cap4/example/mkappzip.exe examples/06-assets/frontend/dist `
+            build/cap4/example/app.zip
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-4 app.zip build failed' }
+          if (-not (Test-Path build/cap4/example/app.zip)) {
+            throw 'CAP-4 app.zip missing after build'
+          }
+
+      # CAP-4 runtime gate, same conditional hosted policy as CAP-4W: the
+      # same real frontend must load over pweb://app from BOTH stores with
+      # HTML/CSS/JS/secure-context PASS and the CAP-3 RPC still returning
+      # 42. A genuine failure gates; only an absent WebView2/desktop session
+      # (webview_create nil) records SKIP. Local runs stay authoritative.
+      - name: CAP-4 dual-mode runtime (best effort, local gate authoritative)
+        shell: pwsh
+        timeout-minutes: 8
+        run: |
+          Copy-Item build/webview-dist/webview.dll build/cap4/example/
+          $env:PWEB_SMOKE_AUTOCLOSE_MS = '8000'
+          $marker = 'via IAssetStore PASS'
+          $failed = $false
+          foreach ($mode in @('folder', 'zip')) {
+            if ($mode -eq 'folder') {
+              $target = 'examples/06-assets/frontend/dist'
+            }
+            else {
+              $target = 'build/cap4/example/app.zip'
+            }
+            $out = & build/cap4/example/assetsapp.exe $mode $target 2>&1 | Out-String
+            $code = $LASTEXITCODE
+            Write-Host $out
+            if (($code -eq 0) -and ($out -match [regex]::Escape($marker))) {
+              $verdict = "PASS - $mode mode served HTML/CSS/JS, secure context, RPC 42"
+            }
+            elseif ($out -match 'webview_create \(returned nil') {
+              $verdict = "SKIP - no usable WebView2 runtime/desktop session on this runner (exit $code)"
+            }
+            else {
+              $verdict = "FAIL - $mode mode exit $code or missing CAP-4 PASS marker (see log)"
+              $failed = $true
+            }
+            "### CAP-4 runtime, $mode mode (conditional hosted gate)`n$verdict" |
+              Out-File -Append $env:GITHUB_STEP_SUMMARY
+            Write-Host "assetsapp[$mode] verdict: $verdict"
+          }
+          if ($failed) { exit 1 }
+
       - name: Upload diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -537,9 +752,12 @@ jobs:
             build/test/abi_c.txt
             build/test/abi_pascal.txt
             build/webview-dist/webview.dll
+            build/cap4w/probe/Release/cap4w_probe.exe
             build/cap3u/compile.log
             build/cap3u/binary.log
             build/cap3u/runtime.log
             build/cap3u/bin/cap3u_unwind.map
             build/cap3/bin/cap3tests.exe
             build/cap3/example/mormotrpc.exe
+            build/cap4/example/assetsapp.exe
+            build/cap4/example/app.zip

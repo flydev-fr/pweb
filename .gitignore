@@ -85,6 +85,7 @@ _FOSSIL_
 .svn/
 # SourceCodeRep artifact
 *.txt
+!test/cap4w/CMakeLists.txt
 
 backup/
 .idea/

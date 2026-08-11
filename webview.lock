@@ -3,6 +3,14 @@
 url = https://github.com/webview/webview
 commit = cbbdee44afff22867de9fd88a9fc8350d9bdd399
 
+# PWeb Windows override. webview/webview's default remains 1.0.1150.38 at
+# this upstream commit; CAP-4W selects this exact stable SDK through the
+# existing WEBVIEW_MSWEBVIEW2_VERSION CMake cache variable.
+webview2-sdk = 1.0.1587.40
+webview2-sdk-sha256 = cd5e34264aaa497d672f391fbdfb4fd4defc7f7a3e72cfe6090717dd063f27e4
+webview2-sdk-tree-sha256 = 96309ee87acbe5ae033797b9041cdc1578e1cc7e87ee5d051e609dcb4563a971
+cap4w-patch-sha256 = ae5177ba2bcc461365e82d40d42fd2d1fb1058ab322d00e93ed4013436f7137c
+
 # SHA256 of the public C API headers at the pinned commit (cross-check on fetch).
 sha256:core/include/webview/api.h = afd355232bd1828013f7e3b11448701b2bb8102e0e8cda67a98c7262c5dc3b1c
 sha256:core/include/webview/errors.h = 52a9b0ce3e435ed910222e8a00e1787a1606e1360e084a0cdb774b6a9218e2fe

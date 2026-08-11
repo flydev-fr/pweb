@@ -1,0 +1,25 @@
+body {
+  font-family: sans-serif;
+  margin: 2em;
+}
+
+#verdict {
+  font-size: 2em;
+  font-weight: bold;
+}
+
+#verdict.ok {
+  color: #087a2e;
+}
+
+#verdict.bad {
+  color: #b00020;
+}
+
+/* deterministic style probed by app.js to prove this file was loaded
+   and applied through the asset pipeline */
+#marker {
+  background-color: rgb(8, 122, 46);
+  width: 10px;
+  height: 10px;
+}

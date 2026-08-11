@@ -1,0 +1,2 @@
+# CAP-4W hashes and applies this canonical patch byte-for-byte on Windows.
+tools/cap4w/webview2-custom-scheme.patch -text whitespace=-trailing-space
