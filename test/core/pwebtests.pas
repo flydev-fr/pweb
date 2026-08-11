@@ -20,7 +20,8 @@ uses
   pweb.test.core,
   pweb.test.scheduler,
   pweb.test.binding,
-  pweb.test.lifecycle
+  pweb.test.lifecycle,
+  pweb.test.assets
   {$ifdef PWEB_CALLMETHOD_UNWIND_PROBE}
   ,
   pweb.test.mormot.bridge,
@@ -34,6 +35,7 @@ type
   published
     procedure CoreBinding;
     procedure InvocationPipeline;
+    procedure AssetSystem;
     {$ifdef PWEB_CALLMETHOD_UNWIND_PROBE}
     procedure MormotBridge;
     {$endif PWEB_CALLMETHOD_UNWIND_PROBE}
@@ -42,6 +44,14 @@ type
 procedure TPWebTests.CoreBinding;
 begin
   AddCase([TTestPWebCoreBinding]);
+end;
+
+procedure TPWebTests.AssetSystem;
+begin
+  // CAP-4, headless: shared canonical-path validation and MIME, then
+  // Folder/ZIP store parity over one generated fixture corpus - no
+  // window, no webview.dll and no WebView2 runtime required
+  AddCase([TTestAssetStores]);
 end;
 
 procedure TPWebTests.InvocationPipeline;
@@ -65,5 +75,6 @@ end;
 begin
   // sets ExitCode = 1 on any failed assertion; pass /noenter switch in
   // scripts/CI so no ENTER key is awaited on exit
-  TPWebTests.RunAsConsole('PWeb tests (CAP-1 raw binding + CAP-2 invocation pipeline)');
+  TPWebTests.RunAsConsole('PWeb tests (CAP-1 raw binding + ' +
+    'CAP-2 invocation pipeline + CAP-3 bridge + CAP-4 assets)');
 end.

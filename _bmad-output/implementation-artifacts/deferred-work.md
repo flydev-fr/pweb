@@ -4,3 +4,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-phase-1-cap1-webview-binding.md`
   summary: Upstream's cmake fetches the WebView2 SDK nuget by version with no URL_HASH, leaving an unverified network input to the DLL build; evaluate vendoring or hash-pinning at the next pin review.
   evidence: cmake/webview.cmake:3 at pinned commit cbbdee44 pins version 1.0.1150.38 but relies solely on nuget version immutability for integrity.
+- source_spec: `_bmad-output/implementation-artifacts/spec-phase-4-cap4-asset-system.md`
+  summary: TZipAssetStore case-collision rejection folds ASCII only; Unicode case pairs (e-acute vs E-acute) are not detected as colliding archive entries.
+  evidence: NTFS treats non-ASCII case pairs as equal per its $UpCase table, so such an archive is ambiguous against a folder store, but a faithful fold needs a ratified Unicode-folding decision (ties into CAP-6 bundler validation) rather than an ad-hoc table.
