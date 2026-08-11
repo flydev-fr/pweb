@@ -278,3 +278,79 @@ CAP-3U PASS — CAP-3 UNBLOCKED
 
 - Run preparation, binary proof, runtime matrix, and restore before baseline compilation.
   [`ci.yml:98`](../../.github/workflows/ci.yml#L98)
+
+## CAP-3 implementation result — 2026-08-11
+
+The closed CAP-3U invariant was consumed as a build prerequisite and was not reopened. All real interface-service builds below ran only after `tools/patch-cap3u.ps1`, with FPC 3.2.2 Win64, `-B -Xm`, fresh dedicated PPU directories, and `-dPWEB_CALLMETHOD_UNWIND_PROBE`. The dependency was restored afterward; its source matches `b1a129b09197b6b9fb67c6d4d2a13445987a3fe1` and generated `x64callmethod.obj` is absent.
+
+### MORMOT BRIDGE
+
+- Added `src/rpc/pweb.rpc.mormot.pas`. `TMormotInvocationBridge` depends on neutral RPC units and mORMot core/ORM/REST/SOA only; it has no raw WebView, binding, HTTP-client/server, or application-service dependency.
+- Registration completes before bridge construction. Construction snapshots and sorts an immutable exact-case catalog, copies method routes/input names/value kinds, excludes mORMot pseudo-method indices, rejects an application `pweb` namespace collision, and transfers optional server ownership only after successful setup.
+- Invocation performs no authorization. The existing scheduler remains the sole `ICapabilityPolicy.IsAllowed(Context, CanonicalMethod)` call site and invokes the bridge afterward on its worker.
+
+### STRICT ROUTING
+
+- Public spelling is exactly one-dot `Service.Method`. Exact catalog lookup rejects service/method case variants and unknown routes as `method_not_found` before `Uri()`.
+- `pweb.echo` and `pweb.handshake` remain runtime-owned. Unknown `pweb.*` names never reach mORMot; registering an `Ipweb` service is refused at bridge construction.
+- Catalog methods with input kinds that cannot yet be validated fully are excluded fail-closed instead of exposing mORMot coercion/default behavior.
+
+### ARGUMENT VALIDATION
+
+- Inputs are strict JSON named objects, or literal `null` only for zero-input methods. Parsing is case-sensitive and rejects malformed JSON, trailing commas, duplicate names, missing/extra names, and wrong-case names.
+- Metadata checks boolean/string/date/numeric/raw-JSON/variant values before dispatch. Signed `Integer`, `Cardinal`, signed `Int64`, unsigned QWord, and Currency conversions are range checked. The Add regression rejects string numerics and `2147483648` before `Uri()`.
+- Reordered exact named arguments are accepted. Runtime built-ins also reject non-object shapes and duplicate keys. `pweb.handshake` reports the immutable native context capability snapshot; JavaScript cannot inject those fields.
+
+### RESULT NORMALIZATION
+
+- Calls create `TRestUriParams` with POST, JSON content type, supervisor access rights, `llfInProcess`, and a unique mutable body, then call `TRestServer.Uri()` synchronously.
+- The pinned `{"result":[...]}` wrapper is interpreted against output metadata. `CalculatorService.Add` returns naked JSON `42`; one-output JSON `null` remains literal `null`; zero outputs normalize to `null`; multiple outputs use mORMot's metadata names.
+- Arbitrary transport-shaped mORMot responses are never returned as successful PWeb values.
+
+### ERROR MAPPING
+
+- Bad public grammar/argument shape maps to `invalid_request`; exact-case misses map to `method_not_found`; pre-dispatch cancellation maps to `cancelled`.
+- A cataloged `TServiceCustomAnswer` method returning status 422 plus strict JSON maps to `service_error` with the explicit structured domain body in `data`.
+- Any unexpected service exception, invalid status, invalid wrapper, or invalid domain body maps to the default redacted `internal_error`. Tests require the exact default message, `data = null`, no exception class, marker, path, or implementation text, and successful reuse of the same server/bridge after `Boom`.
+- No human-readable mORMot error text is parsed to choose a normative PWeb code. No `unauthorized` code was added; `protocol_mismatch` remains the frozen code/status-426 mapping.
+
+### THREADING
+
+- The real service thread differs from the main/GUI thread, and eight scheduled `SlowAdd` calls prove overlapping real `Uri()` execution on the existing worker pool.
+- Cancellation is checked at bridge entry and again immediately before `Uri()`. Once `Uri()` begins it is never aborted. Shutdown preserves CAP-2 semantics: the source completes as cancelled while the synchronous service finishes, workers drain, and only then may the bridge-owned server be destroyed.
+- Tests observe owned and non-owned server destruction and prove exactly-once completion across the drain boundary.
+
+### TESTS
+
+- Dedicated WebView-free `cap3tests.exe`: 124/124 assertions, zero failures. Coverage includes Add 42, wrapper removal, exact case, reordered args, every required pre-URI rejection, integer range, null, runtime methods, structured domain failure, redacted exception/same-server survival, both cancellation checks, policy placement, worker identity, concurrency, drain, and ownership.
+- Prepared combined `pwebtests.exe`: 719/719 assertions, zero failures — the unchanged 595 CAP-1/CAP-2 assertions plus 124 CAP-3 assertions.
+- After transactional restore and without `PWEB_CALLMETHOD_UNWIND_PROBE`, the unchanged CAP-1/CAP-2 suite rebuilt from fresh Win64 PPUs and passed 595/595.
+
+### RUNTIME SMOKE
+
+- Added `examples/03-mormot-rpc`. Its page calls `window.__pweb_invoke('CalculatorService.Add',{a:20,b:22})` through the existing binding and scheduler, renders `42 — PASS`, and returns its automated verdict through the same scheduler using an example-local reporting decorator.
+- The local Win64 run emitted `mormotrpc: CalculatorService.Add -> 42 on scheduler worker PASS`, then `mormotrpc: clean exit`, with exit code 0. Missing verdict, wrong value/thread, auto-close thread failure, teardown failure, or unhandled invocation failure produces a nonzero verdict.
+
+### ZERO-NETWORK PROOF
+
+- The production bridge directly invokes `TRestServer.Uri()` and creates no HTTP transport, REST client, socket, listener, localhost endpoint, or URL fetch.
+- The fail-closed source sweep over every new CAP-3 production/test/example Pascal file found no forbidden network/server/client/loopback pattern. The bridge's standalone compile has no `src/webview` or `src/lib` path.
+
+### CI
+
+- The existing CAP-3U step still rejects stale mORMot interface PPUs, prepares twice, compiles the binary/runtime proof, checks final-PE unwind metadata, runs 12/12, and restores in `finally`.
+- While that same prepared state is active, CI now deletes the dedicated CAP-3 build subtree, compiles the transport-neutral bridge, builds/runs the 124-assertion headless suite, compiles example 03, and runs the zero-network sweep. The later GUI run is best-effort with an explicit PASS marker; example compilation is gating.
+- After restore, the unchanged CAP-1/CAP-2 baseline and existing ABI/freeze/smoke gates remain. CI YAML parsed locally; the hosted workflow run is pending remote execution.
+
+### FREEZE CHECK
+
+- `git diff --exit-code 4653ba77ef03f0a37b0b0c4205ed6ecfe7e0f5` is empty for the frozen Phase-0 interfaces, CAP-1 raw ABI layer, CAP-2 scheduler/dummy bridge/capability policy/WebView binding, and asset interface.
+- No mORMot pin, FPC minimum, frozen public signature/error code, method grammar, named-only contract, policy placement, or capability trust rule changed.
+
+### KNOWN LIMITATIONS
+
+- The catalog is an immutable post-registration snapshot; later service registration is intentionally unsupported.
+- Complex input kinds whose nested values cannot yet be validated exactly (enum, set, record, object, dynamic array, and interface/callback inputs) are excluded fail-closed from the public catalog. The CAP-3 reference scalar/RawJson surface is fully validated; adding a complex kind requires a metadata-complete validator and tests.
+- Cancellation remains cooperative after synchronous `Uri()` begins. The hosted Windows CI execution and environments without a usable desktop/WebView2 runtime remain external validation conditions; local FPC 3.2.2 Win64 gates and the authoritative GUI smoke passed.
+
+CAP-3 PASS

@@ -1,8 +1,9 @@
 # CAP-1 minimal Windows CI (phase-plan.md: starts at Phase 1, not Phase 11),
-# extended by CAP-2: every CAP-1 gate is kept verbatim; CAP-2 adds the
+# extended by CAP-2 and CAP-3: every CAP-1 gate is kept verbatim; CAP-2 adds the
 # webview-free scheduler compile, the headless invocation-pipeline test cases
 # inside pwebtests, and the JS-binding example compile (gating) with a
-# best-effort non-gating run, mirroring the CAP-1 smoke policy.
+# best-effort non-gating run, mirroring the CAP-1 smoke policy. CAP-3 adds its
+# real in-process mORMot bridge gates while the CAP-3U trampoline is prepared.
 #
 # Invariants honoured here:
 # - The upstream fetch is the EXACT pinned SHA from webview.lock, checksum
@@ -165,6 +166,85 @@ jobs:
                 (($runtimeLines -join "`n") -notmatch 'CAP3U: 12/12 PASS')) {
               throw 'CAP-3U runtime matrix failed'
             }
+
+            # CAP-3 must compile only after CAP-3U prepared the source and in
+            # fresh output directories, so no stale mormot.core.interfaces PPU
+            # can mask the required conditional trampoline.
+            if (Test-Path build/cap3) {
+              Remove-Item -LiteralPath build/cap3 -Recurse -Force
+            }
+            New-Item -ItemType Directory -Force build/cap3/bridge-fpc,
+              build/cap3/test-fpc, build/cap3/bin,
+              build/cap3/example-fpc, build/cap3/example | Out-Null
+
+            # Production bridge layering proof: no src/lib or src/webview path.
+            fpc -MObjFPC -Sh -B -Xm -dPWEB_CALLMETHOD_UNWIND_PROBE `
+              -FUbuild/cap3/bridge-fpc -Fusrc/rpc `
+              -Fideps/mormot2/src -Fudeps/mormot2/src/core `
+              -Fudeps/mormot2/src/lib -Fudeps/mormot2/src/crypt `
+              -Fudeps/mormot2/src/net -Fudeps/mormot2/src/db `
+              -Fudeps/mormot2/src/orm -Fudeps/mormot2/src/rest `
+              -Fudeps/mormot2/src/soa `
+              -Fldeps/mormot2/static/x86_64-win64 `
+              src/rpc/pweb.rpc.mormot.pas
+            if ($LASTEXITCODE -ne 0) {
+              throw 'CAP-3 production bridge compile failed'
+            }
+
+            # Mandatory WebView-free headless gate over the real Uri() path.
+            fpc -MObjFPC -Sh -B -Xm -dPWEB_CALLMETHOD_UNWIND_PROBE `
+              -FUbuild/cap3/test-fpc -FEbuild/cap3/bin `
+              -Fusrc/rpc -Fusrc/security -Futest/rpc `
+              -Fideps/mormot2/src -Fudeps/mormot2/src/core `
+              -Fudeps/mormot2/src/lib -Fudeps/mormot2/src/crypt `
+              -Fudeps/mormot2/src/net -Fudeps/mormot2/src/db `
+              -Fudeps/mormot2/src/orm -Fudeps/mormot2/src/rest `
+              -Fudeps/mormot2/src/soa `
+              -Fldeps/mormot2/static/x86_64-win64 `
+              test/rpc/cap3tests.pas
+            if ($LASTEXITCODE -ne 0) { throw 'CAP-3 headless compile failed' }
+            & build/cap3/bin/cap3tests.exe /noenter
+            if ($LASTEXITCODE -ne 0) { throw 'CAP-3 headless suite FAILED' }
+
+            # Compile the real JS -> scheduler -> mORMot runtime proof while
+            # the same prepared trampoline is active. Its best-effort GUI run
+            # occurs after webview.dll has been built and staged below.
+            fpc -MObjFPC -Sh -B -Xm -dPWEB_CALLMETHOD_UNWIND_PROBE `
+              -FUbuild/cap3/example-fpc -FEbuild/cap3/example `
+              -Fusrc/lib -Fusrc/rpc -Fusrc/security -Fusrc/webview `
+              -Fideps/mormot2/src -Fudeps/mormot2/src/core `
+              -Fudeps/mormot2/src/lib -Fudeps/mormot2/src/crypt `
+              -Fudeps/mormot2/src/net -Fudeps/mormot2/src/db `
+              -Fudeps/mormot2/src/orm -Fudeps/mormot2/src/rest `
+              -Fudeps/mormot2/src/soa `
+              -Fldeps/mormot2/static/x86_64-win64 `
+              examples/03-mormot-rpc/mormotrpc.pas
+            if ($LASTEXITCODE -ne 0) { throw 'CAP-3 runtime example compile failed' }
+
+            # Source-level proof that CAP-3 introduced no HTTP client/server,
+            # socket, loopback listener, or localhost transport. TRestServer
+            # itself is intentionally allowed because Uri() is called directly.
+            $cap3Files = @(
+              'src/rpc/pweb.rpc.mormot.pas',
+              'test/rpc/cap3tests.pas',
+              'test/rpc/pweb.test.mormot.bridge.pas',
+              'test/rpc/pweb.test.mormot.fixture.pas',
+              'test/rpc/pweb.test.mormot.integration.pas',
+              'test/rpc/pweb.test.mormot.routing.pas',
+              'examples/03-mormot-rpc/mormotrpc.pas'
+            )
+            $networkPattern = 'TRestHttpServer|TRestClientHttp|THttpServer|' +
+              'mormot\.rest\.http|mormot\.net\.(server|client|http)|' +
+              'localhost|127\.0\.0\.1|socket'
+            $networkHits = @(Select-String -Path $cap3Files `
+              -Pattern $networkPattern -CaseSensitive:$false)
+            if ($networkHits) {
+              $networkHits | ForEach-Object {
+                Write-Host "FORBIDDEN CAP-3 NETWORK PATTERN: $($_.Path):$($_.LineNumber): $($_.Line.Trim())"
+              }
+              throw 'CAP-3 zero-network source proof failed'
+            }
+            Write-Host 'CAP-3 zero-network source proof: PASS'
           }
           finally {
             $restoreFailures = @()
@@ -324,6 +404,22 @@ jobs:
           git diff --exit-code 709bf0fee715d0cf9b8c475b4f801947fc0f4a65 -- src/lib
           if ($LASTEXITCODE -ne 0) { throw 'src/lib (raw ABI layer) was modified without a ratified pin bump' }
 
+      - name: CAP-3 freeze sweep - Phase-0/1/2 implementation boundaries
+        shell: pwsh
+        run: |
+          git diff --exit-code 4653ba77ef03f0a37b0b0b0c4205ed6ecfe7e0f5 -- `
+            src/rpc/pweb.rpc.intf.pas `
+            src/webview/pweb.webview.intf.pas `
+            src/assets/pweb.assets.intf.pas `
+            src/lib `
+            src/rpc/pweb.rpc.scheduler.pas `
+            src/rpc/pweb.rpc.bridge.dummy.pas `
+            src/security/pweb.capabilities.pas `
+            src/webview/pweb.webview.binding.pas
+          if ($LASTEXITCODE -ne 0) {
+            throw 'frozen Phase-0/1/2 implementation boundary was modified'
+          }
+
       - name: Compile smoke example and stage its DLL
         shell: pwsh
         run: |
@@ -398,6 +494,38 @@ jobs:
           Write-Host "jsbinding verdict: $verdict"
           if ($verdict.StartsWith('FAIL')) { exit 1 }
 
+      - name: Stage CAP-3 runtime DLL
+        shell: pwsh
+        run: Copy-Item build/webview-dist/webview.dll build/cap3/example/
+
+      # The executable was compiled while CAP-3U was prepared. As with the
+      # earlier GUI examples, CI records an absent desktop/runtime as SKIP;
+      # the visible local run is the authoritative smoke gate.
+      - name: mORMot RPC example run (best effort - authoritative gate is local)
+        shell: pwsh
+        continue-on-error: true
+        timeout-minutes: 5
+        run: |
+          $env:PWEB_WEBVIEW_DLL = (Resolve-Path build/webview-dist/webview.dll).Path
+          $env:PWEB_SMOKE_AUTOCLOSE_MS = '8000'
+          $out = & build/cap3/example/mormotrpc.exe 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Write-Host $out
+          if (($code -eq 0) -and
+              ($out -match 'CalculatorService\.Add -> 42 on scheduler worker PASS')) {
+            $verdict = 'PASS - JS -> scheduler -> in-process mORMot -> JS returned 42 on a worker'
+          }
+          elseif ($out -match 'webview_create \(returned nil') {
+            $verdict = "SKIP - no usable WebView2 runtime/desktop session on this runner (exit $code)"
+          }
+          else {
+            $verdict = "FAIL - exit $code or missing CAP-3 PASS marker (see log)"
+          }
+          "### mORMot RPC example run (non-gating)`n$verdict" |
+            Out-File -Append $env:GITHUB_STEP_SUMMARY
+          Write-Host "mormotrpc verdict: $verdict"
+          if ($verdict.StartsWith('FAIL')) { exit 1 }
+
       - name: Upload diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -413,3 +541,5 @@ jobs:
             build/cap3u/binary.log
             build/cap3u/runtime.log
             build/cap3u/bin/cap3u_unwind.map
+            build/cap3/bin/cap3tests.exe
+            build/cap3/example/mormotrpc.exe

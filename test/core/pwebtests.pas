@@ -20,13 +20,23 @@ uses
   pweb.test.core,
   pweb.test.scheduler,
   pweb.test.binding,
-  pweb.test.lifecycle;
+  pweb.test.lifecycle
+  {$ifdef PWEB_CALLMETHOD_UNWIND_PROBE}
+  ,
+  pweb.test.mormot.bridge,
+  pweb.test.mormot.routing,
+  pweb.test.mormot.integration
+  {$endif PWEB_CALLMETHOD_UNWIND_PROBE}
+  ;
 
 type
   TPWebTests = class(TSynTests)
   published
     procedure CoreBinding;
     procedure InvocationPipeline;
+    {$ifdef PWEB_CALLMETHOD_UNWIND_PROBE}
+    procedure MormotBridge;
+    {$endif PWEB_CALLMETHOD_UNWIND_PROBE}
   end;
 
 procedure TPWebTests.CoreBinding;
@@ -43,6 +53,14 @@ begin
   AddCase([TTestInvocationScheduler, TTestWebViewBinding,
     TTestSourceLifecycle, TTestBindingLifecycle]);
 end;
+
+{$ifdef PWEB_CALLMETHOD_UNWIND_PROBE}
+procedure TPWebTests.MormotBridge;
+begin
+  AddCase([TTestMormotBridge, TTestMormotRouting,
+    TTestMormotIntegration]);
+end;
+{$endif PWEB_CALLMETHOD_UNWIND_PROBE}
 
 begin
   // sets ExitCode = 1 on any failed assertion; pass /noenter switch in

@@ -29,6 +29,10 @@ uses
   pweb.rpc.intf;
 
 const
+  { Native runtime version reported by pweb.handshake. This is runtime
+    identity, not the independently frozen wire protocol version. }
+  PWEB_RUNTIME_VERSION = '0.1.0';
+
   { Upper bound of the canonical method spelling, in bytes. The wire
     grammar mandates a bounded length (wire-semantics.md "Request
     grammar and limits"); the bound itself is an implementation choice
