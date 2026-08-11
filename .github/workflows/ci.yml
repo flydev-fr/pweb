@@ -12,6 +12,15 @@
 # parity cases inside pwebtests, a zero-HTTP source sweep over the new
 # units, the deterministic app.zip build, and the dual-mode (folder|zip)
 # runtime example under the same conditional hosted GUI policy.
+# CAP-5 adds the frontend SDKs: TypeScript SDK typecheck + node:test suite
+# and Pas2JS SDK compile + node-run semantic suite (both against a fake of
+# the same native primitive), the captured-wire cross-SDK parity gate, the
+# protocol-constant cross-check, pinned React and Pas2JS frontend builds
+# (npm lockfiles; pas2js pinned by sha256 via tools/get-pas2js.ps1), a
+# zero-network sweep over both SDKs and frontends, host-app compiles in a
+# re-applied CAP-3U window, and both real-frontend runtime smokes under
+# the same conditional hosted GUI policy. Every pre-existing step below is
+# kept verbatim.
 #
 # Invariants honoured here:
 # - The upstream fetch is the EXACT pinned SHA from webview.lock, checksum
@@ -740,6 +749,120 @@ jobs:
             Write-Host "assetsapp[$mode] verdict: $verdict"
           }
           if ($failed) { exit 1 }
+
+      # ------------------------- CAP-5 gates -------------------------
+      # Everything below is additive; no earlier step is altered.
+
+      - name: CAP-5 fetch pinned pas2js (sha256-verified)
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/get-pas2js.ps1
+
+      - name: CAP-5 setup pinned Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.11.1
+
+      - name: CAP-5 TypeScript SDK typecheck + tests + wire capture
+        shell: pwsh
+        run: |
+          $v = (node --version).Trim()
+          if ($v -ne 'v24.11.1') { throw "expected node v24.11.1, got $v" }
+          New-Item -ItemType Directory -Force build/cap5 | Out-Null
+          Push-Location sdk/typescript
+          try {
+            npm ci
+            if ($LASTEXITCODE -ne 0) { throw 'SDK npm ci failed' }
+            npm test
+            if ($LASTEXITCODE -ne 0) { throw 'TypeScript SDK tests FAILED' }
+            npm run capture 2>&1 |
+              Out-File -Encoding utf8 ../../build/cap5/ts-capture.log
+            if ($LASTEXITCODE -ne 0) { throw 'TypeScript SDK capture failed' }
+          }
+          finally { Pop-Location }
+
+      - name: CAP-5 Pas2JS SDK compile + semantic tests + wire capture
+        shell: pwsh
+        run: |
+          & deps/pas2js/bin/pas2js.exe -Tnodejs -Jc -O1 `
+            '-Fusdk/pas2js' sdk/pas2js/test/pwebsdktests.pas
+          if ($LASTEXITCODE -ne 0) { throw 'Pas2JS SDK harness compile failed' }
+          $out = & node sdk/pas2js/test/pwebsdktests.js 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Write-Host $out
+          $out | Out-File -Encoding utf8 build/cap5/p2j-capture.log
+          if (($code -ne 0) -or ($out -notmatch 'PWEBSDK: (\d+)/\1 PASS')) {
+            throw 'Pas2JS SDK semantic suite FAILED'
+          }
+
+      - name: CAP-5 cross-SDK captured-wire parity
+        shell: pwsh
+        run: |
+          node tools/check-sdk-parity.mjs `
+            build/cap5/ts-capture.log build/cap5/p2j-capture.log
+          if ($LASTEXITCODE -ne 0) { throw 'SDK wire parity FAILED' }
+
+      - name: CAP-5 protocol constant cross-check (native vs both SDKs)
+        shell: pwsh
+        run: pwsh -NoProfile -File test/cap5/check_cap5_protocol.ps1
+
+      - name: CAP-5 React frontend build (pinned lockfile, offline bundle)
+        shell: pwsh
+        run: |
+          Push-Location examples/04-react/frontend
+          try {
+            npm ci
+            if ($LASTEXITCODE -ne 0) { throw 'react frontend npm ci failed' }
+            npm run typecheck
+            if ($LASTEXITCODE -ne 0) { throw 'react frontend typecheck failed' }
+            npm run build
+            if ($LASTEXITCODE -ne 0) { throw 'react frontend build failed' }
+          }
+          finally { Pop-Location }
+          foreach ($f in 'examples/04-react/frontend/dist/index.html',
+                         'examples/04-react/frontend/dist/assets/app.js') {
+            if (-not (Test-Path $f)) { throw "react frontend output missing: $f" }
+          }
+
+      - name: CAP-5 Pas2JS frontend build (pinned toolchain)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File examples/05-pas2js/frontend/build.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'pas2js frontend build failed' }
+          foreach ($f in 'examples/05-pas2js/frontend/dist/index.html',
+                         'examples/05-pas2js/frontend/dist/assets/app.js') {
+            if (-not (Test-Path $f)) { throw "pas2js frontend output missing: $f" }
+          }
+
+      # Zero-network sweep, host compiles (re-applied CAP-3U window) and
+      # both real-frontend runtime smokes live in test/cap5/*.ps1; the
+      # smokes follow the established conditional hosted PASS/SKIP/FAIL
+      # policy - a genuine failure gates, only an absent WebView2/desktop
+      # session records SKIP, local runs stay authoritative.
+      - name: CAP-5 zero-network sweep over SDKs and frontends
+        shell: pwsh
+        run: pwsh -NoProfile -File test/cap5/check_cap5_nonetwork.ps1
+
+      - name: CAP-5 host examples compile (re-applied CAP-3U window)
+        shell: pwsh
+        run: pwsh -NoProfile -File test/cap5/build_cap5_hosts.ps1
+
+      - name: CAP-5 runtime smokes - React and Pas2JS over pweb://app
+        shell: pwsh
+        timeout-minutes: 10
+        run: pwsh -NoProfile -File test/cap5/run_cap5_smokes.ps1
+
+      - name: CAP-5 diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap5-diagnostics
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            build/cap5/ts-capture.log
+            build/cap5/p2j-capture.log
+            build/cap5/smoke-react.log
+            build/cap5/smoke-pas2js.log
 
       - name: Upload diagnostics on failure
         if: failure()

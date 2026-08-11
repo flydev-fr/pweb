@@ -1,0 +1,12 @@
+# Pinned Pas2JS release toolchain for the CAP-5 frontend SDK builds.
+# The compiler and its RTL are fetched by tools/get-pas2js.ps1 into the
+# git-ignored deps/pas2js checkout. The archive URL is versioned upstream;
+# integrity rests on the sha256 below, not on the URL: a rotated archive
+# fails the fetch loudly instead of drifting silently.
+#
+# Changing this pin is a deliberate, reviewed act.
+version = 3.0.1
+url = https://getpas2js.freepascal.org/downloads/windows/pas2js-win64-x86_64-3.0.1.zip
+sha256 = f039126443a41a697dfa645ef594974f3eec3bd9020b992504f397c95fcb0af2
+# Directory name at the archive root (verified after extraction).
+rootdir = pas2js-win64-x86_64-3.0.1
