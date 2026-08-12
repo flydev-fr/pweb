@@ -1,0 +1,41 @@
+# Pinned Microsoft WebView2 runtime distribution artifacts (CAP-6b0).
+#
+# Every Microsoft binary this project may ever fetch (Evergreen
+# bootstrapper, Standalone Evergreen installer, Fixed Runtime package)
+# is pinned here by authoritative URL, expected filename, byte size and
+# a SHA-256 computed locally at ratification time - Microsoft publishes
+# no digests for these artifacts, so the pin freezes the exact bytes a
+# human ratified, with the Authenticode subject printed at refresh time
+# as the cross-check. tools/get-webview2-runtime.ps1 verifies the
+# SHA-256 BEFORE any use and deletes the download on any mismatch; an
+# artifact without a sha256 is refused outright, so a silently rotated
+# remote payload fails loudly by construction. URLs live in this lock
+# only, never in swept sources.
+#
+# Refreshing a pin is an explicit, reviewed act:
+#   pwsh tools/get-webview2-runtime.ps1 -Refresh -Artifact <name>
+# prints the computed hash/size/Authenticode subject for the human to
+# ratify by editing this file; nothing ever writes this file
+# automatically, and CI never downloads or installs a runtime.
+#
+# Schema (strict 'key = value'; '#' comments and blank lines ignored;
+# every malformed line, duplicate key, unknown key or missing required
+# key is a hard error naming its line):
+#   schema   = 1                          (required, before any artifact)
+#   artifact = <unique logical name>      (opens one artifact block)
+#   kind     = bootstrapper | standalone | fixed
+#   arch     = x64 | x86 | arm64 | neutral
+#   version  = <4-part runtime version>   (required for kind = fixed,
+#                                          optional for the Evergreen
+#                                          installers, whose payload
+#                                          version floats by design)
+#   url      = <authoritative Microsoft download URL>
+#   filename = <expected local filename>
+#   size     = <exact byte size>
+#   sha256   = <64 lowercase hex chars>
+#
+# No artifact is populated in CAP-6b0: populating an entry requires the
+# Ask-First human approval ratified in the spec (any download of a
+# Microsoft binary, even a read-only hash probe, is gated). CAP-6b1+
+# adds entries through the -Refresh workflow above.
+schema = 1

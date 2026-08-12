@@ -463,6 +463,9 @@ jobs:
             'src/assets/pweb.assets.folder.pas',
             'src/assets/pweb.assets.zip.pas',
             'src/platform/windows/pweb.platform.webview2.pas',
+            'src/platform/windows/pweb.platform.webview2.runtime.pas',
+            'test/platform/pweb.test.webview2runtime.pas',
+            'test/cap6b/wv2probe.pas',
             'test/assets/pweb.test.assets.pas',
             'examples/06-assets/assetsapp.pas',
             'examples/06-assets/mkappzip.pas',
@@ -534,8 +537,9 @@ jobs:
         shell: pwsh
         run: |
           fpc -Sh -FUbuild/fpc -Fusrc/lib -Fusrc/rpc -Fusrc/security `
-            -Fusrc/webview -Fusrc/assets -Futest/core -Futest/rpc `
-            -Futest/assets -Fideps/mormot2/src `
+            -Fusrc/webview -Fusrc/assets -Fusrc/platform/windows `
+            -Futest/core -Futest/rpc `
+            -Futest/assets -Futest/platform -Fideps/mormot2/src `
             -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
             -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net `
             -FEbuild/test test/core/pwebtests.pas
@@ -910,6 +914,57 @@ jobs:
             build/cap6/limited.pwb
             build/cap6/release-tampered/app.pwb
             build/cap6/release-proto2/app.pwb
+
+      # ------------------------- CAP-6b0 gates -------------------------
+      # WebView2 runtime detection and provisioning foundation.
+      # Everything below is additive; no earlier step is altered. The
+      # headless policy/provisioning cases (pweb.test.webview2runtime)
+      # already ran inside the PWeb test suite step above. CI NEVER
+      # downloads or installs a runtime here: the lock/fetch gates run
+      # over local fixtures only, and the host detection smoke merely
+      # reports the runner's registry state as diagnostic evidence
+      # (unavailable is a SKIP, only a crashed probe fails).
+
+      - name: CAP-6b0 isolation compile - runtime detector unit
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/cap6b/fpc,
+            build/cap6b/bin | Out-Null
+          fpc -MObjFPC -Sh -B -FUbuild/cap6b/fpc `
+            -Fusrc/platform/windows `
+            -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+            src/platform/windows/pweb.platform.webview2.runtime.pas
+          if ($LASTEXITCODE -ne 0) {
+            throw 'pweb.platform.webview2.runtime.pas failed its isolation compile'
+          }
+
+      - name: CAP-6b0 minimum cross-check (Pascal constant vs CAP-4W patch)
+        shell: pwsh
+        run: pwsh -NoProfile -File test/cap6b/check_wv2min.ps1
+
+      - name: CAP-6b0 host WebView2 detection smoke (diagnostic evidence only)
+        shell: pwsh
+        timeout-minutes: 5
+        run: pwsh -NoProfile -File test/cap6b/run_wv2probe.ps1
+
+      - name: CAP-6b0 lock validator and fixture matrix (zero network)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File tools/get-webview2-runtime.ps1 -Validate
+          if ($LASTEXITCODE -ne 0) { throw 'webview2-runtime.lock validation FAILED' }
+          pwsh -NoProfile -File test/cap6b/check_wv2lock.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-6b0 lock fixture matrix FAILED' }
+
+      - name: CAP-6b0 diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap6b0-diagnostics
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            build/cap6b/probe.log
+            build/cap6b/fixtures/
 
       - name: Upload diagnostics on failure
         if: failure()

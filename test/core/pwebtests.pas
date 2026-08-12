@@ -23,6 +23,10 @@ uses
   pweb.test.lifecycle,
   pweb.test.assets,
   pweb.test.bundle
+  {$ifdef OSWINDOWS}
+  ,
+  pweb.test.webview2runtime
+  {$endif OSWINDOWS}
   {$ifdef PWEB_CALLMETHOD_UNWIND_PROBE}
   ,
   pweb.test.mormot.bridge,
@@ -38,6 +42,9 @@ type
     procedure InvocationPipeline;
     procedure AssetSystem;
     procedure BundleSystem;
+    {$ifdef OSWINDOWS}
+    procedure WebView2Runtime;
+    {$endif OSWINDOWS}
     {$ifdef PWEB_CALLMETHOD_UNWIND_PROBE}
     procedure MormotBridge;
     {$endif PWEB_CALLMETHOD_UNWIND_PROBE}
@@ -65,6 +72,19 @@ begin
   AddCase([TTestBundleSystem]);
 end;
 
+{$ifdef OSWINDOWS}
+procedure TPWebTests.WebView2Runtime;
+begin
+  // CAP-6b0, Windows-private: strict 4-part version policy pinned to
+  // the CAP-4W loader minimum (build >= 1587), provisioning decisions
+  // over injected detection records, the frozen post-install re-probe
+  // invariant, and one real registry probe smoke - no window, no
+  // webview.dll and no WebView2 runtime required (the probe only
+  // reads registry state and reports it)
+  AddCase([TTestWebView2Runtime]);
+end;
+{$endif OSWINDOWS}
+
 procedure TPWebTests.InvocationPipeline;
 begin
   // CAP-2, sharded by domain: scheduler + policy call site + dummy
@@ -88,5 +108,5 @@ begin
   // scripts/CI so no ENTER key is awaited on exit
   TPWebTests.RunAsConsole('PWeb tests (CAP-1 raw binding + ' +
     'CAP-2 invocation pipeline + CAP-3 bridge + CAP-4 assets + ' +
-    'CAP-6 bundle)');
+    'CAP-6 bundle + CAP-6b0 WebView2 runtime detection)');
 end.
