@@ -864,6 +864,53 @@ jobs:
             build/cap5/smoke-react.log
             build/cap5/smoke-pas2js.log
 
+      # ------------------------- CAP-6 gates -------------------------
+      # Everything below is additive; no earlier step is altered. The
+      # CAP-6 headless test cases (pweb.test.bundle) already ran inside
+      # the PWeb test suite step above - the suite registers them via
+      # test/core/pwebtests.pas. The React dist consumed here was built
+      # by the CAP-5 React frontend build step.
+
+      - name: CAP-6 compile bundler + release host (CAP-3U window)
+        shell: pwsh
+        run: pwsh -NoProfile -File test/cap6/build_cap6.ps1
+
+      - name: CAP-6 headless gates - bundle, determinism, release layout, refusals
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          pwsh -NoProfile -File test/cap6/run_cap6_gates.ps1 2>&1 |
+            Tee-Object -FilePath build/cap6/gates.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-6 headless gates FAILED' }
+
+      - name: CAP-6 zero-network sweep over bundle/release sources
+        shell: pwsh
+        run: pwsh -NoProfile -File test/cap6/check_cap6_nonetwork.ps1
+
+      - name: CAP-6 release runtime smoke - app.pwb over pweb://app
+        shell: pwsh
+        timeout-minutes: 10
+        run: pwsh -NoProfile -File test/cap6/run_cap6_smoke.ps1
+
+      - name: CAP-6 diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap6-diagnostics
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            build/cap6/gates.log
+            build/cap6/smoke-release.log
+            build/cap6/app.pwb
+            build/cap6/app-rebuild.pwb
+            build/cap6/maps.pwb
+            build/cap6/maps-optin.pwb
+            build/cap6/minrt.pwb
+            build/cap6/limited.pwb
+            build/cap6/release-tampered/app.pwb
+            build/cap6/release-proto2/app.pwb
+
       - name: Upload diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

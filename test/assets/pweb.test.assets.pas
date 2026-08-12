@@ -31,6 +31,7 @@ uses
   mormot.core.text,
   mormot.core.test,
   mormot.core.zip,
+  mormot.lib.z,
   pweb.assets.intf,
   pweb.assets.support,
   pweb.assets.folder,
@@ -75,6 +76,21 @@ type
     /// shared seekable source - the path the private lock exists for
     procedure FileBackedArchiveConcurrency;
   end;
+
+/// build a parseable ZIP whose STORED zero-byte entries carry exactly
+// the supplied raw names (hostile names included) - full control over
+// stored bytes, beyond what TZipWrite can express; shared with the
+// CAP-6 bundle suite for tamper fixtures
+function BuildRawZip(const Names: array of RawByteString): RawByteString;
+
+/// same raw-ZIP crafting with per-entry STORED contents (correct CRCs)
+// - Contents may be shorter than Names; missing entries are zero-byte
+function BuildRawZipEx(const Names: array of RawByteString;
+  const Contents: array of RawByteString): RawByteString;
+
+/// remove a test directory tree (junction-aware, never recursing into
+// reparse points) - shared test plumbing
+procedure RmTree(const Dir: TFileName);
 
 implementation
 
@@ -137,20 +153,36 @@ begin
   PCardinal(@s[Length(s) - 3])^ := v;
 end;
 
-// build a parseable ZIP whose STORED zero-byte entries carry exactly
-// the supplied raw names (hostile names included)
-function BuildRawZip(const Names: array of RawByteString): RawByteString;
+function BuildRawZipEx(const Names: array of RawByteString;
+  const Contents: array of RawByteString): RawByteString;
 var
-  central: RawByteString;
-  offsets: array of Cardinal;
+  central, c: RawByteString;
+  offsets, crcs: array of Cardinal;
   i: PtrInt;
   cdOffset: Cardinal;
 begin
+  // fixture-builder guards: the 16/32-bit ZIP header fields must
+  // never silently truncate what a test believes it crafted
+  if Length(Contents) > Length(Names) then
+    raise Exception.Create('BuildRawZipEx: more Contents than Names');
   Result := '';
   central := '';
   SetLength(offsets, Length(Names));
+  SetLength(crcs, Length(Names));
   for i := 0 to High(Names) do
   begin
+    if Length(Names[i]) > 65535 then
+      raise Exception.Create('BuildRawZipEx: name exceeds 16-bit field');
+    if i <= High(Contents) then
+      c := Contents[i]
+    else
+      c := '';
+    if Int64(Length(c)) > Int64(High(Cardinal)) then
+      raise Exception.Create('BuildRawZipEx: content exceeds 32-bit field');
+    if c = '' then
+      crcs[i] := 0
+    else
+      crcs[i] := crc32(0, pointer(c), Length(c));
     offsets[i] := Length(Result);
     AppendCardinal(Result, $04034b50); // local file header
     AppendWord(Result, 20); // version needed
@@ -158,16 +190,20 @@ begin
     AppendWord(Result, 0);  // method = STORED
     AppendWord(Result, 0);  // time
     AppendWord(Result, 0);  // date
-    AppendCardinal(Result, 0); // crc32 (empty)
-    AppendCardinal(Result, 0); // compressed size
-    AppendCardinal(Result, 0); // uncompressed size
+    AppendCardinal(Result, crcs[i]);
+    AppendCardinal(Result, Length(c)); // compressed size
+    AppendCardinal(Result, Length(c)); // uncompressed size
     AppendWord(Result, Length(Names[i]));
     AppendWord(Result, 0); // extra len
-    Result := Result + Names[i];
+    Result := Result + Names[i] + c;
   end;
   cdOffset := Length(Result);
   for i := 0 to High(Names) do
   begin
+    if i <= High(Contents) then
+      c := Contents[i]
+    else
+      c := '';
     AppendCardinal(central, $02014b50); // central directory header
     AppendWord(central, 20); // version made by
     AppendWord(central, 20); // version needed
@@ -175,9 +211,9 @@ begin
     AppendWord(central, 0);  // method
     AppendWord(central, 0);  // time
     AppendWord(central, 0);  // date
-    AppendCardinal(central, 0); // crc32
-    AppendCardinal(central, 0); // compressed size
-    AppendCardinal(central, 0); // uncompressed size
+    AppendCardinal(central, crcs[i]);
+    AppendCardinal(central, Length(c)); // compressed size
+    AppendCardinal(central, Length(c)); // uncompressed size
     AppendWord(central, Length(Names[i]));
     AppendWord(central, 0); // extra len
     AppendWord(central, 0); // comment len
@@ -196,6 +232,11 @@ begin
   AppendCardinal(Result, Length(central));
   AppendCardinal(Result, cdOffset);
   AppendWord(Result, 0); // comment len
+end;
+
+function BuildRawZip(const Names: array of RawByteString): RawByteString;
+begin
+  Result := BuildRawZipEx(Names, []);
 end;
 
 // one STORED entry whose central directory CLAIMS the given

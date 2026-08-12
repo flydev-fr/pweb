@@ -10,3 +10,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-phase-5-cap5-frontend-sdks.md`
   summary: CI downloads the pinned pas2js archive from getpas2js.freepascal.org on every run with no cache; an upstream outage fails the pipeline even though the pin is sha256-verified.
   evidence: Review of tools/get-pas2js.ps1 + ci.yml — availability (not integrity) depends on the upstream host per run; an actions/cache keyed on the lock sha256 would remove the dependency without weakening the pin.
+- source_spec: `_bmad-output/implementation-artifacts/spec-phase-6-cap6-release-bundle.md`
+  summary: RESOLVED — the CAP-4 Unicode case-fold finding above (spec-phase-4, TZipAssetStore ASCII-only fold) is closed by the CAP-6 D1 ratification (2026-08-12): collision rejection now uses the pinned mORMot Unicode 10.0 UpperCaseReference fold, enforced at bundle construction and at TZipAssetStore construction.
+  evidence: src/assets/pweb.assets.zip.pas construction fold upgraded to UpperCaseReference; src/assets/pweb.assets.bundle.pas enforces the same fold pre-write; mandated D1 tests in test/assets/pweb.test.bundle.pas (fold-equal reject, non-fold-equal accept, machine-independent verdicts, crafted-ZIP bypass rejected by the store).
+- source_spec: `_bmad-output/implementation-artifacts/spec-phase-6-cap6-release-bundle.md`
+  summary: The pwebbundle CLI directory walk uses unprefixed FindFirstFileW (MAX_PATH bound) and reads file contents through the Ansi TFileName layer, so dist trees deeper than MAX_PATH or names not representable in the process ACP fail the build loudly; revisit with proper wide/long-path I/O at CAP-7 cross-platform.
+  evidence: Review of tools/bundler/pwebbundle.pas — enumeration is wide but unprefixed, content reads go through Utf8ToString+StringFromFile; failures are loud (build error), never silent corruption, so v1 Windows-first scope tolerates it.
