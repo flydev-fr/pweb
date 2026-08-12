@@ -12,8 +12,12 @@
       canonical logical path per pweb.assets.support - this rejects
       traversal, backslash, absolute-like, device, '%', non-UTF-8 and
       folder ('name/') entries outright;
-    - exact-name duplicates and ASCII case-colliding names are
-      ambiguous and reject the archive;
+    - exact-name duplicates, and any two names comparing equal under
+      the pinned mORMot Unicode 10.0 simple case fold
+      (UpperCaseReference - compiled-in tables, never the OS case
+      mapping), are ambiguous and reject the archive (ratified CAP-6
+      D1); the fold is an ambiguity-rejection rule only - it never
+      normalizes or rewrites a name;
     - lookup is byte-exact and case-sensitive: TZipRead.NameToIndex is
       deliberately NOT used (it is case-insensitive and normalizes
       path delimiters).
@@ -37,6 +41,7 @@ uses
   sysutils,
   mormot.core.base,
   mormot.core.os,
+  mormot.core.unicode,
   mormot.core.zip,
   pweb.assets.intf,
   pweb.assets.support;
@@ -104,16 +109,6 @@ begin
   inherited Destroy;
 end;
 
-function LowerAscii(const s: RawUtf8): RawUtf8;
-var
-  i: PtrInt;
-begin
-  SetString(Result, PAnsiChar(pointer(s)), Length(s));
-  for i := 1 to Length(Result) do
-    if Result[i] in ['A'..'Z'] then
-      Result[i] := AnsiChar(Ord(Result[i]) + 32);
-end;
-
 procedure TZipAssetStore.IndexAndValidate;
 var
   n, i, j, ins: PtrInt;
@@ -167,10 +162,16 @@ begin
     fZipIndex[ins] := i;
     fFullSize[ins] := info.f64.zfullSize;
   end;
-  // ASCII case collisions are ambiguous under the exact-case rule -
-  // two entries that only differ by case reject the whole archive
+  // case collisions are ambiguous under the exact-case rule - two
+  // entries comparing equal under the pinned mORMot Unicode 10.0
+  // simple case fold reject the whole archive (ratified CAP-6 D1;
+  // this construction-time gate is the second enforcement point, so
+  // a hand-crafted app.pwb cannot bypass the bundler policy). The
+  // compiled-in tables keep the verdict deterministic across
+  // machines and years - the OS case mapping is never consulted; the
+  // fold never rewrites a name and lookup stays byte-exact
   for i := 0 to n - 1 do
-    folded[i] := LowerAscii(fNames[i]);
+    folded[i] := UpperCaseReference(fNames[i]);
   for i := 0 to n - 1 do
     for j := i + 1 to n - 1 do
       if folded[i] = folded[j] then
