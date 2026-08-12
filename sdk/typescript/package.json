@@ -1,0 +1,28 @@
+{
+  "name": "@pweb/runtime",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PWeb TypeScript frontend SDK: typed invoke/handshake over the native PWeb invocation primitive. No HTTP, no fallback transport.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "files": [
+    "dist/src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test \"dist/test/*.test.js\"",
+    "capture": "npm run build && node dist/test/capture.js"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "typescript": "7.0.2"
+  }
+}

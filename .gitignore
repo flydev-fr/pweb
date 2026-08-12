@@ -99,3 +99,11 @@ backup/
 
 # Local build output (repo root only)
 /build/
+
+# CAP-5 frontend toolchain outputs (never committed; rebuilt from pinned
+# lockfiles/toolchains by CI and the local build scripts)
+node_modules/
+/sdk/typescript/dist/
+/sdk/pas2js/test/pwebsdktests.js
+/examples/04-react/frontend/dist/
+/examples/05-pas2js/frontend/dist/
