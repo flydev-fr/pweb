@@ -35,9 +35,9 @@ if ($pasMin -ne 1587) {
 Write-Host "CAP-6b0 minimum cross-check PASS (build >= $pasMin on both sides)"
 
 # URLs live only in lock files, never in swept sources: no web-scheme
-# literal may appear in any CAP-6b0/CAP-6b1 Pascal source, nor in the
-# Inno Setup project (the setup embeds its payload; nothing may point
-# it at the network)
+# literal may appear in any CAP-6b0/CAP-6b1/CAP-6b2 Pascal source, nor
+# in the Inno Setup projects or their shared include (the setup embeds
+# its payload; nothing may point it at the network)
 $pasFiles = @(
     (Join-Path $RepoRoot 'src/platform/windows/pweb.platform.webview2.runtime.pas'),
     (Join-Path $RepoRoot 'test/platform/pweb.test.webview2runtime.pas'),
@@ -45,7 +45,9 @@ $pasFiles = @(
     (Join-Path $RepoRoot 'src/platform/windows/pweb.platform.webview2.provision.pas'),
     (Join-Path $RepoRoot 'tools/setup/pwebwv2prov.pas'),
     (Join-Path $RepoRoot 'test/platform/pweb.test.wv2provision.pas'),
-    (Join-Path $RepoRoot 'tools/setup/normal.iss')
+    (Join-Path $RepoRoot 'tools/setup/normal.iss'),
+    (Join-Path $RepoRoot 'tools/setup/offline.iss'),
+    (Join-Path $RepoRoot 'tools/setup/pwebprovgate.issi')
 )
 foreach ($f in $pasFiles) {
     if (-not (Test-Path -LiteralPath $f)) { throw "swept file missing: $f" }
@@ -59,3 +61,39 @@ if ($urlHits) {
     throw 'CAP-6b no-URL source proof failed'
 }
 Write-Host "CAP-6b no-URL source proof PASS ($($pasFiles.Count) sources clean)"
+
+# CAP-6b2 offline hard invariant, static half: no download primitive
+# may exist in any setup manifest, the shared provisioning include or
+# a production provisioning Pascal source - the embedded payload is
+# the ONLY installer source a target machine can ever see. Lock files
+# and the build-side acquisition tooling (tools/get-*.ps1) are exempt
+# as ratified: their URLs/downloads are build metadata, never
+# target-side code.
+$setupSources = @(
+    (Join-Path $RepoRoot 'tools/setup/normal.iss'),
+    (Join-Path $RepoRoot 'tools/setup/offline.iss'),
+    (Join-Path $RepoRoot 'tools/setup/pwebprovgate.issi')
+)
+$dlHits = @(Select-String -Path $setupSources -Pattern (
+    'DownloadTemporaryFile|CreateDownloadPage|InternetOpen|' +
+    'URLDownloadToFile|WinHttp|Invoke-WebRequest|WebClient') `
+    -CaseSensitive:$false)
+$prodSources = @(
+    (Join-Path $RepoRoot 'src/platform/windows/pweb.platform.webview2.provision.pas'),
+    (Join-Path $RepoRoot 'tools/setup/pwebwv2prov.pas')
+)
+foreach ($f in $prodSources) {
+    if (-not (Test-Path -LiteralPath $f)) { throw "swept file missing: $f" }
+}
+$dlHits += @(Select-String -Path $prodSources -Pattern (
+    'URLDownloadToFile|WinHttp|InternetOpen|HttpSendRequest|' +
+    'WebClient|Invoke-WebRequest|DownloadFile|DownloadString') `
+    -CaseSensitive:$false)
+if ($dlHits) {
+    $dlHits | ForEach-Object {
+        Write-Host "FORBIDDEN DOWNLOAD PRIMITIVE: $($_.Path):$($_.LineNumber): $($_.Line.Trim())"
+    }
+    throw 'CAP-6b2 no-download-primitive proof failed'
+}
+Write-Host ("CAP-6b2 no-download-primitive proof PASS " +
+    "($($setupSources.Count) setup + $($prodSources.Count) production sources clean)")

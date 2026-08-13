@@ -44,7 +44,23 @@ unit pweb.test.wv2provision;
   create-failure path on a nonexistent image - plus, when the standard
   System32 tools exist, a real bounded run (whoami.exe) and a real
   timeout+kill (waitfor.exe). Every seam is restored in a finally
-  block, mirroring the ratified CAP-6b0 seam discipline. }
+  block, mirroring the ratified CAP-6b0 seam discipline.
+
+  StreamingDigest (CAP-6b2, S1) proves the streamed rewrite of
+  PWebWv2FileSha256: a deterministic fixture LONGER than two of its
+  fixed PWEB_WV2_HASH_CHUNK_BYTES buffers (and deliberately not
+  chunk-aligned, so full chunks plus a partial tail are walked) must
+  hash byte-identically to the one-shot in-memory Sha256 of the same
+  bytes; exact one-chunk and two-chunk boundaries agree too; and the
+  fail-closed legs are unchanged - an empty file and a missing file
+  are errors, never digests. The bounded-memory property itself is
+  PINNED through the PWebWv2HashChunkReader seam: a counting wrapper
+  around the real chunk read proves the multi-chunk fixture took at
+  least three data reads, none larger than the fixed buffer and none
+  requesting more than the fixed buffer - so a regression to
+  whole-file one-shot hashing (zero chunk reads) fails here, not in
+  production. The seam is restored in a finally block, the ratified
+  CAP-6b0 seam discipline. }
 
 {$I mormot.defines.inc}
 
@@ -57,6 +73,7 @@ uses
   mormot.core.unicode,
   mormot.core.os,
   mormot.core.test,
+  mormot.crypt.core,
   pweb.platform.webview2.runtime,
   pweb.platform.webview2.provision;
 
@@ -71,6 +88,8 @@ type
     procedure VerdictTexts;
     /// real hasher/signature/runner primitives, no Microsoft binary
     procedure RealPrimitivesSmoke;
+    /// CAP-6b2 S1: the streamed file digest over multi-chunk fixtures
+    procedure StreamingDigest;
   end;
 
 implementation
@@ -561,6 +580,113 @@ begin
   end
   else
     AddConsole('waitfor.exe absent - timeout leg skipped');
+end;
+
+// deterministic pseudo-random fixture bytes: position-derived, so the
+// SAME content regenerates on any host and any run (no RNG involved)
+function StreamFixture(Len: PtrInt): RawByteString;
+var
+  i: PtrInt;
+  p: PByteArray;
+begin
+  SetLength(Result, Len);
+  p := pointer(Result);
+  for i := 0 to Len - 1 do
+    p^[i] := ((i * 131) + (i shr 9) + 43) and $ff;
+end;
+
+var
+  // counting wrapper state for the chunk-read seam: pins the bounded
+  // streaming (reads happened, none beyond the fixed buffer)
+  ChunkDataReads: PtrInt;   // seam calls that returned payload bytes
+  ChunkLargestRead: Integer; // largest single read observed
+  ChunkOverAsk: Boolean;    // any request above the fixed buffer size
+
+function CountingChunkRead(Handle: THandle; Buffer: Pointer;
+  MaxBytes: Integer): Integer;
+begin
+  if MaxBytes > PWEB_WV2_HASH_CHUNK_BYTES then
+    ChunkOverAsk := True;
+  Result := PWebWv2HashChunkRead(Handle, Buffer, MaxBytes);
+  if Result > 0 then
+  begin
+    Inc(ChunkDataReads);
+    if Result > ChunkLargestRead then
+      ChunkLargestRead := Result;
+  end;
+end;
+
+procedure ResetChunkCounters;
+begin
+  ChunkDataReads := 0;
+  ChunkLargestRead := 0;
+  ChunkOverAsk := False;
+end;
+
+procedure TTestWv2Provision.StreamingDigest;
+var
+  temp: TFileName;
+  content: RawByteString;
+  hex, err, expected: RawUtf8;
+begin
+  temp := TemporaryFileName;
+  PWebWv2HashChunkReader := @CountingChunkRead;
+  try
+    // ---- S1: MULTI-CHUNK fixture, longer than TWO fixed buffers and
+    // deliberately NOT chunk-aligned (full chunks + a partial tail);
+    // the streamed digest must equal the one-shot in-memory digest of
+    // the exact same bytes - chunking can never change the verdict
+    ResetChunkCounters;
+    content := StreamFixture(2 * PWEB_WV2_HASH_CHUNK_BYTES +
+      PWEB_WV2_HASH_CHUNK_BYTES div 2 + 17);
+    Check(FileFromString(content, temp), 'fixture write failed');
+    expected := Sha256(content);
+    Check(PWebWv2FileSha256(temp, hex, err), 'multi-chunk hash failed');
+    CheckEqual(hex, expected, 'streamed digest <> one-shot digest');
+    CheckEqual(err, '', 'multi-chunk error text not empty');
+    // the bounded-memory PIN: the 2.5-buffer fixture must have taken
+    // at least three data reads through the seam (a one-shot
+    // whole-file regression would take zero), and no single read -
+    // requested or returned - may exceed the fixed buffer
+    Check(ChunkDataReads >= 3,
+      'multi-chunk fixture was not streamed in >= 3 reads');
+    Check(ChunkLargestRead <= PWEB_WV2_HASH_CHUNK_BYTES,
+      'a single read exceeded the fixed streaming buffer');
+    Check(not ChunkOverAsk,
+      'the hasher requested more than the fixed streaming buffer');
+    // ---- exact ONE-chunk boundary (file length = buffer length)
+    content := StreamFixture(PWEB_WV2_HASH_CHUNK_BYTES);
+    Check(FileFromString(content, temp), 'one-chunk write failed');
+    Check(PWebWv2FileSha256(temp, hex, err), 'one-chunk hash failed');
+    CheckEqual(hex, Sha256(content), 'one-chunk boundary digest');
+    CheckEqual(err, '', 'one-chunk error text not empty');
+    // ---- exact TWO-chunk boundary (no partial tail at all)
+    content := StreamFixture(2 * PWEB_WV2_HASH_CHUNK_BYTES);
+    Check(FileFromString(content, temp), 'two-chunk write failed');
+    Check(PWebWv2FileSha256(temp, hex, err), 'two-chunk hash failed');
+    CheckEqual(hex, Sha256(content), 'two-chunk boundary digest');
+    CheckEqual(err, '', 'two-chunk error text not empty');
+    // ---- sub-chunk sanity: the FIPS 'abc' vector still holds after
+    // the streamed rewrite (same pin as RealPrimitivesSmoke)
+    Check(FileFromString('abc', temp), 'abc write failed');
+    Check(PWebWv2FileSha256(temp, hex, err), 'abc hash failed');
+    CheckEqual(hex, ABC_SHA, 'FIPS vector mismatch after streaming');
+    // ---- empty file: fail closed, an error and never a digest (the
+    // unchanged CAP-6b1 contract)
+    Check(FileFromString('', temp), 'empty write failed');
+    Check(not PWebWv2FileSha256(temp, hex, err), 'empty file hashed');
+    CheckEqual(hex, '', 'empty file produced a digest');
+    Check(err <> '', 'empty-file error text empty');
+    // ---- missing file: unchanged fail-closed leg, never a digest
+    Check(not PWebWv2FileSha256('Z:\no\such\stream.bin', hex, err),
+      'missing file hashed');
+    CheckEqual(hex, '', 'missing file produced a digest');
+    Check(err <> '', 'missing-file error text empty');
+  finally
+    PWebWv2HashChunkReader := @PWebWv2HashChunkRead;
+    ResetChunkCounters;
+    DeleteFile(temp);
+  end;
 end;
 
 end.

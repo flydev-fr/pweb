@@ -7,6 +7,13 @@
 # unsigned and wrong-subject refusals (correct hash, wrong identity),
 # and the real-lock check that the ratified evergreen-bootstrapper pin
 # carries the exact Microsoft subject.
+# CAP-6b2 adds the standalone kind: the real-lock check now proves
+# BOTH ratified artifacts (evergreen-bootstrapper AND
+# evergreen-standalone-x64, each carrying the exact Microsoft
+# subject), plus fixture legs for a kind=standalone entry - parse,
+# fetch-verify, the O7 wrong-sha delete-on-mismatch refusal, and the
+# -Artifact selection that fetches ONLY the named artifact out of a
+# two-artifact lock (the offline build's acquisition mode).
 #
 # Every fixture is generated locally below build/cap6b/fixtures and the
 # fetch legs read local payload files via -AllowLocalSource: ZERO
@@ -68,20 +75,34 @@ function New-Fixture {
     $path
 }
 
-# --- 1) the real repository lock validates and carries the CAP-6b1
-# --- ratified bootstrapper pin with its authenticode-subject axis ------------
+# --- 1) the real repository lock validates and carries BOTH ratified
+# --- pins (CAP-6b1 bootstrapper + CAP-6b2 standalone), each with the
+# --- authenticode-subject axis -----------------------------------------------
 $r = Invoke-Tool @('-Validate')
 Assert-Pass $r 'repository webview2-runtime.lock validates'
 if ($r.Out -notmatch 'schema 1') { throw "repo lock summary missing schema: $($r.Out)" }
+# anchored on the summary's ', <count> ' shape so 12/22/32 can never match
+if ($r.Out -notmatch ',\s2 artifact\(s\) pinned') {
+    throw "repo lock does not pin exactly the two ratified artifacts: $($r.Out)"
+}
 # \r?$ keeps the anchors CRLF-safe on autocrlf checkouts
 $repoLock = Get-Content (Join-Path $RepoRoot 'webview2-runtime.lock') -Raw
 if ($repoLock -notmatch '(?m)^artifact = evergreen-bootstrapper\r?$') {
     throw 'repo lock is missing the ratified evergreen-bootstrapper artifact'
 }
-if ($repoLock -notmatch '(?m)^authenticode-subject = CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US\r?$') {
-    throw 'repo lock is missing the ratified Microsoft authenticode-subject pin'
+if ($repoLock -notmatch '(?m)^artifact = evergreen-standalone-x64\r?$') {
+    throw 'repo lock is missing the ratified evergreen-standalone-x64 artifact'
 }
-Write-Host 'PASS: repo lock pins evergreen-bootstrapper with the Microsoft subject axis'
+if ($repoLock -notmatch '(?m)^kind = standalone\r?$') {
+    throw 'repo lock standalone entry does not use the frozen kind = standalone'
+}
+$subjectPins = [regex]::Matches($repoLock,
+    '(?m)^authenticode-subject = CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US\r?$')
+if ($subjectPins.Count -ne 2) {
+    throw ("repo lock must pin the exact Microsoft authenticode-subject on BOTH " +
+        "artifacts, found $($subjectPins.Count)")
+}
+Write-Host 'PASS: repo lock pins both ratified artifacts, each with the Microsoft subject axis'
 $script:Passed++
 
 # --- 2) valid fixture lock: parses, fetches and verifies a local payload ----
@@ -517,5 +538,97 @@ foreach ($leftover in @('wrongsigner.bin', 'wrongsigner.bin.download')) {
 }
 Write-Host 'PASS: wrong-subject refusal named the pinned subject and deleted the download'
 $script:Passed++
+
+# --- 15) CAP-6b2 standalone-kind legs over local fixtures ---------------------
+# parse + fetch-verify: a kind=standalone entry rides the exact same
+# strict parse and sha256-first verification as the bootstrapper kind
+$saLock = New-Fixture 'standalone-ok.lock' @"
+schema = 1
+artifact = evergreen-standalone-test
+kind = standalone
+arch = x64
+url = $PayloadUrl
+filename = standalone-payload.bin
+size = $GoodSize
+sha256 = $GoodHash
+"@
+$r = Invoke-Tool @('-Validate', '-LockFile', $saLock, '-AllowLocalSource')
+Assert-Pass $r 'standalone-kind fixture lock validates'
+$dest = Join-Path $Fix 'dest-standalone'
+$r = Invoke-Tool @('-LockFile', $saLock, '-DestDir', $dest, '-AllowLocalSource')
+Assert-Pass $r 'standalone-kind fetch-verify succeeds'
+$fetched = Join-Path $dest 'standalone-payload.bin'
+if (-not (Test-Path $fetched)) { throw 'verified standalone payload missing from dest' }
+if ((Get-FileHash -Algorithm SHA256 -Path $fetched).Hash.ToLowerInvariant() -cne $GoodHash) {
+    throw 'verified standalone payload bytes drifted'
+}
+Write-Host 'PASS: standalone-kind payload landed with the expected name and bytes'
+$script:Passed++
+
+# O7 lock side for the standalone kind: wrong sha -> refused, deleted
+$saBad = New-Fixture 'standalone-wrong-sha.lock' @"
+schema = 1
+artifact = standalone-tampered
+kind = standalone
+arch = x64
+url = $PayloadUrl
+filename = standalone-tampered.bin
+size = $GoodSize
+sha256 = $('1' * 64)
+"@
+$dest = Join-Path $Fix 'dest-standalone-tampered'
+$r = Invoke-Tool @('-LockFile', $saBad, '-DestDir', $dest, '-AllowLocalSource')
+Assert-Refused $r 'sha256 mismatch' 'standalone-kind checksum mismatch rejected'
+foreach ($leftover in @('standalone-tampered.bin', 'standalone-tampered.bin.download')) {
+    if (Test-Path (Join-Path $dest $leftover)) {
+        throw "standalone mismatched download survived as $leftover"
+    }
+}
+Write-Host 'PASS: standalone-kind mismatch deleted the download'
+$script:Passed++
+
+# -Artifact selection over a TWO-artifact lock (the CAP-6b2 offline
+# build's acquisition mode): only the NAMED artifact is fetched
+$dual = New-Fixture 'dual-kind.lock' @"
+schema = 1
+artifact = boot-two
+kind = bootstrapper
+arch = neutral
+url = $PayloadUrl
+filename = boot-two.bin
+size = $GoodSize
+sha256 = $GoodHash
+artifact = standalone-two
+kind = standalone
+arch = x64
+url = $PayloadUrl
+filename = standalone-two.bin
+size = $GoodSize
+sha256 = $GoodHash
+"@
+$r = Invoke-Tool @('-Validate', '-LockFile', $dual, '-AllowLocalSource')
+Assert-Pass $r 'two-artifact (bootstrapper + standalone) lock validates'
+if ($r.Out -notmatch ',\s2 artifact\(s\) pinned') {
+    throw "two-artifact fixture summary wrong: $($r.Out)"
+}
+$dest = Join-Path $Fix 'dest-dual'
+$r = Invoke-Tool @('-LockFile', $dual, '-DestDir', $dest, '-AllowLocalSource',
+    '-Artifact', 'standalone-two')
+Assert-Pass $r '-Artifact fetches only the named standalone'
+if (-not (Test-Path (Join-Path $dest 'standalone-two.bin'))) {
+    throw '-Artifact selection did not fetch the named standalone'
+}
+if (Test-Path (Join-Path $dest 'boot-two.bin')) {
+    throw '-Artifact selection fetched the UNNAMED bootstrapper too'
+}
+Write-Host 'PASS: -Artifact selection fetched the standalone and nothing else'
+$script:Passed++
+
+# an unknown -Artifact name must be refused with a NAMED error before
+# any transfer (pins the fail-fast of the tool's -ceq selection)
+$r = Invoke-Tool @('-LockFile', $dual, '-DestDir', $dest, '-AllowLocalSource',
+    '-Artifact', 'no-such-artifact')
+Assert-Refused $r "no artifact named 'no-such-artifact'" `
+    'unknown -Artifact name refused with a named error'
 
 Write-Host "CAP6B0_WV2LOCK_PASS cases=$($script:Passed)"

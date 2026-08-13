@@ -1,10 +1,15 @@
 {
-  pweb.platform.webview2.provision - WebView2 Evergreen Bootstrapper
-  provisioning core for the Windows normal install profile (CAP-6b1).
+  pweb.platform.webview2.provision - WebView2 Evergreen provisioning
+  core for the Windows install profiles: the normal profile's
+  Bootstrapper (CAP-6b1) and the offline profile's Standalone
+  Installer (CAP-6b2). Both profiles run the SAME orchestration below
+  over the SAME two verification axes; the only provisioning
+  difference is WHICH ratified webview2-runtime.lock artifact the
+  setup embeds and hands to PWebWv2ProvisionRun.
 
   CAP-6b0 froze detection and policy (pweb.platform.webview2.runtime);
-  this Windows-private unit adds the executable half the normal-profile
-  setup helper needs, WITHOUT duplicating one line of frozen policy:
+  this Windows-private unit adds the executable half the setup helper
+  needs, WITHOUT duplicating one line of frozen policy:
 
     PWebWv2ProvisionRun
       -> Detect (frozen PWebWv2Detect via seam)
@@ -47,6 +52,17 @@
   confirmation wait did not succeed is reported as UNCONFIRMED, never
   as "killed".
 
+  The file hasher streams: PWebWv2FileSha256 digests through a fixed
+  PWEB_WV2_HASH_CHUNK_BYTES buffer (TSha256 Init/Update/Final), so
+  verifying the ~1.7 MB Bootstrapper and the ~210 MB Standalone
+  Installer both run in bounded memory - the whole payload is never
+  loaded at once. The signature and hasher seam are unchanged from
+  CAP-6b1; an empty or unreadable payload still fails closed, never a
+  digest. The chunk reads themselves go through one more ratified-style
+  seam (PWebWv2HashChunkReader) so the test suite can PIN the bounded
+  streaming: a regression to whole-file one-shot hashing would produce
+  zero chunk reads and fail the StreamingDigest case.
+
   The impure primitives (real detector, file hasher, WinVerifyTrust
   check, bounded process runner) sit behind the ratified seam style:
   plain procedural variables defaulting to the real implementations,
@@ -73,15 +89,25 @@ uses
   pweb.platform.webview2.runtime;
 
 const
-  /// the exact documented silent-install arguments for the Evergreen
-  // Bootstrapper (learn.microsoft.com distribution doc, retrieved
-  // 2026-08-13); never anything else, never through a shell
+  /// the exact documented silent-install arguments for BOTH Evergreen
+  // installers - the Bootstrapper and the offline Standalone Installer
+  // take the same '/silent /install' (learn.microsoft.com distribution
+  // doc incl. its offline-deployment section, retrieved 2026-08-13);
+  // never anything else, never through a shell
   PWEB_WV2_BOOTSTRAPPER_ARGS = '/silent /install';
 
-  /// ratified bounded wait for one bootstrapper run: the runtime
-  // download is ~150 MB on slow links and Microsoft publishes no
-  // guidance, so 900 s, then kill + fail closed
+  /// ratified bounded wait for one installer run: the bootstrapper's
+  // runtime download is ~150 MB on slow links and Microsoft publishes
+  // no guidance, so 900 s, then kill + fail closed (the offline
+  // Standalone downloads nothing but keeps the same ratified bound)
   PWEB_WV2_INSTALL_TIMEOUT_MS = 900000;
+
+  /// fixed streaming-buffer size for PWebWv2FileSha256: the digest of
+  // any payload - including the ~210 MB Standalone Installer - is
+  // computed in chunks of this many bytes, never by loading the whole
+  // file (public so the test suite can prove multi-chunk streaming
+  // with a fixture deliberately longer than two buffers)
+  PWEB_WV2_HASH_CHUNK_BYTES = 1 shl 20;
 
   /// how long the runner waits for a killed child to actually die
   PWEB_WV2_KILL_CONFIRM_MS = 30000;
@@ -157,10 +183,28 @@ type
     const Args: RawUtf8; TimeoutMs: Cardinal; out ExitCode: Integer;
     out Diag: RawUtf8): TPWebWv2RunOutcome;
 
+  /// signature of the injectable chunk-read seam behind the streamed
+  // PWebWv2FileSha256 (CAP-6b2)
+  // - reads at most MaxBytes into Buffer, returning the bytes read
+  // (0 at end of file, negative on error) - FileRead semantics
+  // - the seam exists so the test suite can PIN the bounded-memory
+  // property: it counts the reads and their sizes, so a regression to
+  // whole-file one-shot hashing (zero chunk reads) fails a test
+  TPWebWv2ChunkReadFunc = function(Handle: THandle; Buffer: Pointer;
+    MaxBytes: Integer): Integer;
+
 /// SHA-256 of one file as 64 lowercase hex chars
 // - fail closed: a missing or empty file is an error, never a digest
+// - streams through one fixed PWEB_WV2_HASH_CHUNK_BYTES buffer, so
+// memory stays bounded even for the ~210 MB Standalone Installer
 function PWebWv2FileSha256(const FileName: TFileName;
   out HexDigest, ErrorText: RawUtf8): Boolean;
+
+/// the real chunk-read primitive behind the streamed PWebWv2FileSha256
+// - plain sysutils.FileRead: at most MaxBytes into Buffer, returning
+// the bytes read (0 at end of file, negative on error)
+function PWebWv2HashChunkRead(Handle: THandle; Buffer: Pointer;
+  MaxBytes: Integer): Integer;
 
 /// WinVerifyTrust embedded-Authenticode check with an exact leaf
 // subject requirement (case-sensitive ordinal over the X.500 string
@@ -194,6 +238,11 @@ var
   /// injectable bounded-runner seam (same rules as above)
   PWebWv2ProvisionRunner: TPWebWv2RunFunc = @PWebWv2RunProcessBounded;
 
+  /// injectable chunk-read seam of the streamed hasher (same rules as
+  // above: production never assigns it, ONLY the platform test suite -
+  // which must restore PWebWv2HashChunkRead afterwards)
+  PWebWv2HashChunkReader: TPWebWv2ChunkReadFunc = @PWebWv2HashChunkRead;
+
 /// the one orchestration: Detect -> verify -> execute -> re-probe
 // - reuses the frozen CAP-6b0 policy functions for every decision;
 // see the unit comment for the exact ratified flow and N1-N12 mapping
@@ -225,11 +274,28 @@ end;
 
 { ---- SHA-256 file digest ---- }
 
+function PWebWv2HashChunkRead(Handle: THandle; Buffer: Pointer;
+  MaxBytes: Integer): Integer;
+begin
+  Result := FileRead(Handle, Buffer^, MaxBytes);
+end;
+
 function PWebWv2FileSha256(const FileName: TFileName;
   out HexDigest, ErrorText: RawUtf8): Boolean;
 var
-  content: RawByteString;
+  handle: THandle;
+  buffer: Pointer;
+  sha: TSha256;
+  digest: TSha256Digest;
+  chunk: Integer;
+  total: Int64;
 begin
+  // streams through one fixed PWEB_WV2_HASH_CHUNK_BYTES buffer via
+  // TSha256 Init/Update/Final: bounded memory whatever the payload
+  // size (the ~210 MB Standalone Installer hashes exactly like the
+  // ~1.7 MB Bootstrapper), same signature and seam as always; the
+  // chunk reads go through the PWebWv2HashChunkReader seam so the
+  // test suite can pin the bounded-memory property
   Result := False;
   HexDigest := '';
   ErrorText := '';
@@ -239,19 +305,57 @@ begin
       ErrorText := 'file not found: ' + StringToUtf8(FileName);
       exit;
     end;
-    content := StringFromFile(FileName);
-    if content = '' then
-    begin
-      // an unreadable or zero-byte payload can never be the ratified
-      // bootstrapper: fail closed, never hash emptiness into a verdict
-      ErrorText := 'file empty or unreadable: ' + StringToUtf8(FileName);
-      exit;
+    // the buffer is allocated BEFORE the file is opened: this way an
+    // allocation failure can never leak the handle (every exit path
+    // past the open runs the finally below and closes it)
+    GetMem(buffer, PWEB_WV2_HASH_CHUNK_BYTES);
+    try
+      handle := FileOpenSequentialRead(FileName);
+      if not ValidHandle(handle) then
+      begin
+        ErrorText := 'file empty or unreadable: ' + StringToUtf8(FileName);
+        exit;
+      end;
+      try
+        sha.Init;
+        total := 0;
+        repeat
+          chunk := PWebWv2HashChunkReader(handle, buffer,
+            PWEB_WV2_HASH_CHUNK_BYTES);
+          if chunk < 0 then
+          begin
+            // a read error mid-stream can never become a digest
+            ErrorText := 'read error after ' + IntToUtf8Local(total) +
+              ' bytes: ' + StringToUtf8(FileName);
+            exit;
+          end;
+          if chunk > 0 then
+          begin
+            sha.Update(buffer, chunk);
+            Inc(total, chunk);
+          end;
+        until chunk = 0;
+        if total = 0 then
+        begin
+          // an unreadable or zero-byte payload can never be the
+          // ratified installer: fail closed, never hash emptiness
+          // into a verdict
+          ErrorText := 'file empty or unreadable: ' + StringToUtf8(FileName);
+          exit;
+        end;
+        sha.Final(digest);
+        HexDigest := Sha256DigestToString(digest); // 64 lowercase hex
+        Result := True;
+      finally
+        FileClose(handle);
+      end;
+    finally
+      FreeMem(buffer);
     end;
-    HexDigest := Sha256(content); // 64 lowercase hex chars
-    Result := True;
   except
     on E: Exception do
     begin
+      Result := False;
       HexDigest := '';
       ErrorText := 'unexpected ' + RawUtf8(E.ClassName) +
         ' hashing ' + StringToUtf8(FileName);

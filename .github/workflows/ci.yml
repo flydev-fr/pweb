@@ -56,7 +56,11 @@ on:
 jobs:
   windows:
     runs-on: windows-latest
-    timeout-minutes: 30
+    # 30 sufficed through CAP-6b1; CAP-6b2 adds the bounded ~210 MB
+    # standalone fetch + the offline setup build/gates, so the job
+    # bound gets matching headroom (each new step carries its own
+    # tighter timeout below)
+    timeout-minutes: 45
     steps:
       - name: Checkout (full history for freeze diff against baseline)
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -1053,6 +1057,75 @@ jobs:
             build/cap6b1/lockfacts.psd1
             build/cap6b1/is-fixtures/
             dist/windows/normal/setup.exe
+
+      # ------------------------- CAP-6b2 gates -------------------------
+      # Offline-profile Evergreen STANDALONE Installer provisioning.
+      # Everything below is additive; no earlier step is altered. The
+      # extended lock fixture matrix (standalone kind + two-artifact
+      # real-lock proof) already ran inside the CAP-6b0 lock step
+      # above, and the streaming-digest cases ran inside the PWeb test
+      # suite step. CI fetches the LOCKED ~210 MB standalone (sha256 +
+      # Authenticode subject verified, drift fails the build and
+      # deletes the download) in a dedicated bounded step, builds the
+      # REAL offline setup.exe with its payload-listing proof
+      # (standalone present, bootstrapper absent), and runs the gates
+      # - but NEVER executes any runtime installer: on the hosted
+      # runner the AlreadyUsable skip path (installing from an
+      # ISOLATED dir holding only setup.exe) is the proof, and the
+      # genuine offline provisioning proof is the network-disabled
+      # clean-machine VM gate
+      # (test/cap6b2/run_offline_clean_machine_gate.ps1, human-run,
+      # never mocked here).
+
+      # dedicated bounded fetch for fail-fast attribution: an upstream
+      # rotation of the ~210 MB artifact is named HERE, never inside
+      # the build (which then reuses the verified local bytes after
+      # re-verifying them against the lock)
+      - name: CAP-6b2 fetch pinned Evergreen Standalone (sha256+authenticode, bounded, never executed)
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          pwsh -NoProfile -File tools/get-webview2-runtime.ps1 `
+            -Artifact evergreen-standalone-x64
+          if ($LASTEXITCODE -ne 0) {
+            throw 'locked standalone fetch-verify FAILED (upstream drift? re-ratify deliberately)'
+          }
+
+      - name: CAP-6b2 build offline setup.exe from the pinned locks (payload-listing proof)
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap6b2/build_offline_setup.ps1 2>&1 |
+            Tee-Object -FilePath build/cap6b2-build.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-6b2 offline setup build FAILED' }
+
+      - name: CAP-6b2 offline setup gates - streamed V-legs, isolated-dir skip path, layout, smoke, uninstall
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap6b2/run_offline_setup_gates.ps1 2>&1 |
+            Tee-Object -FilePath build/cap6b2-gates.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-6b2 offline setup gates FAILED' }
+
+      # deliberate deviation from the CAP-6b1 diagnostics pattern: the
+      # offline setup.exe (~200 MB) is NOT uploaded on failure - the
+      # logs, listing and lockfacts below identify any defect, and the
+      # binary is reproducible from the pinned locks; uploading it
+      # would burn artifact quota for no diagnostic value
+      - name: CAP-6b2 diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap6b2-diagnostics
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            build/cap6b2-build.log
+            build/cap6b2-gates.log
+            build/cap6b2/iscc-offline.log
+            build/cap6b2/setup-install.log
+            build/cap6b2/smoke-installed.log
+            build/cap6b2/lockfacts.psd1
 
       - name: Upload diagnostics on failure
         if: failure()
