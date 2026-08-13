@@ -3,6 +3,10 @@
 # unknown key, key outside a block, bad digest shape, missing schema)
 # and the fetch-verify contract (sha256 checked BEFORE any use; a
 # mismatched download is deleted and the error names both digests).
+# CAP-6b1 adds the authenticode-subject second axis: key parse, the
+# unsigned and wrong-subject refusals (correct hash, wrong identity),
+# and the real-lock check that the ratified evergreen-bootstrapper pin
+# carries the exact Microsoft subject.
 #
 # Every fixture is generated locally below build/cap6b/fixtures and the
 # fetch legs read local payload files via -AllowLocalSource: ZERO
@@ -64,10 +68,21 @@ function New-Fixture {
     $path
 }
 
-# --- 1) the real repository lock validates (zero artifacts tolerated) -------
+# --- 1) the real repository lock validates and carries the CAP-6b1
+# --- ratified bootstrapper pin with its authenticode-subject axis ------------
 $r = Invoke-Tool @('-Validate')
 Assert-Pass $r 'repository webview2-runtime.lock validates'
 if ($r.Out -notmatch 'schema 1') { throw "repo lock summary missing schema: $($r.Out)" }
+# \r?$ keeps the anchors CRLF-safe on autocrlf checkouts
+$repoLock = Get-Content (Join-Path $RepoRoot 'webview2-runtime.lock') -Raw
+if ($repoLock -notmatch '(?m)^artifact = evergreen-bootstrapper\r?$') {
+    throw 'repo lock is missing the ratified evergreen-bootstrapper artifact'
+}
+if ($repoLock -notmatch '(?m)^authenticode-subject = CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US\r?$') {
+    throw 'repo lock is missing the ratified Microsoft authenticode-subject pin'
+}
+Write-Host 'PASS: repo lock pins evergreen-bootstrapper with the Microsoft subject axis'
+$script:Passed++
 
 # --- 2) valid fixture lock: parses, fetches and verifies a local payload ----
 $valid = New-Fixture 'valid.lock' @"
@@ -406,6 +421,101 @@ if ($r.Out -notmatch 'never writes it') {
 $lockAfter = (Get-FileHash -Algorithm SHA256 -Path $valid).Hash
 if ($lockAfter -cne $lockBefore) { throw '-Refresh modified the lock file' }
 Write-Host 'PASS: -Refresh printed true facts and left the lock byte-identical'
+$script:Passed++
+
+# --- 14) CAP-6b1 authenticode-subject axis over local fixtures ----------------
+# parse leg: the optional key is accepted and validated in shape
+$subj = New-Fixture 'subject-ok.lock' @"
+schema = 1
+artifact = signed-probe
+kind = bootstrapper
+arch = neutral
+url = $PayloadUrl
+filename = signed.bin
+size = $GoodSize
+sha256 = $GoodHash
+authenticode-subject = CN=PWeb Fixture Signer, O=PWeb, C=US
+"@
+$r = Invoke-Tool @('-Validate', '-LockFile', $subj, '-AllowLocalSource')
+Assert-Pass $r 'authenticode-subject key parses and validates'
+
+$bad = New-Fixture 'subject-garbage.lock' @"
+schema = 1
+artifact = mispinned
+kind = bootstrapper
+arch = neutral
+url = $PayloadUrl
+filename = x.bin
+size = $GoodSize
+sha256 = $GoodHash
+authenticode-subject = not a distinguished name
+"@
+$r = Invoke-Tool @('-Validate', '-LockFile', $bad, '-AllowLocalSource')
+Assert-Refused $r 'must be an X\.500 subject starting with CN=' `
+    'malformed authenticode-subject refused'
+
+# unsigned refusal (N8 build side): the payload passes the sha256 pin
+# but carries no signature at all - the fetch must refuse it, name the
+# status and the expected subject, and delete the download
+$dest = Join-Path $Fix 'dest-unsigned'
+$r = Invoke-Tool @('-LockFile', $subj, '-DestDir', $dest, '-AllowLocalSource')
+Assert-Refused $r 'authenticode refused' 'unsigned payload refused despite sha256 pass'
+if ($r.Out -notmatch [regex]::Escape('CN=PWeb Fixture Signer, O=PWeb, C=US')) {
+    throw "unsigned refusal does not name the expected subject: $($r.Out)"
+}
+if ($r.Out -notmatch 'status=NotSigned|status=UnknownError|status=Incompatible') {
+    throw "unsigned refusal does not name the signature status: $($r.Out)"
+}
+foreach ($leftover in @('signed.bin', 'signed.bin.download')) {
+    if (Test-Path (Join-Path $dest $leftover)) {
+        throw "authenticode-refused download survived as $leftover"
+    }
+}
+Write-Host 'PASS: unsigned refusal named status + subject and deleted the download'
+$script:Passed++
+
+# wrong-subject refusal (N8 build side): a REAL validly signed binary
+# (the running pwsh host executable, Microsoft-signed) against a pin
+# for a different signer - correct hash, wrong identity, refused
+$pwshExe = (Get-Command pwsh).Source
+$pwshSize = (Get-Item $pwshExe).Length
+if ($pwshSize -le 0) {
+    # an AppExecLink or store stub would be a zero-byte reparse point:
+    # pinning that would silently degrade this leg into a second
+    # unsigned test - refuse loudly instead
+    throw "pwsh.exe at $pwshExe is zero bytes (AppExecLink stub?) - cannot build the wrong-subject fixture"
+}
+$pwshHash = (Get-FileHash -Algorithm SHA256 -Path $pwshExe).Hash.ToLowerInvariant()
+$pwshUrl = $pwshExe -replace '\\', '/'
+$wrongSigner = New-Fixture 'subject-wrong.lock' @"
+schema = 1
+artifact = wrong-signer
+kind = bootstrapper
+arch = neutral
+url = $pwshUrl
+filename = wrongsigner.bin
+size = $pwshSize
+sha256 = $pwshHash
+authenticode-subject = CN=PWeb Fixture Wrong Signer, O=PWeb, C=US
+"@
+$dest = Join-Path $Fix 'dest-wrong-signer'
+$r = Invoke-Tool @('-LockFile', $wrongSigner, '-DestDir', $dest, '-AllowLocalSource')
+Assert-Refused $r 'authenticode refused' 'wrong-subject signer refused despite sha256 pass'
+if ($r.Out -notmatch [regex]::Escape('CN=PWeb Fixture Wrong Signer, O=PWeb, C=US')) {
+    throw "wrong-subject refusal does not name the expected subject: $($r.Out)"
+}
+# the refusal must prove the payload WAS validly signed (status=Valid,
+# only the identity was wrong) - otherwise this leg silently degrades
+# into a second unsigned test and the wrong-subject axis goes unproven
+if ($r.Out -notmatch 'status=Valid') {
+    throw "wrong-subject refusal does not show a Valid signature (leg degraded?): $($r.Out)"
+}
+foreach ($leftover in @('wrongsigner.bin', 'wrongsigner.bin.download')) {
+    if (Test-Path (Join-Path $dest $leftover)) {
+        throw "wrong-subject download survived as $leftover"
+    }
+}
+Write-Host 'PASS: wrong-subject refusal named the pinned subject and deleted the download'
 $script:Passed++
 
 Write-Host "CAP6B0_WV2LOCK_PASS cases=$($script:Passed)"

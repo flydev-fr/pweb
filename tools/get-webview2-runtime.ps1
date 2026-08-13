@@ -1,9 +1,13 @@
 # Lock-driven validator/fetcher for pinned Microsoft WebView2 runtime
-# artifacts (CAP-6b0). The pins live in webview2-runtime.lock at the
-# repo root; integrity rests on the locally ratified sha256 recorded
-# there, never on the URL: a rotated remote payload fails the fetch
-# loudly and the download is deleted. Artifacts without a sha256 are
-# refused by the parser before any network activity can happen.
+# artifacts (CAP-6b0; Authenticode second axis added in CAP-6b1). The
+# pins live in webview2-runtime.lock at the repo root; integrity rests
+# on the locally ratified sha256 recorded there, never on the URL: a
+# rotated remote payload fails the fetch loudly and the download is
+# deleted. Artifacts without a sha256 are refused by the parser before
+# any network activity can happen. An artifact that additionally pins
+# an authenticode-subject is verified on that axis too, AFTER the
+# sha256 pass: signature status must be Valid and the leaf subject
+# must equal the pin exactly (a valid signature never weakens the pin).
 #
 # Modes:
 #   -Validate            parse + validate the lock only (zero network;
@@ -61,7 +65,8 @@ if ($DestDir -eq '') { $DestDir = Join-Path $RepoRoot 'deps/webview2-runtime' }
 
 $KnownKinds = @('bootstrapper', 'standalone', 'fixed')
 $KnownArchs = @('x64', 'x86', 'arm64', 'neutral')
-$ArtifactKeys = @('kind', 'arch', 'version', 'url', 'filename', 'size', 'sha256')
+$ArtifactKeys = @('kind', 'arch', 'version', 'url', 'filename', 'size', 'sha256',
+    'authenticode-subject')
 $RequiredKeys = @('kind', 'arch', 'url', 'filename', 'size', 'sha256')
 
 # culture-invariant case folding: exotic locales (e.g. Turkish dotless
@@ -172,6 +177,16 @@ function Read-Wv2Lock {
             throw ("$lockName line $($art.line): artifact '$($art.name)'" +
                 " version '$($art.version)' is not a 4-part dotted version")
         }
+        # optional CAP-6b1 second verification axis: when pinned, the
+        # subject must look like an X.500 DN starting at the leaf CN -
+        # a free-form value could never match a real signer and would
+        # only hide a mis-edit of the lock
+        if ($art.Contains('authenticode-subject') -and
+            ($art.'authenticode-subject' -cnotmatch '^CN=\S')) {
+            throw ("$lockName line $($art.line): artifact '$($art.name)'" +
+                " authenticode-subject '$($art.'authenticode-subject')' must be" +
+                " an X.500 subject starting with CN=")
+        }
         # a hostile lock line must never be able to write outside
         # DestDir: bare conservative filenames only
         if ($art.filename -notmatch '^[A-Za-z0-9]([A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$') {
@@ -249,9 +264,30 @@ function Get-Wv2Artifact {
             throw ("artifact '$($Art.name)' size mismatch: expected $($Art.size)" +
                 " bytes, got $bytes -- download deleted")
         }
+        # CAP-6b1 second axis, checked AFTER the sha256 pass: a pinned
+        # authenticode-subject additionally requires an embedded
+        # signature with status Valid and this exact leaf subject
+        # (case-sensitive ordinal). A valid signature can never weaken
+        # the byte-exact sha256 pin above - both axes must pass.
+        $axes = 'sha256 OK'
+        if ($Art.Contains('authenticode-subject')) {
+            $sig = Get-AuthenticodeSignature -FilePath $tmp
+            $subject = 'unsigned'
+            if ($null -ne $sig.SignerCertificate) {
+                $subject = $sig.SignerCertificate.Subject
+            }
+            if (("$($sig.Status)" -cne 'Valid') -or
+                ($subject -cne $Art.'authenticode-subject')) {
+                throw ("artifact '$($Art.name)' authenticode refused:" +
+                    " status=$($sig.Status), subject=$subject -- expected status" +
+                    " Valid with leaf subject exactly" +
+                    " $($Art.'authenticode-subject') -- download deleted")
+            }
+            $axes = 'sha256 + authenticode OK'
+        }
         if (Test-Path -LiteralPath $final) { Remove-Item -Force -LiteralPath $final }
         Move-Item -LiteralPath $tmp -Destination $final
-        Write-Host "artifact '$($Art.name)' verified: $final ($bytes bytes, sha256 OK)"
+        Write-Host "artifact '$($Art.name)' verified: $final ($bytes bytes, $axes)"
     }
     catch {
         # no partial or unverified *.download bytes ever survive ANY

@@ -25,7 +25,8 @@ uses
   pweb.test.bundle
   {$ifdef OSWINDOWS}
   ,
-  pweb.test.webview2runtime
+  pweb.test.webview2runtime,
+  pweb.test.wv2provision
   {$endif OSWINDOWS}
   {$ifdef PWEB_CALLMETHOD_UNWIND_PROBE}
   ,
@@ -44,6 +45,7 @@ type
     procedure BundleSystem;
     {$ifdef OSWINDOWS}
     procedure WebView2Runtime;
+    procedure WebView2Provisioning;
     {$endif OSWINDOWS}
     {$ifdef PWEB_CALLMETHOD_UNWIND_PROBE}
     procedure MormotBridge;
@@ -83,6 +85,17 @@ begin
   // reads registry state and reports it)
   AddCase([TTestWebView2Runtime]);
 end;
+
+procedure TPWebTests.WebView2Provisioning;
+begin
+  // CAP-6b1, Windows-private: the normal-profile provisioning
+  // orchestration (detect -> verify sha256 + authenticode -> bounded
+  // execute -> mandatory re-probe) over the full injected N1-N12
+  // matrix, plus real hasher/WinVerifyTrust/bounded-runner smokes -
+  // no window, no webview.dll, no WebView2 runtime and no Microsoft
+  // binary required (nothing is ever downloaded or installed here)
+  AddCase([TTestWv2Provision]);
+end;
 {$endif OSWINDOWS}
 
 procedure TPWebTests.InvocationPipeline;
@@ -108,5 +121,6 @@ begin
   // scripts/CI so no ENTER key is awaited on exit
   TPWebTests.RunAsConsole('PWeb tests (CAP-1 raw binding + ' +
     'CAP-2 invocation pipeline + CAP-3 bridge + CAP-4 assets + ' +
-    'CAP-6 bundle + CAP-6b0 WebView2 runtime detection)');
+    'CAP-6 bundle + CAP-6b0 WebView2 runtime detection + ' +
+    'CAP-6b1 WebView2 provisioning)');
 end.

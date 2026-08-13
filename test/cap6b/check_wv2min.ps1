@@ -35,11 +35,17 @@ if ($pasMin -ne 1587) {
 Write-Host "CAP-6b0 minimum cross-check PASS (build >= $pasMin on both sides)"
 
 # URLs live only in lock files, never in swept sources: no web-scheme
-# literal may appear in any CAP-6b0 Pascal source
+# literal may appear in any CAP-6b0/CAP-6b1 Pascal source, nor in the
+# Inno Setup project (the setup embeds its payload; nothing may point
+# it at the network)
 $pasFiles = @(
     (Join-Path $RepoRoot 'src/platform/windows/pweb.platform.webview2.runtime.pas'),
     (Join-Path $RepoRoot 'test/platform/pweb.test.webview2runtime.pas'),
-    (Join-Path $RepoRoot 'test/cap6b/wv2probe.pas')
+    (Join-Path $RepoRoot 'test/cap6b/wv2probe.pas'),
+    (Join-Path $RepoRoot 'src/platform/windows/pweb.platform.webview2.provision.pas'),
+    (Join-Path $RepoRoot 'tools/setup/pwebwv2prov.pas'),
+    (Join-Path $RepoRoot 'test/platform/pweb.test.wv2provision.pas'),
+    (Join-Path $RepoRoot 'tools/setup/normal.iss')
 )
 foreach ($f in $pasFiles) {
     if (-not (Test-Path -LiteralPath $f)) { throw "swept file missing: $f" }
@@ -48,8 +54,8 @@ $urlHits = @(Select-String -Path $pasFiles -Pattern 'https?://' `
     -CaseSensitive:$false)
 if ($urlHits) {
     $urlHits | ForEach-Object {
-        Write-Host "FORBIDDEN URL IN CAP-6b0 SOURCE: $($_.Path):$($_.LineNumber): $($_.Line.Trim())"
+        Write-Host "FORBIDDEN URL IN CAP-6b SOURCE: $($_.Path):$($_.LineNumber): $($_.Line.Trim())"
     }
-    throw 'CAP-6b0 no-URL source proof failed'
+    throw 'CAP-6b no-URL source proof failed'
 }
-Write-Host 'CAP-6b0 no-URL source proof PASS (3 Pascal sources clean)'
+Write-Host "CAP-6b no-URL source proof PASS ($($pasFiles.Count) sources clean)"

@@ -1,0 +1,19 @@
+# Pinned Inno Setup 6 compiler provisioning (CAP-6b1).
+#
+# tools/get-innosetup.ps1 downloads this exact installer, verifies the
+# sha256 BEFORE executing anything (a mismatched download is deleted
+# and the fetch fails loudly), then performs a silent, bounded,
+# per-user PORTABLE install into deps/innosetup (git-ignored) and
+# records the verified installer sha256 in a stamp file - the cache is
+# reused only while that stamp matches this pin, so bumping this lock
+# reprovisions deterministically. ISCC.exe publishes no machine-
+# readable version resource, so the installer digest IS the toolchain
+# identity; the script additionally asserts the 'Inno Setup 6' banner.
+#
+# Refreshing is a deliberate, reviewed act: download the new installer,
+# compute its sha256 locally, edit this file. Nothing writes it
+# automatically.
+version = 6.7.3
+url = https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe
+size = 10592232
+sha256 = 9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732

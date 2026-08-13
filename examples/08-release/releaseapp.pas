@@ -53,7 +53,8 @@ uses
   pweb.webview.binding,
   pweb.assets.intf,
   pweb.assets.bundle,
-  pweb.platform.webview2;
+  pweb.platform.webview2,
+  pweb.platform.webview2.runtime;
 
 const
   MAX_AUTOCLOSE_MS = 60000;
@@ -151,6 +152,31 @@ begin
     webview_dispatch(webview_t(handle), @TerminateOnGuiThread, nil);
 end;
 
+{ CAP-6b1 defensive fail-early check: the CAP-6b0 detector runs BEFORE
+  webview_create, so an absent/too-old/undetectable WebView2 runtime
+  produces a distinct diagnosable stderr marker and a nonzero exit
+  instead of the collapsed webview_create nil. The app itself NEVER
+  downloads or installs anything - provisioning belongs solely to the
+  setup (normal profile); this is diagnosis, not remediation. }
+procedure CheckWebView2RuntimeUsable;
+var
+  detection: TPWebWv2DetectionResult;
+begin
+  detection := PWebWv2Detect;
+  if PWebWv2ProvisioningDecide(detection) = wv2pdAlreadyUsable then
+    exit;
+  // distinct marker, greppable by the smoke SKIP conventions
+  WriteLn(StdErr, LOG_PREFIX, ': WEBVIEW2 RUNTIME UNUSABLE (status=',
+    PWebWv2StatusText(detection.Status), ', raw=',
+    detection.RawVersion, ', minbuild=', PWEB_WV2_MIN_BUILD,
+    ', decision=', PWebWv2DecisionText(
+      PWebWv2ProvisioningDecide(detection)), ')');
+  WriteLn(StdErr, LOG_PREFIX, ': WEBVIEW2 DIAG ', detection.Diagnostic);
+  raise Exception.Create(
+    'WebView2 runtime unusable - no WebView was created; ' +
+    'install the runtime via the application setup');
+end;
+
 { Locate app.pwb beside the executable (never the CWD), then run the
   full production gate BEFORE anything webview-related exists. On
   refusal the typed marker goes to stderr and the raised exception
@@ -219,6 +245,10 @@ begin
     limits.MaxConcurrent := 4;
     limits.MaxQueueSize := 32;
     source := scheduler.RegisterSource(limits);
+
+    // CAP-6b1: fail early with a distinct diagnosable marker before
+    // webview_create can collapse every bad state into one nil
+    CheckWebView2RuntimeUsable;
 
     w := WebViewCheckCreated(webview_create(0, nil));
     try

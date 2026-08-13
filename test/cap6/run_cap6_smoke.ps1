@@ -30,6 +30,15 @@ if (($code -eq 0) -and ($out -match [regex]::Escape($marker))) {
     $verdict = 'PASS - release layout booted the UI from app.pwb and returned 42'
     $failed = $false
 }
+elseif (($out -match 'WEBVIEW2 RUNTIME UNUSABLE') -and ($code -ne 0)) {
+    # CAP-6b1 defensive pre-webview_create check: the app now reports
+    # an absent/too-old/undetectable runtime with its own diagnosable
+    # marker AND a nonzero exit BEFORE webview_create can return nil.
+    # The marker with exit 0 is an inconsistent state and falls through
+    # to FAIL below - a refusal that does not refuse is a defect.
+    $verdict = "SKIP - CAP-6b1 defensive check reported the runtime unusable on this runner (exit $code)"
+    $failed = $false
+}
 elseif ($out -match 'webview_create \(returned nil') {
     $verdict = "SKIP - no usable WebView2 runtime/desktop session on this runner (exit $code)"
     $failed = $false

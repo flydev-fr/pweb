@@ -464,7 +464,10 @@ jobs:
             'src/assets/pweb.assets.zip.pas',
             'src/platform/windows/pweb.platform.webview2.pas',
             'src/platform/windows/pweb.platform.webview2.runtime.pas',
+            'src/platform/windows/pweb.platform.webview2.provision.pas',
             'test/platform/pweb.test.webview2runtime.pas',
+            'test/platform/pweb.test.wv2provision.pas',
+            'tools/setup/pwebwv2prov.pas',
             'test/cap6b/wv2probe.pas',
             'test/assets/pweb.test.assets.pas',
             'examples/06-assets/assetsapp.pas',
@@ -965,6 +968,91 @@ jobs:
           path: |
             build/cap6b/probe.log
             build/cap6b/fixtures/
+
+      # ------------------------- CAP-6b1 gates -------------------------
+      # Normal-profile Evergreen Bootstrapper provisioning installer.
+      # Everything below is additive; no earlier step is altered. The
+      # lock/Authenticode fixture matrix (including the new
+      # authenticode-subject cases) already ran inside the CAP-6b0 lock
+      # step above via the extended check_wv2lock.ps1, and the N1-N12
+      # provisioning cases ran inside the PWeb test suite step. CI
+      # fetches the LOCKED bootstrapper (sha256 + Authenticode subject
+      # verified, drift fails the build and deletes the download) and
+      # builds/validates the REAL setup.exe - but NEVER executes the
+      # bootstrapper: on the hosted runner the AlreadyUsable skip path
+      # is the proof, and the genuine provisioning proof is the
+      # clean-machine VM gate (test/cap6b1/run_clean_machine_gate.ps1,
+      # human-run, never mocked here).
+
+      - name: CAP-6b1 isolation compile - provisioning unit + setup helper
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/cap6b1/fpc,
+            build/cap6b1/bin | Out-Null
+          fpc -MObjFPC -Sh -B -FUbuild/cap6b1/fpc `
+            -Fusrc/platform/windows `
+            -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+            -Fudeps/mormot2/src/crypt `
+            src/platform/windows/pweb.platform.webview2.provision.pas
+          if ($LASTEXITCODE -ne 0) {
+            throw 'pweb.platform.webview2.provision.pas failed its isolation compile'
+          }
+          fpc -MObjFPC -Sh -B -FUbuild/cap6b1/fpc -FEbuild/cap6b1/bin `
+            -Fusrc/platform/windows `
+            -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+            -Fudeps/mormot2/src/crypt `
+            tools/setup/pwebwv2prov.pas
+          if ($LASTEXITCODE -ne 0) { throw 'pwebwv2prov helper compile failed' }
+
+      - name: CAP-6b1 innosetup.lock fixture matrix (zero network)
+        shell: pwsh
+        run: pwsh -NoProfile -File test/cap6b1/check_innosetup_lock.ps1
+
+      - name: CAP-6b1 contract cross-checks (markers + helper prefixes)
+        shell: pwsh
+        run: pwsh -NoProfile -File test/cap6b1/check_cap6b1_contracts.ps1
+
+      # build_normal_setup.ps1 re-invokes this fetch idempotently (the
+      # sha-stamp cache makes the second call a no-op); the standalone
+      # step exists for fail-fast attribution - a toolchain
+      # provisioning failure is named here, never inside the build
+      - name: CAP-6b1 fetch pinned Inno Setup 6 (sha256-verified, silent, bounded)
+        shell: pwsh
+        timeout-minutes: 10
+        run: pwsh -NoProfile -File tools/get-innosetup.ps1
+
+      - name: CAP-6b1 build normal setup.exe from the pinned locks
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap6b1/build_normal_setup.ps1 2>&1 |
+            Tee-Object -FilePath build/cap6b1-build.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-6b1 setup build FAILED' }
+
+      - name: CAP-6b1 setup gates - skip path, layout, installed smoke, uninstall
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap6b1/run_normal_setup_gates.ps1 2>&1 |
+            Tee-Object -FilePath build/cap6b1-gates.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-6b1 setup gates FAILED' }
+
+      - name: CAP-6b1 diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap6b1-diagnostics
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            build/cap6b1-build.log
+            build/cap6b1-gates.log
+            build/cap6b1/setup-install.log
+            build/cap6b1/setup-abort.log
+            build/cap6b1/smoke-installed.log
+            build/cap6b1/lockfacts.psd1
+            build/cap6b1/is-fixtures/
+            dist/windows/normal/setup.exe
 
       - name: Upload diagnostics on failure
         if: failure()

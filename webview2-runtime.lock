@@ -1,22 +1,23 @@
-# Pinned Microsoft WebView2 runtime distribution artifacts (CAP-6b0).
+# Pinned Microsoft WebView2 runtime distribution artifacts (CAP-6b0,
+# first real pin ratified in CAP-6b1).
 #
 # Every Microsoft binary this project may ever fetch (Evergreen
 # bootstrapper, Standalone Evergreen installer, Fixed Runtime package)
 # is pinned here by authoritative URL, expected filename, byte size and
 # a SHA-256 computed locally at ratification time - Microsoft publishes
 # no digests for these artifacts, so the pin freezes the exact bytes a
-# human ratified, with the Authenticode subject printed at refresh time
-# as the cross-check. tools/get-webview2-runtime.ps1 verifies the
-# SHA-256 BEFORE any use and deletes the download on any mismatch; an
-# artifact without a sha256 is refused outright, so a silently rotated
-# remote payload fails loudly by construction. URLs live in this lock
-# only, never in swept sources.
+# human ratified. tools/get-webview2-runtime.ps1 verifies the SHA-256
+# BEFORE any use and deletes the download on any mismatch; an artifact
+# without a sha256 is refused outright, so a silently rotated remote
+# payload fails loudly by construction. URLs live in this lock only,
+# never in swept sources.
 #
 # Refreshing a pin is an explicit, reviewed act:
 #   pwsh tools/get-webview2-runtime.ps1 -Refresh -Artifact <name>
 # prints the computed hash/size/Authenticode subject for the human to
 # ratify by editing this file; nothing ever writes this file
-# automatically, and CI never downloads or installs a runtime.
+# automatically, and CI never installs a runtime (fetching the locked,
+# verified artifact for embedding is allowed; executing it is not).
 #
 # Schema (strict 'key = value'; '#' comments and blank lines ignored;
 # every malformed line, duplicate key, unknown key or missing required
@@ -33,9 +34,36 @@
 #   filename = <expected local filename>
 #   size     = <exact byte size>
 #   sha256   = <64 lowercase hex chars>
-#
-# No artifact is populated in CAP-6b0: populating an entry requires the
-# Ask-First human approval ratified in the spec (any download of a
-# Microsoft binary, even a read-only hash probe, is gated). CAP-6b1+
-# adds entries through the -Refresh workflow above.
+#   authenticode-subject = <exact X.500 leaf-certificate subject>
+#                                         (optional second verification
+#                                          axis, CAP-6b1: when present,
+#                                          fetch-verify additionally
+#                                          requires an embedded
+#                                          Authenticode signature with
+#                                          status Valid AND this exact
+#                                          leaf subject, checked AFTER
+#                                          the sha256 pass - a valid
+#                                          signature never weakens the
+#                                          byte-exact sha256 pin)
+
 schema = 1
+
+# CAP-6b1 ratification (2026-08-13): Evergreen Bootstrapper acquired via
+# -Refresh, payload inspected and NOT executed. The fwlink URL is the
+# Microsoft-documented "Get the Link" distribution mechanism (verified
+# 301 -> Microsoft delivery CDN at ratification time). Bootstrapper
+# FileVersion at ratification: 1.3.251.23 - recorded as evidence only;
+# the runtime payload the bootstrapper installs floats by design, so no
+# version key is pinned. Signer evidence: leaf cert valid 2026-04-16 ->
+# 2027-04-15 (annual renewal - a thumbprint pin would break yearly);
+# issuer 'Microsoft Code Signing PCA 2024' (issuer churns across
+# years); root 'Microsoft Root Certificate Authority 2011' thumbprint
+# 8F43288AD272F3103B6FB1428485EA3014C0BCFE - evidence, not enforced.
+artifact = evergreen-bootstrapper
+kind = bootstrapper
+arch = neutral
+url = https://go.microsoft.com/fwlink/p/?LinkId=2124703
+filename = MicrosoftEdgeWebview2Setup.exe
+size = 1695960
+sha256 = 8c4a80540b6bbcbef30a4e8c7d1ac504b6fc09db922b4acdfd85c9d5f6f1050e
+authenticode-subject = CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US
