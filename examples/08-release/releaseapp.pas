@@ -24,6 +24,15 @@ program releaseapp;
   bundle loading, window title and log prefix: no backend file
   branches on frontend kind.
 
+  CAP-6b3 adds ONE compile-time variant, the fixed-runtime profile,
+  behind the PWEB_FIXED_RUNTIME define: the pre-create seam then
+  resolves, validates and SELECTS the WebView2 Fixed Version Runtime
+  bundled beside the executable instead of diagnosing the machine's
+  Evergreen runtime, and a post-create check refuses unless the
+  WebView that actually opened OBSERVES the pinned version. Without
+  the define this file compiles exactly as before - the Evergreen
+  profiles are byte-untouched.
+
     releaseapp            (no arguments) }
 
 {$I mormot.defines.inc}
@@ -54,7 +63,12 @@ uses
   pweb.assets.intf,
   pweb.assets.bundle,
   pweb.platform.webview2,
-  pweb.platform.webview2.runtime;
+  pweb.platform.webview2.runtime
+  {$ifdef PWEB_FIXED_RUNTIME}
+  ,
+  pweb.platform.webview2.fixed
+  {$endif PWEB_FIXED_RUNTIME}
+  ;
 
 const
   MAX_AUTOCLOSE_MS = 60000;
@@ -152,6 +166,81 @@ begin
     webview_dispatch(webview_t(handle), @TerminateOnGuiThread, nil);
 end;
 
+{$ifdef PWEB_FIXED_RUNTIME}
+{ CAP-6b3 FIXED-RUNTIME profile: this build runs on the WebView2 Fixed
+  Version Runtime deployed BESIDE the executable, on a runtime the
+  deployment pins - never on whatever Evergreen the machine happens to
+  own. The Evergreen detector is deliberately NOT consulted here: its
+  verdict is irrelevant to this profile in both directions (an absent
+  Evergreen must not stop us, a present one must never rescue us).
+
+  Everything happens strictly before webview_create: the bundled tree
+  is resolved from the executable path only, validated (shape, local
+  drive, required files, pinned version, AMD64, AppContainer ACL by
+  SID) and then SELECTED - the bundled loader preloaded by absolute
+  path, its module identity asserted, and the documented override set
+  and read back. Any refusal prints a typed marker on stderr and exits
+  nonzero with no WebView created and no network activity of any kind;
+  there is no fallback to Evergreen, ever. }
+var
+  // the pre-create verdict, carried to the post-create identity check
+  // so both halves report one typed result
+  FixedRuntime: TPWebWv2FixedResult;
+
+procedure CheckWebView2RuntimeUsable;
+begin
+  FixedRuntime := PWebWv2FixedPrepare;
+  if FixedRuntime.Status = wv2fxSelected then
+  begin
+    WriteLn(LOG_PREFIX, ': FIXED RUNTIME SELECTED (version=',
+      FixedRuntime.TreeVersion, ', tree=', FixedRuntime.TreeDir, ')');
+    WriteLn(LOG_PREFIX, ': FIXED RUNTIME DIAG ', FixedRuntime.Diagnostic);
+    exit;
+  end;
+  // distinct marker, greppable by the CAP-6b3 gates
+  WriteLn(StdErr, LOG_PREFIX, ': FIXED RUNTIME REFUSED (status=',
+    PWebWv2FixedStatusText(FixedRuntime.Status), ', step=',
+    PWebWv2FixedStepText(FixedRuntime.FailedStep), ', pin=',
+    PWEB_WV2_FIXED_VERSION, ')');
+  WriteLn(StdErr, LOG_PREFIX, ': FIXED RUNTIME DIAG ',
+    FixedRuntime.Diagnostic);
+  raise Exception.Create(
+    'bundled WebView2 fixed runtime refused - no WebView was created ' +
+    'and the machine Evergreen runtime was never used as a fallback');
+end;
+
+{ CAP-6b3 OBSERVED identity: pre-create validation can not see a
+  registry-policy BrowserExecutableFolder redirection, so the WebView
+  that actually opened is asked which browser version it is - after
+  webview_create and BEFORE webview_navigate, so a mismatch refuses
+  before one byte of application content loads. }
+procedure CheckObservedFixedIdentity(AWebView: webview_t;
+  const Prepared: TPWebWv2FixedResult);
+var
+  observed: RawUtf8;
+  verdict: TPWebWv2FixedResult;
+begin
+  observed := PWebWv2ObservedBrowserVersion(AWebView);
+  // the SAME typed verdict shape as every pre-create refusal, so the
+  // status=/step= marker grammar never forks between the two halves
+  verdict := PWebWv2FixedConfirmIdentity(Prepared, observed);
+  if verdict.Status = wv2fxSelected then
+  begin
+    WriteLn(LOG_PREFIX, ': FIXED RUNTIME IDENTITY OK ',
+      PWEB_WV2_FIXED_VERSION, ' (observed=', observed, ')');
+    exit;
+  end;
+  WriteLn(StdErr, LOG_PREFIX,
+    ': FIXED RUNTIME IDENTITY REFUSED (status=',
+    PWebWv2FixedStatusText(verdict.Status), ', step=',
+    PWebWv2FixedStepText(verdict.FailedStep), ', observed=', observed,
+    ', pin=', PWEB_WV2_FIXED_VERSION, ')');
+  WriteLn(StdErr, LOG_PREFIX, ': FIXED RUNTIME DIAG ', verdict.Diagnostic);
+  raise Exception.Create(
+    'the WebView that opened is not the pinned fixed runtime - ' +
+    'refused before any content was loaded');
+end;
+{$else}
 { CAP-6b1 defensive fail-early check: the CAP-6b0 detector runs BEFORE
   webview_create, so an absent/too-old/undetectable WebView2 runtime
   produces a distinct diagnosable stderr marker and a nonzero exit
@@ -176,6 +265,7 @@ begin
     'WebView2 runtime unusable - no WebView was created; ' +
     'install the runtime via the application setup');
 end;
+{$endif PWEB_FIXED_RUNTIME}
 
 { Locate app.pwb beside the executable (never the CWD), then run the
   full production gate BEFORE anything webview-related exists. On
@@ -252,6 +342,11 @@ begin
 
     w := WebViewCheckCreated(webview_create(0, nil));
     try
+      {$ifdef PWEB_FIXED_RUNTIME}
+      // CAP-6b3: identity is OBSERVED, not inferred - and it is
+      // observed here, before webview_navigate can load anything
+      CheckObservedFixedIdentity(w, FixedRuntime);
+      {$endif PWEB_FIXED_RUNTIME}
       AutoCloseHandle := Pointer(w);
       context := Default(TInvocationContext);
       context.WindowId := 'main';

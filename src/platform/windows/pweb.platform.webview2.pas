@@ -74,6 +74,22 @@ type
     procedure Detach;
   end;
 
+/// OBSERVED runtime identity of the WebView that actually opened
+// (CAP-6b3)
+// - walks the SAME already-proven borrowed-controller chain
+// TWebView2AssetHandler.Create uses - controller -> ICoreWebView2 ->
+// ICoreWebView2_2 -> ICoreWebView2Environment - and returns
+// get_BrowserVersionString verbatim (it may carry a channel suffix
+// after a space; interpreting that is the caller's policy)
+// - the controller stays BORROWED: never AddRef/Release, exactly like
+// the CAP-4W seam; call on the GUI thread after webview_create and
+// BEFORE webview_navigate, so a refusal happens before any content
+// - never raises: every refusal comes back as a '<...>' marker text
+// that can never be mistaken for a version, so a caller comparing
+// against a pin fails closed
+// - nothing outside the fixed-runtime profile calls this
+function PWebWv2ObservedBrowserVersion(AWebView: webview_t): RawUtf8;
+
 implementation
 
 { ---- minimal pinned WebView2 SDK 1.0.1587.40 COM surface ---- }
@@ -122,7 +138,11 @@ type
     function CreateWebResourceResponse(content: Pointer;
       statusCode: Integer; reasonPhrase: PWideChar; headers: PWideChar;
       out response: ICoreWebView2WebResourceResponse): HRESULT; stdcall;
-    function Stub_get_BrowserVersionString: HRESULT; stdcall;
+    // CAP-6b3 turned this slot from a never-called stub into its real
+    // declaration; the slot INDEX is unchanged, so every existing
+    // caller keeps the exact same vtable layout
+    function get_BrowserVersionString(
+      out versionInfo: PWideChar): HRESULT; stdcall;
     function Stub_add_NewBrowserVersionAvailable: HRESULT; stdcall;
     function Stub_remove_NewBrowserVersionAvailable: HRESULT; stdcall;
   end;
@@ -262,6 +282,72 @@ end;
 
 procedure CoTaskFree(p: Pointer); stdcall;
   external 'ole32.dll' name 'CoTaskMemFree';
+
+{ ---- CAP-6b3 observed runtime identity ---- }
+
+function PWebWv2ObservedBrowserVersion(AWebView: webview_t): RawUtf8;
+var
+  controller: Pointer;
+  core: ICoreWebView2;
+  core2: ICoreWebView2_2;
+  env: ICoreWebView2Environment;
+  versionW: PWideChar;
+  hr: HRESULT;
+begin
+  Result := '';
+  try
+    if AWebView = nil then
+    begin
+      Result := '<no-webview>';
+      exit;
+    end;
+    controller := webview_get_native_handle(AWebView,
+      WEBVIEW_NATIVE_HANDLE_KIND_BROWSER_CONTROLLER);
+    if controller = nil then
+    begin
+      Result := '<no-controller>';
+      exit;
+    end;
+    // borrowed, exactly like TWebView2AssetHandler: method calls only
+    hr := ICoreWebView2Controller(controller).get_CoreWebView2(core);
+    if (hr <> S_OK) or
+       (core = nil) then
+    begin
+      Result := '<get_CoreWebView2 0x' + RawUtf8(IntToHex(hr, 8)) + '>';
+      exit;
+    end;
+    hr := core.QueryInterface(ICoreWebView2_2, core2);
+    if (hr <> S_OK) or
+       (core2 = nil) then
+    begin
+      Result := '<no ICoreWebView2_2 0x' + RawUtf8(IntToHex(hr, 8)) + '>';
+      exit;
+    end;
+    hr := core2.get_Environment(env);
+    core2 := nil;
+    if (hr <> S_OK) or
+       (env = nil) then
+    begin
+      Result := '<get_Environment 0x' + RawUtf8(IntToHex(hr, 8)) + '>';
+      exit;
+    end;
+    versionW := nil;
+    hr := env.get_BrowserVersionString(versionW);
+    if (hr <> S_OK) or
+       (versionW = nil) then
+    begin
+      Result := '<get_BrowserVersionString 0x' +
+        RawUtf8(IntToHex(hr, 8)) + '>';
+      exit;
+    end;
+    Result := RawUnicodeToUtf8(versionW, StrLenW(versionW));
+    CoTaskFree(versionW); // the string is CoTaskMemAlloc'd by WebView2
+  except
+    // the boundary contract: never raise - a refusal marker instead,
+    // which no version comparison can ever accept
+    Result := '<observation failed>';
+  end;
+end;
 
 function BuildHeaders(const AContentType: RawUtf8): WideString;
 begin

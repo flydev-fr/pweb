@@ -26,7 +26,8 @@ uses
   {$ifdef OSWINDOWS}
   ,
   pweb.test.webview2runtime,
-  pweb.test.wv2provision
+  pweb.test.wv2provision,
+  pweb.test.wv2fixed
   {$endif OSWINDOWS}
   {$ifdef PWEB_CALLMETHOD_UNWIND_PROBE}
   ,
@@ -46,6 +47,7 @@ type
     {$ifdef OSWINDOWS}
     procedure WebView2Runtime;
     procedure WebView2Provisioning;
+    procedure WebView2FixedRuntime;
     {$endif OSWINDOWS}
     {$ifdef PWEB_CALLMETHOD_UNWIND_PROBE}
     procedure MormotBridge;
@@ -96,6 +98,20 @@ begin
   // binary required (nothing is ever downloaded or installed here)
   AddCase([TTestWv2Provision]);
 end;
+
+procedure TPWebTests.WebView2FixedRuntime;
+begin
+  // CAP-6b3, Windows-private: the fixed-runtime profile's pure path
+  // and observed-identity policies, the full tree validation matrix
+  // over a FABRICATED on-disk tree (fake drive-type/file-version
+  // seams, hand-built PE images), the real Windows AppContainer ACL
+  // apply/verify BY SID in both directions over an isolated DACL, the
+  // deterministic tree manifest, and the ratified selection order
+  // (loader preload -> module identity -> env var + read-back) - no
+  // window, no webview.dll, no WebView2 runtime and no Microsoft
+  // binary required (nothing is downloaded, installed or executed)
+  AddCase([TTestWv2Fixed]);
+end;
 {$endif OSWINDOWS}
 
 procedure TPWebTests.InvocationPipeline;
@@ -122,5 +138,5 @@ begin
   TPWebTests.RunAsConsole('PWeb tests (CAP-1 raw binding + ' +
     'CAP-2 invocation pipeline + CAP-3 bridge + CAP-4 assets + ' +
     'CAP-6 bundle + CAP-6b0 WebView2 runtime detection + ' +
-    'CAP-6b1 WebView2 provisioning)');
+    'CAP-6b1 WebView2 provisioning + CAP-6b3 fixed runtime)');
 end.

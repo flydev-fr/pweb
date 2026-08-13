@@ -35,9 +35,9 @@ if ($pasMin -ne 1587) {
 Write-Host "CAP-6b0 minimum cross-check PASS (build >= $pasMin on both sides)"
 
 # URLs live only in lock files, never in swept sources: no web-scheme
-# literal may appear in any CAP-6b0/CAP-6b1/CAP-6b2 Pascal source, nor
-# in the Inno Setup projects or their shared include (the setup embeds
-# its payload; nothing may point it at the network)
+# literal may appear in any CAP-6b0/CAP-6b1/CAP-6b2/CAP-6b3 Pascal
+# source, nor in the Inno Setup projects or their shared includes (the
+# setups embed their payload; nothing may point one at the network)
 $pasFiles = @(
     (Join-Path $RepoRoot 'src/platform/windows/pweb.platform.webview2.runtime.pas'),
     (Join-Path $RepoRoot 'test/platform/pweb.test.webview2runtime.pas'),
@@ -45,9 +45,14 @@ $pasFiles = @(
     (Join-Path $RepoRoot 'src/platform/windows/pweb.platform.webview2.provision.pas'),
     (Join-Path $RepoRoot 'tools/setup/pwebwv2prov.pas'),
     (Join-Path $RepoRoot 'test/platform/pweb.test.wv2provision.pas'),
+    (Join-Path $RepoRoot 'src/platform/windows/pweb.platform.webview2.fixed.pas'),
+    (Join-Path $RepoRoot 'tools/setup/pwebwv2fixed.pas'),
+    (Join-Path $RepoRoot 'test/platform/pweb.test.wv2fixed.pas'),
     (Join-Path $RepoRoot 'tools/setup/normal.iss'),
     (Join-Path $RepoRoot 'tools/setup/offline.iss'),
-    (Join-Path $RepoRoot 'tools/setup/pwebprovgate.issi')
+    (Join-Path $RepoRoot 'tools/setup/fixed.iss'),
+    (Join-Path $RepoRoot 'tools/setup/pwebprovgate.issi'),
+    (Join-Path $RepoRoot 'tools/setup/pwebappsetup.issi')
 )
 foreach ($f in $pasFiles) {
     if (-not (Test-Path -LiteralPath $f)) { throw "swept file missing: $f" }
@@ -62,17 +67,21 @@ if ($urlHits) {
 }
 Write-Host "CAP-6b no-URL source proof PASS ($($pasFiles.Count) sources clean)"
 
-# CAP-6b2 offline hard invariant, static half: no download primitive
-# may exist in any setup manifest, the shared provisioning include or
-# a production provisioning Pascal source - the embedded payload is
-# the ONLY installer source a target machine can ever see. Lock files
-# and the build-side acquisition tooling (tools/get-*.ps1) are exempt
-# as ratified: their URLs/downloads are build metadata, never
-# target-side code.
+# CAP-6b2 offline hard invariant, static half (extended by CAP-6b3 to
+# the fixed profile, whose invariant is stronger still - it provisions
+# nothing at all): no download primitive may exist in any setup
+# manifest, either shared include, or a production provisioning /
+# fixed-runtime Pascal source - the embedded payload is the ONLY
+# runtime source a target machine can ever see. Lock files and the
+# build-side acquisition tooling (tools/get-*.ps1) are exempt as
+# ratified: their URLs/downloads are build metadata, never target-side
+# code.
 $setupSources = @(
     (Join-Path $RepoRoot 'tools/setup/normal.iss'),
     (Join-Path $RepoRoot 'tools/setup/offline.iss'),
-    (Join-Path $RepoRoot 'tools/setup/pwebprovgate.issi')
+    (Join-Path $RepoRoot 'tools/setup/fixed.iss'),
+    (Join-Path $RepoRoot 'tools/setup/pwebprovgate.issi'),
+    (Join-Path $RepoRoot 'tools/setup/pwebappsetup.issi')
 )
 $dlHits = @(Select-String -Path $setupSources -Pattern (
     'DownloadTemporaryFile|CreateDownloadPage|InternetOpen|' +
@@ -80,7 +89,9 @@ $dlHits = @(Select-String -Path $setupSources -Pattern (
     -CaseSensitive:$false)
 $prodSources = @(
     (Join-Path $RepoRoot 'src/platform/windows/pweb.platform.webview2.provision.pas'),
-    (Join-Path $RepoRoot 'tools/setup/pwebwv2prov.pas')
+    (Join-Path $RepoRoot 'tools/setup/pwebwv2prov.pas'),
+    (Join-Path $RepoRoot 'src/platform/windows/pweb.platform.webview2.fixed.pas'),
+    (Join-Path $RepoRoot 'tools/setup/pwebwv2fixed.pas')
 )
 foreach ($f in $prodSources) {
     if (-not (Test-Path -LiteralPath $f)) { throw "swept file missing: $f" }
@@ -97,3 +108,40 @@ if ($dlHits) {
 }
 Write-Host ("CAP-6b2 no-download-primitive proof PASS " +
     "($($setupSources.Count) setup + $($prodSources.Count) production sources clean)")
+
+# CAP-6b3 fixed-profile hard invariant, static half: the fixed profile
+# must contain no Evergreen provisioning path whatsoever. Its manifest
+# may not include the shared provisioning gate, may not name either
+# Evergreen installer define, and its Pascal sources may not reference
+# the provisioning orchestration (installer arguments, the bounded
+# process runner or the provisioning run) - a fixed build that could
+# execute an installer would have forked the whole profile.
+$fixedSources = @(
+    (Join-Path $RepoRoot 'tools/setup/fixed.iss'),
+    # the shared identity include reaches the fixed profile through
+    # fixed.iss, so a provisioning path added THERE would arrive here
+    # untripped unless it is swept too
+    (Join-Path $RepoRoot 'tools/setup/pwebappsetup.issi'),
+    (Join-Path $RepoRoot 'src/platform/windows/pweb.platform.webview2.fixed.pas'),
+    (Join-Path $RepoRoot 'tools/setup/pwebwv2fixed.pas')
+)
+foreach ($f in $fixedSources) {
+    if (-not (Test-Path -LiteralPath $f)) { throw "swept file missing: $f" }
+}
+# the ban is on the provisioning MECHANISM, not on the word: a
+# provenance comment naming the include is fine, an #include of it is
+# not (anchored on the directive, so a documented cross-reference can
+# never trip the gate and a real include can never slip past it)
+$provHits = @(Select-String -Path $fixedSources -Pattern (
+    '#include\s*"pwebprovgate\.issi"|PWEB_WV2_BOOTSTRAPPER|' +
+    'PWEB_WV2_STANDALONE|PWEB_WV2_INSTALLER|PWEB_WV2_TIMEOUT_MS|' +
+    'PWebWv2RunProcessBounded|PWebWv2ProvisionRun|' +
+    'PWEB_WV2_BOOTSTRAPPER_ARGS') -CaseSensitive:$false)
+if ($provHits) {
+    $provHits | ForEach-Object {
+        Write-Host "FORBIDDEN PROVISIONING PATH IN CAP-6b3 SOURCE: $($_.Path):$($_.LineNumber): $($_.Line.Trim())"
+    }
+    throw 'CAP-6b3 no-provisioning-path proof failed'
+}
+Write-Host ("CAP-6b3 no-provisioning-path proof PASS " +
+    "($($fixedSources.Count) fixed-profile sources clean)")

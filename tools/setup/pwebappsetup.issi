@@ -1,0 +1,86 @@
+; Shared PWeb application-identity include (CAP-6b3 anti-fork
+; extraction of the neutral half of tools/setup/pwebprovgate.issi).
+; EVERY install profile consumes this one file:
+;
+;   tools/setup/normal.iss  Evergreen Bootstrapper       (CAP-6b1)
+;   tools/setup/offline.iss Evergreen Standalone         (CAP-6b2)
+;   tools/setup/fixed.iss   bundled Fixed Version Runtime (CAP-6b3)
+;
+; so the installed application identity - the AppId, the app name, the
+; per-user install location, the privilege level, the architecture
+; gating and the unchanged CAP-6 release triple - can never fork
+; between profiles. A profile that changed any of it would install a
+; DIFFERENT application over the same users, which is exactly what the
+; shared AppId forbids.
+;
+; What each profile still owns:
+;   PWEB_PROFILE      profile name, stamped into VersionInfoDescription
+;                     so the binary itself says which profile it is
+;   its own [Files]   the profile-specific payload (a provisioning
+;                     installer + helper, or the bundled runtime tree)
+;   its own [Code]    the profile-specific gate, if any
+;
+; Defines consumed here (all derived by the profile build scripts):
+;   PWEB_PAYLOAD_DIR  staged payload directory holding the release
+;                     triple; required, no default - a hand-run ISCC
+;                     must fail loudly rather than build a partial
+;                     setup out of whatever happens to be on disk
+;   PWEB_APP_VERSION  optional, defaults to the historical 0.1.0
+;   PWEB_PROFILE      optional, defaults to the historical "normal"
+;   PWEB_COMPRESSION  optional, defaults to the historical lzma2
+;   PWEB_SOLID        optional, defaults to the historical yes
+;
+; The two compression overrides exist for ONE reason: the CAP-6b3
+; fixed profile embeds a ~690 MB runtime tree, where the ratified
+; normal/offline settings turn a build into an unbounded wall-clock
+; cost. They default to today's values, so the CAP-6b1 and CAP-6b2
+; setups compile with byte-identical [Setup] semantics; only a profile
+; that explicitly overrides them gets anything else.
+;
+; Nothing here can reach the network: there is no URL, no download
+; primitive and no [Run] entry in this file, and the payload the
+; profiles embed is the only source a target machine ever sees.
+
+#ifndef PWEB_PAYLOAD_DIR
+  #error PWEB_PAYLOAD_DIR must be defined - build via a profile build script (test/cap6b1/build_normal_setup.ps1, test/cap6b2/build_offline_setup.ps1 or test/cap6b3/build_fixed_setup.ps1)
+#endif
+#ifndef PWEB_APP_VERSION
+  #define PWEB_APP_VERSION "0.1.0"
+#endif
+; profile identity: every profile emits a setup.exe with the SAME
+; [Setup] identity, so the binary itself must say WHICH profile it is
+; (VersionInfoDescription below); each .iss defines PWEB_PROFILE, and
+; the default keeps historical build-script interfaces untouched
+#ifndef PWEB_PROFILE
+  #define PWEB_PROFILE "normal"
+#endif
+#ifndef PWEB_COMPRESSION
+  #define PWEB_COMPRESSION "lzma2"
+#endif
+#ifndef PWEB_SOLID
+  #define PWEB_SOLID "yes"
+#endif
+
+[Setup]
+AppId={{7C3E9A1B-5D24-4F68-A0C9-2B8E6D4F1A57}
+AppName=PWeb Release
+AppVersion={#PWEB_APP_VERSION}
+AppPublisher=PWeb
+VersionInfoDescription=PWeb Release Setup ({#PWEB_PROFILE})
+DefaultDirName={localappdata}\Programs\PWebRelease
+; per-user by construction: never any elevation, never any attempt to
+; force where Microsoft places the runtime
+PrivilegesRequired=lowest
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+DisableProgramGroupPage=yes
+Compression={#PWEB_COMPRESSION}
+SolidCompression={#PWEB_SOLID}
+OutputBaseFilename=setup
+Uninstallable=yes
+
+[Files]
+; the unchanged CAP-6 release triple - no loose frontend files, ever
+Source: "{#PWEB_PAYLOAD_DIR}\releaseapp.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PWEB_PAYLOAD_DIR}\app.pwb"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PWEB_PAYLOAD_DIR}\webview.dll"; DestDir: "{app}"; Flags: ignoreversion

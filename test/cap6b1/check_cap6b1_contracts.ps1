@@ -3,20 +3,24 @@
 # rename on either side breaks THIS gate instead of silently voiding a
 # runtime gate downstream.
 #
-#   (a) the defensive stderr marker 'WEBVIEW2 RUNTIME UNUSABLE' and
-#       the CAP-6 42 PASS marker must appear literally in the producer
+#   (a) the defensive stderr marker 'WEBVIEW2 RUNTIME UNUSABLE', the
+#       CAP-6 42 PASS marker and the CAP-6b3 fixed-runtime markers
+#       must appear literally in the producer
 #       examples/08-release/releaseapp.pas AND in EVERY registered
-#       consumer script that greps them (CAP-6, CAP-6b1 and CAP-6b2
-#       gates; an empty consumer set is an error)
+#       consumer script that greps them (CAP-6, CAP-6b1, CAP-6b2 and
+#       CAP-6b3 gates; an empty consumer set is an error)
 #   (b) every WV2PROV_* line prefix that any CAP-6b1 gate, any
 #       CAP-6b2 offline gate or either clean-machine gate
 #       regex-matches must appear in the helper source
 #       tools/setup/pwebwv2prov.pas (the producer)
-#   (c) the setup AppId GUID is authored ONCE in the shared include
-#       tools/setup/pwebprovgate.issi; every gate script that touches
-#       the per-user uninstall registry key must carry the exact same
-#       GUID literal - a drift on either side breaks this gate, not a
-#       runtime gate
+#   (c) the setup AppId GUID is authored ONCE in the shared identity
+#       include tools/setup/pwebappsetup.issi; every gate script that
+#       touches the per-user uninstall registry key must carry the
+#       exact same GUID literal - a drift on either side breaks this
+#       gate, not a runtime gate
+#   (d) every WV2FIXED_* line prefix that any CAP-6b3 gate or the
+#       fixed profile manifest regex-matches must appear in the helper
+#       source tools/setup/pwebwv2fixed.pas (the producer)
 #
 # Usage: pwsh -File test/cap6b1/check_cap6b1_contracts.ps1
 
@@ -50,8 +54,41 @@ $markerContracts = @(
             'test/cap6b1/run_normal_setup_gates.ps1',
             'test/cap6b1/run_clean_machine_gate.ps1',
             'test/cap6b2/run_offline_setup_gates.ps1',
-            'test/cap6b2/run_offline_clean_machine_gate.ps1'
+            'test/cap6b2/run_offline_clean_machine_gate.ps1',
+            'test/cap6b3/run_fixed_setup_gates.ps1',
+            'test/cap6b3/run_fixed_clean_machine_gate.ps1'
         )
+    },
+    # CAP-6b3: the fixed-runtime markers, produced under the
+    # PWEB_FIXED_RUNTIME define in the SAME producer file
+    @{
+        Literal = 'FIXED RUNTIME SELECTED'
+        ProducerLiterals = @(': FIXED RUNTIME SELECTED (version=')
+        Consumers = @('test/cap6b3/run_fixed_setup_gates.ps1')
+    },
+    @{
+        Literal = 'FIXED RUNTIME REFUSED'
+        ProducerLiterals = @(': FIXED RUNTIME REFUSED (status=')
+        Consumers = @(
+            'test/cap6b3/run_fixed_setup_gates.ps1',
+            'test/cap6b3/run_fixed_clean_machine_gate.ps1'
+        )
+    },
+    @{
+        Literal = 'FIXED RUNTIME IDENTITY OK '
+        ProducerLiterals = @(': FIXED RUNTIME IDENTITY OK ')
+        Consumers = @(
+            'test/cap6b3/run_fixed_setup_gates.ps1',
+            'test/cap6b3/run_fixed_clean_machine_gate.ps1'
+        )
+    },
+    # the post-create refusal: its own marker, because 'FIXED RUNTIME
+    # REFUSED' does NOT match it and an identity refusal must never
+    # fall into a gate's generic failure branch
+    @{
+        Literal = 'FIXED RUNTIME IDENTITY REFUSED'
+        ProducerLiterals = @(': FIXED RUNTIME IDENTITY REFUSED (status=')
+        Consumers = @('test/cap6b3/run_fixed_setup_gates.ps1')
     }
 )
 foreach ($contract in $markerContracts) {
@@ -104,17 +141,67 @@ if ($missing) {
 Write-Host ("CAP-6b1 contract (b) PASS ($($wanted.Count) WV2PROV_ prefixes " +
     'consumed by gates all produced by the helper)')
 
-# --- (c) AppId GUID contract: authored once in the shared include ------------
-$issi = Get-Content (Join-Path $RepoRoot 'tools/setup/pwebprovgate.issi') -Raw
+# --- (b2) the CAP-6b3 provisioning BAN is complete ---------------------------
+# The fixed-profile gates do not CONSUME a provisioning prefix: they ban
+# the whole vocabulary with the bare literal 'WV2PROV_'. A bare literal
+# is only a complete ban while EVERY prefix the helper can emit starts
+# with it - so that is what gets asserted here, rather than pretending
+# these files are prefix consumers (they matched zero prefixes above,
+# which would have made their registration a silent no-op).
+$produced = [System.Collections.Generic.SortedSet[string]]::new()
+foreach ($m in [regex]::Matches($helperSource, 'WV2PROV_[A-Z]+')) {
+    [void]$produced.Add($m.Value)
+}
+if ($produced.Count -eq 0) {
+    throw 'the provisioning helper emits no WV2PROV_ prefix - the ban is vacuous'
+}
+$banConsumers = @(
+    'test/cap6b3/run_fixed_setup_gates.ps1',
+    'test/cap6b3/run_fixed_clean_machine_gate.ps1'
+)
+foreach ($rel in $banConsumers) {
+    $f = Join-Path $RepoRoot $rel
+    if (-not (Test-Path $f)) { throw "ban consumer script missing: $f" }
+    if (-not (Get-Content $f -Raw).Contains('WV2PROV_')) {
+        throw "$rel lost the bare 'WV2PROV_' provisioning ban"
+    }
+}
+$unbanned = @($produced | Where-Object { -not $_.StartsWith('WV2PROV_', [StringComparison]::Ordinal) })
+if ($unbanned) {
+    throw ("the bare 'WV2PROV_' ban in the CAP-6b3 gates would MISS the " +
+        "helper prefix(es): $($unbanned -join ', ')")
+}
+Write-Host ("CAP-6b1 contract (b2) PASS ($($banConsumers.Count) CAP-6b3 gates " +
+    "ban all $($produced.Count) provisioning prefixes with one literal)")
+
+# --- (c) AppId GUID contract: authored once in the shared identity include ---
+# CAP-6b3 moved it one level down, from pwebprovgate.issi into
+# pwebappsetup.issi, so the non-provisioning fixed profile shares the
+# very same installed-application identity
+$issi = Get-Content (Join-Path $RepoRoot 'tools/setup/pwebappsetup.issi') -Raw
 # Inno escapes one literal '{' as '{{': AppId={{<GUID>}
 $appIdMatch = [regex]::Match($issi, '(?m)^AppId=\{\{([0-9A-Fa-f-]+)\}\s*$')
 if (-not $appIdMatch.Success) {
-    throw 'pwebprovgate.issi does not author the AppId={{...} directive'
+    throw 'pwebappsetup.issi does not author the AppId={{...} directive'
 }
 $appId = $appIdMatch.Groups[1].Value
+# the provisioning include must NOT author a second one: two AppIds
+# would be two applications wearing one name
+$provIssi = Get-Content (Join-Path $RepoRoot 'tools/setup/pwebprovgate.issi') -Raw
+if ($provIssi -match '(?m)^AppId=') {
+    throw 'pwebprovgate.issi authors its own AppId - the identity has forked'
+}
+if ($provIssi -notmatch 'pwebappsetup\.issi') {
+    throw 'pwebprovgate.issi does not consume the shared identity include'
+}
+$fixedIss = Get-Content (Join-Path $RepoRoot 'tools/setup/fixed.iss') -Raw
+if ($fixedIss -notmatch 'pwebappsetup\.issi') {
+    throw 'fixed.iss does not consume the shared identity include'
+}
 $appIdConsumers = @(
     'test/cap6b1/run_normal_setup_gates.ps1',
-    'test/cap6b2/run_offline_setup_gates.ps1'
+    'test/cap6b2/run_offline_setup_gates.ps1',
+    'test/cap6b3/run_fixed_setup_gates.ps1'
 )
 if ($appIdConsumers.Count -eq 0) {
     throw 'no AppId consumers registered - the contract check is broken'
@@ -129,5 +216,34 @@ foreach ($rel in $appIdConsumers) {
 }
 Write-Host ("CAP-6b1 contract (c) PASS (AppId $appId authored in the shared " +
     "include and matched by $($appIdConsumers.Count) gate script(s))")
+
+# --- (d) WV2FIXED_* prefix contract (CAP-6b3) --------------------------------
+$fixedHelperSource = Get-Content (Join-Path $RepoRoot 'tools/setup/pwebwv2fixed.pas') -Raw
+$fixedConsumers = @(
+    (Join-Path $RepoRoot 'test/cap6b3/build_fixed_setup.ps1'),
+    (Join-Path $RepoRoot 'test/cap6b3/run_fixed_setup_gates.ps1'),
+    (Join-Path $RepoRoot 'test/cap6b3/run_fixed_clean_machine_gate.ps1'),
+    (Join-Path $RepoRoot 'tools/setup/fixed.iss')
+)
+$wantedFixed = [System.Collections.Generic.SortedSet[string]]::new()
+foreach ($f in $fixedConsumers) {
+    if (-not (Test-Path $f)) { throw "consumer script missing: $f" }
+    foreach ($m in [regex]::Matches((Get-Content $f -Raw), 'WV2FIXED_[A-Z]+')) {
+        [void]$wantedFixed.Add($m.Value)
+    }
+}
+if ($wantedFixed.Count -eq 0) {
+    throw 'no WV2FIXED_ prefixes found in any consumer - the contract check is broken'
+}
+$missingFixed = @()
+foreach ($prefix in $wantedFixed) {
+    if (-not $fixedHelperSource.Contains($prefix)) { $missingFixed += $prefix }
+}
+if ($missingFixed) {
+    throw ("fixed helper source does not produce the gate-consumed prefix(es): " +
+        ($missingFixed -join ', '))
+}
+Write-Host ("CAP-6b1 contract (d) PASS ($($wantedFixed.Count) WV2FIXED_ prefixes " +
+    'consumed by the CAP-6b3 gates all produced by the fixed helper)')
 
 Write-Host 'CAP6B1_CONTRACTS_PASS'

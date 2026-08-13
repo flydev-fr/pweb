@@ -1,11 +1,15 @@
 ; Shared PWeb provisioning-gate include (CAP-6b2 anti-fork extraction
-; of the ratified CAP-6b1 normal.iss body). BOTH install profiles -
-; tools/setup/normal.iss (Evergreen Bootstrapper, CAP-6b1) and
-; tools/setup/offline.iss (Evergreen Standalone Installer, CAP-6b2) -
-; consume this one file, so the [Setup] identity, the embedded-payload
-; model, the define validation and the fail-closed provisioning gate
-; can never fork between profiles. The ONLY profile difference is the
-; neutral define each .iss maps before including this file:
+; of the ratified CAP-6b1 normal.iss body). Both PROVISIONING install
+; profiles - tools/setup/normal.iss (Evergreen Bootstrapper, CAP-6b1)
+; and tools/setup/offline.iss (Evergreen Standalone Installer,
+; CAP-6b2) - consume this one file, so the embedded-payload model, the
+; define validation and the fail-closed provisioning gate can never
+; fork between them. The application identity itself moved one level
+; down at CAP-6b3, into tools/setup/pwebappsetup.issi, which the
+; non-provisioning fixed profile (tools/setup/fixed.iss) consumes as
+; well; this file includes it below. The ONLY difference between the
+; two provisioning profiles is the neutral define each .iss maps
+; before including this file:
 ;
 ;   PWEB_WV2_INSTALLER    filename of the lock-verified installer this
 ;                         profile embeds (normal.iss maps its existing
@@ -67,40 +71,16 @@
 #ifndef PWEB_PROV_HELPER
   #define PWEB_PROV_HELPER "pwebwv2prov.exe"
 #endif
-#ifndef PWEB_APP_VERSION
-  #define PWEB_APP_VERSION "0.1.0"
-#endif
-; profile identity: both profiles emit a setup.exe with the same
-; [Setup] identity, so the binary itself must say WHICH profile it is
-; (VersionInfoDescription below); each .iss defines PWEB_PROFILE, and
-; the default keeps historical build-script interfaces untouched
-#ifndef PWEB_PROFILE
-  #define PWEB_PROFILE "normal"
-#endif
 
-[Setup]
-AppId={{7C3E9A1B-5D24-4F68-A0C9-2B8E6D4F1A57}
-AppName=PWeb Release
-AppVersion={#PWEB_APP_VERSION}
-AppPublisher=PWeb
-VersionInfoDescription=PWeb Release Setup ({#PWEB_PROFILE})
-DefaultDirName={localappdata}\Programs\PWebRelease
-; per-user by construction: never any elevation, never any attempt to
-; force where Microsoft places the runtime
-PrivilegesRequired=lowest
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
-DisableProgramGroupPage=yes
-Compression=lzma2
-SolidCompression=yes
-OutputBaseFilename=setup
-Uninstallable=yes
+; the neutral half - [Setup] identity (AppId, per-user location,
+; PrivilegesRequired=lowest, architecture gating, compression) plus
+; the unchanged CAP-6 release triple - lives in the shared include
+; below, which the CAP-6b3 fixed profile consumes too (CAP-6b3
+; anti-fork extraction). Nothing about the installed application
+; identity is authored in this provisioning-only file any more.
+#include "pwebappsetup.issi"
 
 [Files]
-; the unchanged CAP-6 release triple - no loose frontend files, ever
-Source: "{#PWEB_PAYLOAD_DIR}\releaseapp.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PWEB_PAYLOAD_DIR}\app.pwb"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PWEB_PAYLOAD_DIR}\webview.dll"; DestDir: "{app}"; Flags: ignoreversion
 ; provisioning payload: extracted to {tmp} on demand, auto-deleted by
 ; Inno when setup exits (success OR abort) - never installed to {app}
 Source: "{#PWEB_PAYLOAD_DIR}\{#PWEB_WV2_INSTALLER}"; Flags: dontcopy

@@ -14,6 +14,15 @@
 # fetch-verify, the O7 wrong-sha delete-on-mismatch refusal, and the
 # -Artifact selection that fetches ONLY the named artifact out of a
 # two-artifact lock (the offline build's acquisition mode).
+# CAP-6b3 adds the fixed kind: the real-lock check now proves THREE
+# ratified artifacts (the two Evergreen installers plus
+# webview2-fixed-runtime-x64 with its required 4-part version), each
+# carrying the exact Microsoft subject, plus fixture legs for a
+# kind=fixed entry - parse with a pinned version, fetch-verify, the
+# wrong-sha delete-on-mismatch refusal, and -Artifact selection out of
+# a THREE-artifact lock (the fixed build's acquisition mode). The
+# pre-existing kind=fixed REFUSAL legs (missing version, malformed
+# version) are unchanged above.
 #
 # Every fixture is generated locally below build/cap6b/fixtures and the
 # fetch legs read local payload files via -AllowLocalSource: ZERO
@@ -75,15 +84,15 @@ function New-Fixture {
     $path
 }
 
-# --- 1) the real repository lock validates and carries BOTH ratified
-# --- pins (CAP-6b1 bootstrapper + CAP-6b2 standalone), each with the
-# --- authenticode-subject axis -----------------------------------------------
+# --- 1) the real repository lock validates and carries ALL THREE
+# --- ratified pins (CAP-6b1 bootstrapper + CAP-6b2 standalone +
+# --- CAP-6b3 fixed runtime), each with the authenticode-subject axis ---------
 $r = Invoke-Tool @('-Validate')
 Assert-Pass $r 'repository webview2-runtime.lock validates'
 if ($r.Out -notmatch 'schema 1') { throw "repo lock summary missing schema: $($r.Out)" }
-# anchored on the summary's ', <count> ' shape so 12/22/32 can never match
-if ($r.Out -notmatch ',\s2 artifact\(s\) pinned') {
-    throw "repo lock does not pin exactly the two ratified artifacts: $($r.Out)"
+# anchored on the summary's ', <count> ' shape so 13/23/33 can never match
+if ($r.Out -notmatch ',\s3 artifact\(s\) pinned') {
+    throw "repo lock does not pin exactly the three ratified artifacts: $($r.Out)"
 }
 # \r?$ keeps the anchors CRLF-safe on autocrlf checkouts
 $repoLock = Get-Content (Join-Path $RepoRoot 'webview2-runtime.lock') -Raw
@@ -96,13 +105,24 @@ if ($repoLock -notmatch '(?m)^artifact = evergreen-standalone-x64\r?$') {
 if ($repoLock -notmatch '(?m)^kind = standalone\r?$') {
     throw 'repo lock standalone entry does not use the frozen kind = standalone'
 }
+if ($repoLock -notmatch '(?m)^artifact = webview2-fixed-runtime-x64\r?$') {
+    throw 'repo lock is missing the ratified webview2-fixed-runtime-x64 artifact'
+}
+if ($repoLock -notmatch '(?m)^kind = fixed\r?$') {
+    throw 'repo lock fixed entry does not use the frozen kind = fixed'
+}
+# the fixed kind is the ONE kind whose version never floats: the frozen
+# schema requires it and the running app OBSERVES exactly this string
+if ($repoLock -notmatch '(?m)^version = [0-9]{1,9}(\.[0-9]{1,9}){3}\r?$') {
+    throw 'repo lock fixed entry does not pin a 4-part runtime version'
+}
 $subjectPins = [regex]::Matches($repoLock,
     '(?m)^authenticode-subject = CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US\r?$')
-if ($subjectPins.Count -ne 2) {
-    throw ("repo lock must pin the exact Microsoft authenticode-subject on BOTH " +
-        "artifacts, found $($subjectPins.Count)")
+if ($subjectPins.Count -ne 3) {
+    throw ("repo lock must pin the exact Microsoft authenticode-subject on ALL " +
+        "THREE artifacts, found $($subjectPins.Count)")
 }
-Write-Host 'PASS: repo lock pins both ratified artifacts, each with the Microsoft subject axis'
+Write-Host 'PASS: repo lock pins all three ratified artifacts, each with the Microsoft subject axis'
 $script:Passed++
 
 # --- 2) valid fixture lock: parses, fetches and verifies a local payload ----
@@ -630,5 +650,95 @@ $r = Invoke-Tool @('-LockFile', $dual, '-DestDir', $dest, '-AllowLocalSource',
     '-Artifact', 'no-such-artifact')
 Assert-Refused $r "no artifact named 'no-such-artifact'" `
     'unknown -Artifact name refused with a named error'
+
+# --- 16) CAP-6b3 fixed-kind legs over local fixtures --------------------------
+# parse + fetch-verify: a kind=fixed entry WITH its required pinned
+# version rides the exact same strict parse and sha256-first
+# verification as the two Evergreen kinds (the fixed REFUSAL legs -
+# missing version, malformed version - already ran in section 11)
+$fxLock = New-ArtifactFixture 'fixed-ok.lock' -Kind 'fixed' `
+    -Filename 'fixed-runtime-payload.cab' -ExtraLines 'version = 151.0.4129.78'
+$r = Invoke-Tool @('-Validate', '-LockFile', $fxLock, '-AllowLocalSource')
+Assert-Pass $r 'fixed-kind fixture lock with a pinned version validates'
+$dest = Join-Path $Fix 'dest-fixed'
+$r = Invoke-Tool @('-LockFile', $fxLock, '-DestDir', $dest, '-AllowLocalSource')
+Assert-Pass $r 'fixed-kind fetch-verify succeeds'
+$fetched = Join-Path $dest 'fixed-runtime-payload.cab'
+if (-not (Test-Path $fetched)) { throw 'verified fixed payload missing from dest' }
+if ((Get-FileHash -Algorithm SHA256 -Path $fetched).Hash.ToLowerInvariant() -cne $GoodHash) {
+    throw 'verified fixed payload bytes drifted'
+}
+Write-Host 'PASS: fixed-kind payload landed with the expected name and bytes'
+$script:Passed++
+
+# O7 lock side for the fixed kind: wrong sha -> refused, deleted
+$fxBad = New-Fixture 'fixed-wrong-sha.lock' @"
+schema = 1
+artifact = fixed-tampered
+kind = fixed
+arch = x64
+version = 151.0.4129.78
+url = $PayloadUrl
+filename = fixed-tampered.cab
+size = $GoodSize
+sha256 = $('2' * 64)
+"@
+$dest = Join-Path $Fix 'dest-fixed-tampered'
+$r = Invoke-Tool @('-LockFile', $fxBad, '-DestDir', $dest, '-AllowLocalSource')
+Assert-Refused $r 'sha256 mismatch' 'fixed-kind checksum mismatch rejected'
+foreach ($leftover in @('fixed-tampered.cab', 'fixed-tampered.cab.download')) {
+    if (Test-Path (Join-Path $dest $leftover)) {
+        throw "fixed mismatched download survived as $leftover"
+    }
+}
+Write-Host 'PASS: fixed-kind mismatch deleted the download'
+$script:Passed++
+
+# -Artifact selection over a THREE-artifact lock (the CAP-6b3 fixed
+# build's acquisition mode): only the NAMED fixed artifact is fetched
+$triple = New-Fixture 'triple-kind.lock' @"
+schema = 1
+artifact = boot-three
+kind = bootstrapper
+arch = neutral
+url = $PayloadUrl
+filename = boot-three.bin
+size = $GoodSize
+sha256 = $GoodHash
+artifact = standalone-three
+kind = standalone
+arch = x64
+url = $PayloadUrl
+filename = standalone-three.bin
+size = $GoodSize
+sha256 = $GoodHash
+artifact = fixed-three
+kind = fixed
+arch = x64
+version = 151.0.4129.78
+url = $PayloadUrl
+filename = fixed-three.cab
+size = $GoodSize
+sha256 = $GoodHash
+"@
+$r = Invoke-Tool @('-Validate', '-LockFile', $triple, '-AllowLocalSource')
+Assert-Pass $r 'three-artifact (bootstrapper + standalone + fixed) lock validates'
+if ($r.Out -notmatch ',\s3 artifact\(s\) pinned') {
+    throw "three-artifact fixture summary wrong: $($r.Out)"
+}
+$dest = Join-Path $Fix 'dest-triple'
+$r = Invoke-Tool @('-LockFile', $triple, '-DestDir', $dest, '-AllowLocalSource',
+    '-Artifact', 'fixed-three')
+Assert-Pass $r '-Artifact fetches only the named fixed runtime'
+if (-not (Test-Path (Join-Path $dest 'fixed-three.cab'))) {
+    throw '-Artifact selection did not fetch the named fixed runtime'
+}
+foreach ($unnamed in @('boot-three.bin', 'standalone-three.bin')) {
+    if (Test-Path (Join-Path $dest $unnamed)) {
+        throw "-Artifact selection fetched the UNNAMED artifact $unnamed too"
+    }
+}
+Write-Host 'PASS: -Artifact selection fetched the fixed runtime and nothing else'
+$script:Passed++
 
 Write-Host "CAP6B0_WV2LOCK_PASS cases=$($script:Passed)"

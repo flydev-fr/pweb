@@ -56,11 +56,20 @@ on:
 jobs:
   windows:
     runs-on: windows-latest
-    # 30 sufficed through CAP-6b1; CAP-6b2 adds the bounded ~210 MB
-    # standalone fetch + the offline setup build/gates, so the job
-    # bound gets matching headroom (each new step carries its own
-    # tighter timeout below)
-    timeout-minutes: 45
+    # 30 sufficed through CAP-6b1; CAP-6b2 added the bounded ~210 MB
+    # standalone fetch + the offline setup build/gates, and CAP-6b3
+    # adds the bounded ~290 MB Fixed Version Runtime fetch, its ~690 MB
+    # expansion, TWO setup compiles over that tree (the real one plus
+    # the abort probe) and install/uninstall gates over ~690 MB.
+    # The rule this number follows: every step budget must exceed the
+    # sum of the bounded waits the step's own script can spend, and
+    # this job budget must exceed the sum of every declared step
+    # budget. Those now total 283 minutes (143 pre-existing + 20 fetch
+    # + 45 build + 75 gates for CAP-6b3), so the job gets 300 - still
+    # inside the 360-minute hosted-runner ceiling. These are CEILINGS
+    # that only ever fire on a hang: a healthy run is a small fraction
+    # of them (the CAP-6b3 setup compiles in ~25 s locally).
+    timeout-minutes: 300
     steps:
       - name: Checkout (full history for freeze diff against baseline)
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -1126,6 +1135,87 @@ jobs:
             build/cap6b2/setup-install.log
             build/cap6b2/smoke-installed.log
             build/cap6b2/lockfacts.psd1
+
+      # ------------------------- CAP-6b3 gates -------------------------
+      # Fixed-runtime profile: a bundled WebView2 Fixed Version Runtime
+      # tree deployed as ordinary application content, selected by the
+      # application itself before webview_create. Everything below is
+      # additive; no earlier step is altered. The extended lock fixture
+      # matrix (fixed kind + three-artifact real-lock proof) already ran
+      # inside the CAP-6b0 lock step above, and the fixed validation /
+      # ACL / manifest / selection cases ran inside the PWeb test suite
+      # step. CI acquires the LOCKED ~290 MB cabinet (sha256 +
+      # Authenticode subject verified, drift fails the build and deletes
+      # the download) in a dedicated bounded step, expands it, builds the
+      # REAL fixed setup.exe with its full-relative-path payload proof
+      # (runtime tree present, BOTH Evergreen installers absent), and
+      # runs the gates end to end - install, ACL verified by SID,
+      # manifest equality, observed pinned identity, the no-fallback
+      # negative legs and uninstall. Nothing is ever provisioned,
+      # downloaded at run time or executed from Microsoft's installers
+      # here: this profile has no provisioning path at all. The
+      # runtime-absent proof is the human-run clean-machine VM gate
+      # (test/cap6b3/run_fixed_clean_machine_gate.ps1, never mocked).
+
+      # dedicated bounded fetch for fail-fast attribution: an upstream
+      # rotation of the ~290 MB cabinet is named HERE, never inside the
+      # build (which then reuses the verified local bytes after
+      # re-verifying them against the lock)
+      - name: CAP-6b3 fetch pinned Fixed Version Runtime (sha256+authenticode, bounded, never executed)
+        shell: pwsh
+        timeout-minutes: 20
+        run: |
+          pwsh -NoProfile -File tools/get-webview2-runtime.ps1 `
+            -Artifact webview2-fixed-runtime-x64
+          if ($LASTEXITCODE -ne 0) {
+            throw 'locked fixed-runtime fetch-verify FAILED (upstream drift? re-ratify deliberately)'
+          }
+
+      # 45: the ~690 MB expansion, the CAP-3U-windowed host compile, the
+      # native tree-version/manifest passes and TWO ISCC compiles over
+      # the tree (the real setup plus the abort probe)
+      - name: CAP-6b3 build fixed setup.exe from the pinned locks (expand + manifest + payload proof)
+        shell: pwsh
+        timeout-minutes: 45
+        run: |
+          pwsh -NoProfile -File test/cap6b3/build_fixed_setup.ps1 2>&1 |
+            Tee-Object -FilePath build/cap6b3-build.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-6b3 fixed setup build FAILED' }
+
+      # 75: the gate script's OWN bounded waits can sum past an hour in
+      # the worst case (install 20 min + two manifest verifies 10 min
+      # each + smoke/control/negative legs + uninstall 10 min + the
+      # abort probe 20 min), and a step budget below its script's sum
+      # would kill a healthy run before the script could report
+      - name: CAP-6b3 fixed setup gates - install, ACL by SID, manifest, observed identity, no-fallback, uninstall, abort probe
+        shell: pwsh
+        timeout-minutes: 75
+        run: |
+          pwsh -NoProfile -File test/cap6b3/run_fixed_setup_gates.ps1 2>&1 |
+            Tee-Object -FilePath build/cap6b3-gates.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-6b3 fixed setup gates FAILED' }
+
+      # same deliberate deviation as CAP-6b2: the fixed setup.exe
+      # (~276 MB) is NOT uploaded on failure - the logs, listing and
+      # lockfacts below identify any defect, and the binary is
+      # reproducible from the pinned locks
+      - name: CAP-6b3 diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap6b3-diagnostics
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            build/cap6b3-build.log
+            build/cap6b3-gates.log
+            build/cap6b3/iscc-fixed.log
+            build/cap6b3/setup-install.log
+            build/cap6b3/setup-abort.log
+            build/cap6b3/smoke-installed.log
+            build/cap6b3/smoke-installed.err.log
+            build/cap6b3/lockfacts.psd1
+            build/cap6b3/tree.manifest
 
       - name: Upload diagnostics on failure
         if: failure()

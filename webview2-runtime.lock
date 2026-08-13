@@ -90,3 +90,40 @@ filename = MicrosoftEdgeWebView2RuntimeInstallerX64.exe
 size = 209653456
 sha256 = f8d4ab074c22a0cd136434f37c6b34dfb64ebf8a32ce42e03bd8f2a6b51a3892
 authenticode-subject = CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US
+
+# CAP-6b3 ratification (2026-08-13): x64 Fixed Version Runtime package,
+# acquired, extracted and inspected - never executed. Unlike the two
+# Evergreen installers above this artifact is NOT an installer at all:
+# it is a cabinet whose extracted tree IS the runtime, deployed as
+# ordinary per-user application content beside the app and selected by
+# the process itself. Its version therefore does NOT float, so the
+# frozen schema's `version` key is required for kind = fixed and is
+# pinned here as the identity the running app must OBSERVE.
+#
+# Extraction (expand -F:* <cab> <dir>) yields exactly one folder,
+# Microsoft.WebView2.FixedVersionRuntime.151.0.4129.78.x64 - 256 files,
+# 689841950 bytes - carrying msedgewebview2.exe, msedge.dll and
+# EBWebView\x64\EmbeddedBrowserWebView.dll, all with FileVersion
+# 151.0.4129.78. The package ships NO WebView2Loader.dll: PWeb bundles
+# the loader from the pinned WebView2 SDK 1.0.1587.40 (webview.lock,
+# covered by its extracted-tree sha256) instead.
+#
+# Signer evidence: the cabinet itself carries the exact ratified
+# CAP-6b1/6b2 Microsoft leaf subject below with status Valid (the
+# enforced axes are sha256 + this subject). Inside the tree the five
+# critical binaries (msedgewebview2.exe, msedge.dll, msedge_elf.dll,
+# EBWebView\x64\EmbeddedBrowserWebView.dll and the bundled
+# WebView2Loader.dll) carry the same 'CN=Microsoft Corporation, ...'
+# subject; eleven non-critical redistributables (CRT, d3dcompiler_47,
+# dxil, mspdf, widevinecdm) legitimately carry the second Microsoft
+# subject 'CN=Microsoft Windows, O=Microsoft Corporation, ...' - that
+# is recorded as evidence and accepted for non-critical files only.
+artifact = webview2-fixed-runtime-x64
+kind = fixed
+arch = x64
+version = 151.0.4129.78
+url = https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/355004fc-ebbc-42d3-b319-d43be39f8d39/Microsoft.WebView2.FixedVersionRuntime.151.0.4129.78.x64.cab
+filename = Microsoft.WebView2.FixedVersionRuntime.151.0.4129.78.x64.cab
+size = 304135089
+sha256 = d4c8864a764bc3ff015f7b644e1f9d022ba8a73ab470447398dda0cc9e75ab92
+authenticode-subject = CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US
