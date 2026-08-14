@@ -38,11 +38,12 @@
 #   9. silent uninstall leaves no installed launchable app, no runtime
 #      tree and no per-user (HKCU) uninstall registry key
 #  10. ABORT PROBE: the TEST-ONLY setup whose post-install helper always
-#      fails must leave NO installed app, NO runtime tree and no HKCU
-#      uninstall key (the fail-closed chain, proven by automation).
-#      Inno does not signal an ssPostInstall abort through the process
-#      exit code - measured, not assumed - so the profile undoes the
-#      installation itself and this leg asserts that state
+#      fails must exit NONZERO and leave NO installed app, NO runtime
+#      tree and no HKCU uninstall key - with INNO'S OWN rollback proven
+#      in the log ("Rolling back changes" / "Uninstallation process
+#      succeeded"), not a hand-rolled cleanup. The failing gate writes
+#      no verdict file, so Setup cannot find the last [Files] entry's
+#      external source and aborts itself
 #
 # Usage: pwsh -File test/cap6b3/run_fixed_setup_gates.ps1
 
@@ -181,8 +182,18 @@ try {
     if ($logText -match 'WV2PROV_') {
         throw 'FIXED INVARIANT BROKEN: a provisioning marker appears in the setup log'
     }
+    if ($logText -notmatch 'PWEB_WV2FIXED verdict written') {
+        throw 'setup log does not show the gate writing its success verdict'
+    }
+    # the verdict file is the gate's signal to Setup, not application
+    # content: deleteafterinstall must keep it out of the install dir
+    $verdictLeft = Join-Path $InstallDir 'pweb-fixed-runtime.verdict'
+    if (Test-Path $verdictLeft) {
+        throw "the gate's verdict file was left installed: $verdictLeft"
+    }
     Write-Host ('CAP-6b3 gate 3 PASS (silent install from isolated dir exit 0; ' +
-        'ACL applied and verified by SID in the log; zero provisioning)')
+        'ACL applied and verified by SID in the log; verdict written and not ' +
+        'installed; zero provisioning)')
 
     # --- 4) installed-layout exact set BY RELATIVE PATH -----------------------
     # policy: paths relative to the install dir (so any unexpected nesting
@@ -493,16 +504,15 @@ try {
     if (Test-Path $abortLog) { Remove-Item -Force $abortLog }
     $ab = Invoke-Bounded $AbortProbe @('/VERYSILENT', '/SUPPRESSMSGBOXES',
         '/NORESTART', '/SP-', "/LOG=$abortLog") 1200000 'abort-probe setup'
-    # NOTE, measured on Inno 6.7.3 rather than assumed: an exception at
-    # ssPostInstall is NOT a rollback and does NOT make setup.exe exit
-    # nonzero - by then every file is copied, the uninstall key is
-    # written, and the log already says "Installation process
-    # succeeded". Asserting a nonzero exit here would assert a fiction.
-    # What actually protects the user is the STATE the profile leaves
-    # behind, so that is what this leg proves: the failure verdict and
-    # the explicit undo in the log, then nothing installed and no
-    # uninstall entry.
-    Write-Host "abort-probe setup exit=$($ab.Code) (Inno does not signal ssPostInstall aborts)"
+    Write-Host "abort-probe setup exit=$($ab.Code)"
+    # a failing gate writes no verdict file, so Setup cannot find the
+    # last [Files] entry's source and aborts. The exit code is Inno's
+    # own (the Abort default of its Abort/Retry/Ignore box under
+    # /SUPPRESSMSGBOXES), so this asserts NONZERO rather than pinning a
+    # number the pinned ISCC could legitimately change.
+    if ($ab.Code -eq 0) {
+        throw 'ABORT CHAIN BROKEN: the abort-probe setup exited 0'
+    }
     if (-not (Test-Path $abortLog)) { throw 'abort-probe setup produced no log' }
     $abortText = Get-Content $abortLog -Raw
     if ($abortText -notmatch 'WV2FIXED_RESULT outcome=Failed step=signers') {
@@ -511,11 +521,29 @@ try {
     if ($abortText -notmatch 'PWEB_WV2FIXED exit=6') {
         throw 'abort-probe log does not show the helper nonzero exit'
     }
-    if ($abortText -notmatch 'PWEB_WV2FIXED aborting and removing') {
-        throw 'abort-probe log does not show the explicit fail-closed removal'
+    if ($abortText -notmatch 'PWEB_WV2FIXED REFUSED') {
+        throw 'abort-probe log does not show the gate refusing with a reason'
     }
-    if ($abortText -notmatch 'CurStepChanged raised an exception') {
-        throw 'abort-probe log does not show the gate raising after the undo'
+    if ($abortText -match 'PWEB_WV2FIXED verdict written') {
+        throw 'ABORT CHAIN BROKEN: a failing gate still wrote its verdict file'
+    }
+    # the rollback must be INNO'S OWN, not something this profile does
+    # by hand: hand-rolled cleanup races the installer and was measured
+    # to produce an incidental EFileError instead of a real abort
+    foreach ($proof in 'Rolling back changes',
+                       'Uninstallation process succeeded') {
+        if ($abortText -notmatch [regex]::Escape($proof)) {
+            throw ("abort-probe log does not prove Inno's own rollback ran " +
+                "('$proof' missing): see $abortLog")
+        }
+    }
+    if ($abortText -match 'WV2PROV_') {
+        throw 'FIXED INVARIANT BROKEN: a provisioning marker appears in the abort log'
+    }
+    foreach ($banned in $facts.BootFile, $facts.StandaloneFile) {
+        if ($abortText -match [regex]::Escape($banned)) {
+            throw "FIXED INVARIANT BROKEN: '$banned' appears in the abort log"
+        }
     }
     # nothing launchable, and no runtime tree, may survive a failed gate
     $deadline = [DateTime]::UtcNow.AddSeconds(120)
@@ -537,9 +565,9 @@ try {
     if (Test-Path $UninstKey) {
         throw "ABORT CHAIN BROKEN: the HKCU uninstall key survived: $UninstKey"
     }
-    Write-Host ('CAP-6b3 gate 10 PASS (a failing post-install gate undid the ' +
-        'installation itself: no {app}, no runtime tree, no HKCU uninstall ' +
-        "key; setup exit $($ab.Code) is Inno's, not a verdict)")
+    Write-Host ("CAP-6b3 gate 10 PASS (a failing gate wrote no verdict; setup " +
+        "exited $($ab.Code) and INNO'S OWN rollback removed everything: no " +
+        '{app}, no runtime tree, no HKCU uninstall key, no provisioning path)')
 
     if ($env:GITHUB_STEP_SUMMARY) {
         ("### CAP-6b3 fixed-runtime setup gates`nPASS - pin coherence, staged and " +

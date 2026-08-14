@@ -94,6 +94,60 @@ baseline_commit: 'e7fe7fc4908682243e5f5c17c0603f7203fac134'
 
 ## Spec Change Log
 
+**2026-08-14 — corrective review: CONFIRMED FINDING, fixed. The fixed
+profile's post-install gate could not fail the installation.** Round 1 had
+recorded the `ssPostInstall` exit-0 behaviour as a measured Inno limitation
+and worked around it with a hand-rolled cleanup. That was wrong on both
+counts: it is a defect in this profile's design, and the workaround was
+itself harmful. The pinned ISCC 6.7.3 lifecycle was measured directly (all
+with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-`):
+
+| seam | exit | `{app}` | uninstall key |
+|---|---|---|---|
+| `CurStepChanged(ssPostInstall)` + raise | 0 | present | present |
+| `AfterInstall` + raise | 0 | present | present (install *continues*) |
+| `AfterInstall` + our `DelTree` + raise | 4 | absent | absent |
+| `CurStepChanged(ssInstall)` + raise | 3 | absent | absent (but pre-copy) |
+| verdict file present (gate passes) | 0 | installed | present |
+| **verdict file absent (gate fails)** | **5** | **absent** | **absent** |
+
+Two facts settle the design. A script exception raised from `AfterInstall`
+or `ssPostInstall` is **swallowed** — it can never fail setup, so no
+arrangement of `RaiseException` was ever going to work. And Inno's own
+rollback machinery exists, works, and is triggered by a genuine Setup file
+error during the installing phase ("Rolling back changes … Uninstallation
+process succeeded"). The exit 4 in row 3 was not a supported abort at all:
+it was an incidental `EFileError` our own `DelTree` caused by racing the
+installer — the workaround was manufacturing the failure it appeared to
+prove.
+
+So the verdict is now **something Setup itself checks**: the last `[Files]`
+entry is an `external` `{tmp}` source whose `BeforeInstall` runs the helper,
+and the gate writes that file **only** when the helper exits 0. Smallest
+Inno-supported architecture giving both properties at once — a clean failed
+state (Inno's own rollback removes the tree and never writes the uninstall
+key) and an externally observable failure (a nonzero exit a gate can assert).
+Post-copy validation is unchanged and unweakened: `BeforeInstall` on the
+*last* entry still runs after the whole tree has landed and before the
+uninstall key is written. `deleteafterinstall` keeps the verdict out of the
+installed layout; there is deliberately no `skipifsourcedoesntexist`, which
+would turn the failure signal into a silent skip. Fail-closed by
+construction and relied on deliberately: if the gate itself crashes the
+exception is swallowed, but no verdict is written, so the abort still
+happens — **absence** is the failure signal and an explicit success write is
+the only way to produce one.
+
+`AbortFixedInstall`, its `DelTree` and its `RegDeleteKeyIncludingSubkeys`
+are **deleted**; nothing here removes files or registry keys by hand. The
+abort-probe leg asserts a **nonzero** exit (`-ne 0`, not pinned to 5 — 5 is
+Inno's Abort default for its suppressed Abort/Retry/Ignore box, not a code
+this project fabricates) plus `Rolling back changes` and `Uninstallation
+process succeeded`, proving the rollback is Inno's own. An interactive user
+gets the real reason before the generic "source file does not exist", via
+`SuppressibleMsgBox` — never `MsgBox`, which `/SUPPRESSMSGBOXES` does not
+apply to and which was measured hanging a `/VERYSILENT` run forever;
+automation reads it from `Log()` either way.
+
 **2026-08-14 — adversarial review round 1, all findings patched (no
 frozen-intent change).** Twenty-one findings, all applied. The ones that
 changed *behaviour* rather than wording:
@@ -130,28 +184,17 @@ changed *behaviour* rather than wording:
   header states exactly where each axis is enforced.
 - **The fail-closed abort chain is proven, not asserted in a comment**: the
   build produces an abort-probe setup through the documented
-  `PWEB_ACL_HELPER` hook, and a gate leg runs it. Building that leg
-  *measured* Inno 6.7.3 rather than assuming it, and found a real product
-  defect: an exception raised in `CurStepChanged(ssPostInstall)` is **not**
-  a rollback and does **not** make `setup.exe` exit nonzero — by then every
-  file is copied, the per-user uninstall key is written, and the log says
-  "Installation process succeeded". A failed verification would therefore
-  have left an entry in Programs & Features pointing at a directory the
-  profile had just deleted. The failure branch now undoes the installation
-  itself — `{app}` **and** the HKCU uninstall key (the key path derived
-  from the shared `AppId` at run time, never duplicated) — and the gate
-  asserts that resulting state rather than an exit code Inno never
-  produces.
+  `PWEB_ACL_HELPER` hook, and a gate leg runs it. (Round 1's abort
+  *mechanism* was wrong and is superseded by the corrective entry above.)
 - **Gate 7 can no longer absorb a defect as a SKIP**: a nil
-  `webview_create` in fixed mode is only a SKIP once the Evergreen control
-  host has failed the same way on the same machine.
+  `webview_create` is a SKIP only once the Evergreen control host has failed
+  the same way on the same machine.
 - **The build-side version assertion runs through the helper**, so build and
   runtime read the numeric `VS_FIXEDFILEINFO` through one code path.
-- `--pin` and `--validate` now use distinct line prefixes and keys so a
-  compiled-in constant can never be grepped as an observed fact; `--validate`
-  is wired into a gate leg; the clean-machine gate's post-kill wait is
-  bounded; CI step budgets exceed their scripts' internal sums and the job
-  budget exceeds the sum of the steps.
+- `--pin`/`--validate` got distinct prefixes and keys so a compiled-in
+  constant can never be grepped as an observed fact; `--validate` is wired
+  into a gate; the clean-machine post-kill wait is bounded; CI step budgets
+  exceed their scripts' internal sums and the job budget exceeds the steps'.
 
 The `AceCount - 1` "underflow" was reviewed and **rejected**: `AceCount` is a
 `Word`, so an empty DACL simply skips the loop and lands on the
@@ -162,35 +205,19 @@ ACE count so an empty DACL reads truthfully.
 mechanism decisions were made while implementing the Code Map; each stays
 inside the ratified boundaries and is recorded here rather than silently:
 
-1. **`tools/setup/pwebwv2fixed.pas` (new compiled helper).** The Code Map put
-   the ACL apply/verify in the new Pascal unit and the `CurStepChanged` gate in
-   `fixed.iss`. Inno's PascalScript cannot bridge the two: it has no pointer
-   arithmetic, so a DACL cannot be walked (and therefore *verified by SID*)
-   there at all. The installer therefore reaches the ratified native code
-   through a compiled console helper — exactly the `pwebwv2prov.exe` idiom the
-   provisioning profiles already use. It is embedded `Flags: dontcopy`,
-   extracted to `{tmp}`, never installed (gate 4 proves it never lands in
-   `{app}`), and the gates reuse it for ACL-by-SID, manifest and Evergreen-
-   detect observations. Zero ACL logic exists outside
+1. **`tools/setup/pwebwv2fixed.pas` (new compiled helper).** Inno's
+   PascalScript has no pointer arithmetic, so a DACL cannot be walked — and
+   therefore never *verified by SID* — there at all. The installer reaches the
+   ratified native code through a compiled console helper, the existing
+   `pwebwv2prov.exe` idiom: `Flags: dontcopy`, extracted to `{tmp}`, never
+   installed (gate 4 proves it). Zero ACL logic exists outside
    `pweb.platform.webview2.fixed.pas`.
-2. **Tree manifest is a build/gate artifact, never installed and never hashed
-   at startup.** The writer/verifier live in the unit as ratified; the build
-   writes `build/cap6b3/tree.manifest` and self-verifies it, and the gates
-   re-verify the *installed* tree against it. Ordinary startup validates
-   shape/version/architecture/ACL only, honouring "no full-tree hashing on
-   ordinary startup".
+2. **Tree manifest is a build/gate artifact**, never installed and never
+   hashed at startup — honouring "no full-tree hashing on ordinary startup".
 3. **Directory enumeration uses the wide Win32 API directly** (the ratified
-   `pwebbundle`/`TFolderAssetStore` precedent). The RTL Ansi `FindFirst` layer
-   was observed returning `ERROR_PATH_NOT_FOUND` for a perfectly valid path in
-   this unit's link context — the exact codepage-state hazard that precedent
-   documents — so the manifest walk goes straight to
-   `FindFirstFileW`/`FindNextFileW`, refuses reparse points, and fails loudly
-   on any mid-enumeration error instead of truncating.
-
-Profile-scoped compression measured locally: `lzma2/fast` + `SolidCompression=no`
-compiles the ~690 MB tree in **23 s** of ISCC wall time and yields a 276 MB
-`setup.exe`. The shared `lzma2`/solid defaults are untouched, so CAP-6b1/6b2
-compile byte-identically.
+   `pwebbundle`/`TFolderAssetStore` precedent): the RTL Ansi `FindFirst` layer
+   returned `ERROR_PATH_NOT_FOUND` for a valid path in this unit's link
+   context — exactly the codepage-state hazard that precedent documents.
 
 ## Design Notes
 
@@ -202,7 +229,9 @@ compile byte-identically.
 
 **Installed layout:** `{app}\releaseapp.exe`, `app.pwb`, `webview.dll`, `runtime\webview2\WebView2Loader.dll`, `runtime\webview2\Microsoft.WebView2.FixedVersionRuntime.151.0.4129.78.x64\…`. The loader lives inside the runtime folder so it can only ever be loaded by explicit absolute path, never by DLL search order.
 
-**Compression:** the tree is ~690 MB uncompressed; measure ISCC wall time locally before fixing the CI step budget, and use the profile-scoped compression override rather than changing the shared defaults.
+**Compression (measured):** the tree is ~690 MB uncompressed; `lzma2/fast` + `SolidCompression=no`, passed through the profile-scoped override so the shared defaults stay untouched, compiles it in ~23 s of ISCC wall time and yields a ~276 MB `setup.exe`.
+
+**Install-time gate (measured):** the post-install verification runs as the LAST `[Files]` entry's `BeforeInstall`, and its verdict is an `external` `{tmp}` source that the gate writes only on success — because a script exception raised from `AfterInstall`/`ssPostInstall` is swallowed by Inno and can never fail setup, while a missing `[Files]` source triggers Inno's own rollback (exit 5 under `/SUPPRESSMSGBOXES`, `{app}` and the uninstall key both absent). Nothing in this profile removes files or registry keys by hand. See the Spec Change Log for the full lifecycle table.
 
 ## Verification
 

@@ -21,6 +21,10 @@
 #   (d) every WV2FIXED_* line prefix that any CAP-6b3 gate or the
 #       fixed profile manifest regex-matches must appear in the helper
 #       source tools/setup/pwebwv2fixed.pas (the producer)
+#   (e) the fixed profile's verdict-file name is authored once in
+#       tools/setup/fixed.iss, is wired to FixedRuntimeGate, is never
+#       weakened with skipifsourcedoesntexist, and is carried by every
+#       gate script that asserts it stays out of the installed layout
 #
 # Usage: pwsh -File test/cap6b1/check_cap6b1_contracts.ps1
 
@@ -245,5 +249,39 @@ if ($missingFixed) {
 }
 Write-Host ("CAP-6b1 contract (d) PASS ($($wantedFixed.Count) WV2FIXED_ prefixes " +
     'consumed by the CAP-6b3 gates all produced by the fixed helper)')
+
+# --- (e) the fixed profile's verdict-file name (CAP-6b3) ---------------------
+# The fixed setup's fail-closed gate is expressed as a verdict FILE: the
+# last [Files] entry's external source, written only on success. Its name
+# is authored once in fixed.iss, and the gate script asserts that file
+# never lands in {app} - so a rename on either side must break THIS gate,
+# not silently void the layout assertion downstream.
+$fixedIssRaw = Get-Content (Join-Path $RepoRoot 'tools/setup/fixed.iss') -Raw
+$verdictMatch = [regex]::Match($fixedIssRaw,
+    '(?m)^#define\s+PWEB_VERDICT_FILE\s+"([^"]+)"\s*$')
+if (-not $verdictMatch.Success) {
+    throw 'fixed.iss does not author the PWEB_VERDICT_FILE define'
+}
+$verdictName = $verdictMatch.Groups[1].Value
+if ($fixedIssRaw -notmatch 'BeforeInstall:\s*FixedRuntimeGate') {
+    throw 'fixed.iss does not wire the verdict entry to the FixedRuntimeGate'
+}
+# anchored on an actual Flags: usage, so the comment explaining WHY the
+# flag is absent cannot trip the check that proves it is absent
+if ($fixedIssRaw -match '(?m)^\s*Flags:[^\r\n]*skipifsourcedoesntexist') {
+    throw ('fixed.iss uses skipifsourcedoesntexist - that flag would turn ' +
+        'the missing-verdict FAILURE SIGNAL into a silent skip')
+}
+$verdictConsumers = @('test/cap6b3/run_fixed_setup_gates.ps1')
+foreach ($rel in $verdictConsumers) {
+    $f = Join-Path $RepoRoot $rel
+    if (-not (Test-Path $f)) { throw "verdict consumer script missing: $f" }
+    if (-not (Get-Content $f -Raw).Contains($verdictName)) {
+        throw "$rel does not carry the verdict-file name '$verdictName'"
+    }
+}
+Write-Host ("CAP-6b1 contract (e) PASS (verdict file '$verdictName' authored " +
+    "in fixed.iss, gated by FixedRuntimeGate, matched by " +
+    "$($verdictConsumers.Count) gate script(s))")
 
 Write-Host 'CAP6B1_CONTRACTS_PASS'

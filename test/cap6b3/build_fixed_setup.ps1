@@ -508,6 +508,21 @@ end.
     Copy-Item "build/cap6b3/bin/$StubName" $Payload/
     $AbortDir = Join-Path $RepoRoot 'build/cap6b3/abort-probe'
     New-Item -ItemType Directory -Force $AbortDir | Out-Null
+    # a stale output from an earlier run can still be HELD by Inno's
+    # respawned second stage (abortprobe.tmp) if that run was killed
+    # rather than allowed to finish; ISCC would then fail to overwrite
+    # it with an opaque error. Clear it here and say so plainly.
+    $AbortProbeExe = Join-Path $AbortDir 'abortprobe.exe'
+    if (Test-Path $AbortProbeExe) {
+        try {
+            Remove-Item -Force -LiteralPath $AbortProbeExe -ErrorAction Stop
+        }
+        catch {
+            throw ("cannot replace the stale abort probe $AbortProbeExe - a " +
+                'previous abort-probe run is probably still alive (look for ' +
+                "abortprobe.tmp): $($_.Exception.Message)")
+        }
+    }
     & $Iscc "/DPWEB_PAYLOAD_DIR=$Payload" `
         "/DPWEB_RUNTIME_DIR=$RuntimeDir" `
         "/DPWEB_FIXED_TREE=$ExpectedTree" `
@@ -515,10 +530,16 @@ end.
         "/DPWEB_ACL_HELPER=$StubName" `
         '/DPWEB_COMPRESSION=lzma2/fast' `
         '/DPWEB_SOLID=no' `
-        "/O$AbortDir" '/Fabortprobe' tools/setup/fixed.iss |
+        "/O$AbortDir" '/Fabortprobe' tools/setup/fixed.iss 2>&1 |
+        Tee-Object -FilePath (Join-Path $RepoRoot 'build/cap6b3/iscc-abort.log') |
         Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'ISCC compile of the abort-probe setup failed' }
-    $AbortProbeExe = Join-Path $AbortDir 'abortprobe.exe'
+    if ($LASTEXITCODE -ne 0) {
+        # never swallow this: a discarded listing turns a one-line ISCC
+        # diagnostic into a blind rebuild
+        Get-Content (Join-Path $RepoRoot 'build/cap6b3/iscc-abort.log') |
+            Select-Object -Last 15 | Write-Host
+        throw 'ISCC compile of the abort-probe setup failed'
+    }
     if (-not (Test-Path $AbortProbeExe)) {
         throw "abort-probe setup missing at $AbortProbeExe"
     }
