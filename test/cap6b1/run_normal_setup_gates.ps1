@@ -1,4 +1,7 @@
-# CAP-6b1 gates over the real dist/windows/normal/setup.exe. Safe by
+# CAP-6b1 gates over the real
+# dist/windows/normal/PWebRelease-Normal-Setup.exe (CAP-6b4 renamed the
+# artifact away from the appcompat-shimmed setup.exe basename; every
+# assertion below is unchanged and stays the no-regression proof). Safe by
 # construction on any machine that already has a usable WebView2
 # runtime (hosted runners do): the helper's AlreadyUsable skip path is
 # proven and the Bootstrapper is NEVER executed. On a machine WITHOUT
@@ -41,7 +44,7 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 Push-Location $RepoRoot
 try {
-    foreach ($pre in 'dist/windows/normal/setup.exe',
+    foreach ($pre in 'dist/windows/normal/PWebRelease-Normal-Setup.exe',
                      'build/cap6b1/bin/pwebwv2prov.exe',
                      'build/cap6b1/lockfacts.psd1') {
         if (-not (Test-Path $pre)) {
@@ -51,7 +54,7 @@ try {
     }
     $facts = Import-PowerShellDataFile (Resolve-Path build/cap6b1/lockfacts.psd1).Path
     $Helper = (Resolve-Path build/cap6b1/bin/pwebwv2prov.exe).Path
-    $SetupExe = (Resolve-Path dist/windows/normal/setup.exe).Path
+    $SetupExe = (Resolve-Path dist/windows/normal/PWebRelease-Normal-Setup.exe).Path
     $BootPayload = Join-Path $RepoRoot "build/cap6b1/payload/$($facts.BootFile)"
     if (-not (Test-Path $BootPayload)) {
         throw "staged bootstrapper missing: $BootPayload"

@@ -52,7 +52,10 @@ $pasFiles = @(
     (Join-Path $RepoRoot 'tools/setup/offline.iss'),
     (Join-Path $RepoRoot 'tools/setup/fixed.iss'),
     (Join-Path $RepoRoot 'tools/setup/pwebprovgate.issi'),
-    (Join-Path $RepoRoot 'tools/setup/pwebappsetup.issi')
+    (Join-Path $RepoRoot 'tools/setup/pwebappsetup.issi'),
+    # CAP-6b4 split the release triple out of the identity include; the
+    # new file is a setup source like any other and is swept like one
+    (Join-Path $RepoRoot 'tools/setup/pwebapppayload.issi')
 )
 foreach ($f in $pasFiles) {
     if (-not (Test-Path -LiteralPath $f)) { throw "swept file missing: $f" }
@@ -81,7 +84,8 @@ $setupSources = @(
     (Join-Path $RepoRoot 'tools/setup/offline.iss'),
     (Join-Path $RepoRoot 'tools/setup/fixed.iss'),
     (Join-Path $RepoRoot 'tools/setup/pwebprovgate.issi'),
-    (Join-Path $RepoRoot 'tools/setup/pwebappsetup.issi')
+    (Join-Path $RepoRoot 'tools/setup/pwebappsetup.issi'),
+    (Join-Path $RepoRoot 'tools/setup/pwebapppayload.issi')
 )
 $dlHits = @(Select-String -Path $setupSources -Pattern (
     'DownloadTemporaryFile|CreateDownloadPage|InternetOpen|' +
@@ -120,8 +124,11 @@ $fixedSources = @(
     (Join-Path $RepoRoot 'tools/setup/fixed.iss'),
     # the shared identity include reaches the fixed profile through
     # fixed.iss, so a provisioning path added THERE would arrive here
-    # untripped unless it is swept too
+    # untripped unless it is swept too - and CAP-6b4's shared payload
+    # include reaches it the same way, from the fixed profile's own
+    # [Files] order
     (Join-Path $RepoRoot 'tools/setup/pwebappsetup.issi'),
+    (Join-Path $RepoRoot 'tools/setup/pwebapppayload.issi'),
     (Join-Path $RepoRoot 'src/platform/windows/pweb.platform.webview2.fixed.pas'),
     (Join-Path $RepoRoot 'tools/setup/pwebwv2fixed.pas')
 )

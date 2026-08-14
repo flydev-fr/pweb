@@ -1,9 +1,15 @@
-# CAP-6b3: builds dist/windows/fixed-runtime/setup.exe - the
+# CAP-6b3: builds
+# dist/windows/fixed-runtime/PWebRelease-FixedRuntime-Setup.exe - the
 # FIXED-RUNTIME-profile per-user installer that deploys the
 # lock-verified x64 WebView2 Fixed Version Runtime tree
 # (webview2-runtime.lock artifact webview2-fixed-runtime-x64) plus the
 # pinned WebView2 SDK's WebView2Loader.dll as ordinary application
 # content, and runs NO provisioning of any kind.
+#
+# The artifact basename is authored in tools/setup/fixed.iss
+# (PWEB_SETUP_BASENAME) and PARSED here, never passed with /F: the
+# manifest stays the single source of the name, and no artifact this
+# repository ships is called setup.exe (CAP-6b4).
 #
 #   1. provisions the pinned Inno Setup 6 compiler (innosetup.lock)
 #   2. cross-checks the Pascal pin constants against the lock (the
@@ -369,6 +375,18 @@ try {
     # the profile-scoped compression override exists because this payload is
     # ~690 MB: the shared lzma2/solid defaults stay untouched for the
     # CAP-6b1/6b2 profiles, which is what keeps their gates green
+    # the artifact basename is the manifest's, parsed from it: no /F
+    # override, so a rename in the .iss can never leave the build script
+    # looking for a file ISCC no longer produces
+    $IssFile = Join-Path $RepoRoot 'tools/setup/fixed.iss'
+    $issText = Get-Content $IssFile -Raw
+    if ($issText -notmatch '(?m)^#define\s+PWEB_SETUP_BASENAME\s+"([^"]+)"\s*$') {
+        throw 'tools/setup/fixed.iss does not author the PWEB_SETUP_BASENAME define'
+    }
+    $SetupBase = $Matches[1]
+    if ($SetupBase -ieq 'setup') {
+        throw 'the fixed profile may not be named setup: setup.exe is appcompat-shimmed'
+    }
     $DistDir = Join-Path $RepoRoot 'dist/windows/fixed-runtime'
     New-Item -ItemType Directory -Force $DistDir | Out-Null
     $ListingFile = Join-Path $RepoRoot 'build/cap6b3/iscc-fixed.log'
@@ -379,13 +397,13 @@ try {
         "/DPWEB_FIXED_SUBJECT=$FxSubject" `
         '/DPWEB_COMPRESSION=lzma2/fast' `
         '/DPWEB_SOLID=no' `
-        "/O$DistDir" '/Fsetup' tools/setup/fixed.iss 2>&1 |
+        "/O$DistDir" tools/setup/fixed.iss 2>&1 |
         Tee-Object -FilePath $ListingFile
     if ($LASTEXITCODE -ne 0) { throw 'ISCC compile of fixed.iss failed' }
     $isccSeconds = [int]([DateTime]::UtcNow - $isccStart).TotalSeconds
     Write-Host "ISCC wall time: ${isccSeconds}s"
-    $SetupExe = Join-Path $DistDir 'setup.exe'
-    if (-not (Test-Path $SetupExe)) { throw "setup.exe missing at $SetupExe" }
+    $SetupExe = Join-Path $DistDir "$SetupBase.exe"
+    if (-not (Test-Path $SetupExe)) { throw "fixed setup missing at $SetupExe" }
 
     # --- 8) payload proof from the compile listing ----------------------------
     # the listing is authoritative evidence of what ISCC actually embedded;
@@ -550,7 +568,7 @@ end.
     $SetupSize = (Get-Item $SetupExe).Length
     $floor = [long]($treeBytes / 20)
     if ($SetupSize -lt $floor) {
-        throw ("setup.exe ($SetupSize bytes) is below the sanity floor " +
+        throw ("$SetupBase.exe ($SetupSize bytes) is below the sanity floor " +
             "($floor bytes = 1/20 of the $treeBytes-byte tree) - the payload " +
             'cannot be complete')
     }

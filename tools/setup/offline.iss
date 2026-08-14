@@ -29,5 +29,11 @@
 #endif
 #define PWEB_WV2_INSTALLER PWEB_WV2_STANDALONE
 #define PWEB_PROFILE "offline"
+; CAP-6b4: the profile's own setup basename. Never "setup" - every
+; executable named setup.exe is shimmed by Windows application
+; compatibility into loading extra DLLs from its own directory. The
+; build script reads this literal instead of passing /F, so the .iss
+; stays the single source of the artifact name.
+#define PWEB_SETUP_BASENAME "PWebRelease-Offline-Setup"
 
 #include "pwebprovgate.issi"

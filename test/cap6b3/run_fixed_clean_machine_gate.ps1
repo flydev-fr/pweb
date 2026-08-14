@@ -10,7 +10,7 @@
 # under CI.
 #
 # Transport to the instance (from a repo where the build gates ran):
-#   dist/windows/fixed-runtime/setup.exe
+#   dist/windows/fixed-runtime/PWebRelease-FixedRuntime-Setup.exe
 #   build/cap6b3/bin/pwebwv2fixed.exe
 #   build/cap6b3/lockfacts.psd1
 #   build/cap6b3/tree.manifest
@@ -73,7 +73,7 @@ if ($env:CI -or $env:GITHUB_ACTIONS) {
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 if ($SetupExe -eq '') {
-    $SetupExe = Join-Path $RepoRoot 'dist/windows/fixed-runtime/setup.exe'
+    $SetupExe = Join-Path $RepoRoot 'dist/windows/fixed-runtime/PWebRelease-FixedRuntime-Setup.exe'
 }
 if ($Helper -eq '') { $Helper = Join-Path $RepoRoot 'build/cap6b3/bin/pwebwv2fixed.exe' }
 if ($LockFacts -eq '') { $LockFacts = Join-Path $RepoRoot 'build/cap6b3/lockfacts.psd1' }
@@ -143,7 +143,7 @@ try {
     # the very bytes this gate is about to execute must be THIS build's
     $sha = (Get-FileHash -Algorithm SHA256 $SetupExe).Hash.ToLowerInvariant()
     if ($sha -cne $facts.SetupSha) {
-        Add-Evidence ("CAP6B3_CLEAN_MACHINE_FAIL setup.exe sha256 $sha is not " +
+        Add-Evidence ("CAP6B3_CLEAN_MACHINE_FAIL setup binary sha256 $sha is not " +
             "the built $($facts.SetupSha) - transported the wrong binary?")
         exit 1
     }

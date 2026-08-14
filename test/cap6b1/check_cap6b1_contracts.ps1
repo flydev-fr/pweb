@@ -60,7 +60,8 @@ $markerContracts = @(
             'test/cap6b2/run_offline_setup_gates.ps1',
             'test/cap6b2/run_offline_clean_machine_gate.ps1',
             'test/cap6b3/run_fixed_setup_gates.ps1',
-            'test/cap6b3/run_fixed_clean_machine_gate.ps1'
+            'test/cap6b3/run_fixed_clean_machine_gate.ps1',
+            'test/cap6b4/run_profile_matrix.ps1'
         )
     },
     # CAP-6b3: the fixed-runtime markers, produced under the
@@ -68,14 +69,18 @@ $markerContracts = @(
     @{
         Literal = 'FIXED RUNTIME SELECTED'
         ProducerLiterals = @(': FIXED RUNTIME SELECTED (version=')
-        Consumers = @('test/cap6b3/run_fixed_setup_gates.ps1')
+        Consumers = @(
+            'test/cap6b3/run_fixed_setup_gates.ps1',
+            'test/cap6b4/run_profile_matrix.ps1'
+        )
     },
     @{
         Literal = 'FIXED RUNTIME REFUSED'
         ProducerLiterals = @(': FIXED RUNTIME REFUSED (status=')
         Consumers = @(
             'test/cap6b3/run_fixed_setup_gates.ps1',
-            'test/cap6b3/run_fixed_clean_machine_gate.ps1'
+            'test/cap6b3/run_fixed_clean_machine_gate.ps1',
+            'test/cap6b4/run_profile_matrix.ps1'
         )
     },
     @{
@@ -83,7 +88,8 @@ $markerContracts = @(
         ProducerLiterals = @(': FIXED RUNTIME IDENTITY OK ')
         Consumers = @(
             'test/cap6b3/run_fixed_setup_gates.ps1',
-            'test/cap6b3/run_fixed_clean_machine_gate.ps1'
+            'test/cap6b3/run_fixed_clean_machine_gate.ps1',
+            'test/cap6b4/run_profile_matrix.ps1'
         )
     },
     # the post-create refusal: its own marker, because 'FIXED RUNTIME
@@ -92,7 +98,10 @@ $markerContracts = @(
     @{
         Literal = 'FIXED RUNTIME IDENTITY REFUSED'
         ProducerLiterals = @(': FIXED RUNTIME IDENTITY REFUSED (status=')
-        Consumers = @('test/cap6b3/run_fixed_setup_gates.ps1')
+        Consumers = @(
+            'test/cap6b3/run_fixed_setup_gates.ps1',
+            'test/cap6b4/run_profile_matrix.ps1'
+        )
     }
 )
 foreach ($contract in $markerContracts) {
@@ -122,7 +131,10 @@ $consumers = @(
     (Join-Path $RepoRoot 'test/cap6b1/run_normal_setup_gates.ps1'),
     (Join-Path $RepoRoot 'test/cap6b1/run_clean_machine_gate.ps1'),
     (Join-Path $RepoRoot 'test/cap6b2/run_offline_setup_gates.ps1'),
-    (Join-Path $RepoRoot 'test/cap6b2/run_offline_clean_machine_gate.ps1')
+    (Join-Path $RepoRoot 'test/cap6b2/run_offline_clean_machine_gate.ps1'),
+    # CAP-6b4: the profile matrix reads the provisioning verdict out of
+    # the setup log on every switch that LEAVES the fixed profile
+    (Join-Path $RepoRoot 'test/cap6b4/run_profile_matrix.ps1')
 )
 $wanted = [System.Collections.Generic.SortedSet[string]]::new()
 foreach ($f in $consumers) {
@@ -205,7 +217,10 @@ if ($fixedIss -notmatch 'pwebappsetup\.issi') {
 $appIdConsumers = @(
     'test/cap6b1/run_normal_setup_gates.ps1',
     'test/cap6b2/run_offline_setup_gates.ps1',
-    'test/cap6b3/run_fixed_setup_gates.ps1'
+    'test/cap6b3/run_fixed_setup_gates.ps1',
+    # CAP-6b4: the matrix asserts there is exactly ONE uninstall
+    # registration for this AppId across every profile switch
+    'test/cap6b4/run_profile_matrix.ps1'
 )
 if ($appIdConsumers.Count -eq 0) {
     throw 'no AppId consumers registered - the contract check is broken'
@@ -227,7 +242,10 @@ $fixedConsumers = @(
     (Join-Path $RepoRoot 'test/cap6b3/build_fixed_setup.ps1'),
     (Join-Path $RepoRoot 'test/cap6b3/run_fixed_setup_gates.ps1'),
     (Join-Path $RepoRoot 'test/cap6b3/run_fixed_clean_machine_gate.ps1'),
-    (Join-Path $RepoRoot 'tools/setup/fixed.iss')
+    (Join-Path $RepoRoot 'tools/setup/fixed.iss'),
+    # CAP-6b4: the matrix consumes the fixed helper's detector and ACL
+    # verdicts to prove the shared Evergreen runtime was never touched
+    (Join-Path $RepoRoot 'test/cap6b4/run_profile_matrix.ps1')
 )
 $wantedFixed = [System.Collections.Generic.SortedSet[string]]::new()
 foreach ($f in $fixedConsumers) {
@@ -273,6 +291,9 @@ if ($fixedIssRaw -match '(?m)^\s*Flags:[^\r\n]*skipifsourcedoesntexist') {
         'the missing-verdict FAILURE SIGNAL into a silent skip')
 }
 $verdictConsumers = @('test/cap6b3/run_fixed_setup_gates.ps1')
+# CAP-6b4: the fixed profile's [Files] ORDER around that verdict entry is
+# itself a contract (the shared release triple must come AFTER it); it is
+# proven by test/cap6b4/check_cap6b4_contracts.ps1 contract (d)
 foreach ($rel in $verdictConsumers) {
     $f = Join-Path $RepoRoot $rel
     if (-not (Test-Path $f)) { throw "verdict consumer script missing: $f" }

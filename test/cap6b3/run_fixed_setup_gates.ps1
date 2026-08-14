@@ -1,4 +1,8 @@
-# CAP-6b3 gates over the real dist/windows/fixed-runtime/setup.exe.
+# CAP-6b3 gates over the real
+# dist/windows/fixed-runtime/PWebRelease-FixedRuntime-Setup.exe
+# (CAP-6b4 renamed the artifact away from the appcompat-shimmed
+# setup.exe basename; every assertion below is unchanged and stays the
+# no-regression proof).
 # Safe by construction on ANY host: this profile provisions nothing,
 # executes no Microsoft installer and touches no machine-wide state -
 # it deploys a bundled runtime tree under the per-user install dir and
@@ -11,7 +15,8 @@
 #   2. staged-tree manifest re-verification through the native streamed
 #      digest (the build wrote it; this proves it still holds)
 #   3. silent per-user install FROM AN ISOLATED DIRECTORY containing
-#      ONLY setup.exe (packaged independence: no repo, no CWD, no cache
+#      ONLY the profile's own setup binary (packaged independence: no
+#      repo, no CWD, no cache
 #      can contribute anything), bounded, with /LOG; the log must show
 #      the ACL helper's exit 0 and must contain NO provisioning marker
 #      of any kind (WV2PROV_*) - this profile provisions nothing
@@ -52,7 +57,7 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 Push-Location $RepoRoot
 try {
-    foreach ($pre in 'dist/windows/fixed-runtime/setup.exe',
+    foreach ($pre in 'dist/windows/fixed-runtime/PWebRelease-FixedRuntime-Setup.exe',
                      'build/cap6b3/bin/pwebwv2fixed.exe',
                      'build/cap6b3/tree.manifest',
                      'build/cap6b3/lockfacts.psd1') {
@@ -63,7 +68,7 @@ try {
     }
     $facts = Import-PowerShellDataFile (Resolve-Path build/cap6b3/lockfacts.psd1).Path
     $Helper = (Resolve-Path build/cap6b3/bin/pwebwv2fixed.exe).Path
-    $SetupExe = (Resolve-Path dist/windows/fixed-runtime/setup.exe).Path
+    $SetupExe = (Resolve-Path dist/windows/fixed-runtime/PWebRelease-FixedRuntime-Setup.exe).Path
     $Manifest = (Resolve-Path build/cap6b3/tree.manifest).Path
     $RuntimeDir = $facts.RuntimeDir
     if (-not (Test-Path $RuntimeDir)) {
@@ -142,7 +147,8 @@ try {
         "manifest: $($facts.TreeFiles) file(s), $($facts.TreeBytes) byte(s))")
 
     # --- 3) silent per-user install from an ISOLATED directory ---------------
-    # packaged independence: the dir holds ONLY setup.exe, lives outside
+    # packaged independence: the dir holds ONLY this profile's setup
+    # binary, lives outside
     # the repo, and is the process CWD - nothing but the embedded payload
     # can contribute a byte to the install
     if (Test-Path $InstallDir) {
@@ -155,12 +161,13 @@ try {
     $log = Join-Path $RepoRoot 'build/cap6b3/setup-install.log'
     if (Test-Path $log) { Remove-Item -Force $log }
     try {
-        Copy-Item $SetupExe (Join-Path $Isolated 'setup.exe')
+        $IsolatedName = Split-Path -Leaf $SetupExe
+        Copy-Item $SetupExe (Join-Path $Isolated $IsolatedName)
         $contents = @(Get-ChildItem $Isolated -Force | ForEach-Object Name)
-        if (($contents -join ',') -cne 'setup.exe') {
-            throw "isolated dir is not exactly [setup.exe]: $($contents -join ', ')"
+        if (($contents -join ',') -cne $IsolatedName) {
+            throw "isolated dir is not exactly [$IsolatedName]: $($contents -join ', ')"
         }
-        $r = Invoke-Bounded (Join-Path $Isolated 'setup.exe') @('/VERYSILENT',
+        $r = Invoke-Bounded (Join-Path $Isolated $IsolatedName) @('/VERYSILENT',
             '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/LOG=$log") 1200000 `
             'silent fixed setup' $Isolated
         if ($r.Code -ne 0) {

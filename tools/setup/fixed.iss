@@ -80,13 +80,17 @@
 ;     or ssPostInstall is SWALLOWED and can never fail setup, and
 ;     Inno's own rollback machinery exists, works, and is triggered by
 ;     a genuine Setup file error during the installing phase. So the
-;     gate's verdict is expressed as something SETUP ITSELF checks: the
-;     last [Files] entry is an `external` source in {tmp} that the gate
-;     creates ONLY on success. Its BeforeInstall runs after the whole
-;     runtime tree has landed (post-copy validation is unchanged and
-;     unweakened) and before the uninstall key is written; a missing
+;     gate's verdict is expressed as something SETUP ITSELF checks: an
+;     `external` [Files] entry whose source lives in {tmp} and which the
+;     gate creates ONLY on success. Its BeforeInstall runs after the
+;     whole runtime tree has landed (post-copy validation is unchanged
+;     and unweakened) and before the uninstall key is written; a missing
 ;     source is a real Setup error, with no skipifsourcedoesntexist to
-;     silence it, so Setup rolls the installation back itself. Nothing
+;     silence it, so Setup rolls the installation back itself.
+;     CAP-6b4 moved the SHARED release triple to after this entry (it is
+;     therefore no longer the last one): the gate still runs on a fully
+;     landed tree, and a refused switch now aborts before the source
+;     install's own triple is touched at all. Nothing
 ;     here removes files or registry keys by hand: our own DelTree is
 ;     exactly what produced the incidental EFileError above.
 ;     Fail-closed by construction, relied on deliberately: if the gate
@@ -117,10 +121,20 @@
   #define PWEB_ACL_HELPER "pwebwv2fixed.exe"
 #endif
 ; the gate's verdict, written to {tmp} by FixedRuntimeGate ONLY when
-; the helper exits 0, and consumed as the last [Files] entry's external
-; source. deleteafterinstall keeps it out of the installed layout.
+; the helper exits 0, and consumed as the external source of the [Files]
+; entry that follows the whole runtime tree.
+; deleteafterinstall keeps it out of the installed layout.
 #define PWEB_VERDICT_FILE "pweb-fixed-runtime.verdict"
-#define PWEB_PROFILE "fixed"
+; CAP-6b4: the ratified profile name is the marker value too, so it
+; became the exact string 'fixed-runtime' (the set is validated
+; case-sensitively inside the shared identity include)
+#define PWEB_PROFILE "fixed-runtime"
+; CAP-6b4: the profile's own setup basename. Never "setup" - every
+; executable named setup.exe is shimmed by Windows application
+; compatibility into loading extra DLLs from its own directory. The
+; build script reads this literal instead of passing /F, so the .iss
+; stays the single source of the artifact name.
+#define PWEB_SETUP_BASENAME "PWebRelease-FixedRuntime-Setup"
 
 #include "pwebappsetup.issi"
 
@@ -129,17 +143,22 @@
 ; extracted Fixed Version Runtime tree plus the pinned-SDK loader. The
 ; loader sits INSIDE this folder on purpose, so the application can
 ; only ever load it by explicit absolute path, never by DLL search
-; order.
-Source: "{#PWEB_RUNTIME_DIR}\*"; DestDir: "{app}\runtime\webview2"; \
+; order. The subdirectory name comes from the single
+; PWEB_RUNTIME_SUBDIR source in pwebappsetup.issi - the same one the
+; Evergreen profiles' [InstallDelete] reclaim targets, so the tree this
+; profile installs and the tree they remove can never be two different
+; directories.
+Source: "{#PWEB_RUNTIME_DIR}\*"; DestDir: "{app}\{#PWEB_RUNTIME_SUBDIR}"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
 ; the ACL helper is extracted to {tmp} on demand and auto-deleted by
 ; Inno when setup exits (success OR abort) - it is never installed to
 ; {app}, so the installed layout stays exactly the release triple plus
 ; the runtime folder
 Source: "{#PWEB_PAYLOAD_DIR}\{#PWEB_ACL_HELPER}"; Flags: dontcopy
-; THE GATE. This must stay the LAST entry: its BeforeInstall therefore
-; runs after every file above has landed, so the helper verifies the
-; DEPLOYED tree. The source is `external` and lives in {tmp}; the gate
+; THE GATE. It must stay after every RUNTIME TREE entry - its
+; BeforeInstall therefore runs once the whole tree has landed, so the
+; helper verifies the DEPLOYED bytes, which is the only thing it
+; verifies. The source is `external` and lives in {tmp}; the gate
 ; creates it only when the helper exits 0. If it is missing, Setup
 ; cannot find its source and rolls the whole installation back - which
 ; is the abort. There is deliberately NO skipifsourcedoesntexist here:
@@ -148,10 +167,25 @@ Source: "{tmp}\{#PWEB_VERDICT_FILE}"; DestDir: "{app}"; \
     Flags: external ignoreversion deleteafterinstall; \
     BeforeInstall: FixedRuntimeGate
 
+; CAP-6b4: the shared release triple comes LAST, AFTER the verdict
+; gate above. Measured with the pinned ISCC 6.7.3: with the triple
+; BEFORE the gate, a failed Evergreen -> fixed switch exits nonzero and
+; Inno's rollback removes the tree, but the source install's
+; releaseapp.exe has already been overwritten with the fixed-mode
+; binary - a fixed-mode app with no runtime tree and a marker still
+; reading the source profile. With the triple AFTER the gate, the abort
+; happens before these three entries are reached at all, so the source
+; install's payload, marker and uninstall registration come out
+; byte-identical to pre-switch. Both source profiles are measured: the
+; CAP-6b4 matrix runs this failure over an offline install (row F3) and
+; over a normal install (row F3b). Nothing about the gate's own
+; guarantee changes: the tree is still fully landed when it runs.
+#include "pwebapppayload.issi"
+
 [Code]
-// The post-install gate. Runs as the LAST [Files] entry's
-// BeforeInstall, so the whole runtime tree has already landed and the
-// helper verifies the DEPLOYED bytes:
+// The post-install gate. Runs as the BeforeInstall of the [Files]
+// entry that follows the whole runtime tree, so the tree has already
+// landed and the helper verifies the DEPLOYED bytes:
 //   1. Authenticode of the five critical binaries vs the ratified
 //      leaf subject;
 //   2. the AppContainer grant applied to the tree root;
@@ -175,7 +209,10 @@ begin
   Reason := '';
   ExtractTemporaryFile('{#PWEB_ACL_HELPER}');
   Helper := ExpandConstant('{tmp}\{#PWEB_ACL_HELPER}');
-  RuntimeRoot := ExpandConstant('{app}\runtime\webview2');
+  // the same single PWEB_RUNTIME_SUBDIR source the [Files] entry above
+  // deploys into: the gate can never verify a different directory than
+  // the one that was installed
+  RuntimeRoot := ExpandConstant('{app}\{#PWEB_RUNTIME_SUBDIR}');
   GateLog := ExpandConstant('{tmp}\pwebwv2fixed.log');
   Params := '--postinstall "' + RuntimeRoot + '" "{#PWEB_FIXED_SUBJECT}" "' +
     GateLog + '"';

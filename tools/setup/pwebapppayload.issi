@@ -1,0 +1,60 @@
+; Shared PWeb application-payload include (CAP-6b4 extraction of the
+; release triple out of tools/setup/pwebappsetup.issi).
+;
+; This file authors, ONCE, the only [Files] entries that install the
+; application itself - the unchanged CAP-6 release triple:
+;
+;   releaseapp.exe  the release host (the same source built per mode:
+;                   only the fixed profile compiles it with
+;                   -dPWEB_FIXED_RUNTIME)
+;   app.pwb         the bundle - byte-identical across all profiles
+;   webview.dll     the pinned binding - byte-identical across all
+;                   profiles
+;
+; It is a SEPARATE include from the identity one for exactly one
+; reason, measured against the pinned ISCC 6.7.3: the position of these
+; three entries inside a profile's [Files] order decides what a FAILED
+; profile switch leaves behind.
+;
+;   common payload BEFORE the fixed profile's verdict gate (the
+;   pre-CAP-6b4 order): a failed Evergreen -> fixed switch exits
+;   nonzero and Inno's rollback removes the runtime tree - but the
+;   source install's releaseapp.exe has already been OVERWRITTEN with
+;   the fixed-mode binary, leaving a fixed-mode app with no runtime
+;   tree and a marker still reading the source profile. A mixed,
+;   broken install.
+;
+;   common payload AFTER the verdict gate (the ratified order): the
+;   gate aborts before these entries are ever reached, so the source
+;   install's payload, marker and uninstall registration are
+;   byte-identical to pre-switch.
+;
+; Both source profiles are measured, not one: the CAP-6b4 matrix runs
+; a failing post-install gate over an OFFLINE install (row F3) and over
+; a NORMAL install (row F3b), and asserts byte-identity of the source
+; triple in each.
+;
+; So each profile #includes this file at the position ITS order needs -
+; the Evergreen profiles right after their own dontcopy payload, the
+; fixed profile after its verdict entry - while the entries themselves
+; can never fork between profiles. The fixed profile's gate is not
+; weakened by this: it still runs after the entire runtime tree has
+; landed, which is the only thing it verifies.
+;
+; Consumed define (validated by pwebappsetup.issi, which every profile
+; includes before this one):
+;   PWEB_PAYLOAD_DIR  staged payload directory holding the triple
+;
+; Nothing here can reach the network, and nothing here is a
+; profile-specific artifact: no provisioning installer, no runtime
+; tree, no loose frontend file, ever.
+
+#ifndef PWEB_PAYLOAD_DIR
+  #error PWEB_PAYLOAD_DIR must be defined - include tools/setup/pwebappsetup.issi before this file, and build via a profile build script
+#endif
+
+[Files]
+; the unchanged CAP-6 release triple - no loose frontend files, ever
+Source: "{#PWEB_PAYLOAD_DIR}\releaseapp.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PWEB_PAYLOAD_DIR}\app.pwb"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PWEB_PAYLOAD_DIR}\webview.dll"; DestDir: "{app}"; Flags: ignoreversion

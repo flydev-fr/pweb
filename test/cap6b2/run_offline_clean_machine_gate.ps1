@@ -18,13 +18,13 @@
 # prove the offline profile, because the runtime could have arrived
 # through the network instead of the embedded payload.
 #
-# The transported setup.exe is verified too: its sha256 is computed
+# The transported setup binary is verified too: its sha256 is computed
 # before execution, recorded as evidence, and MUST equal the
 # build-recorded SetupSha from lockfacts.psd1 - a mutated or swapped
 # binary fails the gate before it ever runs.
 #
 # Transport to the instance (from a repo where the build gates ran):
-#   dist/windows/offline/setup.exe
+#   dist/windows/offline/PWebRelease-Offline-Setup.exe
 #   build/cap6b2/bin/pwebwv2prov.exe
 #   build/cap6b2/lockfacts.psd1
 #   build/cap6b2/payload/        (the staged release triple: the
@@ -45,7 +45,7 @@
 #            STAGED releaseapp.exe (payload dir, pre-setup) must
 #            refuse with the distinct 'WEBVIEW2 RUNTIME UNUSABLE'
 #            stderr marker and a nonzero exit
-#   SETUP_SHA256  sha256 of the exact setup.exe about to run vs the
+#   SETUP_SHA256  sha256 of the exact setup binary about to run vs the
 #            build-recorded lockfacts value; mismatch refuses
 #   NETWORK  active-adapter samples before, DURING (5 s poll) and
 #            after SETUP; any adapter Up - or an unknowable state -
@@ -99,7 +99,9 @@ if ($env:CI -or $env:GITHUB_ACTIONS) {
 }
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
-if ($SetupExe -eq '') { $SetupExe = Join-Path $RepoRoot 'dist/windows/offline/setup.exe' }
+if ($SetupExe -eq '') {
+    $SetupExe = Join-Path $RepoRoot 'dist/windows/offline/PWebRelease-Offline-Setup.exe'
+}
 if ($Helper -eq '') { $Helper = Join-Path $RepoRoot 'build/cap6b2/bin/pwebwv2prov.exe' }
 if ($LockFacts -eq '') { $LockFacts = Join-Path $RepoRoot 'build/cap6b2/lockfacts.psd1' }
 if ($PayloadDir -eq '') { $PayloadDir = Join-Path $RepoRoot 'build/cap6b2/payload' }
@@ -294,7 +296,7 @@ try {
         exit 1
     }
     if ($setupSha -cne $expectedSha) {
-        Add-Evidence ('CAP6B2_OFFLINE_CLEAN_MACHINE_FAIL setup.exe sha256 does not ' +
+        Add-Evidence ('CAP6B2_OFFLINE_CLEAN_MACHINE_FAIL setup binary sha256 does not ' +
             'match the build-recorded value - refusing to execute a mutated or ' +
             'swapped binary')
         exit 1

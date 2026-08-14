@@ -8,7 +8,7 @@
 # mocked: this script refuses to run under CI.
 #
 # Transport to the instance (from a repo where the build gates ran):
-#   dist/windows/normal/setup.exe
+#   dist/windows/normal/PWebRelease-Normal-Setup.exe
 #   build/cap6b1/bin/pwebwv2prov.exe
 #   build/cap6b1/lockfacts.psd1
 #   build/cap6b1/payload/        (the staged release triple: the
@@ -67,7 +67,9 @@ if ($env:CI -or $env:GITHUB_ACTIONS) {
 }
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
-if ($SetupExe -eq '') { $SetupExe = Join-Path $RepoRoot 'dist/windows/normal/setup.exe' }
+if ($SetupExe -eq '') {
+    $SetupExe = Join-Path $RepoRoot 'dist/windows/normal/PWebRelease-Normal-Setup.exe'
+}
 if ($Helper -eq '') { $Helper = Join-Path $RepoRoot 'build/cap6b1/bin/pwebwv2prov.exe' }
 if ($LockFacts -eq '') { $LockFacts = Join-Path $RepoRoot 'build/cap6b1/lockfacts.psd1' }
 if ($PayloadDir -eq '') { $PayloadDir = Join-Path $RepoRoot 'build/cap6b1/payload' }

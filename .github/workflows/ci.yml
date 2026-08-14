@@ -61,15 +61,34 @@ jobs:
     # adds the bounded ~290 MB Fixed Version Runtime fetch, its ~690 MB
     # expansion, TWO setup compiles over that tree (the real one plus
     # the abort probe) and install/uninstall gates over ~690 MB.
-    # The rule this number follows: every step budget must exceed the
-    # sum of the bounded waits the step's own script can spend, and
-    # this job budget must exceed the sum of every declared step
-    # budget. Those now total 283 minutes (143 pre-existing + 20 fetch
-    # + 45 build + 75 gates for CAP-6b3), so the job gets 300 - still
-    # inside the 360-minute hosted-runner ceiling. These are CEILINGS
-    # that only ever fire on a hang: a healthy run is a small fraction
-    # of them (the CAP-6b3 setup compiles in ~25 s locally).
-    timeout-minutes: 300
+    # CAP-6b4 adds the integration block: the contract cross-checks, the
+    # offline abort probe, the release index, the isolation matrix and
+    # the profile matrix itself - which installs the ~690 MB fixed
+    # profile the three times its rows require, switches between all
+    # three modes, and proves four fail-closed refusals.
+    #
+    # TWO DIFFERENT RULES, stated apart because conflating them is how
+    # this number went wrong before.
+    #
+    # PER-STEP budgets are the real protection: each must exceed the sum
+    # of the bounded waits its own script can spend, so a hang is caught
+    # by the STEP, which lets the `if: failure()` diagnostics uploads
+    # below still run. Those budgets now sum to 416 minutes (283 through
+    # CAP-6b3, plus 133 for CAP-6b4: 3 contracts + 8 probes + 3 index +
+    # 4 isolation + 115 matrix).
+    #
+    # The JOB budget is only a BACKSTOP, and it deliberately does NOT
+    # try to exceed that sum. It cannot meaningfully: the step budgets
+    # are independent worst-case ceilings that no single run can reach
+    # together, 56 of this job's 79 steps declare no budget at all, and the
+    # hosted-runner hard ceiling is 360 minutes anyway. What matters is
+    # that it stays well UNDER 360 - when the JOB ceiling fires, GitHub
+    # cancels everything that remains, INCLUDING every diagnostics
+    # upload, which is the opposite of what those uploads are for. 330
+    # leaves 30 minutes of headroom for exactly that. A healthy full run
+    # is a small fraction of it (the CAP-6b3 setup compiles in ~25 s
+    # locally; the CAP-6b4 matrix measures ~3 minutes).
+    timeout-minutes: 330
     steps:
       - name: Checkout (full history for freeze diff against baseline)
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -991,7 +1010,7 @@ jobs:
       # provisioning cases ran inside the PWeb test suite step. CI
       # fetches the LOCKED bootstrapper (sha256 + Authenticode subject
       # verified, drift fails the build and deletes the download) and
-      # builds/validates the REAL setup.exe - but NEVER executes the
+      # builds/validates the REAL normal-profile setup - but NEVER executes the
       # bootstrapper: on the hosted runner the AlreadyUsable skip path
       # is the proof, and the genuine provisioning proof is the
       # clean-machine VM gate (test/cap6b1/run_clean_machine_gate.ps1,
@@ -1034,7 +1053,7 @@ jobs:
         timeout-minutes: 10
         run: pwsh -NoProfile -File tools/get-innosetup.ps1
 
-      - name: CAP-6b1 build normal setup.exe from the pinned locks
+      - name: CAP-6b1 build the normal-profile setup from the pinned locks (payload-listing proof)
         shell: pwsh
         timeout-minutes: 15
         run: |
@@ -1065,7 +1084,11 @@ jobs:
             build/cap6b1/smoke-installed.log
             build/cap6b1/lockfacts.psd1
             build/cap6b1/is-fixtures/
-            dist/windows/normal/setup.exe
+            build/cap6b1/iscc-normal.log
+            # CAP-6b4 renamed every profile artifact away from the
+            # appcompat-shimmed setup.exe basename; this upload path
+            # follows the rename so failure diagnostics keep working
+            dist/windows/normal/PWebRelease-Normal-Setup.exe
 
       # ------------------------- CAP-6b2 gates -------------------------
       # Offline-profile Evergreen STANDALONE Installer provisioning.
@@ -1076,11 +1099,11 @@ jobs:
       # suite step. CI fetches the LOCKED ~210 MB standalone (sha256 +
       # Authenticode subject verified, drift fails the build and
       # deletes the download) in a dedicated bounded step, builds the
-      # REAL offline setup.exe with its payload-listing proof
+      # REAL offline-profile setup with its payload-listing proof
       # (standalone present, bootstrapper absent), and runs the gates
       # - but NEVER executes any runtime installer: on the hosted
       # runner the AlreadyUsable skip path (installing from an
-      # ISOLATED dir holding only setup.exe) is the proof, and the
+      # ISOLATED dir holding only that setup binary) is the proof, and the
       # genuine offline provisioning proof is the network-disabled
       # clean-machine VM gate
       # (test/cap6b2/run_offline_clean_machine_gate.ps1, human-run,
@@ -1100,7 +1123,7 @@ jobs:
             throw 'locked standalone fetch-verify FAILED (upstream drift? re-ratify deliberately)'
           }
 
-      - name: CAP-6b2 build offline setup.exe from the pinned locks (payload-listing proof)
+      - name: CAP-6b2 build the offline-profile setup from the pinned locks (payload-listing proof)
         shell: pwsh
         timeout-minutes: 15
         run: |
@@ -1117,7 +1140,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'CAP-6b2 offline setup gates FAILED' }
 
       # deliberate deviation from the CAP-6b1 diagnostics pattern: the
-      # offline setup.exe (~200 MB) is NOT uploaded on failure - the
+      # offline-profile setup (~200 MB) is NOT uploaded on failure - the
       # logs, listing and lockfacts below identify any defect, and the
       # binary is reproducible from the pinned locks; uploading it
       # would burn artifact quota for no diagnostic value
@@ -1147,7 +1170,7 @@ jobs:
       # step. CI acquires the LOCKED ~290 MB cabinet (sha256 +
       # Authenticode subject verified, drift fails the build and deletes
       # the download) in a dedicated bounded step, expands it, builds the
-      # REAL fixed setup.exe with its full-relative-path payload proof
+      # REAL fixed-profile setup with its full-relative-path payload proof
       # (runtime tree present, BOTH Evergreen installers absent), and
       # runs the gates end to end - install, ACL verified by SID,
       # manifest equality, observed pinned identity, the no-fallback
@@ -1174,7 +1197,7 @@ jobs:
       # 45: the ~690 MB expansion, the CAP-3U-windowed host compile, the
       # native tree-version/manifest passes and TWO ISCC compiles over
       # the tree (the real setup plus the abort probe)
-      - name: CAP-6b3 build fixed setup.exe from the pinned locks (expand + manifest + payload proof)
+      - name: CAP-6b3 build the fixed-profile setup from the pinned locks (expand + manifest + payload proof)
         shell: pwsh
         timeout-minutes: 45
         run: |
@@ -1195,7 +1218,7 @@ jobs:
             Tee-Object -FilePath build/cap6b3-gates.log
           if ($LASTEXITCODE -ne 0) { throw 'CAP-6b3 fixed setup gates FAILED' }
 
-      # same deliberate deviation as CAP-6b2: the fixed setup.exe
+      # same deliberate deviation as CAP-6b2: the fixed-profile setup
       # (~276 MB) is NOT uploaded on failure - the logs, listing and
       # lockfacts below identify any defect, and the binary is
       # reproducible from the pinned locks
@@ -1216,6 +1239,100 @@ jobs:
             build/cap6b3/smoke-installed.err.log
             build/cap6b3/lockfacts.psd1
             build/cap6b3/tree.manifest
+
+      # ------------------------- CAP-6b4 gates -------------------------
+      # Windows profile INTEGRATION: the three profiles above are
+      # mutually exclusive MODES of one product (one AppId, one install
+      # directory, one HKCU profile marker), and this block proves the
+      # integration rather than the individual profiles. Everything
+      # below is additive; no earlier step is altered.
+      #
+      # It runs LAST on purpose: the CAP-6b1/6b2/6b3 steps have already
+      # built all three artifacts and left the machine clean, so the
+      # matrix can chain real installs, real switches, real refusals and
+      # real uninstalls without paying for a fourth set of compiles.
+      #
+      # Nothing here installs, repairs or uninstalls the runner's shared
+      # WebView2 Evergreen runtime, and nothing deletes the shared
+      # WebView2 user-data folder - both are ASSERTED by the matrix (the
+      # detector verdict must be identical before and after the whole
+      # chain, and a user-data sentinel must survive all three
+      # uninstalls), not merely intended.
+
+      - name: CAP-6b4 contract cross-checks (marker, basenames, runtime subdir, fixed [Files] order, sweeps, prior-gate aggregation)
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          pwsh -NoProfile -File test/cap6b4/check_cap6b4_contracts.ps1 2>&1 |
+            Tee-Object -FilePath build/cap6b4-contracts.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-6b4 contract cross-checks FAILED' }
+
+      # the offline abort probe (matrix row F2) plus the one consolidated
+      # parse point the matrix reads; it embeds the ~210 MB standalone
+      # exactly like the real offline setup, so it gets a real budget
+      - name: CAP-6b4 build switch probes (offline abort probe + consolidated facts)
+        shell: pwsh
+        timeout-minutes: 8
+        run: |
+          pwsh -NoProfile -File test/cap6b4/build_switch_probes.ps1 2>&1 |
+            Tee-Object -FilePath build/cap6b4-probes.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-6b4 switch-probe build FAILED' }
+
+      # -IndexOnly: the three artifacts already exist from the blocks
+      # above, so the orchestrator only measures them and writes the
+      # release index the isolation gate then verifies
+      - name: CAP-6b4 release index from the three built profiles
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          pwsh -NoProfile -File tools/build-windows-profiles.ps1 -IndexOnly 2>&1 |
+            Tee-Object -FilePath build/cap6b4-index.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-6b4 release index FAILED' }
+
+      - name: CAP-6b4 profile isolation (per-profile ISCC listings, size envelopes, release index)
+        shell: pwsh
+        timeout-minutes: 4
+        run: |
+          pwsh -NoProfile -File test/cap6b4/run_profile_isolation.ps1 2>&1 |
+            Tee-Object -FilePath build/cap6b4-isolation.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-6b4 profile isolation FAILED' }
+
+      # 115: the matrix script's OWN bounded waits - installs, abort
+      # probes, uninstall EXEC calls and the post-exec polls that follow
+      # them, app runs and helper probes - sum to 113.5 minutes in the
+      # worst case. That arithmetic is written out, line by line, in the
+      # BOUNDED-WAIT BUDGET table at the top of
+      # test/cap6b4/run_profile_matrix.ps1, which is its single source;
+      # this number only has to exceed it. It is a hang ceiling, not a
+      # prediction: a healthy full run measures ~3 minutes.
+      - name: CAP-6b4 profile matrix - I1-I3, S1-S6, F1-F4, U1-U3 over the three real setups
+        shell: pwsh
+        timeout-minutes: 115
+        run: |
+          pwsh -NoProfile -File test/cap6b4/run_profile_matrix.ps1 2>&1 |
+            Tee-Object -FilePath build/cap6b4-matrix.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-6b4 profile matrix FAILED' }
+
+      # same deliberate deviation as CAP-6b2/6b3: no ~200-276 MB setup
+      # binary is uploaded - the logs and the release index identify any
+      # defect, and every artifact is reproducible from the pinned locks
+      - name: CAP-6b4 diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap6b4-diagnostics
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            build/cap6b4-contracts.log
+            build/cap6b4-probes.log
+            build/cap6b4-index.log
+            build/cap6b4-isolation.log
+            build/cap6b4-matrix.log
+            build/cap6b4/switchfacts.psd1
+            build/cap6b4/iscc-offline-abort.log
+            build/cap6b4/matrix/
+            dist/windows/release-index.json
 
       - name: Upload diagnostics on failure
         if: failure()

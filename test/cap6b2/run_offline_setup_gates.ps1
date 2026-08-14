@@ -1,4 +1,8 @@
-# CAP-6b2 gates over the real dist/windows/offline/setup.exe. Safe by
+# CAP-6b2 gates over the real
+# dist/windows/offline/PWebRelease-Offline-Setup.exe (CAP-6b4 renamed
+# the artifact away from the appcompat-shimmed setup.exe basename;
+# every assertion below is unchanged and stays the no-regression
+# proof). Safe by
 # construction on any machine that already has a usable WebView2
 # runtime (hosted runners do): the helper's AlreadyUsable skip path is
 # proven and the embedded Standalone Installer is NEVER executed. On a
@@ -23,7 +27,8 @@
 #   1. helper skip path over the REAL embedded payload: AlreadyUsable,
 #      exit 0, no WV2PROV_EXEC line (the standalone never ran)
 #   2. silent per-user install FROM AN ISOLATED DIRECTORY containing
-#      ONLY setup.exe (packaged independence: no repo, no CWD, no
+#      ONLY the profile's own setup binary (packaged independence: no
+#      repo, no CWD, no
 #      cache can contribute anything), bounded, with /LOG; the log
 #      must show the helper verdict AlreadyUsable/exit 0 and no
 #      execution
@@ -47,7 +52,7 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 Push-Location $RepoRoot
 try {
-    foreach ($pre in 'dist/windows/offline/setup.exe',
+    foreach ($pre in 'dist/windows/offline/PWebRelease-Offline-Setup.exe',
                      'build/cap6b2/bin/pwebwv2prov.exe',
                      'build/cap6b2/lockfacts.psd1') {
         if (-not (Test-Path $pre)) {
@@ -57,7 +62,7 @@ try {
     }
     $facts = Import-PowerShellDataFile (Resolve-Path build/cap6b2/lockfacts.psd1).Path
     $Helper = (Resolve-Path build/cap6b2/bin/pwebwv2prov.exe).Path
-    $SetupExe = (Resolve-Path dist/windows/offline/setup.exe).Path
+    $SetupExe = (Resolve-Path dist/windows/offline/PWebRelease-Offline-Setup.exe).Path
     $SaPayload = Join-Path $RepoRoot "build/cap6b2/payload/$($facts.StandaloneFile)"
     if (-not (Test-Path $SaPayload)) {
         throw "staged standalone missing: $SaPayload"
@@ -239,7 +244,8 @@ try {
     Write-Host 'CAP-6b2 gate 1 PASS (real payload skip path: AlreadyUsable, never executed)'
 
     # --- 2) silent per-user install from an ISOLATED directory ---------------
-    # packaged independence: the dir holds ONLY setup.exe, lives outside
+    # packaged independence: the dir holds ONLY this profile's setup
+    # binary, lives outside
     # the repo, and is the process CWD - nothing but the embedded
     # payload can contribute a byte to the install
     if (Test-Path $InstallDir) {
@@ -252,12 +258,13 @@ try {
     $log = Join-Path $RepoRoot 'build/cap6b2/setup-install.log'
     if (Test-Path $log) { Remove-Item -Force $log }
     try {
-        Copy-Item $SetupExe (Join-Path $Isolated 'setup.exe')
+        $IsolatedName = Split-Path -Leaf $SetupExe
+        Copy-Item $SetupExe (Join-Path $Isolated $IsolatedName)
         $contents = @(Get-ChildItem $Isolated -Force | ForEach-Object Name)
-        if (($contents -join ',') -cne 'setup.exe') {
-            throw "isolated dir is not exactly [setup.exe]: $($contents -join ', ')"
+        if (($contents -join ',') -cne $IsolatedName) {
+            throw "isolated dir is not exactly [$IsolatedName]: $($contents -join ', ')"
         }
-        $r = Invoke-Bounded (Join-Path $Isolated 'setup.exe') @('/VERYSILENT',
+        $r = Invoke-Bounded (Join-Path $Isolated $IsolatedName) @('/VERYSILENT',
             '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/LOG=$log") 600000 `
             'silent offline setup' $Isolated
         if ($r.Code -ne 0) {

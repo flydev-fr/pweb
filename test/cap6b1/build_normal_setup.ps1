@@ -1,5 +1,13 @@
-# CAP-6b1: builds dist/windows/normal/setup.exe - the normal-profile
-# per-user installer embedding the lock-verified Evergreen Bootstrapper.
+# CAP-6b1: builds dist/windows/normal/PWebRelease-Normal-Setup.exe -
+# the normal-profile per-user installer embedding the lock-verified
+# Evergreen Bootstrapper.
+#
+# The artifact basename is authored in tools/setup/normal.iss
+# (PWEB_SETUP_BASENAME) and PARSED here, never passed with /F: the
+# manifest stays the single source of the name, and no artifact this
+# repository ships is called setup.exe (CAP-6b4 - every executable with
+# that name is appcompat-shimmed into loading extra DLLs from its own
+# directory).
 #
 #   1. provisions the pinned Inno Setup 6 compiler (innosetup.lock)
 #   2. fetches the LOCKED bootstrapper through webview2-runtime.lock
@@ -61,15 +69,30 @@ try {
     # this parse only extracts the ratified values for the /D defines)
     $lockLines = Get-Content (Join-Path $RepoRoot 'webview2-runtime.lock')
     $facts = @{}
-    $inArtifact = $false
+    # the OTHER two profiles' artifacts are parsed for one reason only:
+    # the payload proof below asserts their ABSENCE from this profile's
+    # embedded set (CAP-6b4 isolation, mirroring the CAP-6b2/6b3 builds)
+    $saFacts = @{}
+    $fxFacts = @{}
+    $section = ''
     foreach ($raw in $lockLines) {
         $line = $raw.Trim()
         if ($line -eq '' -or $line.StartsWith('#')) { continue }
         $k, $v = $line -split '=', 2
         $k = $k.Trim(); $v = $v.Trim()
-        if ($k -ceq 'artifact') { $inArtifact = ($v -ceq 'evergreen-bootstrapper'); continue }
-        if ($inArtifact) { $facts[$k] = $v }
+        if ($k -ceq 'artifact') { $section = $v; continue }
+        if ($section -ceq 'evergreen-bootstrapper') { $facts[$k] = $v }
+        elseif ($section -ceq 'evergreen-standalone-x64') { $saFacts[$k] = $v }
+        elseif ($section -ceq 'webview2-fixed-runtime-x64') { $fxFacts[$k] = $v }
     }
+    foreach ($other in @(@{ n = 'evergreen-standalone-x64'; f = $saFacts },
+                         @{ n = 'webview2-fixed-runtime-x64'; f = $fxFacts })) {
+        if (-not $other.f['filename']) {
+            throw "webview2-runtime.lock: $($other.n) is missing 'filename'"
+        }
+    }
+    $SaFile = $saFacts['filename']
+    $FxFile = $fxFacts['filename']
     foreach ($key in 'filename', 'sha256', 'authenticode-subject') {
         if (-not $facts[$key]) {
             throw "webview2-runtime.lock: evergreen-bootstrapper is missing '$key'"
@@ -120,17 +143,82 @@ try {
     }
 
     # --- 5) compile the setup ---------------------------------------------------
+    # the artifact basename is the manifest's, parsed from it: no /F
+    # override, so a rename in the .iss can never leave the build script
+    # looking for a file ISCC no longer produces
+    $IssFile = Join-Path $RepoRoot 'tools/setup/normal.iss'
+    $issText = Get-Content $IssFile -Raw
+    if ($issText -notmatch '(?m)^#define\s+PWEB_SETUP_BASENAME\s+"([^"]+)"\s*$') {
+        throw 'tools/setup/normal.iss does not author the PWEB_SETUP_BASENAME define'
+    }
+    $SetupBase = $Matches[1]
+    if ($SetupBase -ieq 'setup') {
+        throw 'the normal profile may not be named setup: setup.exe is appcompat-shimmed'
+    }
     $DistDir = Join-Path $RepoRoot 'dist/windows/normal'
     New-Item -ItemType Directory -Force $DistDir | Out-Null
+    # the compile listing is captured (as the CAP-6b2/6b3 builds already
+    # do) and asserted below, and the CAP-6b4 isolation matrix reads the
+    # same record to prove this profile against the other two
+    $ListingFile = Join-Path $RepoRoot 'build/cap6b1/iscc-normal.log'
     & $Iscc "/DPWEB_PAYLOAD_DIR=$Payload" `
         "/DPWEB_WV2_BOOTSTRAPPER=$BootFile" `
         "/DPWEB_WV2_SHA256=$BootSha" `
         "/DPWEB_WV2_SUBJECT=$BootSubject" `
         "/DPWEB_WV2_TIMEOUT_MS=$TimeoutMs" `
-        "/O$DistDir" '/Fsetup' tools/setup/normal.iss
+        "/O$DistDir" tools/setup/normal.iss 2>&1 |
+        Tee-Object -FilePath $ListingFile
     if ($LASTEXITCODE -ne 0) { throw 'ISCC compile of normal.iss failed' }
-    $SetupExe = Join-Path $DistDir 'setup.exe'
-    if (-not (Test-Path $SetupExe)) { throw "setup.exe missing at $SetupExe" }
+    $SetupExe = Join-Path $DistDir "$SetupBase.exe"
+    if (-not (Test-Path $SetupExe)) { throw "normal setup missing at $SetupExe" }
+
+    # --- 5b) payload proof from the compile listing -----------------------------
+    # the same assertion the CAP-6b2 and CAP-6b3 builds make, applied to
+    # this profile: the listing is authoritative evidence of what ISCC
+    # actually embedded, and it is checked HERE rather than only in the
+    # CAP-6b4 isolation gate, so a payload defect fails its own build.
+    # This is a payload assertion only - nothing about CAP-6b1
+    # provisioning semantics is touched.
+    $listing = Get-Content $ListingFile -Raw
+    # one basename per embedded file: ISCC may append a parenthesized
+    # progress/size suffix, and a progress refresh may repeat a line -
+    # strip the suffix, keep unique basenames (our staged names are
+    # unique by construction, so collapsing repeats loses nothing)
+    $compressed = @(($listing -split "`r?`n") |
+        Where-Object { $_ -match '^\s*Compressing: ' } |
+        ForEach-Object {
+            (($_ -replace '^\s*Compressing: ', '') -replace '\s+\([^)]*\)\s*$', '').Trim()
+        } | ForEach-Object { Split-Path -Leaf $_ } | Sort-Object -Unique)
+    if ($compressed.Count -eq 0) {
+        throw ('compile listing contains no "Compressing:" lines - ISCC output ' +
+            "format changed? see $ListingFile")
+    }
+    $expectedSet = @('app.pwb', $BootFile, 'pwebwv2prov.exe', 'releaseapp.exe',
+        'webview.dll') | Sort-Object
+    if (($compressed -join ',') -cne ($expectedSet -join ',')) {
+        throw ("embedded payload set drifted: listing shows [$($compressed -join ', ')], " +
+            "expected exactly [$($expectedSet -join ', ')]")
+    }
+    if ($compressed -cnotcontains $BootFile) {
+        throw "bootstrapper '$BootFile' missing from the embedded payload listing"
+    }
+    if ($listing -match [regex]::Escape($SaFile)) {
+        throw ("NORMAL INVARIANT BROKEN: the Standalone Installer '$SaFile' appears " +
+            'in the normal compile listing')
+    }
+    if ($listing -match [regex]::Escape($FxFile)) {
+        throw ("NORMAL INVARIANT BROKEN: the Fixed Runtime cabinet '$FxFile' appears " +
+            'in the normal compile listing')
+    }
+    if ($listing -match '(?i)msedgewebview2') {
+        throw 'NORMAL INVARIANT BROKEN: a Fixed Runtime tree file appears in the listing'
+    }
+    $loose = @($compressed | Where-Object { $_ -match '\.(html|css|js|map|json)$' })
+    if ($loose) {
+        throw "loose frontend file(s) embedded: $($loose -join ', ')"
+    }
+    Write-Host ('CAP-6b1 payload proof PASS (listing: bootstrapper present, ' +
+        'standalone absent, no fixed tree, no loose frontend, exact 5-file set)')
 
     # --- 6) abort-probe TEST build: always-fail stub via the documented
     # PWEB_PROV_HELPER hook - proves the fail-closed abort chain in the
@@ -191,21 +279,29 @@ end.
     }
 
     # export the exact facts the gates must reuse (single parse point);
+    # SetupSize/SetupSha let the CAP-6b4 release orchestrator verify that
+    # the artifact it publishes is the one THIS build produced (the same
+    # role they already play for the CAP-6b2/6b3 profiles);
     # psd1 single-quoted strings escape embedded quotes by doubling
+    $SetupSize = (Get-Item $SetupExe).Length
+    $SetupSha = (Get-FileHash -Algorithm SHA256 $SetupExe).Hash.ToLowerInvariant()
     function ConvertTo-Psd1Value([string]$s) { $s -replace "'", "''" }
     @"
 @{
     BootFile = '$(ConvertTo-Psd1Value $BootFile)'
     BootSha = '$(ConvertTo-Psd1Value $BootSha)'
     BootSubject = '$(ConvertTo-Psd1Value $BootSubject)'
+    StandaloneFile = '$(ConvertTo-Psd1Value $SaFile)'
     SetupExe = '$(ConvertTo-Psd1Value $SetupExe)'
+    SetupSize = $SetupSize
+    SetupSha = '$(ConvertTo-Psd1Value $SetupSha)'
     AbortProbeExe = '$(ConvertTo-Psd1Value $AbortProbeExe)'
     TimeoutMs = $TimeoutMs
 }
 "@ | Set-Content -Encoding utf8 build/cap6b1/lockfacts.psd1
 
-    $size = (Get-Item $SetupExe).Length
-    $hash = (Get-FileHash -Algorithm SHA256 $SetupExe).Hash.ToLowerInvariant()
+    $size = $SetupSize
+    $hash = $SetupSha
     Write-Host "CAP-6b1 normal setup built: $SetupExe ($size bytes, sha256 $hash)"
     Write-Host 'CAP6B1_SETUP_BUILD_PASS'
 }

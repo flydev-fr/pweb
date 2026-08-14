@@ -60,13 +60,27 @@ schema = 1
 # issuer 'Microsoft Code Signing PCA 2024' (issuer churns across
 # years); root 'Microsoft Root Certificate Authority 2011' thumbprint
 # 8F43288AD272F3103B6FB1428485EA3014C0BCFE - evidence, not enforced.
+#
+# CAP-6b4 RE-RATIFICATION (2026-08-14): Microsoft rotated the payload
+# behind the same fwlink - the drift cadence deferred-work.md predicted
+# ("every rotation turns CI red until a human re-ratifies the lock, by
+# ratified design"). The fetch refused the new bytes and deleted them,
+# exactly as designed; the pin below was then re-ratified by explicit
+# human decision after -Refresh evidence. What changed: size
+# 1695960 -> 1708760 and the sha256 below. What did NOT change: the
+# fwlink URL, the filename, and the Authenticode leaf subject - the new
+# payload verifies 'Valid' with the byte-exact subject already pinned
+# here, so the independent second axis agreed with the new bytes before
+# the digest was accepted. Payload inspected via -Refresh and NOT
+# executed. The superseded digest was
+# 8c4a80540b6bbcbef30a4e8c7d1ac504b6fc09db922b4acdfd85c9d5f6f1050e.
 artifact = evergreen-bootstrapper
 kind = bootstrapper
 arch = neutral
 url = https://go.microsoft.com/fwlink/p/?LinkId=2124703
 filename = MicrosoftEdgeWebview2Setup.exe
-size = 1695960
-sha256 = 8c4a80540b6bbcbef30a4e8c7d1ac504b6fc09db922b4acdfd85c9d5f6f1050e
+size = 1708760
+sha256 = 4f29c9366bbcf7902a3fe9d87373b4b270fe176b3645e15f9bbf8048a5e07a7e
 authenticode-subject = CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US
 
 # CAP-6b2 ratification (2026-08-13): x64 Evergreen Standalone Installer

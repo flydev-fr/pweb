@@ -15,10 +15,20 @@
 ;
 ; What each profile still owns:
 ;   PWEB_PROFILE      profile name, stamped into VersionInfoDescription
-;                     so the binary itself says which profile it is
+;                     AND into the HKCU profile marker below, so both
+;                     the binary and the installed machine say which
+;                     profile it is
+;   PWEB_SETUP_BASENAME  the profile's own setup basename
 ;   its own [Files]   the profile-specific payload (a provisioning
 ;                     installer + helper, or the bundled runtime tree)
 ;   its own [Code]    the profile-specific gate, if any
+;
+; The CAP-6 release triple itself moved out at CAP-6b4, into
+; tools/setup/pwebapppayload.issi, so each profile can #include it at
+; the POSITION its own [Files] order needs (the fixed profile includes
+; it AFTER its verdict gate, which is what makes a failed switch leave
+; the source install byte-identical). It is still authored exactly
+; once, and every profile still consumes that one file.
 ;
 ; Defines consumed here (all derived by the profile build scripts):
 ;   PWEB_PAYLOAD_DIR  staged payload directory holding the release
@@ -26,7 +36,16 @@
 ;                     must fail loudly rather than build a partial
 ;                     setup out of whatever happens to be on disk
 ;   PWEB_APP_VERSION  optional, defaults to the historical 0.1.0
-;   PWEB_PROFILE      optional, defaults to the historical "normal"
+;   PWEB_PROFILE      REQUIRED and validated (CAP-6b4): exactly one of
+;                     normal | offline | fixed-runtime, case-sensitive.
+;                     There is deliberately NO default: the value is
+;                     written to the machine as the profile marker, and
+;                     a silent default would mislabel an install
+;   PWEB_SETUP_BASENAME  REQUIRED (CAP-6b4): the output basename. No
+;                     default, and in particular never "setup" - every
+;                     executable named setup.exe is shimmed by Windows
+;                     application compatibility into loading extra DLLs
+;                     (version.dll and friends) from its own directory
 ;   PWEB_COMPRESSION  optional, defaults to the historical lzma2
 ;   PWEB_SOLID        optional, defaults to the historical yes
 ;
@@ -40,6 +59,40 @@
 ; Nothing here can reach the network: there is no URL, no download
 ; primitive and no [Run] entry in this file, and the payload the
 ; profiles embed is the only source a target machine ever sees.
+;
+; CAP-6b4 profile marker. The three profiles are mutually exclusive
+; MODES of ONE product, so the machine gets ONE record of which mode is
+; installed. It is written here, once, from PWEB_PROFILE, by Inno's own
+; [Registry] phase - which runs after every [Files] entry, therefore
+; after the fixed profile's verdict gate, so the marker is the COMMIT
+; POINT of a profile switch: a setup that aborts anywhere earlier
+; leaves the marker reading the SOURCE profile. Uninstall removes it
+; (uninsdeletevalue) and then the two key levels if they are empty
+; (uninsdeletekeyifempty), so an uninstall leaves no trace of the mode
+; either.
+;
+; WHAT IT IS, precisely. It is an INSTALL RECORD - for migration (a
+; future installer can know what it is replacing), for diagnostics, and
+; for the CAP-6b4 profile matrix, which reads it as the authoritative
+; answer to "which mode is installed" on every row. It is deliberately
+; NOT read by the shipped application at run time: the fixed-mode host
+; finds its bundled tree by absolute path and validates it, and the
+; Evergreen-mode host never looks for a tree at all, so neither needs
+; to be told which one it is. Nothing about runtime behaviour depends
+; on this value, and nothing should be made to depend on it without
+; ratifying that as a change.
+;
+; It is also NOT the ownership signal that gates the stale-tree
+; reclaim. That signal is the presence of our own uninstaller in {app}
+; (see PWebOwnsInstallDir in tools/setup/pwebprovgate.issi), because
+; the marker is per-USER and says nothing about which DIRECTORY setup
+; was pointed at - and because the very install the reclaim exists to
+; migrate, a pre-CAP-6b4 fixed install, predates the marker and carries
+; none.
+;
+; It is never written to app.pwb, to JS, to localStorage or to the CWD,
+; and the mode is never INFERRED from "the runtime tree exists" - a
+; tree can be orphaned, a marker cannot.
 
 #ifndef PWEB_PAYLOAD_DIR
   #error PWEB_PAYLOAD_DIR must be defined - build via a profile build script (test/cap6b1/build_normal_setup.ps1, test/cap6b2/build_offline_setup.ps1 or test/cap6b3/build_fixed_setup.ps1)
@@ -47,12 +100,33 @@
 #ifndef PWEB_APP_VERSION
   #define PWEB_APP_VERSION "0.1.0"
 #endif
-; profile identity: every profile emits a setup.exe with the SAME
-; [Setup] identity, so the binary itself must say WHICH profile it is
-; (VersionInfoDescription below); each .iss defines PWEB_PROFILE, and
-; the default keeps historical build-script interfaces untouched
+; profile identity: every profile emits a setup with the SAME [Setup]
+; identity, so the binary itself must say WHICH profile it is
+; (VersionInfoDescription below) and the machine must record it (the
+; [Registry] marker below). Each .iss defines PWEB_PROFILE; CAP-6b4
+; removed the historical "normal" default, because a default here would
+; silently STAMP a wrong mode onto a user's machine.
 #ifndef PWEB_PROFILE
-  #define PWEB_PROFILE "normal"
+  #error PWEB_PROFILE must be defined by the including profile (.iss) - exactly one of normal | offline | fixed-runtime; there is deliberately no default
+#endif
+; the ratified profile-name set, authored once. Pos() is case-SENSITIVE
+; (measured against the pinned ISCC 6.7.3, unlike ISPP's = / != string
+; operators), so this rejects case drift too: the marker value must be
+; byte-exact, not merely recognizable.
+#define PWEB_PROFILE_SET "|normal|offline|fixed-runtime|"
+#if Pos("|" + PWEB_PROFILE + "|", PWEB_PROFILE_SET) == 0
+  #error PWEB_PROFILE must be exactly one of normal | offline | fixed-runtime (case-sensitive)
+#endif
+#ifndef PWEB_SETUP_BASENAME
+  #error PWEB_SETUP_BASENAME must be defined by the including profile (.iss) - and never "setup": setup.exe is appcompat-shimmed into unsafe DLL loading
+#endif
+; and it must not merely be PRESENT - it must not be the shimmed name.
+; An absence guard alone would let /DPWEB_SETUP_BASENAME=setup compile
+; cleanly and emit exactly the setup.exe this shard exists to prevent.
+; LowerCase() folds the comparison, so SETUP / Setup / sEtUp are all
+; refused; the Pos() form mirrors the PWEB_PROFILE guard above.
+#if Pos("|" + LowerCase(PWEB_SETUP_BASENAME) + "|", "|setup|") != 0
+  #error PWEB_SETUP_BASENAME must not be "setup" (in any casing): every executable named setup.exe is shimmed by Windows application compatibility into loading version.dll and other DLLs from its own directory
 #endif
 #ifndef PWEB_COMPRESSION
   #define PWEB_COMPRESSION "lzma2"
@@ -60,6 +134,25 @@
 #ifndef PWEB_SOLID
   #define PWEB_SOLID "yes"
 #endif
+; the fixed profile's installed runtime subdirectory, authored ONCE
+; here: tools/setup/fixed.iss deploys the tree INTO it, and
+; tools/setup/pwebprovgate.issi reclaims it with [InstallDelete] when
+; an Evergreen profile is installed over a fixed one. Two literals
+; would be two directories, and the orphan this reclaim exists to kill
+; would come straight back.
+;
+; The PARENT is authored beside it because Inno only removes what an
+; install RECORDED: the Evergreen profiles never create {app}\runtime,
+; so reclaiming only the leaf would leave that intermediate directory
+; behind forever - and every gate enumerates with -Recurse -File, so
+; nothing would ever see it. The reclaim therefore names both, and the
+; CAP-6b4 contract asserts the subdir really does live under the parent.
+#define PWEB_RUNTIME_PARENT "runtime"
+#define PWEB_RUNTIME_SUBDIR "runtime\webview2"
+; the profile marker: one per-user key, one value, authored once
+#define PWEB_MARKER_PARENT "Software\PWeb"
+#define PWEB_MARKER_KEY "Software\PWeb\PWebRelease"
+#define PWEB_MARKER_VALUE "Profile"
 
 [Setup]
 AppId={{7C3E9A1B-5D24-4F68-A0C9-2B8E6D4F1A57}
@@ -76,11 +169,25 @@ ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
 Compression={#PWEB_COMPRESSION}
 SolidCompression={#PWEB_SOLID}
-OutputBaseFilename=setup
+OutputBaseFilename={#PWEB_SETUP_BASENAME}
 Uninstallable=yes
 
-[Files]
-; the unchanged CAP-6 release triple - no loose frontend files, ever
-Source: "{#PWEB_PAYLOAD_DIR}\releaseapp.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PWEB_PAYLOAD_DIR}\app.pwb"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PWEB_PAYLOAD_DIR}\webview.dll"; DestDir: "{app}"; Flags: ignoreversion
+[Registry]
+; THE PROFILE MARKER - the single machine-readable fact that says which
+; of the three mutually exclusive modes is installed, and the COMMIT
+; POINT of a profile switch (Inno runs [Registry] after every [Files]
+; entry, so a setup that aborts earlier never reaches it and the marker
+; still names the SOURCE profile).
+;
+; Uninstall order is the reverse of install order, so the value goes
+; first and the two key levels follow only while they are empty - an
+; uninstall therefore removes the marker without ever touching a
+; neighbouring key some other PWeb product might own.
+;
+; This is per-user (HKCU) by construction, matching
+; PrivilegesRequired=lowest: nothing here needs or asks for elevation.
+Root: HKCU; Subkey: "{#PWEB_MARKER_PARENT}"; Flags: uninsdeletekeyifempty
+Root: HKCU; Subkey: "{#PWEB_MARKER_KEY}"; Flags: uninsdeletekeyifempty
+Root: HKCU; Subkey: "{#PWEB_MARKER_KEY}"; ValueType: string; \
+    ValueName: "{#PWEB_MARKER_VALUE}"; ValueData: "{#PWEB_PROFILE}"; \
+    Flags: uninsdeletevalue

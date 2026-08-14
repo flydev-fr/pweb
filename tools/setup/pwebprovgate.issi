@@ -73,11 +73,11 @@
 #endif
 
 ; the neutral half - [Setup] identity (AppId, per-user location,
-; PrivilegesRequired=lowest, architecture gating, compression) plus
-; the unchanged CAP-6 release triple - lives in the shared include
-; below, which the CAP-6b3 fixed profile consumes too (CAP-6b3
-; anti-fork extraction). Nothing about the installed application
-; identity is authored in this provisioning-only file any more.
+; PrivilegesRequired=lowest, architecture gating, compression) and the
+; CAP-6b4 profile marker - lives in the shared include below, which the
+; CAP-6b3 fixed profile consumes too (CAP-6b3 anti-fork extraction).
+; Nothing about the installed application identity is authored in this
+; provisioning-only file any more.
 #include "pwebappsetup.issi"
 
 [Files]
@@ -86,7 +86,100 @@
 Source: "{#PWEB_PAYLOAD_DIR}\{#PWEB_WV2_INSTALLER}"; Flags: dontcopy
 Source: "{#PWEB_PAYLOAD_DIR}\{#PWEB_PROV_HELPER}"; Flags: dontcopy
 
+; the unchanged CAP-6 release triple, authored once in the shared
+; payload include. An Evergreen profile has no post-install gate, so
+; its position is free; it sits after the dontcopy payload above purely
+; for readability.
+#include "pwebapppayload.issi"
+
+[InstallDelete]
+; CAP-6b4 STALE-TREE RECLAIM. All three profiles are modes of ONE
+; product sharing one AppId and one install directory, so installing an
+; Evergreen profile over a CAP-6b3 fixed one used to strand the ~690 MB
+; bundled runtime tree forever: the Evergreen-mode binary never looks
+; at it, and the uninstaller of the newer install only removes what
+; that install recorded.
+;
+; This one entry is the whole fix, and it is Inno's own machinery -
+; there is no DelTree, no RegDeleteKey and no hand-rolled cleanup
+; anywhere in this repository's setups (CAP-6b3 measured hand-rolled
+; deletion racing the installer into an incidental EFileError).
+;
+; ORDER IS THE SAFETY PROPERTY, and it is Inno's, not ours:
+; PrepareToInstall runs BEFORE the installation phase, and
+; [InstallDelete] is the FIRST step of that phase. So on a
+; fixed -> Evergreen switch the frozen gate below has already PROVEN a
+; usable Evergreen runtime by the time a single byte of the old tree is
+; touched; a refusal aborts with zero file operations and the fixed
+; install stays exactly as it was, tree included.
+;
+; THE MEASURED RESIDUAL, stated rather than implied. [InstallDelete] is
+; NOT part of Inno's rollback: once the tree is reclaimed it stays
+; reclaimed, so a failure LATER in this same run leaves a stale
+; `fixed-runtime` marker on a machine whose tree is already gone. That
+; is untidy, and it is not dangerous, for one measured reason: Inno's
+; rollback does not restore OVERWRITTEN files (measured with the pinned
+; ISCC 6.7.3 - it was the whole reason the fixed profile's [Files] order
+; changed), so the Evergreen-mode release triple this run had already
+; copied survives, and PrepareToInstall had already proven an Evergreen
+; runtime usable. The app therefore still runs; only the marker lies,
+; and the next install of any profile corrects it. Inno offers no
+; post-[Registry] failure seam, and hand-rolled cleanup is exactly what
+; CAP-6b3 measured to be harmful.
+;
+; OWNERSHIP IS CHECKED, because {app} is user-redirectable. On an
+; interactive run the user can point setup at any directory; without a
+; check, a directory that merely happened to contain runtime\webview2
+; would have it recursively deleted by an installer that never put it
+; there. PWebOwnsInstallDir below therefore lets the reclaim proceed
+; only when this is an over-install of OUR product.
+;
+; It targets only the runtime subdirectory this product installs (and
+; the intermediate directory that subdirectory lives in), named from the
+; single PWEB_RUNTIME_SUBDIR / PWEB_RUNTIME_PARENT sources in
+; pwebappsetup.issi - never {app} itself, and never any user data. The
+; WebView2 user-data folder (%APPDATA%\releaseapp.exe) is SHARED across
+; profiles and deliberately untouched here and at uninstall.
+;
+; The parent entry comes SECOND on purpose: [InstallDelete] entries are
+; processed in order, so the leaf has to be gone before dirifempty can
+; find the parent empty.
+Type: filesandordirs; Name: "{app}\{#PWEB_RUNTIME_SUBDIR}"; \
+    Check: PWebOwnsInstallDir
+Type: dirifempty; Name: "{app}\{#PWEB_RUNTIME_PARENT}"; \
+    Check: PWebOwnsInstallDir
+
 [Code]
+// The stale-tree reclaim's ownership gate. {app} is user-redirectable
+// on an interactive run, so "there is a runtime\webview2 under {app}"
+// is NOT on its own a licence to delete it recursively - the directory
+// may belong to something this installer never touched.
+//
+// The signal used is the presence of OUR OWN Inno uninstaller in {app},
+// which means one specific thing: a previous install of this product
+// put its files here. It is read at [InstallDelete] time, which is
+// BEFORE this run writes anything (this run's own uninstaller is
+// written later, during the [Files] phase), so the file it sees can
+// only be a pre-existing one.
+//
+// Deliberately NOT the profile marker: the marker is per-USER and says
+// nothing about which DIRECTORY setup was pointed at, and the very
+// install this reclaim exists to migrate - a pre-CAP-6b4 fixed install
+// - predates the marker and carries none.
+function PWebOwnsInstallDir: Boolean;
+var
+  Dir: String;
+begin
+  Dir := ExpandConstant('{app}');
+  Result := FileExists(AddBackslash(Dir) + 'unins000.exe');
+  if Result then
+    Log('PWEB_RECLAIM owned install detected in ' + Dir +
+      ' - the stale runtime tree (if any) will be reclaimed')
+  else
+    Log('PWEB_RECLAIM no PWeb uninstaller in ' + Dir +
+      ' - reclaim SKIPPED (this directory is not an over-install of our product)');
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Helper, Installer, ProvLog, Params: String;

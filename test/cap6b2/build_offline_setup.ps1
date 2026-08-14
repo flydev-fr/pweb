@@ -1,8 +1,13 @@
-# CAP-6b2: builds dist/windows/offline/setup.exe - the OFFLINE-profile
-# per-user installer embedding the lock-verified x64 Evergreen
-# STANDALONE Installer (webview2-runtime.lock artifact
+# CAP-6b2: builds dist/windows/offline/PWebRelease-Offline-Setup.exe -
+# the OFFLINE-profile per-user installer embedding the lock-verified
+# x64 Evergreen STANDALONE Installer (webview2-runtime.lock artifact
 # evergreen-standalone-x64), so a WebView2-less machine WITHOUT
 # network provisions its runtime from the embedded payload alone.
+#
+# The artifact basename is authored in tools/setup/offline.iss
+# (PWEB_SETUP_BASENAME) and PARSED here, never passed with /F: the
+# manifest stays the single source of the name, and no artifact this
+# repository ships is called setup.exe (CAP-6b4).
 #
 #   1. provisions the pinned Inno Setup 6 compiler (innosetup.lock)
 #   2. acquires the LOCKED standalone through webview2-runtime.lock
@@ -181,6 +186,18 @@ try {
     }
 
     # --- 5) compile the setup, capturing the compile listing --------------------
+    # the artifact basename is the manifest's, parsed from it: no /F
+    # override, so a rename in the .iss can never leave the build script
+    # looking for a file ISCC no longer produces
+    $IssFile = Join-Path $RepoRoot 'tools/setup/offline.iss'
+    $issText = Get-Content $IssFile -Raw
+    if ($issText -notmatch '(?m)^#define\s+PWEB_SETUP_BASENAME\s+"([^"]+)"\s*$') {
+        throw 'tools/setup/offline.iss does not author the PWEB_SETUP_BASENAME define'
+    }
+    $SetupBase = $Matches[1]
+    if ($SetupBase -ieq 'setup') {
+        throw 'the offline profile may not be named setup: setup.exe is appcompat-shimmed'
+    }
     $DistDir = Join-Path $RepoRoot 'dist/windows/offline'
     New-Item -ItemType Directory -Force $DistDir | Out-Null
     $ListingFile = Join-Path $RepoRoot 'build/cap6b2/iscc-offline.log'
@@ -189,11 +206,11 @@ try {
         "/DPWEB_WV2_SHA256=$SaSha" `
         "/DPWEB_WV2_SUBJECT=$SaSubject" `
         "/DPWEB_WV2_TIMEOUT_MS=$TimeoutMs" `
-        "/O$DistDir" '/Fsetup' tools/setup/offline.iss 2>&1 |
+        "/O$DistDir" tools/setup/offline.iss 2>&1 |
         Tee-Object -FilePath $ListingFile
     if ($LASTEXITCODE -ne 0) { throw 'ISCC compile of offline.iss failed' }
-    $SetupExe = Join-Path $DistDir 'setup.exe'
-    if (-not (Test-Path $SetupExe)) { throw "setup.exe missing at $SetupExe" }
+    $SetupExe = Join-Path $DistDir "$SetupBase.exe"
+    if (-not (Test-Path $SetupExe)) { throw "offline setup missing at $SetupExe" }
 
     # --- 6) payload proof from the compile listing ------------------------------
     # the listing is authoritative evidence of what ISCC actually
@@ -240,7 +257,7 @@ try {
     # means the wrong bytes went in
     $SetupSize = (Get-Item $SetupExe).Length
     if ($SetupSize -lt $SaSize) {
-        throw ("setup.exe ($SetupSize bytes) is SMALLER than the embedded " +
+        throw ("$SetupBase.exe ($SetupSize bytes) is SMALLER than the embedded " +
             "standalone ($SaSize bytes) - the payload cannot be complete")
     }
 
