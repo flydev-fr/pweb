@@ -59,9 +59,29 @@ mkdir -p -- "${logs}"
 
 # OUTSIDE the checkout on purpose: if anything in the bundle still needed the
 # repository, this is where that shows up rather than in a user's crash report.
-staging="$(mktemp -d "${TMPDIR:-/tmp}/cap7m-layout.XXXXXX")"
-cleanup() { rm -rf -- "${staging}"; }
+#
+# This is the ONE deletion on a default path in the whole shard, and it earns
+# it: the directory is created by this script, inside TMPDIR, and removing it
+# is the only way not to leak a bundle per run. It still goes through the
+# guard, with the allowed root passed explicitly because it is deliberately
+# outside the repository.
+tmp_root="${TMPDIR:-/tmp}"
+
+# Assigned BEFORE the trap is installed, so a failure between here and the
+# mktemp cannot run cleanup against an unset variable.
+staging=''
+cleanup() {
+    [ -n "${staging}" ] || return 0
+    # In a SUBSHELL: cap7m_rm_tree dies on refusal, and an `exit` inside an
+    # EXIT trap would replace the script's real exit status with the guard's.
+    # A refusal here must warn, never rewrite the verdict.
+    ( cap7m_rm_tree "${staging}" "${tmp_root}" ) ||
+        printf '[CAP-7M0] warning: refused to remove staging directory %s\n' \
+            "${staging}" >&2
+}
 trap cleanup EXIT
+
+staging="$(mktemp -d "${tmp_root}/cap7m-layout.XXXXXX")"
 
 app="${staging}/CAP7M.app"
 mkdir -p -- "${app}/Contents/MacOS" "${app}/Contents/Resources"

@@ -39,12 +39,15 @@
 #
 # Prerequisite: tools/build-webview-dylib.sh has staged build/cap7m/webview-dist.
 #
-# Usage: test/cap7m/check_abi.sh
+# Usage: test/cap7m/check_abi.sh [--clean]
+#        --clean is OPT-IN; without it a stale work directory is a refusal.
 #
 set -euo pipefail
 
 # shellcheck source=test/cap7m/cap7m_common.sh
 . "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/cap7m_common.sh"
+
+eval "$(cap7m_take_clean_flag "$@")"
 
 assert_native_arch "${CAP7M_EXPECT_ARCH:-}"
 assert_fpc_target
@@ -67,7 +70,7 @@ host_arch="$(uname -m)"
 [ -f "${dist}/${dylib_link}" ] ||
     die "staged webview dylib missing -- run tools/build-webview-dylib.sh first (${dist})"
 
-rm -rf -- "${abi}"
+cap7m_prepare_dir "${abi}"
 mkdir -p -- "${abi}/units" "${abi}/bin"
 # The Pascal probe links against the dev name and LOADS the versioned one
 # (ld records the install name, exactly as it records the SONAME on Linux), so
@@ -148,19 +151,39 @@ done < "${abi}/abi_c.txt" 3< "${abi}/abi_pascal.txt"
 printf '[CAP-7M0] core ABI: %s facts, 2 documented deltas, 0 blocking (%s)\n' \
     "${c_facts}" "${host_arch}"
 
-# MEASURED, and recorded rather than assumed: what the Pascal probe actually
-# asked the loader for. On Linux this is DT_NEEDED = the SONAME; here it is
-# LC_LOAD_DYLIB = the install name, which is why the versioned file - not the
-# bare one the compiler was pointed at - is what a bundle ships.
-loaded="$(otool -L "${abi}/bin/abi_probe" |
+# MEASURED, run 31905105454, and RECORDED rather than asserted - because the
+# Linux property this used to assert does not exist on Darwin.
+#
+# CAP-7L could measure DT_NEEDED = libwebview.so.0.12 straight off abi_probe,
+# because ELF's ld records DT_NEEDED for any library named on the command
+# line whether or not a symbol from it is used. Mach-O's linker does not: it
+# records an LC_LOAD_DYLIB only when a symbol from that dylib is actually
+# referenced - ELF's --as-needed behaviour, unconditionally and with no
+# opt-out by default.
+#
+# test/core/abi_probe.pas references NOTHING. It declares the externals,
+# assigns its OWN cdecl procedures to the typed callback consts, and measures
+# sizes, offsets and signedness. So the absence of a load command here is
+# correct, expected, and the direct Darwin counterpart of CAP-7L's DT_NEEDED
+# finding - not a defect to assert away.
+#
+# The load command IS asserted, in test/cap7m/build_cap7m.sh, on the binary
+# that genuinely calls into the dylib. Neither abi_probe.pas nor abi_probe.c is
+# modified to reference a symbol: that pair is the single pinned CAP-1 probe,
+# unmodified on every platform, and making it call in to satisfy a gate would
+# change what it measures. Nor is the dependency manufactured with
+# -needed_library, which would fabricate the measurement instead of taking it.
+abi_loaded="$(otool -L "${abi}/bin/abi_probe" |
     awk '/libwebview/ { print $1; exit }')"
-[ -n "${loaded}" ] ||
-    die 'the Pascal probe records no libwebview load command at all'
-printf '[CAP-7M0] MEASURED LC_LOAD_DYLIB: %s\n' "${loaded}"
-case "${loaded}" in
-    *"${dylib_versioned}") ;;
-    *) die "expected the load command to name ${dylib_versioned}, got ${loaded}" ;;
-esac
+if [ -n "${abi_loaded}" ]; then
+    record_measurement "CAP7M_M5 binary=abi_probe references_dylib=yes load=${abi_loaded}"
+    case "${abi_loaded}" in
+        *"${dylib_versioned}") ;;
+        *) die "abi_probe loads '${abi_loaded}', expected a path ending ${dylib_versioned}" ;;
+    esac
+else
+    record_measurement "CAP7M_M5 binary=abi_probe references_dylib=no load=<none> note=mach-o-records-LC_LOAD_DYLIB-only-when-a-symbol-is-referenced (ELF records DT_NEEDED unconditionally: CAP-7L measured libwebview.so.0.12 from this same probe)"
+fi
 
 # --- 2. Mach-O presence gate --------------------------------------------------
 
@@ -196,9 +219,22 @@ done <<< "${decls}"
 printf '[CAP-7M0] presence gate PASS - %s declared symbols exist under the underscore convention\n' \
     "${declared_count}"
 
-# --- 3. dlopen/dlsym gate -----------------------------------------------------
-
-step 'dynamic resolution gate (dlopen + dlsym, the loader itself)'
+# --- 3. dlopen/dlsym gate: THIS is what satisfies M5 --------------------------
+#
+# M5 asks that "all 17 externals resolve through the Mach-O underscore
+# convention". A load command cannot show that and never could: it says a
+# library is needed, not that a name resolves. dlopen + dlsym does show it,
+# and shows it at RUN time through the exact mangling FPC's `external` uses.
+#
+# The convention is asserted from BOTH sides, because asserting it from one
+# is how it ends up proven incidentally:
+#   - the bare C name MUST resolve       ("webview_create")
+#   - the trie's own spelling MUST NOT   ("_webview_create" -> dlsym looks up
+#     __webview_create, which does not exist)
+# The second is recorded rather than gated, so a future dyld that added a
+# fallback would be reported as the finding it is instead of blocking a shard
+# on a triviality.
+step 'M5: dynamic resolution gate (dlopen + dlsym, the loader itself)'
 # Generated from the SAME parsed list, so it can never drift from the binding.
 {
     printf '/* generated by test/cap7m/check_abi.sh -- do not commit */\n'
@@ -210,19 +246,31 @@ step 'dynamic resolution gate (dlopen + dlsym, the loader itself)'
     done <<< "${decls}"
     printf '};\n\n'
     printf 'int main(int argc, char **argv) {\n'
-    printf '  void *h;\n  unsigned i, bad = 0;\n'
+    printf '  void *h;\n  unsigned i, bad = 0, underscored = 0;\n'
+    printf '  char prefixed[256];\n'
     printf '  if (argc != 2) { fprintf(stderr, "usage: dlprobe <dylib>\\n"); return 2; }\n'
     printf '  h = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);\n'
     printf '  if (!h) { fprintf(stderr, "dlopen failed: %%s\\n", dlerror()); return 1; }\n'
     printf '  for (i = 0; i < sizeof(kNames) / sizeof(kNames[0]); ++i) {\n'
-    printf '    /* dlsym takes the C name WITHOUT the underscore: the loader\n'
-    printf '       applies the Mach-O convention itself, exactly as FPC does */\n'
+    printf '    /* THE CONVENTION, asserted: dlsym takes the C name WITHOUT the\n'
+    printf '       leading underscore even though the export trie stores\n'
+    printf '       _webview_create. The loader applies the Mach-O prefix\n'
+    printf '       itself - which is exactly what FPC does for `external name`,\n'
+    printf '       and why the generated binding keeps _PU empty. */\n'
     printf '    if (!dlsym(h, kNames[i])) {\n'
-    printf '      fprintf(stderr, "dlsym failed: %%s\\n", kNames[i]);\n'
-    printf '      ++bad;\n    }\n  }\n'
+    printf '      fprintf(stderr, "dlsym failed for the bare name: %%s\\n", kNames[i]);\n'
+    printf '      ++bad;\n    }\n'
+    printf '    /* the contrast, recorded: the trie spelling must NOT resolve */\n'
+    printf '    snprintf(prefixed, sizeof(prefixed), "_%%s", kNames[i]);\n'
+    printf '    if (dlsym(h, prefixed)) { ++underscored; }\n'
+    printf '  }\n'
     printf '  dlclose(h);\n'
-    printf '  printf("CAP7M_DLSYM resolved=%%u failed=%%u\\n",\n'
-    printf '         (unsigned)(sizeof(kNames) / sizeof(kNames[0])) - bad, bad);\n'
+    printf '  printf("CAP7M_M5 dlsym_bare_resolved=%%u dlsym_bare_failed=%%u "\n'
+    printf '         "dlsym_underscored_resolved=%%u convention=%%s\\n",\n'
+    printf '         (unsigned)(sizeof(kNames) / sizeof(kNames[0])) - bad, bad,\n'
+    printf '         underscored,\n'
+    printf '         (bad == 0 && underscored == 0) ? "bare-name-only-as-expected"\n'
+    printf '                                        : "UNEXPECTED");\n'
     printf '  return bad ? 1 : 0;\n}\n'
 } > "${abi}/dlprobe.c"
 
@@ -230,7 +278,13 @@ clang -O1 -Wall -Wextra -Werror \
     -arch "${host_arch}" "-mmacosx-version-min=${deployment_target}" \
     "${abi}/dlprobe.c" -o "${abi}/bin/dlprobe" ||
     die 'dlopen probe failed to compile'
-"${abi}/bin/dlprobe" "${dist}/${dylib_versioned}" ||
-    die 'the dynamic loader could not resolve every declared symbol'
+dlresult="$("${abi}/bin/dlprobe" "${dist}/${dylib_versioned}")" ||
+    { printf '%s\n' "${dlresult}" >&2
+      die 'the dynamic loader could not resolve every declared symbol by its bare C name'; }
+record_measurement "${dlresult}"
+case "${dlresult}" in
+    *dlsym_underscored_resolved=0*) ;;
+    *) printf '[CAP-7M0] RECORDED SURPRISE: the trie spelling also resolved through dlsym\n' ;;
+esac
 
 printf '\n[CAP-7M0] check_abi: PASS (%s)\n' "${host_arch}"

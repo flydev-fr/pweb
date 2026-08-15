@@ -21,12 +21,15 @@
 #
 # Prerequisites: test/cap7m/build_cap7m.sh
 #
-# Usage: test/cap7m/run_cap7m_probes.sh [cycles]
+# Usage: test/cap7m/run_cap7m_probes.sh [cycles] [--clean]
+#        --clean is OPT-IN; without it a stale log directory is a refusal.
 #
 set -euo pipefail
 
 # shellcheck source=test/cap7m/cap7m_common.sh
 . "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/cap7m_common.sh"
+
+eval "$(cap7m_take_clean_flag "$@")"
 
 cd -- "${repo_root}"
 
@@ -45,8 +48,7 @@ vectors='test/cap7m/uri_vectors.txt'
 [ -x "${bin}/uri_oracle" ] || die 'uri_oracle missing -- run test/cap7m/build_cap7m.sh'
 [ -f "${vectors}" ] || die "vector list missing: ${vectors}"
 
-rm -rf -- "${logs}"
-mkdir -p -- "${logs}"
+cap7m_prepare_dir "${repo_root}/${logs}"
 
 # --- PROBES C, D, E, G, H -----------------------------------------------------
 step "feasibility probe, ${cycles} cycle(s) (M6-M10, M13-M15)"

@@ -41,8 +41,11 @@
 #           LICENSE.webview
 #           measurements.txt
 #
-# Usage:  tools/build-webview-dylib.sh [x86_64|arm64]
+# Usage:  tools/build-webview-dylib.sh [x86_64|arm64] [--clean]
 #         (default: the native architecture of this host)
+#
+#         --clean is OPT-IN. Without it a stale build/ or dist/ directory is
+#         a loud refusal; nothing is ever removed on the default path.
 #
 set -euo pipefail
 
@@ -58,6 +61,103 @@ fpc_lock_file="${repo_root}/fpc.lock"
 measurements="${repo_root}/build/cap7m/measurements.txt"
 
 die() { printf '[CAP-7M0] %s\n' "$*" >&2; exit 1; }
+
+# --- working directories and the deletion guard ------------------------------
+#
+# DELIBERATELY DUPLICATED from cap7m_prepare_dir / cap7m_rm_tree in
+# test/cap7m/cap7m_common.sh, identical in behaviour. This is a BUILD tool:
+# sourcing a file under test/ would invert the dependency and mean the dylib
+# could not be built without the test tree present. The copies must be kept in
+# step -- change one, change the other.
+#
+# THE DEFAULT PATH DELETES NOTHING. A stale build or dist directory is a loud
+# refusal, not a silent wipe; --clean is the only way anything is removed, and
+# even then it goes through the guard.
+cap7m_prepare_dir() {
+    local dir="${1:-}"
+    [ -n "${dir}" ] || die 'cap7m_prepare_dir: empty directory argument'
+
+    if [ ! -e "${dir}" ]; then
+        mkdir -p -- "${dir}"
+        return 0
+    fi
+    [ -d "${dir}" ] || die "expected a directory but found a file: ${dir}"
+    if [ -z "$(ls -A -- "${dir}" 2>/dev/null)" ]; then
+        return 0
+    fi
+
+    if [ "${CAP7M_CLEAN:-0}" = '1' ]; then
+        printf '[CAP-7M0] --clean: removing stale %s\n' "${dir}"
+        cap7m_rm_tree "${dir}"
+        mkdir -p -- "${dir}"
+        return 0
+    fi
+
+    printf '[CAP-7M0] %s already exists and is not empty.\n' "${dir}" >&2
+    printf '[CAP-7M0] Re-using it would let CMake resolve against the PREVIOUS cache.\n' >&2
+    printf '[CAP-7M0] Re-run with --clean, or remove the directory yourself.\n' >&2
+    die "refusing to reuse a non-empty working directory: ${dir}"
+}
+
+# Refuses, in order: an empty target or allowed root; `/`; a `..` PATH
+# COMPONENT (matched against a slash-padded copy, so a filename that merely
+# contains dots is fine); a target whose parent does not resolve; an unusable
+# basename; a target outside the allowed root; and the allowed root itself.
+# All comparisons are on `pwd -P` output so symlinked paths resolve.
+cap7m_rm_tree() {
+    local target="${1:-}"
+    # `${2-…}` and NOT `${2:-…}`: `:-` would treat an explicitly passed EMPTY
+    # allowed root as "unset" and silently substitute the default instead of
+    # failing. Omitted means default; explicitly empty means die.
+    local allowed_root="${2-${repo_root}/build}"
+    local padded parent base resolved resolved_root root_slash target_slash
+
+    [ -n "${target}" ] || die 'refusing to delete: empty target path'
+    [ -n "${allowed_root}" ] || die 'refusing to delete: empty allowed root'
+    [ "${target}" != '/' ] || die 'refusing to delete: /'
+
+    padded="/${target}/"
+    case "${padded}" in
+        */../*) die "refusing to delete: '..' path component in '${target}'" ;;
+    esac
+
+    base="$(basename -- "${target}")"
+    case "${base}" in
+        ''|'.'|'..'|'/')
+            die "refusing to delete: unusable basename in '${target}'" ;;
+    esac
+    parent="$(cd -- "$(dirname -- "${target}")" 2>/dev/null && pwd -P)" ||
+        die "refusing to delete '${target}': its parent does not resolve"
+    [ -n "${parent}" ] ||
+        die "refusing to delete '${target}': its parent does not resolve"
+    resolved="${parent%/}/${base}"
+
+    resolved_root="$(cd -- "${allowed_root}" 2>/dev/null && pwd -P)" ||
+        die "refusing to delete '${target}': allowed root '${allowed_root}' does not resolve"
+    [ -n "${resolved_root}" ] ||
+        die "refusing to delete '${target}': allowed root '${allowed_root}' does not resolve"
+
+    root_slash="${resolved_root%/}/"
+    target_slash="${resolved}/"
+    [ "${target_slash#"${root_slash}"}" != "${target_slash}" ] ||
+        die "refusing to delete '${resolved}': outside '${resolved_root}'"
+    [ "${resolved}" != "${resolved_root%/}" ] ||
+        die "refusing to delete the allowed root itself: '${resolved}'"
+
+    rm -rf -- "${resolved}"
+}
+
+# --clean is opt-in and is the ONLY way anything is removed. Lifted out of the
+# positional arguments so both `… arm64 --clean` and `… --clean arm64` work.
+CAP7M_CLEAN=0
+cap7m_args=()
+for cap7m_arg in "$@"; do
+    case "${cap7m_arg}" in
+        --clean) CAP7M_CLEAN=1 ;;
+        *) cap7m_args+=( "${cap7m_arg}" ) ;;
+    esac
+done
+set -- ${cap7m_args[@]+"${cap7m_args[@]}"}
 
 # --- read a lock (strict: one 'key = value' per non-comment line) ------------
 _lock_get() {
@@ -200,7 +300,7 @@ printf '[CAP-7M0] DEVELOPER_DIR=%s (pinned Xcode %s)\n' \
 # targets, not part of the library: turning them off changes nothing about the
 # artifact, and the alternative -- brew-installing clang-format -- would add an
 # unpinned build dependency to satisfy a check PWeb never runs.
-rm -rf -- "${build_dir}"
+cap7m_prepare_dir "${build_dir}"
 cmake -B "${build_dir}" -S "${src}" \
     -DCMAKE_BUILD_TYPE=Release \
     "-DCMAKE_OSX_ARCHITECTURES=${want_arch}" \
@@ -293,8 +393,7 @@ rpaths="$(otool -l "${real_lib}" |
     awk '/LC_RPATH/ { r = 1 } r && /^ *path / { print $2; r = 0 }')"
 
 # --- stage --------------------------------------------------------------------
-rm -rf -- "${dist_dir}"
-mkdir -p -- "${dist_dir}"
+cap7m_prepare_dir "${dist_dir}"
 
 # Regular files, not the symlinks CMake leaves in the build tree: a copy of
 # this directory has to be self-contained, and a bundle must never ship a

@@ -411,6 +411,87 @@ are written up in the semantics doc (constraints 7 and 8):
    because it would contradict the floor's own justification. This is a
    Checkpoint 1 ratification item, above, not an implementation detail.
 
+### Round 3 — run `31905105454`: Pascal links and runs on both arches
+
+Both round-2 fixes worked. The chained-fixups mitigation is now **MEASURED,
+not predicted**, the contract-based export gate passes on both arches, and
+**M4 passes on both**: 36 facts, exactly the two documented signedness deltas,
+the same pair Linux permits — clang types the enums the way gcc does.
+
+One further platform difference, identical on both arches: **a Mach-O load
+command records USE, where ELF's `DT_NEEDED` records LINKAGE.** `abi_probe`
+deliberately references nothing, so on Darwin it correctly carries no
+`LC_LOAD_DYLIB`, and the gate was asserting a Linux property that does not
+exist here — CAP-7L's write-up of `DT_NEEDED = libwebview.so.0.12`, measured
+off that very probe, does not transfer. Constraint 9 in the semantics doc,
+cross-referenced to CAP-7L's paragraph.
+
+The three obligations were separated rather than merged:
+
+- the absence is **recorded** (`CAP7M_M5 binary=abi_probe references_dylib=no`),
+  not asserted, and neither `abi_probe.pas` nor `abi_probe.c` was touched —
+  that pair is the pinned CAP-1 probe, and making it call in to satisfy a gate
+  would change what it measures. No `-needed_library` either: forcing a load
+  command onto a binary that references nothing fabricates the measurement.
+- **M5 is satisfied by `dlopen` + `dlsym`**, the stronger proof and the one
+  the gate's name already promised. Asserted from both sides: the bare name
+  must resolve, the trie spelling `_webview_create` must not.
+- **The load command is asserted on `cap7m_probe`**, which really calls in and
+  whose `@rpath/libwebview.0.12.dylib` PROBE K depends on. Any binary carrying
+  one must name that path; `signature_pin` (17 addresses taken, none called)
+  and `uri_oracle` are recorded either way — checked against the source.
+
+### Round 4 — human review: these scripts stop deleting
+
+The objection was not that the `rm -rf` calls were unguarded; it was that the
+scripts delete **at all**. A CI runner checks out fresh, so the wipe bought
+nothing there — it only ever served repeated local runs, and it paid for that
+convenience with a recursive delete on the default path of a file CI executes
+as a program.
+
+**The default path now deletes nothing.** `cap7m_prepare_dir` creates an
+absent directory, uses an empty one, and REFUSES a non-empty one — naming it
+and saying to pass `--clean` or remove it. A stale tree is a loud refusal
+instead of a choice between a silently stale measurement and a destructive
+cleanup. `--clean` is opt-in per invocation, accepted by
+`tools/build-webview-dylib.sh`, `build_cap7m.sh`, `check_abi.sh` and
+`run_cap7m_probes.sh`, and is the only route to a removal — which then still
+goes through `cap7m_rm_tree`. The CI jobs call every gate WITHOUT it, with a
+comment at each of the eight call sites saying why.
+
+`cap7m_rm_tree` survives unchanged as the last line of defence, for `--clean`
+and for the one deletion that remains on a default path: the `mktemp`
+staging trap in `check_release_layout.sh`, which removes a directory it
+created itself in `TMPDIR` and would otherwise leak a bundle per run. That
+one passes its allowed root explicitly, initialises `staging=''` before the
+trap is installed, and calls the guard in a subshell so a refusal warns
+rather than replacing the script's exit status.
+
+`tools/build-webview-dylib.sh` carries both functions as a self-contained
+copy: a build tool sourcing a file under `test/` would invert the dependency.
+
+**Verified — 21 controls against both copies, 21/21 each.** Every path handed
+to the functions lived inside a `mktemp -d` sandbox; `${repo_root}` was
+pointed at a sandbox subdirectory so even the DEFAULT allowed root could not
+name anything real, and the repository root was never an input. `die` was
+defined exactly as the scripts define it — printf to stderr, then `exit 1`.
+
+Refusals: empty target, `/`, the fake repo root, the allowed root bare and
+slash-suffixed, `..` escaping and `..` inside, `.` basename, unresolvable
+parent, explicitly empty allowed root, and the `buildkit`-vs-`build` prefix
+trap. Allowances: a legitimate subdirectory, a `report..old` filename, a
+not-yet-existing target. For `cap7m_prepare_dir`: absent creates, empty
+proceeds, non-empty refuses **with its content verified still present
+afterwards**, a file where a directory belongs refuses, an empty argument
+refuses, `--clean` empties it, and `--clean` still cannot escape the allowed
+root (its content verified untouched). The `--clean` flag parser was checked
+separately over seven argument shapes, including one containing a space.
+
+The same pre-existing shape in `tools/build-webview-so.sh` and five
+`test/cap7l/*.sh` scripts is out of scope — ledgered in `deferred-work.md`
+with all seven line numbers and with the assert-empty-unless-`--clean` design
+named as the pattern to lift.
+
 ### Known risk
 
 The `.mm` probe still has not compiled — run `31904189177` stopped at the

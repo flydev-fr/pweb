@@ -26,12 +26,15 @@
 # Prerequisites: tools/build-webview-dylib.sh has staged
 # build/cap7m/webview-dist, and deps/webview + deps/mormot2 are present.
 #
-# Usage: test/cap7m/build_cap7m.sh
+# Usage: test/cap7m/build_cap7m.sh [--clean]
+#        --clean is OPT-IN; without it a stale work directory is a refusal.
 #
 set -euo pipefail
 
 # shellcheck source=test/cap7m/cap7m_common.sh
 . "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/cap7m_common.sh"
+
+eval "$(cap7m_take_clean_flag "$@")"
 
 cd -- "${repo_root}"
 
@@ -60,8 +63,12 @@ esac
 [ -d "${static_dir}" ] ||
     die "mORMot Darwin statics missing: ${static_dir} -- fetch deps/mormot2 first"
 
-rm -rf -- build/cap7m/iso build/cap7m/bin build/cap7m/units
-mkdir -p -- build/cap7m/iso build/cap7m/bin build/cap7m/units
+# Absolute, under ${repo_root}, rather than relying on the `cd` above: what a
+# gate touches should not depend on the working directory being what an
+# earlier line happened to set.
+for stale in iso bin units; do
+    cap7m_prepare_dir "${repo_root}/build/cap7m/${stale}"
+done
 
 mormot_core=(
     -Fideps/mormot2/src
@@ -178,10 +185,23 @@ read_minos() {
     printf '%s' "${out}"
 }
 
-# EVERY binary this script produced, not just the two that link the dylib:
-# uri_oracle and the probe are compiled with an explicit floor too, and an
-# unverified -WM is exactly the "the SDK decided it" failure M16 exists to
-# exclude.
+# EVERY binary this script produced, not just the ones that link the dylib:
+# uri_oracle is compiled with an explicit floor too, and an unverified -WM is
+# exactly the "the SDK decided it" failure M16 exists to exclude.
+#
+# THE LOAD COMMAND IS ASSERTED WHERE THE REFERENCE EXISTS, and only there.
+# MEASURED (run 31905105454): Mach-O records an LC_LOAD_DYLIB only when a
+# symbol from that dylib is actually referenced - ELF's --as-needed behaviour,
+# unconditionally. So "carries a load command" is a property of what a binary
+# USES, not of what it was linked against, and demanding it everywhere would
+# assert a Linux property that does not exist here. Two rules instead:
+#
+#   - cap7m_probe MUST carry one. It calls webview_create and fifteen others,
+#     so an absence there would mean the reference vanished - and it is also
+#     the binary whose load command the PROBE K bundle layout depends on.
+#   - any binary that DOES carry one must name @rpath/<versioned dylib>.
+#     Recorded for the rest, since signature_pin only takes the addresses of
+#     the 17 externals and uri_oracle references none of them.
 for binary in build/cap7m/bin/cap7m_probe build/cap7m/bin/signature_pin \
               build/cap7m/bin/uri_oracle; do
     [ -x "${binary}" ] || die "expected binary missing: ${binary}"
@@ -195,26 +215,29 @@ for binary in build/cap7m/bin/cap7m_probe build/cap7m/bin/signature_pin \
         *) die "${binary} minos is '${minos}', expected '${deployment_target}'" ;;
     esac
 
-    # uri_oracle links no dylib and needs no rpath; the other two do both.
-    case "${name}" in
-        uri_oracle)
-            record_measurement "CAP7M_M16 binary=${name} minos=${minos}"
-            continue
-            ;;
-    esac
-
     loaded="$(otool -L "${binary}" | awk '/libwebview/ { print $1; exit }')"
-    [ -n "${loaded}" ] || die "${binary} records no libwebview load command"
-    case "${loaded}" in
-        *"${dylib_versioned}") ;;
-        *) die "${binary} loads '${loaded}', expected a path ending ${dylib_versioned}" ;;
-    esac
-    rpath="$(otool -l "${binary}" |
-        awk '/LC_RPATH/ { r = 1 } r && /^ *path / { print $2; r = 0 }' |
-        grep -x '@executable_path' || true)"
-    [ "${rpath}" = '@executable_path' ] ||
-        die "${binary} has no LC_RPATH @executable_path (CWD dependence)"
-    record_measurement "CAP7M_M16 binary=${name} minos=${minos} load=${loaded} rpath=${rpath}"
+    if [ -n "${loaded}" ]; then
+        # wherever it exists, it must be @rpath-relative and versioned - that
+        # is the fact a bundle layout is built on
+        case "${loaded}" in
+            @rpath/*"${dylib_versioned}") ;;
+            *) die "${binary} loads '${loaded}', expected @rpath/${dylib_versioned}" ;;
+        esac
+    elif [ "${name}" = 'cap7m_probe' ]; then
+        die 'cap7m_probe records no libwebview load command -- it calls into the dylib, so the reference has gone missing'
+    fi
+
+    # uri_oracle is not linked with -rpath and needs none; the other two are.
+    rpath=''
+    if [ "${name}" != 'uri_oracle' ]; then
+        rpath="$(otool -l "${binary}" |
+            awk '/LC_RPATH/ { r = 1 } r && /^ *path / { print $2; r = 0 }' |
+            grep -x '@executable_path' || true)"
+        [ "${rpath}" = '@executable_path' ] ||
+            die "${binary} has no LC_RPATH @executable_path (CWD dependence)"
+    fi
+
+    record_measurement "CAP7M_M16 binary=${name} minos=${minos} references_dylib=$([ -n "${loaded}" ] && printf 'yes' || printf 'no') load=${loaded:-<none>} rpath=${rpath:-<none>}"
 done
 
 printf '\n[CAP-7M0] build_cap7m: PASS (%s, deployment target %s)\n' \

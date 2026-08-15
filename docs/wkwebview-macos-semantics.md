@@ -118,7 +118,7 @@ M10 (`CAP7M_M10 precreate_seam_ran=1` plus a served main document).
 Escalation only, and only with evidence that B failed. No patch exists in this
 tree and none may be written before ratification.
 
-## Eight constraints that are not obvious
+## Nine constraints that are not obvious
 
 ### 1. `WKURLSchemeTask` throws. Nothing in the GLib model carries over
 
@@ -265,6 +265,10 @@ convenience — the identical structure the Linux port has with
 `libwebview.so.0.12` versus `libwebview.so`, arrived at by a different
 mechanism.
 
+**With one difference that constraint 9 makes precise:** the linker records
+that name only when the binary actually *references* a symbol from the dylib.
+`DT_NEEDED` follows the link line; `LC_LOAD_DYLIB` follows the call graph.
+
 `tools/build-webview-dylib.sh` asserts only that the install name is
 `@rpath`-relative (an absolute build-tree install name is what would break a
 bundle) and **records** the exact observed string, because M3 measures it.
@@ -368,6 +372,61 @@ Note what was **not** done: no `-fvisibility=hidden` or any other compiler
 flag was added to make the count match. That would change how the pinned
 upstream is built, diverge from the Windows and Linux builds, and convert a
 measured fact into a hidden one.
+
+### 9. A Mach-O load command records USE, where `DT_NEEDED` records LINKAGE
+
+**MEASURED**, run `31905105454`, identically on both architectures:
+
+```
+[CAP-7M0] the Pascal probe records no libwebview load command at all
+```
+
+Mach-O's linker emits an `LC_LOAD_DYLIB` only when a symbol from that dylib is
+actually **referenced** — ELF's `--as-needed` behaviour, unconditionally and
+with no opt-out by default. ELF's `ld` records `DT_NEEDED` for any library
+merely *named on the command line*.
+
+That difference is exactly why CAP-7L could write up
+`DT_NEEDED = libwebview.so.0.12`, measured straight off `abi_probe`, as a
+load-bearing fact (see "Linkage, sonames and the release layout" in
+`webkitgtk-linux-semantics.md`). `test/core/abi_probe.pas` references
+**nothing**: it declares the externals, assigns its *own* `cdecl` procedures
+to the typed callback consts, and measures sizes, offsets and signedness. On
+Linux it still recorded a `DT_NEEDED`. On Darwin it correctly records no load
+command at all, and a gate that demanded one was asserting a Linux property
+that does not exist here.
+
+Two things were deliberately **not** done to make it pass:
+
+- **`abi_probe.pas` / `abi_probe.c` were not modified** to call into the
+  dylib. That pair is the single pinned CAP-1 probe, unmodified on every
+  platform; making it reference a symbol to satisfy a gate would change what
+  it measures.
+- **The dependency was not manufactured** with `-needed_library` /
+  `-needed-lwebview`. Forcing a load command onto a binary that genuinely
+  references nothing fabricates the measurement instead of taking it.
+
+So the fact is **recorded** (`CAP7M_M5 binary=abi_probe references_dylib=no`)
+rather than asserted, and the two obligations move to where they belong:
+
+- **M5 — "all 17 externals resolve through the Mach-O underscore
+  convention"** is proven by `dlopen` + `dlsym` on the staged dylib, which is
+  the stronger claim anyway: it shows the names are reachable at *run* time
+  through the exact mangling FPC's `external` uses. Asserted from both sides —
+  the bare name `webview_create` must resolve, and the trie's own spelling
+  `_webview_create` must not, because `dlsym` applies the Mach-O prefix
+  itself.
+- **The load command is asserted on `cap7m_probe`**, which really does call
+  `webview_create` and fifteen others, and whose `@rpath/libwebview.0.12.dylib`
+  is the value PROBE K's bundle layout actually depends on. Any binary that
+  carries one at all must name that path; `signature_pin` (which only takes
+  the 17 addresses) and `uri_oracle` (which references none) are recorded.
+
+Consequence for CAP-7M: on Darwin, "what does this executable need at run
+time" is a question about the *call graph*, not about the link line. A future
+adapter that stops calling a library stops depending on it, silently — which
+is convenient for packaging and treacherous for anyone porting a Linux
+assumption across.
 
 ## Threading
 
@@ -513,7 +572,7 @@ and diffing two artifacts by hand.
 |---|---|---|
 | A (M1–M3) | `tools/build-webview-dylib.sh` | `CAP7M_PIN` (lock = checkout), `CAP7M_ARCH`, `CAP7M_DEPLOYMENT_TARGET`, `CAP7M_XCODE`, `CAP7M_INSTALL_NAME`, `CAP7M_LC_RPATH`, `CAP7M_OTOOL_L` |
 | A (M2) | `check_webview_exports.sh` | `CAP7M_EXPORTS arch=… total=… webview_api=17 other=…`; the `webview_*` set is identical on both arches, the total is **not** (constraint 8) |
-| B (M4/M5) | `check_abi.sh` | 36 facts, exactly 2 documented deltas, `CAP7M_DLSYM` |
+| B (M4/M5) | `check_abi.sh` | 36 facts, exactly 2 documented deltas; `CAP7M_M5 dlsym_bare_resolved=17 … dlsym_underscored_resolved=0`; `CAP7M_M5 binary=abi_probe references_dylib=…` (constraint 9) |
 | C (M6) | `run_cap7m_probes.sh` | `CAP7M_M6 shutdown=terminate` *and* `=window-close`; `CAP7M_RSS`, `CAP7M_M6_LEAK` |
 | D (M7/M8) | `run_cap7m_probes.sh` | `CAP7M_M7`, `CAP7M_M8` (one marker per cycle, asserted) |
 | E (M9/M10) | `run_cap7m_probes.sh` | `CAP7M_M10 precreate_seam_ran=1`; `CAP7M_M9 … seam_a_effective` (recorded) |

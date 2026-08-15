@@ -1830,6 +1830,10 @@ jobs:
       - name: CAP-7M0 build libwebview.dylib from pinned source (M1/M3/M16)
         shell: bash
         timeout-minutes: 20
+        # No --clean: the runner checks out fresh, so the working
+        # directories do not exist yet. These gates never delete on their
+        # default path; a stale tree is a refusal, and --clean is for
+        # repeated LOCAL runs only.
         run: tools/build-webview-dylib.sh
 
       - name: CAP-7M0 public ABI remains exactly 17 exports (M2)
@@ -1839,11 +1843,13 @@ jobs:
       - name: CAP-7M0 paired ABI probes + Mach-O presence and dlopen gates (M4/M5)
         shell: bash
         timeout-minutes: 15
+        # No --clean: fresh workspace (see the dylib build step).
         run: test/cap7m/check_abi.sh
 
       - name: CAP-7M0 compile the binding, mORMot core and the probe (M17)
         shell: bash
         timeout-minutes: 20
+        # No --clean: fresh workspace (see the dylib build step).
         run: test/cap7m/build_cap7m.sh
 
       # A REAL WKWebView on a real Aqua session. No mocked WebKit, no browser
@@ -1853,6 +1859,7 @@ jobs:
       - name: CAP-7M0 feasibility probes (M6-M15)
         shell: bash
         timeout-minutes: 25
+        # No --clean: fresh workspace (see the dylib build step).
         run: test/cap7m/run_cap7m_probes.sh 3
 
       - name: CAP-7M0 bundle layout measured from an unrelated CWD (M18)
@@ -2009,6 +2016,10 @@ jobs:
       - name: CAP-7M0 build libwebview.dylib from pinned source (M1/M3/M16)
         shell: bash
         timeout-minutes: 20
+        # No --clean: the runner checks out fresh, so the working
+        # directories do not exist yet. These gates never delete on their
+        # default path; a stale tree is a refusal, and --clean is for
+        # repeated LOCAL runs only.
         run: tools/build-webview-dylib.sh
 
       - name: CAP-7M0 public ABI remains exactly 17 exports (M2)
@@ -2018,11 +2029,13 @@ jobs:
       - name: CAP-7M0 paired ABI probes + Mach-O presence and dlopen gates (M4/M5)
         shell: bash
         timeout-minutes: 15
+        # No --clean: fresh workspace (see the dylib build step).
         run: test/cap7m/check_abi.sh
 
       - name: CAP-7M0 compile the binding, mORMot core and the probe (M17)
         shell: bash
         timeout-minutes: 20
+        # No --clean: fresh workspace (see the dylib build step).
         run: test/cap7m/build_cap7m.sh
 
       # Three cycles: one of each shutdown shape, plus a third so the M6 leak
@@ -2030,6 +2043,7 @@ jobs:
       - name: CAP-7M0 feasibility probes (M6-M15)
         shell: bash
         timeout-minutes: 25
+        # No --clean: fresh workspace (see the dylib build step).
         run: test/cap7m/run_cap7m_probes.sh 3
 
       - name: CAP-7M0 bundle layout measured from an unrelated CWD (M18)

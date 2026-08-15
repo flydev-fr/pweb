@@ -47,6 +47,137 @@ record_measurement() {
     printf '%s\n' "$*"
 }
 
+# --- working directories: ASSERT EMPTY, do not wipe --------------------------
+#
+# THE DEFAULT PATH OF THESE GATES DELETES NOTHING.
+#
+# The `rm -rf` these scripts used to open with bought nothing on CI, which
+# checks out fresh every time; it existed only to make repeated LOCAL runs
+# convenient, and it paid for that convenience by putting a recursive delete on
+# the default path of a script CI executes as a program. A stale tree is now a
+# LOUD REFUSAL instead of a choice between a silently stale measurement and a
+# destructive cleanup.
+#
+#   absent            -> create it, proceed
+#   present, empty    -> proceed
+#   present, non-empty-> refuse, naming the directory, unless --clean
+#
+# --clean is opt-in, per invocation, and is the ONLY way anything is removed.
+# Even then the removal goes through cap7m_rm_tree below.
+cap7m_prepare_dir() {
+    local dir="${1:-}"
+    [ -n "${dir}" ] || die 'cap7m_prepare_dir: empty directory argument'
+
+    if [ ! -e "${dir}" ]; then
+        mkdir -p -- "${dir}"
+        return 0
+    fi
+    [ -d "${dir}" ] || die "expected a directory but found a file: ${dir}"
+    if [ -z "$(ls -A -- "${dir}" 2>/dev/null)" ]; then
+        return 0
+    fi
+
+    if [ "${CAP7M_CLEAN:-0}" = '1' ]; then
+        printf '[CAP-7M0] --clean: removing stale %s\n' "${dir}"
+        cap7m_rm_tree "${dir}"
+        mkdir -p -- "${dir}"
+        return 0
+    fi
+
+    printf '[CAP-7M0] %s already exists and is not empty.\n' "${dir}" >&2
+    printf '[CAP-7M0] Re-using it would let this gate report the PREVIOUS run.\n' >&2
+    printf '[CAP-7M0] Re-run with --clean, or remove the directory yourself.\n' >&2
+    die "refusing to reuse a non-empty working directory: ${dir}"
+}
+
+# Tiny, shared argument convention. Each gate keeps its own positional
+# arguments; this only lifts --clean out of them.
+#
+#   eval "$(cap7m_take_clean_flag "$@")"
+#
+# sets CAP7M_CLEAN and replaces "$@" with the remaining arguments.
+cap7m_take_clean_flag() {
+    local arg clean=0
+    printf 'set --'
+    for arg in "$@"; do
+        case "${arg}" in
+            --clean) clean=1 ;;
+            *) printf ' %q' "${arg}" ;;
+        esac
+    done
+    printf '\nCAP7M_CLEAN=%s\n' "${clean}"
+}
+
+# --- the ONE deletion guard --------------------------------------------------
+#
+# Reached only by `--clean` and by the mktemp staging trap in
+# check_release_layout.sh. It is the last line of defence, not the first: the
+# first is that nothing above deletes at all.
+#
+#   cap7m_rm_tree <target> [allowed_root]   allowed_root: ${repo_root}/build
+#
+# Refuses, in this order: an empty target or allowed root; `/`; a `..` PATH
+# COMPONENT; a target whose parent does not resolve; an unusable basename; a
+# target outside the allowed root; and the allowed root itself.
+#
+# Two details that are easy to get wrong, and the reason this is one function
+# rather than an inline test at each site:
+#
+#   - the `..` test matches `*/../*` against a SLASH-PADDED copy, not `*..*`
+#     against the bare string, so `report..old` is a legitimate filename while
+#     `build/../etc` is refused;
+#   - every comparison is on `pwd -P` output. The runner's /tmp is a symlink
+#     to /private/tmp, so an unresolved comparison would reject a staging
+#     directory that really is inside its allowed root.
+cap7m_rm_tree() {
+    local target="${1:-}"
+    # `${2-…}` and NOT `${2:-…}`, deliberately: `:-` treats an explicitly
+    # passed EMPTY string as "unset" and silently substitutes the default, so
+    # `cap7m_rm_tree "$x" "$root"` with an empty $root would quietly fall back
+    # to ${repo_root}/build instead of failing. Omitted means default;
+    # explicitly empty means die, which is what the caller meant to be told.
+    local allowed_root="${2-${repo_root}/build}"
+    local padded parent base resolved resolved_root root_slash target_slash
+
+    [ -n "${target}" ] || die 'refusing to delete: empty target path'
+    [ -n "${allowed_root}" ] || die 'refusing to delete: empty allowed root'
+    [ "${target}" != '/' ] || die 'refusing to delete: /'
+
+    padded="/${target}/"
+    case "${padded}" in
+        */../*) die "refusing to delete: '..' path component in '${target}'" ;;
+    esac
+
+    # The target may legitimately not exist yet, so resolve its PARENT and
+    # re-append the basename rather than requiring the target itself.
+    base="$(basename -- "${target}")"
+    case "${base}" in
+        ''|'.'|'..'|'/')
+            die "refusing to delete: unusable basename in '${target}'" ;;
+    esac
+    parent="$(cd -- "$(dirname -- "${target}")" 2>/dev/null && pwd -P)" ||
+        die "refusing to delete '${target}': its parent does not resolve"
+    [ -n "${parent}" ] ||
+        die "refusing to delete '${target}': its parent does not resolve"
+    resolved="${parent%/}/${base}"
+
+    resolved_root="$(cd -- "${allowed_root}" 2>/dev/null && pwd -P)" ||
+        die "refusing to delete '${target}': allowed root '${allowed_root}' does not resolve"
+    [ -n "${resolved_root}" ] ||
+        die "refusing to delete '${target}': allowed root '${allowed_root}' does not resolve"
+
+    # Trailing slash on BOTH sides, and a LITERAL (unglobbed) prefix strip, so
+    # /x/buildkit can never pass as inside /x/build.
+    root_slash="${resolved_root%/}/"
+    target_slash="${resolved}/"
+    [ "${target_slash#"${root_slash}"}" != "${target_slash}" ] ||
+        die "refusing to delete '${resolved}': outside '${resolved_root}'"
+    [ "${resolved}" != "${resolved_root%/}" ] ||
+        die "refusing to delete the allowed root itself: '${resolved}'"
+
+    rm -rf -- "${resolved}"
+}
+
 # strict 'key = value' reader, identical in behaviour to the one in
 # tools/build-webview-dylib.sh and tools/build-webview-so.sh
 _lock_get() {
