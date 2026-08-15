@@ -18,6 +18,9 @@ const
   {$IF Defined(WIN64)}
   LIB_WEBVIEW = 'webview.dll';
   _PU = '';
+  {$ELSEIF Defined(LINUX)}
+  LIB_WEBVIEW = 'libwebview.so';
+  _PU = '';
   {$ELSE}
     {$MESSAGE Error 'Unsupported platform'}
   {$ENDIF}

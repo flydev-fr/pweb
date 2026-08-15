@@ -33,6 +33,20 @@ program releaseapp;
   the define this file compiles exactly as before - the Evergreen
   profiles are byte-untouched.
 
+  CAP-7L adds Linux x64. This is the SAME release app, not a Linux
+  demo: bundle loading, backend, scheduler, binding, teardown order and
+  the runtime verdict are shared source. Exactly two things differ, both
+  at the platform seam:
+    - the pweb://app handler is TWebKitGtkAssetHandler instead of
+      TWebView2AssetHandler, attached at the same point between
+      webview_set_size and webview_navigate;
+    - the WebView2 runtime pre-check has no counterpart on Linux. There
+      is nothing to provision: WebKitGTK is a distro package and its
+      absence is a LOADER failure that names the missing soname before
+      main() runs. An unusable display still collapses into
+      webview_create returning nil, which WebViewCheckCreated turns into
+      the same typed PWeb diagnostic on both platforms.
+
     releaseapp            (no arguments) }
 
 {$I mormot.defines.inc}
@@ -62,13 +76,27 @@ uses
   pweb.webview.binding,
   pweb.assets.intf,
   pweb.assets.bundle,
+  {$ifdef LINUX}
+  pweb.platform.webkitgtk
+  {$else}
   pweb.platform.webview2,
   pweb.platform.webview2.runtime
   {$ifdef PWEB_FIXED_RUNTIME}
   ,
   pweb.platform.webview2.fixed
   {$endif PWEB_FIXED_RUNTIME}
+  {$endif LINUX}
   ;
+
+type
+  { The one platform-selected name in this file. Both handlers expose the
+    identical surface - Create(webview_t, IAssetStore), Detach, Destroy -
+    so every other line below is shared source. }
+  {$ifdef LINUX}
+  TPWebAssetHandler = TWebKitGtkAssetHandler;
+  {$else}
+  TPWebAssetHandler = TWebView2AssetHandler;
+  {$endif LINUX}
 
 const
   MAX_AUTOCLOSE_MS = 60000;
@@ -166,6 +194,41 @@ begin
     webview_dispatch(webview_t(handle), @TerminateOnGuiThread, nil);
 end;
 
+{$ifdef LINUX}
+{ CAP-7L: the Linux pre-create check. There is no runtime to PROVISION -
+  WebKitGTK is a distro package the application never installs, and a
+  missing one is a loader failure naming the exact soname before main()
+  runs - but provisioning is not the only thing worth diagnosing. A host
+  with no display is the ordinary Linux failure (a server, a cron job, a
+  CI step that forgot xvfb-run), and MEASURED, it collapses into
+  webview_create returning nil, which the FROZEN raw layer reports as
+  'missing WebView2 runtime or window creation failure'. Naming a
+  Windows runtime on a machine that has never had one is a false lead,
+  so the knowable cause is named here first. }
+procedure CheckGtkDisplayUsable;
+var
+  reason: RawUtf8;
+begin
+  reason := PWebGtkDisplayUnavailableReason;
+  if reason = '' then
+    exit;
+  WriteLn(StdErr, LOG_PREFIX, ': GTK DISPLAY UNAVAILABLE (', reason, ')');
+  raise Exception.Create(
+    'no usable display - no WebView was created; a GTK/WebKitGTK ' +
+    'WebView needs an X or Wayland session');
+end;
+{$endif LINUX}
+
+{$ifndef LINUX}
+{ Everything from here to the matching endif is the WINDOWS
+  runtime-provisioning pre-check, whose Linux counterpart is the display
+  check above.
+
+  Note for editors: a compiler directive may not be written inside this
+  comment. FPC reads a nested brace as a directive and ends the comment
+  at the next closing brace, which silently mangles the block below on
+  the platform where it is ACTIVE - so it compiles on Linux, where the
+  block is skipped, and fails on Windows. }
 {$ifdef PWEB_FIXED_RUNTIME}
 { CAP-6b3 FIXED-RUNTIME profile: this build runs on the WebView2 Fixed
   Version Runtime deployed BESIDE the executable, on a runtime the
@@ -266,6 +329,7 @@ begin
     'install the runtime via the application setup');
 end;
 {$endif PWEB_FIXED_RUNTIME}
+{$endif LINUX}
 
 { Locate app.pwb beside the executable (never the CWD), then run the
   full production gate BEFORE anything webview-related exists. On
@@ -291,7 +355,7 @@ end;
 var
   w: webview_t;
   store: IAssetStore;
-  assetHandler: TWebView2AssetHandler;
+  assetHandler: TPWebAssetHandler;
   server: TRestServerFullMemory;
   factory: TServiceFactoryServerAbstract;
   realBridge, bridge: IInvocationBridge;
@@ -336,9 +400,18 @@ begin
     limits.MaxQueueSize := 32;
     source := scheduler.RegisterSource(limits);
 
+    {$ifdef LINUX}
+    // CAP-7L: the same call site, for the same reason. There is no
+    // runtime to provision on Linux, but there is still one cause that
+    // is knowable BEFORE webview_create collapses every bad state into
+    // one nil - and if it is left to collapse, the frozen raw layer
+    // names a WebView2 runtime on a machine that has never had one.
+    CheckGtkDisplayUsable;
+    {$else}
     // CAP-6b1: fail early with a distinct diagnosable marker before
     // webview_create can collapse every bad state into one nil
     CheckWebView2RuntimeUsable;
+    {$endif LINUX}
 
     w := WebViewCheckCreated(webview_create(0, nil));
     try
@@ -361,8 +434,15 @@ begin
       WebViewCheck(webview_set_size(w, 900, 650, WEBVIEW_HINT_NONE),
         'webview_set_size');
       // production asset path: attach the pweb://app handler on the
-      // proven CAP-4W seam, then navigate - never any injected HTML
+      // proven native seam, then navigate - never any injected HTML.
+      // CAP-4W borrowed-controller seam on Windows, CAP-7L
+      // BROWSER_CONTROLLER -> WebKitWebContext seam on Linux; the
+      // attach point itself is unchanged on both
+      {$ifdef LINUX}
+      assetHandler := TWebKitGtkAssetHandler.Create(w, store);
+      {$else}
       assetHandler := TWebView2AssetHandler.Create(w, store);
+      {$endif LINUX}
       WebViewCheck(webview_navigate(w, 'pweb://app/'), 'webview_navigate');
 
       autoCloseMs := StrToIntDef(

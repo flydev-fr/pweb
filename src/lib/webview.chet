@@ -33,8 +33,8 @@ DebugLibraryName=
 Prefix=
 
 [Platform.Linux64]
-Enabled=0
-LibraryName=
+Enabled=1
+LibraryName=libwebview.so
 DebugLibraryName=
 Prefix=
 

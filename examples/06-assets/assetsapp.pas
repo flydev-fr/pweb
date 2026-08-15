@@ -13,6 +13,11 @@ program assetsapp;
   asset-loaded page. No SetHtml/Eval injection and no network or
   filesystem URL transport of any kind.
 
+  CAP-7L runs this same proof on Linux/WebKitGTK. Only the handler
+  class is selected by platform, at the same attach point; the folder
+  and ZIP stores, the URI translation and the verdict are shared
+  source, which is exactly what makes this a parity gate.
+
     assetsapp folder <path-to-frontend/dist>
     assetsapp zip    <path-to-app.zip> }
 
@@ -43,13 +48,25 @@ uses
   pweb.assets.intf,
   pweb.assets.folder,
   pweb.assets.zip,
+  {$ifdef LINUX}
+  pweb.platform.webkitgtk;
+  {$else}
   pweb.platform.webview2;
+  {$endif LINUX}
 
 const
   MAX_AUTOCLOSE_MS = 60000;
   CLOSER_WAIT_MARGIN_MS = 10000;
 
 type
+  { The one platform-selected name in this file; both handlers expose the
+    identical Create(webview_t, IAssetStore)/Detach surface. }
+  {$ifdef LINUX}
+  TPWebAssetHandler = TWebKitGtkAssetHandler;
+  {$else}
+  TPWebAssetHandler = TWebView2AssetHandler;
+  {$endif LINUX}
+
   ICalculatorService = interface(IInvokable)
     ['{F2D880F7-0EE4-4EBE-8371-FBB16467BE41}']
     function Add(a, b: Integer): Integer;
@@ -143,7 +160,7 @@ var
   w: webview_t;
   mode: string;
   store: IAssetStore;
-  assetHandler: TWebView2AssetHandler;
+  assetHandler: TPWebAssetHandler;
   server: TRestServerFullMemory;
   factory: TServiceFactoryServerAbstract;
   realBridge, bridge: IInvocationBridge;
@@ -193,6 +210,17 @@ begin
     limits.MaxQueueSize := 32;
     source := scheduler.RegisterSource(limits);
 
+    {$ifdef LINUX}
+    // CAP-7L: name the knowable cause before webview_create collapses
+    // it into a nil the frozen raw layer blames on a WebView2 runtime
+    if PWebGtkDisplayUnavailableReason <> '' then
+    begin
+      WriteLn(StdErr, 'assetsapp: GTK DISPLAY UNAVAILABLE (',
+        PWebGtkDisplayUnavailableReason, ')');
+      raise Exception.Create('no usable display - no WebView was created');
+    end;
+    {$endif LINUX}
+
     w := WebViewCheckCreated(webview_create(0, nil));
     try
       AutoCloseHandle := Pointer(w);
@@ -210,8 +238,12 @@ begin
       WebViewCheck(webview_set_size(w, 900, 650, WEBVIEW_HINT_NONE),
         'webview_set_size');
       // production asset path: attach the pweb://app handler on the
-      // proven CAP-4W seam, then navigate - never SetHtml/Eval
+      // proven native seam, then navigate - never SetHtml/Eval
+      {$ifdef LINUX}
+      assetHandler := TWebKitGtkAssetHandler.Create(w, store);
+      {$else}
       assetHandler := TWebView2AssetHandler.Create(w, store);
+      {$endif LINUX}
       WebViewCheck(webview_navigate(w, 'pweb://app/'), 'webview_navigate');
 
       autoCloseMs := StrToIntDef(

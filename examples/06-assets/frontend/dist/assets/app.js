@@ -13,15 +13,24 @@
     return invoke('example.report', payload);
   }
 
-  // the deterministic 404 path must be exercised, not assumed: a
+  // The deterministic refusal path must be exercised, not assumed: a
   // missing asset, a non-canonical path (trailing dot) and a wrong-case
-  // request must all answer status 404 with an EMPTY body
-  function expect404(url) {
+  // request must all be refused with NO body.
+  //
+  // Its observable SHAPE is engine-specific by design, and this one
+  // fixture runs on both:
+  //   - WebView2 (CAP-4W) answers a constant 404 with an empty body,
+  //     because a WebResourceRequested response carries a status line;
+  //   - WebKitGTK (CAP-7L) has no status code in the URI-scheme finish
+  //     contract, so the handler refuses with an error finish, and the
+  //     fetch REJECTS. That carries no body by construction.
+  // Both mean exactly "refused, nothing served", which is the claim.
+  function expectRefused(url) {
     return fetch(url).then(function (r) {
       return r.text().then(function (t) {
         return r.status === 404 && t === '';
       });
-    }, function () { return false; });
+    }, function () { return true; });
   }
 
   window.addEventListener('DOMContentLoaded', function () {
@@ -34,9 +43,9 @@
           getComputedStyle(marker).backgroundColor === 'rgb(8, 122, 46)';
         var secureOk = window.isSecureContext === true;
         Promise.all([
-          expect404('/no-such-file'),
-          expect404('/index.html.'),
-          expect404('/assets/App.js')
+          expectRefused('/no-such-file'),
+          expectRefused('/index.html.'),
+          expectRefused('/assets/App.js')
         ]).then(function (nf) {
           var notFoundOk = nf[0] && nf[1] && nf[2];
           invoke('CalculatorService.Add', { a: 20, b: 22 }).then(

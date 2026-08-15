@@ -29,6 +29,10 @@ uses
   pweb.test.wv2provision,
   pweb.test.wv2fixed
   {$endif OSWINDOWS}
+  {$ifdef LINUX}
+  ,
+  pweb.test.webkitgtk
+  {$endif LINUX}
   {$ifdef PWEB_CALLMETHOD_UNWIND_PROBE}
   ,
   pweb.test.mormot.bridge,
@@ -49,6 +53,9 @@ type
     procedure WebView2Provisioning;
     procedure WebView2FixedRuntime;
     {$endif OSWINDOWS}
+    {$ifdef LINUX}
+    procedure WebKitGtkAdapter;
+    {$endif LINUX}
     {$ifdef PWEB_CALLMETHOD_UNWIND_PROBE}
     procedure MormotBridge;
     {$endif PWEB_CALLMETHOD_UNWIND_PROBE}
@@ -113,6 +120,19 @@ begin
   AddCase([TTestWv2Fixed]);
 end;
 {$endif OSWINDOWS}
+
+{$ifdef LINUX}
+procedure TPWebTests.WebKitGtkAdapter;
+begin
+  // CAP-7L, Linux-private: the pweb://app adapter's own routines - the
+  // URI gate over the CAP-4 hostile vectors (with a counting store
+  // proving a refused URI never costs a lookup), deterministic MIME
+  // parity, and the response-lifetime regression that requires the
+  // GIO-owned body to be an independent heap copy - no window, no
+  // display, no GTK initialisation and no libwebview.so needed
+  AddCase([TTestWebKitGtkAdapter]);
+end;
+{$endif LINUX}
 
 procedure TPWebTests.InvocationPipeline;
 begin

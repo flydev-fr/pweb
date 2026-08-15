@@ -26,6 +26,12 @@
   that the RTL then mistranslates. A store this security-sensitive
   gets one deterministic path to the kernel, not three.
 
+  On POSIX (CAP-7L) the same principle produces raw byte paths handed
+  straight to open/lstat/readdir, and the RTL's FindFirst is bypassed
+  for one more reason on top: on Unix it matches with fnmatch, so a
+  perfectly legal asset name containing '[' or ']' would behave as a
+  GLOB and could resolve a different file.
+
   TryRead never raises - any violation or I/O failure returns False.
   Concurrent TryRead calls share no mutable state.
 }
@@ -47,6 +53,7 @@ type
 
   TFolderAssetStore = class(TInterfacedObject, IAssetStore)
   private
+    {$ifdef WINDOWS}
     fRootW: SynUnicode; // absolute UTF-16 root, no trailing delimiter
     // resolve one segment inside ADirW: it must exist with the exact
     // on-disk spelling, must not be a reparse point, and must match
@@ -54,6 +61,16 @@ type
     function ResolveSegment(const ADirW: SynUnicode;
       const ASegment: RawUtf8; AWantDirectory: Boolean;
       out AResolvedW: SynUnicode): Boolean;
+    {$else}
+    // POSIX paths are byte strings, not text: the kernel-resolved root
+    // is kept verbatim so nothing round-trips through a codepage
+    fRoot: RawByteString; // absolute root, no trailing '/'
+    // same contract as the Windows overload: exact on-disk spelling, no
+    // symlink, right kind - or False
+    function ResolveSegment(const ADir: RawByteString;
+      const ASegment: RawUtf8; AWantDirectory: Boolean;
+      out AResolved: RawByteString): Boolean;
+    {$endif WINDOWS}
   public
     // ARootDir must exist and be a directory - a configuration error
     // surfaces at startup, never as a silent 404 stream later
@@ -266,122 +283,226 @@ end;
 
 {$else}
 
-{ POSIX fallback - not part of the CAP-4 Windows gate. Case-sensitive
-  lookup and reparse refusal rely on the native filesystem semantics
-  plus the same per-segment walk; revisited for the CAP-7 platforms. }
+uses
+  baseunix,
+  unix;
+
+{ POSIX branch - hardened for CAP-7L to the same standard as the Windows
+  branch above, because the ratified rule is that the dev folder store
+  behaves like the packaged archive store, not like whatever filesystem
+  happens to sit underneath it. Three properties the pre-CAP-7 fallback
+  did not actually have:
+
+    - symlink refusal is EXPLICIT: lstat (never stat) on every segment,
+      plus O_NOFOLLOW on the final open, instead of trusting the RTL's
+      attribute reporting;
+    - exact case is proven by READING the directory and comparing the
+      on-disk bytes, never by asking the filesystem to match a name -
+      the dev host mounts the repository on DrvFs and CI images can
+      carry ext4 casefold or an NTFS mount, all of which fold case;
+    - confinement is re-proven on the OPEN descriptor via /proc/self/fd,
+      the direct counterpart of the Windows GetFinalPathNameByHandleW
+      re-proof, so a component swapped for a link between check and open
+      cannot serve a file from somewhere else.
+
+  Only regular files are ever served: any special inode that happens to
+  sit in frontend/dist/ - a device node, a FIFO, a named endpoint - is a
+  miss, never something the handler starts reading from. }
 
 const
-  PWEB_FA_REPARSE = $00000400; // faSymLink
+  /// the kernel's own answer to "what did I actually open?"
+  PWEB_PROC_SELF_FD = '/proc/self/fd/';
+
+// kernel-resolved absolute path of an open descriptor, '' on failure.
+// An unlinked file reads back as '<path> (deleted)', which simply fails
+// the equality re-proof below - fail-closed either way.
+function FinalPathOfFd(fd: cint): RawByteString;
+begin
+  Result := RawByteString(FpReadLink(PWEB_PROC_SELF_FD + IntToStr(fd)));
+  if (Result = '') or
+     (Result[1] <> '/') then
+    Result := '';
+end;
+
+// byte-exact comparison against a NUL-terminated directory entry, the
+// POSIX twin of WideEquals above
+function EntryEquals(P: PAnsiChar; const S: RawUtf8): Boolean;
+var
+  i, len: PtrInt;
+begin
+  Result := False;
+  len := Length(S);
+  for i := 1 to len do
+    if (P^ = #0) or
+       (P^ <> S[i]) then
+      exit
+    else
+      Inc(P);
+  Result := P^ = #0; // same length too
+end;
 
 constructor TFolderAssetStore.Create(const ARootDir: TFileName);
 var
-  root: TFileName;
+  configured: RawByteString;
+  fd: cint;
 begin
   inherited Create;
   if ARootDir = '' then
     raise EPWebFolderAssetStore.Create('folder asset root is empty');
-  root := ExcludeTrailingPathDelimiter(ExpandFileName(ARootDir));
-  if not DirectoryExists(root) then
+  // cast, never convert: the path is bytes and must reach the kernel as
+  // the same bytes under both the plain and the UTF-8 RTL regimes
+  configured := RawByteString(
+    ExcludeTrailingPathDelimiter(ExpandFileName(ARootDir)));
+  if configured = '' then
+    configured := '/'; // ExcludeTrailingPathDelimiter('/') empties it
+  // canonicalize ONCE through the kernel: a link in the CONFIGURED root
+  // resolves here, so confinement below is relative to the real
+  // directory. O_DIRECTORY also makes "a file was passed as the root" a
+  // construction-time refusal rather than a silent 404 stream later.
+  fd := FpOpen(configured, O_RDONLY or O_DIRECTORY);
+  if fd < 0 then
     raise EPWebFolderAssetStore.CreateFmt(
-      'folder asset root does not exist: %s', [root]);
-  fRootW := Utf8ToSynUnicode(StringToUtf8(root));
+      'folder asset root does not exist: %s', [ARootDir]);
+  try
+    fRoot := FinalPathOfFd(fd);
+  finally
+    FpClose(fd);
+  end;
+  if fRoot = '' then
+    raise EPWebFolderAssetStore.CreateFmt(
+      'folder asset root cannot be resolved: %s', [ARootDir]);
 end;
 
-function TFolderAssetStore.ResolveSegment(const ADirW: SynUnicode;
+function TFolderAssetStore.ResolveSegment(const ADir: RawByteString;
   const ASegment: RawUtf8; AWantDirectory: Boolean;
-  out AResolvedW: SynUnicode): Boolean;
+  out AResolved: RawByteString): Boolean;
 var
-  segW: SynUnicode;
-  native: TFileName;
-  sr: TSearchRec;
-  isDir: Boolean;
+  path: RawByteString;
+  info: stat;
+  dirp: pDir;
+  entry: pDirent;
+  found: Boolean;
 begin
   Result := False;
-  AResolvedW := '';
-  segW := Utf8ToSynUnicode(ASegment);
-  if segW = '' then
+  AResolved := '';
+  if ASegment = '' then
     exit;
-  native := Utf8ToString(ASegment);
-  if FindFirst(Utf8ToString(SynUnicodeToUtf8(ADirW)) + PathDelim + native,
-       faAnyFile, sr) <> 0 then
+  path := ADir + '/' + RawByteString(ASegment);
+  // lstat, NOT stat: a symlink must be refused, never followed
+  if FpLstat(path, info{%H-}) <> 0 then
     exit;
+  if fpS_ISLNK(info.st_mode) then
+    exit; // never follow a link out of the root
+  if AWantDirectory then
+  begin
+    if not fpS_ISDIR(info.st_mode) then
+      exit;
+  end
+  else if not fpS_ISREG(info.st_mode) then
+    exit; // only regular files are assets
+  // the directory itself tells us the true on-disk spelling: anything
+  // but a byte-exact match (a case variant on a folding mount) is a miss
+  dirp := FpOpendir(ADir);
+  if dirp = nil then
+    exit;
+  found := False;
   try
-    if sr.Name <> native then
-      exit;
-    if (sr.Attr and PWEB_FA_REPARSE) <> 0 then
-      exit;
-    isDir := (sr.Attr and faDirectory) <> 0;
-    if isDir <> AWantDirectory then
-      exit;
-    AResolvedW := ADirW + '/' + segW;
-    Result := True;
+    repeat
+      entry := FpReaddir(dirp^);
+      if entry = nil then
+        break;
+      if EntryEquals(PAnsiChar(@entry^.d_name[0]), ASegment) then
+      begin
+        found := True;
+        break;
+      end;
+    until False;
   finally
-    FindClose(sr);
+    FpClosedir(dirp^);
   end;
+  if not found then
+    exit;
+  AResolved := path;
+  Result := True;
 end;
 
-function ReadWholeFile(const APathW: SynUnicode;
+function ReadWholeFile(const APath: RawByteString;
   out Content: RawByteString): Boolean;
 var
-  h: THandle;
+  fd: cint;
+  info: stat;
   size, done: Int64;
-  rd: LongInt;
-  native: TFileName;
+  chunk, rd: PtrInt;
 begin
   Result := False;
   Content := '';
-  native := Utf8ToString(SynUnicodeToUtf8(APathW));
-  h := FileOpen(native, fmOpenRead or fmShareDenyWrite);
-  if h = THandle(-1) then
+  // O_NOFOLLOW: if the final component became a symlink between the walk
+  // and this open, the open FAILS instead of resolving elsewhere
+  fd := FpOpen(APath, O_RDONLY or O_NOFOLLOW);
+  if fd < 0 then
     exit;
   try
-    size := FileSeek(h, Int64(0), fsFromEnd);
-    if (size < 0) or
-       (FileSeek(h, Int64(0), fsFromBeginning) <> 0) then
+    // confinement is re-proven on the OPEN descriptor: the walk verified
+    // each segment, but a component swapped for a link between check and
+    // open would resolve elsewhere - the kernel's own path for what was
+    // actually opened must equal the expected path byte-exactly, or the
+    // read fails closed
+    if FinalPathOfFd(fd) <> APath then
       exit;
+    if FpFstat(fd, info{%H-}) <> 0 then
+      exit;
+    if not fpS_ISREG(info.st_mode) then
+      exit; // what we opened is not the regular file the walk saw
+    size := info.st_size;
+    if (size < 0) or
+       (size > High(Integer)) then
+      exit; // v1 assets are materialised: bounded by design
     SetLength(Content, size);
     done := 0;
     while done < size do
     begin
-      rd := FileRead(h, PByteArray(Content)^[done], size - done);
+      chunk := $100000;
+      if size - done < chunk then
+        chunk := size - done;
+      rd := FpRead(fd, PByteArray(Content)^[done], chunk);
       if rd <= 0 then
       begin
         Content := '';
-        exit;
+        exit; // short read: never serve truncated bytes
       end;
       Inc(done, rd);
     end;
     Result := True;
   finally
-    FileClose(h);
+    FpClose(fd);
   end;
 end;
 
 function TFolderAssetStore.TryRead(const Path: RawUtf8;
   out Asset: TAssetResponse): Boolean;
 var
-  dirW, resolvedW: SynUnicode;
+  dir, resolved: RawByteString;
   segStart, i, len: PtrInt;
 begin
   Result := False;
   Asset.Content := '';
   Asset.ContentType := '';
   if not PWebAssetPathValid(Path) then
-    exit;
-  dirW := fRootW;
+    exit; // stores fail closed independently of the URI layer
+  dir := fRoot;
   len := Length(Path);
   segStart := 1;
   for i := 1 to len + 1 do
     if (i > len) or
        (Path[i] = '/') then
     begin
-      if not ResolveSegment(dirW, Copy(Path, segStart, i - segStart),
-           {wantDir=}i <= len, resolvedW) then
+      if not ResolveSegment(dir, Copy(Path, segStart, i - segStart),
+           {wantDir=}i <= len, resolved) then
         exit;
-      dirW := resolvedW;
+      dir := resolved;
       segStart := i + 1;
     end;
-  if not ReadWholeFile(dirW, Asset.Content) then
+  if not ReadWholeFile(dir, Asset.Content) then
     exit;
   Asset.ContentType := PWebAssetMimeType(Path);
   Result := True;

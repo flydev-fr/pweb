@@ -474,8 +474,24 @@ const
   // if the pinned mORMot zip/deflate path, the writer's ordering,
   // timestamps, level or manifest bytes ever drift, this fails
   // loudly on every machine instead of self-comparing green.
+  //
+  // CAP-7L MEASURED: the pin is per BUILD TOOLCHAIN, not universal.
+  // The writer's own contributions - entry order, timestamps,
+  // manifest bytes, compression level - are platform-neutral, but the
+  // DEFLATE stream is produced by the mORMot static compression
+  // object for the target, and the x86_64-linux and x86_64-win64
+  // statics do not emit byte-identical output for the same input.
+  // Determinism, the property CAP-6 actually ratified, is unaffected:
+  // it means "same inputs on the same toolchain always produce the
+  // same bytes", and WriterDeterminism proves that separately on each
+  // platform. What this constant pins is drift, and it can only do
+  // that against a value measured on the same toolchain - hence two.
   GOLDEN_SHA256: RawUtf8 =
+    {$ifdef LINUX}
+    'dcf5f272ec0e19615deb132642a8688287650e9f263c23354cf9cdab20f8499a';
+    {$else}
     '4f7c040485e9af880023f9543479b0a015d5cb1db98ec158fc83d287835091a2';
+    {$endif LINUX}
 var
   err: RawUtf8;
   target: TFileName;

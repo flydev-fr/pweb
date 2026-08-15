@@ -7,7 +7,14 @@ $ErrorActionPreference = 'Stop'
 
 $FrontendDir = $PSScriptRoot
 $RepoRoot = (Resolve-Path (Join-Path $FrontendDir '../../..')).Path
-$Compiler = Join-Path $RepoRoot 'deps/pas2js/bin/pas2js.exe'
+# CAP-7L: same pinned compiler, host-specific checkout (see pas2js.lock).
+# Not $IsWindows - that variable does not exist in Windows PowerShell 5.1.
+if ($env:OS -eq 'Windows_NT') {
+    $Compiler = Join-Path $RepoRoot 'deps/pas2js/bin/pas2js.exe'
+}
+else {
+    $Compiler = Join-Path $RepoRoot 'deps/pas2js-linux/bin/pas2js'
+}
 if (-not (Test-Path $Compiler)) {
     throw "pinned pas2js missing at $Compiler -- run: pwsh tools/get-pas2js.ps1"
 }

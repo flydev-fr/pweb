@@ -33,6 +33,9 @@ uses
   {$ifdef OSWINDOWS}
   windows, // VirtualAlloc/VirtualProtect for the guard-page scan test
   {$endif OSWINDOWS}
+  {$ifdef LINUX}
+  baseunix, // mmap/mprotect: the same guard-page proof on Linux (CAP-7L)
+  {$endif LINUX}
   sysutils,
   classes,
   syncobjs,
@@ -901,16 +904,78 @@ begin
   EndBindingPipeline;
 end;
 
-procedure TTestWebViewBinding.BoundedScanGuardPage; // corrective re-review C1 + C2
+{ Guard-page plumbing. The PROOF below is one piece of platform-neutral
+  test logic; only the three primitives it needs - reserve two pages, make
+  the second one inaccessible, release - are per-OS. CAP-7L adds the POSIX
+  implementation rather than skipping the case on Linux: a bounded-scan
+  regression would be just as fatal there, and mmap/mprotect(PROT_NONE)
+  faults exactly as loudly as PAGE_NOACCESS. }
+
+{$ifdef OSWINDOWS}
+
+function GuardPageSize: PtrUInt;
 var
   si: TSystemInfo;
+begin
+  GetSystemInfo(si{%H-});
+  Result := si.dwPageSize;
+end;
+
+function GuardPageAlloc(ASize: PtrUInt): Pointer;
+begin
+  Result := VirtualAlloc(nil, ASize, MEM_COMMIT or MEM_RESERVE,
+    PAGE_READWRITE);
+end;
+
+function GuardPageProtect(AAt: Pointer; ASize: PtrUInt): Boolean;
+var
+  old: DWORD;
+begin
+  Result := VirtualProtect(AAt, ASize, PAGE_NOACCESS, @old{%H-});
+end;
+
+procedure GuardPageFree(ABase: Pointer; ASize: PtrUInt);
+begin
+  VirtualFree(ABase, 0, MEM_RELEASE);
+end;
+
+{$else}
+
+function GuardPageSize: PtrUInt;
+begin
+  // mORMot resolves this from libc getpagesize()/AT_PAGESZ at startup, so
+  // no extra libc declaration is needed for the POSIX branch
+  Result := mormot.core.os.SystemInfo.dwPageSize;
+end;
+
+function GuardPageAlloc(ASize: PtrUInt): Pointer;
+begin
+  Result := FpMMap(nil, ASize, PROT_READ or PROT_WRITE,
+    MAP_PRIVATE or MAP_ANONYMOUS, -1, 0);
+  if Result = Pointer(-1) then
+    Result := nil;
+end;
+
+function GuardPageProtect(AAt: Pointer; ASize: PtrUInt): Boolean;
+begin
+  Result := FpMProtect(AAt, ASize, PROT_NONE) = 0;
+end;
+
+procedure GuardPageFree(ABase: Pointer; ASize: PtrUInt);
+begin
+  FpMUnmap(ABase, ASize);
+end;
+
+{$endif OSWINDOWS}
+
+procedure TTestWebViewBinding.BoundedScanGuardPage; // corrective re-review C1 + C2
+var
   base: Pointer;
   pageSize: PtrUInt;
   req: PAnsiChar;
   window: PtrInt;
   status, seqBefore: Integer;
   payload: RawUtf8;
-  old: DWORD;
   bigId: RawUtf8;
 begin
   NewBindingPipeline(2, 8, 64); // effective limit 64 -> scan window 65
@@ -924,22 +989,21 @@ begin
   CheckEqual(FakeMaxSeq, seqBefore, 'oversize id produced no native call');
   CheckEqual(FBridge.InvokeCount, 0, 'oversize id was never enqueued');
   // C1: guard-page proof of the bounded-scan/copy-after-check property.
-  // The request bytes end flush against a PAGE_NOACCESS page with no
+  // The request bytes end flush against an INACCESSIBLE page with no
   // NUL anywhere accessible: an unbounded StrLen - or a full copy
   // before the size check - reads into the guard page and faults
   // loudly (surfacing as internal_error at best, a crash at worst);
   // ONLY the bounded scan (limit + 1 bytes, all accessible) passes
   // and rejects invalid_request without ever touching the guard.
-  GetSystemInfo(si);
-  pageSize := si.dwPageSize;
+  pageSize := GuardPageSize;
+  Check(pageSize > 0, 'page size resolved');
   window := 65; // exactly limit + 1 accessible bytes, none of them NUL
-  base := VirtualAlloc(nil, pageSize * 2, MEM_COMMIT or MEM_RESERVE,
-    PAGE_READWRITE);
-  Check(base <> nil, 'VirtualAlloc succeeded');
+  base := GuardPageAlloc(pageSize * 2);
+  Check(base <> nil, 'two-page reservation succeeded');
   if base <> nil then
   try
-    Check(VirtualProtect(Pointer(PtrUInt(base) + pageSize), pageSize,
-      PAGE_NOACCESS, @old), 'guard page protected');
+    Check(GuardPageProtect(Pointer(PtrUInt(base) + pageSize), pageSize),
+      'guard page protected');
     req := PAnsiChar(PtrUInt(base) + pageSize - PtrUInt(window));
     FillChar(req^, window, Ord('x'));
     FireBoundPtr('__pweb_invoke', 'gp1', req);
@@ -949,7 +1013,7 @@ begin
       'bounded scan rejected without touching the guard page');
     CheckEqual(FBridge.InvokeCount, 0, 'guarded request never reached the bridge');
   finally
-    VirtualFree(base, 0, MEM_RELEASE);
+    GuardPageFree(base, pageSize * 2);
   end;
   EndBindingPipeline;
 end;

@@ -11,6 +11,25 @@ webview2-sdk-sha256 = cd5e34264aaa497d672f391fbdfb4fd4defc7f7a3e72cfe6090717dd06
 webview2-sdk-tree-sha256 = 96309ee87acbe5ae033797b9041cdc1578e1cc7e87ee5d051e609dcb4563a971
 cap4w-patch-sha256 = ae5177ba2bcc461365e82d40d42fd2d1fb1058ab322d00e93ed4013436f7137c
 
+# PWeb Linux x64 baseline (CAP-7L). Ratified, never autodetected: upstream's
+# pkg_search_module fallback (webkitgtk-6.0 -> 4.1 -> 4.0) must never decide
+# which engine we build against, so every configure passes
+# -DWEBVIEW_WEBKITGTK_API and the build asserts the resolved module in
+# CMakeCache.txt. The soname is what FPC records as DT_NEEDED (MEASURED), so
+# it - not the chet LibraryName - is the file the release layout ships.
+linux-webkitgtk-api = 4.1
+linux-gtk-api = 3.0
+linux-soname = libwebview.so.0.12
+
+# SHA256 of the ratified CAP-7L src/lib platform-block patch. src/lib stays
+# pinned by BOTH freeze sweeps at their ORIGINAL CAP-1/CAP-3 baselines; instead
+# of requiring an empty diff they require EXACTLY this patch, so the anchors
+# survive and any drift past the ratified three lines still fails. The hash is
+# taken over `git diff --no-color --no-ext-diff --full-index <baseline> --
+# src/lib` with line endings normalised to LF and one trailing LF, which is
+# stable on both the Windows and the Linux runner.
+cap7l-binding-patch-sha256 = 3bd45f60703f91f6fc32697efd21f77c8d5d2470bfa97784beec6f223c84434b
+
 # SHA256 of the public C API headers at the pinned commit (cross-check on fetch).
 sha256:core/include/webview/api.h = afd355232bd1828013f7e3b11448701b2bb8102e0e8cda67a98c7262c5dc3b1c
 sha256:core/include/webview/errors.h = 52a9b0ce3e435ed910222e8a00e1787a1606e1360e084a0cdb774b6a9218e2fe

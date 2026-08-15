@@ -6,7 +6,19 @@
 #
 # Changing this pin is a deliberate, reviewed act.
 version = 3.0.1
+
+# Windows x64 build host.
 url = https://getpas2js.freepascal.org/downloads/windows/pas2js-win64-x86_64-3.0.1.zip
 sha256 = f039126443a41a697dfa645ef594974f3eec3bd9020b992504f397c95fcb0af2
 # Directory name at the archive root (verified after extraction).
 rootdir = pas2js-win64-x86_64-3.0.1
+
+# Linux x64 build host (CAP-7L). The SAME pinned compiler version, for a
+# second BUILD HOST - not a second frontend path: examples/05-pas2js is
+# compiled from the identical sources by the identical Pas2JS 3.0.1, so
+# the Linux runtime gate proves the real Pas2JS frontend, not a variant.
+# Installed into deps/pas2js-linux so a dev host that shares one working
+# tree between Windows and WSL keeps both toolchains side by side.
+linux-url = https://getpas2js.freepascal.org/downloads/linux/pas2js-linux-x86_64-3.0.1.zip
+linux-sha256 = cd1ed3dcb5a8370c22b4638be70e154a8306d5911f308c0677684824f438cee1
+linux-rootdir = pas2js-linux-x86_64-3.0.1

@@ -4,11 +4,12 @@
 
 The raw binding units in `src/lib/` are generated from the C headers of
 [webview/webview](https://github.com/webview/webview) at the pinned commit
-recorded in `webview.lock`, and `webview.dll` is built from that same pinned
-source (`tools/build-webview-dll.ps1`, which also places the license text
-next to every built binary as `LICENSE.webview`). The upstream MIT license is
-preserved below for all vendored, generated, or distributed material derived
-from that project.
+recorded in `webview.lock`. Both distributed binaries are built from that same
+pinned source: `webview.dll` by `tools/build-webview-dll.ps1` and
+`libwebview.so.0.12` by `tools/build-webview-so.sh`. Each script places the
+license text next to every built binary as `LICENSE.webview`. The upstream MIT
+license is preserved below for all vendored, generated, or distributed
+material derived from that project.
 
 ```
 MIT License
@@ -75,6 +76,24 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
+
+## GTK 3, WebKitGTK and GLib (LGPL / BSD-style, dynamically linked)
+
+The Linux build (CAP-7L) **dynamically links** the distribution's own GTK 3,
+WebKitGTK 4.1 and GLib shared objects (`libwebkit2gtk-4.1.so.0`,
+`libgtk-3.so.0`, `libgio-2.0.so.0`, `libgobject-2.0.so.0`,
+`libglib-2.0.so.0`). None of them is vendored, bundled, modified or
+redistributed by this project, and the release layout deliberately contains no
+WebKit file at all — the engine is the target system's, installed and updated
+by its package manager (`_bmad-output/specs/spec-pweb/deployment.md`).
+
+GTK and GLib are distributed under the GNU LGPL, and WebKitGTK under the LGPL
+together with the BSD-style licenses of the WebKit project; those terms are
+satisfied by the distribution that supplies the libraries. Dynamic linking
+against the unmodified system copies imposes no additional obligation on a
+PWeb application. Applications that choose to redistribute these libraries
+themselves — which PWeb neither does nor recommends — become responsible for
+carrying their license texts.
 
 ## React and react-dom (MIT)
 

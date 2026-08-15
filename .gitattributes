@@ -1,2 +1,9 @@
 # CAP-4W hashes and applies this canonical patch byte-for-byte on Windows.
 tools/cap4w/webview2-custom-scheme.patch -text whitespace=-trailing-space
+
+# CAP-7L: every Linux gate is a bash script executed from the repository
+# working tree - under WSL on the dev host, natively on the ubuntu-24.04
+# runner. A CRLF checkout (Git for Windows defaults to core.autocrlf=true)
+# would break the shebang line and every heredoc, so pin these to LF
+# regardless of platform or local git configuration.
+*.sh text eol=lf

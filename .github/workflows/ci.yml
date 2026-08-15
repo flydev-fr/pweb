@@ -608,13 +608,42 @@ jobs:
             src/assets/pweb.assets.intf.pas
           if ($LASTEXITCODE -ne 0) { throw 'frozen Phase-0 contract units were modified' }
 
-      - name: Freeze sweep - raw ABI layer byte-identical to CAP-1 baseline
+      # CAP-7L: src/lib is no longer expected to be EMPTY against its
+      # baselines. Enabling [Platform.Linux64] in the committed chet
+      # config and re-running the committed regeneration pipeline added
+      # exactly three lines to the generated platform block. Both sweeps
+      # below therefore keep their ORIGINAL baseline SHAs - the CAP-1 and
+      # CAP-3 anchors survive untouched - and require the diff to equal
+      # the RATIFIED patch, identified by the sha256 pinned in
+      # webview.lock. Anything past those three lines still fails, and
+      # moving a baseline is still not how src/lib changes.
+      #
+      # The diff text is normalised to LF with one trailing newline
+      # before hashing, so the same patch hashes identically on the
+      # Windows and the Linux runner, and --full-index removes the only
+      # other source of variation (abbreviated blob ids scale with the
+      # object count of the clone).
+      - name: Freeze sweep - raw ABI layer equals the ratified CAP-7L platform block (CAP-1 baseline)
         shell: pwsh
         run: |
-          # src/lib is regenerated only via the committed pipeline on a
-          # ratified pin bump - never edited during a feature phase.
-          git diff --exit-code 709bf0fee715d0cf9b8c475b4f801947fc0f4a65 -- src/lib
-          if ($LASTEXITCODE -ne 0) { throw 'src/lib (raw ABI layer) was modified without a ratified pin bump' }
+          New-Item -ItemType Directory -Force build/freeze | Out-Null
+          $expected = ((Select-String -Path webview.lock `
+            -Pattern '^cap7l-binding-patch-sha256\s*=').Line -split '=', 2)[1].Trim()
+          if ($expected -cnotmatch '^[0-9a-f]{64}$') {
+            throw 'webview.lock has no full lowercase cap7l-binding-patch-sha256'
+          }
+          $lines = @(git --no-pager diff --no-color --no-ext-diff --full-index `
+            709bf0fee715d0cf9b8c475b4f801947fc0f4a65 -- src/lib)
+          $text = (($lines | ForEach-Object { $_ -replace "`r$", '' }) -join "`n")
+          if ($text -ne '') { $text += "`n" }
+          $patch = Join-Path (Get-Location) 'build/freeze/srclib-cap1.patch'
+          [IO.File]::WriteAllText($patch, $text, [Text.UTF8Encoding]::new($false))
+          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $patch).Hash.ToLowerInvariant()
+          Write-Host "src/lib patch sha256: $actual"
+          if ($actual -cne $expected) {
+            Write-Host $text
+            throw 'src/lib drifted beyond the ratified CAP-7L platform block'
+          }
 
       - name: CAP-3 freeze sweep - Phase-0/1/2 implementation boundaries
         shell: pwsh
@@ -623,13 +652,32 @@ jobs:
             src/rpc/pweb.rpc.intf.pas `
             src/webview/pweb.webview.intf.pas `
             src/assets/pweb.assets.intf.pas `
-            src/lib `
             src/rpc/pweb.rpc.scheduler.pas `
             src/rpc/pweb.rpc.bridge.dummy.pas `
             src/security/pweb.capabilities.pas `
             src/webview/pweb.webview.binding.pas
           if ($LASTEXITCODE -ne 0) {
             throw 'frozen Phase-0/1/2 implementation boundary was modified'
+          }
+          # src/lib carried the same way as the CAP-1 sweep above, against
+          # this sweep's own untouched baseline
+          New-Item -ItemType Directory -Force build/freeze | Out-Null
+          $expected = ((Select-String -Path webview.lock `
+            -Pattern '^cap7l-binding-patch-sha256\s*=').Line -split '=', 2)[1].Trim()
+          if ($expected -cnotmatch '^[0-9a-f]{64}$') {
+            throw 'webview.lock has no full lowercase cap7l-binding-patch-sha256'
+          }
+          $lines = @(git --no-pager diff --no-color --no-ext-diff --full-index `
+            4653ba77ef03f0a37b0b0b0c4205ed6ecfe7e0f5 -- src/lib)
+          $text = (($lines | ForEach-Object { $_ -replace "`r$", '' }) -join "`n")
+          if ($text -ne '') { $text += "`n" }
+          $patch = Join-Path (Get-Location) 'build/freeze/srclib-cap3.patch'
+          [IO.File]::WriteAllText($patch, $text, [Text.UTF8Encoding]::new($false))
+          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $patch).Hash.ToLowerInvariant()
+          Write-Host "src/lib patch sha256: $actual"
+          if ($actual -cne $expected) {
+            Write-Host $text
+            throw 'src/lib drifted beyond the ratified CAP-7L platform block'
           }
 
       - name: Compile smoke example and stage its DLL
@@ -1354,3 +1402,219 @@ jobs:
             build/cap3/example/mormotrpc.exe
             build/cap4/example/assetsapp.exe
             build/cap4/example/app.zip
+
+  # ========================= CAP-7L: Linux x64 =========================
+  # A SEPARATE job, not a matrix leg. Every step above stays on
+  # windows-latest and is untouched; nothing here needs anything from
+  # there, so the two run independently and a Linux failure never
+  # obscures a Windows one (nor the reverse).
+  #
+  # ONE RATIFIED STACK, stated and asserted, never autodetected:
+  # GTK 3 + WebKitGTK API 4.1 (webkit2gtk-4.1, libsoup3), x86_64, glibc.
+  # The dev packages are installed explicitly here; the APPLICATION never
+  # installs anything, and there is deliberately no Linux counterpart to
+  # the Windows runtime provisioning (no Linux CAP-13).
+  #
+  # The GUI gates have NO conditional SKIP, unlike their Windows
+  # siblings. A hosted Windows runner may genuinely lack a WebView2
+  # runtime or a desktop session; this job always supplies a real
+  # display through xvfb-run, so a real GTK/WebKitGTK WebView opening is
+  # a precondition and every failure gates.
+  linux:
+    name: linux-x64 (GTK 3 + WebKitGTK 4.1)
+    runs-on: ubuntu-24.04
+    # A healthy full run measures a few minutes: the library build is one
+    # translation unit, and the GUI gates are auto-closing. This is a hang
+    # ceiling with room for the npm and pinned-toolchain fetches.
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Guard - no floating upstream ref in the Linux build/gate path
+        shell: bash
+        run: |
+          # The same invariant the Windows job enforces over its own
+          # scripts, extended to the ones CAP-7L adds. Patterns are
+          # concatenated so they cannot literally match their own source.
+          pat="git[[:space:]]+(cl""one|pu""ll|ls-rem""ote)"
+          pat="${pat}|re""fs/(he""ads|ta""gs)"
+          pat="${pat}|webview/web""view@"
+          files="tools/build-webview-so.sh test/cap7l/build_cap7l.sh"
+          files="${files} test/cap7l/check_abi.sh test/cap7l/check_webview_exports.sh"
+          files="${files} test/cap7l/run_cap7l_gates.sh test/cap7l/run_gui_matrix.sh"
+          files="${files} test/cap7l/run_release_layout.sh"
+          files="${files} test/cap7l/check_cap7l_nonetwork.sh"
+          bad=0
+          for f in ${files}; do
+            if grep -nEi "${pat}" "${f}"; then
+              echo "VIOLATION: ${f}"
+              bad=1
+            fi
+          done
+          [ "${bad}" -eq 0 ] || { echo 'floating upstream ref detected'; exit 1; }
+          echo 'guard: no floating upstream ref in the Linux path'
+
+      - name: Install the ratified WebKitGTK stack and FPC (distro packages)
+        shell: bash
+        timeout-minutes: 15
+        run: |
+          sudo apt-get update
+          # Exactly the ratified baseline plus a real virtual display.
+          # webkitgtk-6.0 is deliberately NOT installed: the build asserts
+          # which module pkg-config resolved, and an unratified engine on
+          # the machine must fail that assertion rather than be chosen.
+          sudo apt-get install -y --no-install-recommends \
+            cmake pkg-config ninja-build build-essential \
+            libgtk-3-dev libwebkit2gtk-4.1-dev \
+            xvfb x11-utils xauth \
+            fpc binutils
+          echo "gtk+-3.0      $(pkg-config --modversion gtk+-3.0)"
+          echo "webkit2gtk-4.1 $(pkg-config --modversion webkit2gtk-4.1)"
+
+      - name: Assert the toolchain and the ratified engine family
+        shell: bash
+        run: |
+          v="$(fpc -iV | tr -d '[:space:]')"
+          echo "fpc version: ${v}"
+          # conventions.md: FPC 3.2.2 is the minimum; the dev host runs
+          # 3.2.3 and CAP-7L is proven on both.
+          case "${v}" in
+            3.2.2|3.2.3) ;;
+            *) echo "unsupported FPC ${v}"; exit 1 ;;
+          esac
+          os="$(fpc -iTO | tr -d '[:space:]')"
+          cpu="$(fpc -iTP | tr -d '[:space:]')"
+          echo "fpc target: ${os}/${cpu}"
+          [ "${os}" = 'linux' ] || { echo "expected linux target"; exit 1; }
+          [ "${cpu}" = 'x86_64' ] || { echo 'CAP-7L is x86_64 only'; exit 1; }
+          # the lock is the single source for the Linux baseline
+          grep -qx 'linux-webkitgtk-api = 4.1' webview.lock ||
+            { echo 'webview.lock does not pin WebKitGTK API 4.1'; exit 1; }
+          grep -qx 'linux-gtk-api = 3.0' webview.lock ||
+            { echo 'webview.lock does not pin GTK API 3.0'; exit 1; }
+          grep -qx 'linux-soname = libwebview.so.0.12' webview.lock ||
+            { echo 'webview.lock does not pin the Linux soname'; exit 1; }
+
+      # pwsh is preinstalled on the ubuntu-24.04 image, so the pinned
+      # fetch/verify logic stays SINGLE-SOURCE: the exact same scripts the
+      # Windows job runs, with the same sha256 and exact-SHA checks. A bash
+      # twin of a security-critical verifier is precisely what this avoids.
+      - name: Fetch pinned webview/webview (exact SHA, checksum verified)
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/get-webview.ps1
+
+      - name: Fetch pinned mORMot2 (exact SHA + sha256-pinned statics)
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/get-mormot.ps1
+
+      - name: CAP-7L build libwebview.so from pinned source (cmake + gcc)
+        shell: bash
+        timeout-minutes: 15
+        run: tools/build-webview-so.sh
+
+      # The acceptance criterion in the flesh: the Linux port reaches
+      # pweb://app through the seam upstream already exposes, so the
+      # dependency tree must be pristine - no Linux patch exists, and this
+      # job never applies the Windows one.
+      - name: CAP-7L deps/webview carries no Linux patch
+        shell: bash
+        run: |
+          dirty="$(git -C deps/webview status --porcelain)"
+          if [ -n "${dirty}" ]; then
+            echo "${dirty}"
+            echo 'deps/webview was modified on the Linux path'
+            exit 1
+          fi
+          echo 'deps/webview: pristine at the pinned commit'
+
+      - name: CAP-7L public ABI remains exactly 17 exports (nm -D)
+        shell: bash
+        run: test/cap7l/check_webview_exports.sh
+
+      - name: CAP-7L paired ABI probes + hand-declared symbol presence gate
+        shell: bash
+        timeout-minutes: 10
+        run: test/cap7l/check_abi.sh
+
+      - name: CAP-7L setup pinned Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.11.1
+
+      - name: CAP-7L React frontend build (pinned lockfile, offline bundle)
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          v="$(node --version)"
+          [ "${v}" = 'v24.11.1' ] || { echo "expected node v24.11.1, got ${v}"; exit 1; }
+          cd examples/04-react/frontend
+          npm ci
+          npm run typecheck
+          npm run build
+          cd ../../..
+          for f in examples/04-react/frontend/dist/index.html \
+                   examples/04-react/frontend/dist/assets/app.js; do
+            [ -f "${f}" ] || { echo "react frontend output missing: ${f}"; exit 1; }
+          done
+
+      # Same pinned Pas2JS 3.0.1 as the Windows job, its linux-x86_64
+      # artifact, sha256-verified into deps/pas2js-linux. Same frontend
+      # sources, same SDK, same compiler version: L17 is a parity proof,
+      # not a second frontend path.
+      - name: CAP-7L fetch pinned pas2js (sha256-verified) and build its frontend
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          pwsh -NoProfile -File tools/get-pas2js.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'pinned pas2js fetch FAILED' }
+          pwsh -NoProfile -File examples/05-pas2js/frontend/build.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'pas2js frontend build FAILED' }
+          foreach ($f in 'examples/05-pas2js/frontend/dist/index.html',
+                         'examples/05-pas2js/frontend/dist/assets/app.js') {
+            if (-not (Test-Path $f)) { throw "pas2js frontend output missing: $f" }
+          }
+
+      - name: CAP-7L compile every unit, probe and example for Linux
+        shell: bash
+        timeout-minutes: 20
+        run: test/cap7l/build_cap7l.sh
+
+      - name: CAP-7L headless gates - suite, POSIX store confinement, packaging
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap7l/run_cap7l_gates.sh
+
+      # A GENUINE virtual display, and a real GTK/WebKitGTK WebView on it.
+      # No mocked rendering, no headless-DOM substitute, no SKIP path.
+      - name: CAP-7L GUI matrix (L4-L22) under Xvfb
+        shell: bash
+        timeout-minutes: 20
+        run: xvfb-run -a test/cap7l/run_gui_matrix.sh
+
+      - name: CAP-7L release layout - React and Pas2JS to 42 from an isolated dir
+        shell: bash
+        timeout-minutes: 15
+        run: xvfb-run -a test/cap7l/run_release_layout.sh
+
+      - name: CAP-7L zero-transport proof (L20)
+        shell: bash
+        timeout-minutes: 10
+        run: xvfb-run -a test/cap7l/check_cap7l_nonetwork.sh
+
+      - name: CAP-7L diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap7l-diagnostics
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            build/cap7l/abi/abi_c.txt
+            build/cap7l/abi/abi_pascal.txt
+            build/cap7l/abi/gtk_c.txt
+            build/cap7l/abi/gtk_pas.txt
+            build/cap7l/pwebtests.log
+            build/cap7l/gui/
+            build/cap7l/release/
+            build/cap7l/webview-build/CMakeCache.txt
