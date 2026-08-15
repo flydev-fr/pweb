@@ -2,7 +2,7 @@
 title: 'CAP-6b4 — Windows profile integration: one product, three deployment modes, CAP-13 closure'
 type: 'feature'
 created: '2026-08-14'
-status: 'in-review'
+status: 'done'
 review_loop_iteration: 0
 context: []
 baseline_commit: '41692720e24f785819bdb9f670e626cc30d7d277'
@@ -153,6 +153,8 @@ findings that changed *behaviour* rather than wording:
 | failed gate, common payload AFTER it (ratified order) | exit 5, Inno rollback removes the tree, and the source install's payload/marker/registration are **byte-identical to pre-switch** |
 
 That fourth row is the whole reason the fixed profile's `[Files]` order changes: with it, a failed `normal→fixed` switch would leave a fixed-mode `releaseapp.exe` with no runtime tree and a marker still reading `normal` — exactly the mixed, broken install the failure matrix exists to forbid. The gate's own guarantee is unweakened: it still runs after the entire runtime tree has landed, which is the only thing it verifies.
+
+**CAP-13 CLOSED / Phase 6b CLOSED (2026-08-15).** All nineteen acceptance items satisfied at commit `b18e88e`, hosted CI run `31879087884` green (verified: head SHA matches, every CAP-6b4 step `success`, profile matrix reporting no skips on the runner). Prior runtime gates aggregated, never re-performed: CAP-6b1 clean-machine PASS, CAP-6b2 and CAP-6b3 Gate B/C WAIVED — recorded as distinct verdicts. This artifact is the canonical closure record; the repository keeps no separate phase-status file, matching how CAP-1..CAP-6 were closed.
 
 **Measured residual**, stated in full in the `[InstallDelete]` header of `tools/setup/pwebprovgate.issi` and ledgered in `deferred-work.md`: leaving fixed, the tree is reclaimed before the marker commits, so a later failure in that same run leaves a stale marker — never the dangerous class, because the surviving binary is Evergreen-mode and its runtime was already proven usable.
 
