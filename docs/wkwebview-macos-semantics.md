@@ -31,9 +31,19 @@ finding that blocks CAP-7M.
 **Run `31904189177` got as far as building the dylib on both architectures.**
 It promoted constraints 7 and 8 to MEASURED — an aarch64 linker failure at the
 proposed floor, and an export surface that genuinely differs between
-architectures — and neither was predicted here. Everything downstream of the
-Pascal link (the seam, the threading contract, the origin, the URI verdicts)
-is still EXPECTED.
+architectures — and neither was predicted here. Runs `31905105454`,
+`31908958453` and `31909456486` then added constraints 9, 10 and 11 as each
+got a little further.
+
+**Run `31909938201` ran the probe against a real WKWebView on both arches**,
+and promoted most of what was left: seam B works while seam A is measurably
+and *silently* ineffective, the frozen threading contract holds, `pweb://app`
+**is** a secure context, WebKit copies the response body at handoff, a
+post-stop callback really does raise, and every hostile URI vector was
+refused. It also produced constraint 12 — the one assertion that failed.
+
+What is still EXPECTED is now narrow: the mechanism behind constraint 11, and
+whatever CAP-7M measures beyond this shard's matrix.
 
 ## The seam: the whole architectural question, and not the Linux one
 
@@ -83,6 +93,30 @@ measurement while measuring nothing. The deciding number is
 An ineffective result **refuses seam A**; it is not a failure of the shard,
 and the gate records the answer rather than requiring one.
 
+**MEASURED, run `31909938201`, and it is stronger than Apple's documentation
+sentence — because it shows seam A failing SILENTLY:**
+
+```
+CAP7M_M9 postcreate_install_accepted=1 configuration_is_same_object=1 \
+         postcreate_hits=0 seam_a_effective=no
+```
+
+Read that together: the registration was **accepted** — no exception, no
+error, nothing to catch — the configuration object compared **equal** to the
+one `webview_create` used, and the handler was **still never consulted**. An
+adapter written against seam A would look correct, log nothing, and simply
+never serve. That is the most dangerous shape a wrong seam can take, and it
+is why seam B is not merely preferred but required: `precreate_seam_ran=1` is
+what actually works.
+
+One honest caveat on the middle term. `configuration_is_same_object=1` is
+pointer equality against the configuration the seam saw at `+new`. Upstream
+autoreleases that object (`cocoa_webkit.hh:450`), so by the time
+`WKWebView.configuration` is read the original may have been deallocated and
+a fresh copy allocated **at the same address**. Pointer equality cannot tell
+those apart. So the load-bearing facts are `postcreate_install_accepted=1`
+with `postcreate_hits=0`; treat the identity as suggestive, not settled.
+
 ### B — a PWeb-owned pre-create seam. PROPOSED.
 
 The smallest thing that does not touch the ABI is to own the constructor
@@ -109,7 +143,7 @@ class's own metaclass affects this class alone. The probe uses the second and
 only falls back to replacing an implementation if the class already declares
 its own `+new`.
 
-**EXPECTED**: `webview_create` goes through this override exactly once per
+**MEASURED**, run `31909938201`: `webview_create` goes through this override once per
 create, and `pweb://app/index.html` is then really requested by WebKit. Gate:
 M10 (`CAP7M_M10 precreate_seam_ran=1` plus a served main document).
 
@@ -118,7 +152,7 @@ M10 (`CAP7M_M10 precreate_seam_ran=1` plus a served main document).
 Escalation only, and only with evidence that B failed. No patch exists in this
 tree and none may be written before ratification.
 
-## Eleven constraints that are not obvious
+## Twelve constraints that are not obvious
 
 ### 1. `WKURLSchemeTask` throws. Nothing in the GLib model carries over
 
@@ -141,7 +175,7 @@ claims it owns the right to send a terminal callback; everyone else silently
 does nothing. `stopURLSchemeTask:` claims it too, which is what makes
 "no callback after stop" structural rather than a rule to remember.
 
-**EXPECTED**: a post-stop callback really does raise. Gate: M13 records
+**MEASURED**, run `31909938201` (`poststop_throws=1`): a post-stop callback really does raise. M13 records
 `poststop_throws=0|1` from one deliberate, contained attempt on a task WebKit
 has just stopped. If it turns out **not** to throw, the guard is still
 correct — but the reason to keep it changes, and that is worth knowing.
@@ -174,6 +208,18 @@ poison, WebKit kept the pointer and a Pascal adapter must keep its source
 alive until `didFinish`. The probe deliberately never frees that buffer:
 measuring ownership must not itself become a use-after-free.
 
+**MEASURED, run `31909938201`: `handoff=original-bytes`,
+`ownership=webkit-copies-at-handoff`.** The page read the original text after
+the source buffer was poisoned, so on this OS and toolchain WebKit copies the
+bytes at `didReceiveData:` and a Pascal adapter need **not** keep its source
+alive until `didFinish`.
+
+That is a licence to simplify, not a licence to stop checking: it is one
+measurement on one OS/toolchain pair of an API that documents no such
+contract. CAP-7M should keep the poisoned-buffer case as a regression rather
+than rely on the result — if a future WebKit starts retaining the pointer,
+the failure would be silent data corruption in served assets.
+
 **Both answers are results, so neither is a pass condition.** "WebKit keeps
 the pointer" is precisely the finding that would tell CAP-7M its adapter must
 hold the source buffer alive — folding it into the page's `ok` would turn
@@ -195,7 +241,7 @@ That is why `pweb://app` is plausible here where the
 `tauri://localhost` / `capacitor://localhost` generation needed the localhost
 host — and it is the entire justification for the proposed macOS 12.0 floor.
 
-**EXPECTED**: the page reports
+**MEASURED**, run `31909938201`. The page reports
 `{"protocol":"pweb:","host":"app","origin":"pweb://app","secure":true}`.
 Gate: M15, which requires the page to **state** it. `"secure":false` is
 reported exactly and stops the shard; it is never waived and never inferred
@@ -537,9 +583,61 @@ practical rule that falls out of it is: on Mach-O, what a binary needs at run
 time follows its call graph, and what reaches the linker must be stated
 explicitly rather than inferred from a declaration.
 
+### 12. A bare `NSURLResponse` loads the resource but gives `fetch()` no status
+
+**MEASURED**, run `31909938201`, and it was the last failing assertion of an
+otherwise passing probe:
+
+```
+CAP7M_URI cycle=1 verdict=serve url=pweb://app/probe.css   <- the handler DID serve it
+"css":true                                                 <- computed style proves it applied
+"subresource":false                                        <- and yet fetch() says not ok
+```
+
+A `WKURLSchemeTask` completed with a plain `NSURLResponse` **loads correctly**:
+the HTML renders, the stylesheet applies, subresources arrive. But
+`NSURLResponse` carries no status code, so `fetch()` sees `status: 0` and
+`ok === false`. A subresource load does not care; JavaScript does.
+
+**Only `NSHTTPURLResponse` gives JavaScript a status** - `statusCode: 200`,
+`HTTPVersion: "HTTP/1.1"`, header fields carrying at least `Content-Type`
+and `Content-Length`.
+
+The refusal path is deliberately left as `didFailWithError:`, which is the
+measured Darwin refusal shape and matches how CAP-7L documented WebKitGTK
+refusing without a status.
+
+One trap the probe hit while fixing this: `Content-Length` must be OMITTED
+(not merely wrong) for a response whose body is meant to stay open. The M13
+cancellation case declares no length, because a declared length the response
+never delivers makes `fetch()` reject on a truncated body - reporting
+`aborted` whether or not the abort ever arrived, and quietly turning the
+cancellation measurement into a tautology.
+
+**Three platforms, three status stories** - worth having in one place, since
+a handler ported from either sibling gets this wrong by default:
+
+| | Serving | Refusing |
+|---|---|---|
+| **Windows / WebView2** | status set on the response | constant **404**, empty body |
+| **Linux / WebKitGTK** | `finish` + stream, no status concept | `finish_error`, **no status at all** - `fetch()` rejects |
+| **macOS / WKWebView** | `NSURLResponse` loads but reports **0**; `NSHTTPURLResponse` reports **200** | `didFailWithError:`, **no status** - `fetch()` rejects |
+
+(CAP-7L's "A refusal has no status code" paragraph in
+`webkitgtk-linux-semantics.md` is the Linux row. The two REFUSAL columns
+agree across all three; it is the SERVING column that differs.)
+
+**Consequences.** The CAP-7M production adapter must use `NSHTTPURLResponse`.
+A bare `NSURLResponse` would ship an asset plane where every `fetch()` of an
+app resource reports failure while the page looks perfectly fine - a defect
+that surfaces in a user's application code rather than in any gate here.
+**CAP-12's blob plane will depend on it harder**: `Range` handling is
+meaningless without status codes, since 206, 416 and `Content-Range` have
+nowhere to live on an `NSURLResponse`.
+
 ## Threading
 
-**EXPECTED**, and re-proven rather than adapted. The frozen model is the same
+**MEASURED**, run `31909938201` (`gui_affine=1 worker_distinct=1 direct_return=1`, `echoes=8 errors=1 outstanding=1`), and re-proven rather than adapted. The frozen model is the same
 on all three backends:
 
 - the bind callback runs on the **GUI thread**;

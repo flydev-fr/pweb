@@ -205,6 +205,17 @@ new]`**, added with `class_addMethod` on that class's own metaclass, doing
 before returning. `deps/webview` stays pristine, the ABI does not change,
 exports stay at 17.
 
+**MEASURED, run `31909938201`, and the result is stronger than Apple's
+documentation sentence:** seam B ran on every cycle (`precreate_seam_ran=1`)
+and served `pweb://app/index.html`, while seam A was accepted **without an
+exception** (`postcreate_install_accepted=1`), compared as the **same**
+configuration object (`configuration_is_same_object=1`), and was **never
+consulted** (`postcreate_hits=0`). Seam A does not fail loudly — it fails
+silently, which is the worst shape a wrong seam can have. (The identity term
+carries a caveat: pointer equality cannot distinguish "same object" from
+"fresh allocation at a freed address"; the load-bearing pair is
+accepted-yet-never-consulted. Semantics doc, seam A.)
+
 Seam A is measured, not assumed: M9 installs a handler for its own `pwebpost`
 scheme on what `webView.configuration` returns, compares that object's
 identity against the configuration `webview_create` actually used, and has the
@@ -578,6 +589,46 @@ differing by accident — means a load command appearing on it is no longer
 evidence about how `external` binds. `CAP7M_LINKLINE` is now the instrument
 that keeps constraint 9's mechanism observable, and the M5 record says
 `linked_with_explicit_l=yes` so no later reader misreads it.
+
+### Round 7 — run `31909938201`: the probe ran, and M0's question is answered
+
+`cap7m_probe.mm` compiled, linked and **ran against a real WKWebView on both
+architectures**. Nearly everything the shard set out to measure came back:
+
+| | Measured |
+|---|---|
+| M15 secure origin | `{"protocol":"pweb:","host":"app","origin":"pweb://app","secure":true}` |
+| M10 / M9 seam | B ran every cycle; A accepted, same object, **never consulted** |
+| M7 / M8 threading | `gui_affine=1 worker_distinct=1 direct_return=1`; `echoes=8 errors=1 outstanding=1` |
+| M13 lifecycle | `stops=1 caught_exceptions=0 poststop_throws=1 abort_delivered=1` |
+| M14 ownership | `handoff=original-bytes` — WebKit copies at handoff |
+| M6 leak | `growth_kb=352` against a `65536` budget |
+| M11 / M12 | every hostile vector refused; 6 served / 9 refused per cycle |
+| M6 shutdown | both shapes clean |
+
+**One assertion failed, and it was a real finding rather than a probe bug.**
+`fetch('pweb://app/probe.css')` reported `ok: false` even though the handler
+served it and `css:true` proved the stylesheet applied. Cause: the handler
+replied with a bare `NSURLResponse`, which carries no status code, so
+`fetch()` sees `status: 0`. Fixed by replying with `NSHTTPURLResponse`
+(200, HTTP/1.1, `Content-Type` + `Content-Length`) for served assets; the
+refusal path stays `didFailWithError:`, which is the measured Darwin refusal
+shape. Written up as constraint 12, with a three-platform status table —
+the refusal story is the same everywhere, the SERVING story differs on all
+three — and with the consequence that CAP-12's blob plane needs it harder,
+since `Range` (206/416/`Content-Range`) has nowhere to live without a status.
+
+A trap worth recording from the fix itself: `Content-Length` must be OMITTED,
+not merely wrong, on a response whose body stays open. The M13 cancellation
+case declares no length — a declared length never delivered makes `fetch()`
+reject on a truncated body and report `aborted` whether or not the abort
+arrived, which would have turned a working measurement into a tautology.
+
+M14's result licenses a simplification for CAP-7M (no need to keep the source
+buffer alive until `didFinish`) but the poisoned-buffer case should be kept
+as a regression rather than relied on: it is one measurement, on one
+OS/toolchain pair, of an API that documents no such contract, and the failure
+mode if it ever changes is silent corruption of served assets.
 
 ### Known risk
 

@@ -397,18 +397,40 @@ static void probe_fail(struct probe_state *state, const char *message) {
   [task didFailWithError:error];
 }
 
+/* MEASURED, run 31909938201, and it is the reason this helper exists at all:
+ * a WKURLSchemeTask completed with a bare NSURLResponse LOADS CORRECTLY - the
+ * HTML renders, the stylesheet applies, computed style proves it - while
+ * fetch() reports `status: 0` and `ok: false`, because NSURLResponse carries
+ * no status code to report. Only NSHTTPURLResponse gives JavaScript a status.
+ *
+ * Length is optional on purpose. Passing -1 omits Content-Length, which keeps
+ * the body OPEN until didFinish - required by the cancellation case in
+ * beginSlow:, where declaring a length the response never delivers would make
+ * fetch() reject for the wrong reason and fake M13's abort. */
+- (NSURLResponse *)httpResponseFor:(id<WKURLSchemeTask>)task
+                              type:(NSString *)mime
+                            length:(NSInteger)length {
+  NSMutableDictionary *headers =
+      [NSMutableDictionary dictionaryWithObject:mime forKey:@"Content-Type"];
+  if (length >= 0) {
+    [headers setObject:[NSString stringWithFormat:@"%ld", (long)length]
+                forKey:@"Content-Length"];
+  }
+  return [[[NSHTTPURLResponse alloc] initWithURL:[[task request] URL]
+                                      statusCode:200
+                                     HTTPVersion:@"HTTP/1.1"
+                                    headerFields:headers] autorelease];
+}
+
 - (void)finishBody:(id<WKURLSchemeTask>)task
               data:(NSData *)data
               type:(NSString *)mime {
   if (![self claimTask:task]) {
     return;
   }
-  NSURLResponse *response =
-      [[[NSURLResponse alloc] initWithURL:[[task request] URL]
-                                 MIMEType:mime
-                    expectedContentLength:(NSInteger)[data length]
-                         textEncodingName:@"utf-8"] autorelease];
-  [task didReceiveResponse:response];
+  [task didReceiveResponse:[self httpResponseFor:task
+                                            type:mime
+                                          length:(NSInteger)[data length]]];
   [task didReceiveData:data];
   [task didFinish];
 }
@@ -433,12 +455,9 @@ static void probe_fail(struct probe_state *state, const char *message) {
   NSData *data = [NSData dataWithBytesNoCopy:buffer
                                       length:n
                                 freeWhenDone:NO];
-  NSURLResponse *response =
-      [[[NSURLResponse alloc] initWithURL:[[task request] URL]
-                                 MIMEType:@"text/plain"
-                    expectedContentLength:(NSInteger)n
-                         textEncodingName:@"utf-8"] autorelease];
-  [task didReceiveResponse:response];
+  [task didReceiveResponse:[self httpResponseFor:task
+                                            type:@"text/plain"
+                                          length:(NSInteger)n]];
   [task didReceiveData:data];
   memset(buffer, 0xAA, n); /* poison, immediately after handoff */
   [task didFinish];
@@ -447,12 +466,14 @@ static void probe_fail(struct probe_state *state, const char *message) {
 /* M13: a response that is deliberately slow, so the page can abort it and
  * stopURLSchemeTask: really arrives mid-flight. */
 - (void)beginSlow:(id<WKURLSchemeTask>)task {
-  NSURLResponse *response =
-      [[[NSURLResponse alloc] initWithURL:[[task request] URL]
-                                 MIMEType:@"application/octet-stream"
-                    expectedContentLength:4096
-                         textEncodingName:nil] autorelease];
-  [task didReceiveResponse:response];
+  /* length -1: NO Content-Length, deliberately. The abort has to land while
+     the body is still open, and a declared length this response never
+     delivers would make fetch() reject on a truncated body instead - which
+     would report `aborted` whether or not the abort actually arrived, and
+     M13's cancellation measurement would be worthless. */
+  [task didReceiveResponse:[self httpResponseFor:task
+                                            type:@"application/octet-stream"
+                                          length:-1]];
   [task didReceiveData:[NSData dataWithBytes:"...." length:4]];
 
   [task retain]; /* keep the object alive for the deferred half */
