@@ -24,7 +24,16 @@ version = 3.2.2
 # this file in its own listing - an independent corroboration that the bytes
 # recorded here are the bytes upstream published, not merely the bytes some
 # mirror served once.
+#
+# MEASURED (hosted run 31903085050): the `downloads.` host answers a
+# browser-shaped User-Agent with a 145464-byte interstitial page instead of
+# the image. tools/get-fpc-macos.ps1 fetches with curl for that reason and
+# falls back to the `/download` form below, which resolves through the same
+# mirror network. Both are version-qualified and neither is a "latest"
+# pointer; integrity still rests entirely on the digests, so a mirror that
+# serves the wrong bytes fails exactly as the interstitial did.
 macos-url = https://downloads.sourceforge.net/project/freepascal/Mac%20OS%20X/3.2.2/fpc-3.2.2.intelarm64-macosx.dmg
+macos-url-fallback = https://sourceforge.net/projects/freepascal/files/Mac%20OS%20X/3.2.2/fpc-3.2.2.intelarm64-macosx.dmg/download
 macos-sha256 = 05d4510c8c887e3c68de20272abf62171aa5b2ef1eba6bce25e4c0bc41ba8b7d
 macos-md5 = 50babbde74790a5b86bc63c1fa3250d0
 macos-size = 274206896

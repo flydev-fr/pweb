@@ -180,8 +180,47 @@ if (Test-Path -LiteralPath $Dmg) {
 }
 
 if (-not $Reused) {
-    Write-Host "fetching $($Lock['macos-url'])"
-    Invoke-WebRequest -Uri $Lock['macos-url'] -OutFile $Dmg -UseBasicParsing
+    # MEASURED (hosted run 31903085050): Invoke-WebRequest against the pinned
+    # SourceForge url returned 145464 bytes of HTML instead of the 274206896
+    # byte image. SourceForge serves its "your download will start shortly"
+    # interstitial to clients whose User-Agent looks like a browser, and
+    # PowerShell's default UA does; curl's does not, and gets a 302 to a
+    # mirror followed by application/x-apple-diskimage. So the transfer is
+    # curl's and the VERIFICATION stays here, which is the half that has to
+    # be single-source. curl is preinstalled on every hosted macOS image.
+    #
+    # The size/sha256/md5 gate below caught the HTML page cleanly, so this is
+    # a fetch-reliability fix, not a trust fix: nothing about what the script
+    # ACCEPTS changes, and a future interstitial fails exactly as this one did.
+    $Urls = @($Lock['macos-url'], $Lock['macos-url-fallback']) |
+        Where-Object { $_ }
+    $Fetched = $false
+    foreach ($Url in $Urls) {
+        Write-Host "fetching $Url"
+        & curl --location --fail --silent --show-error `
+            --retry 3 --retry-delay 5 --retry-connrefused `
+            --output $Dmg -- $Url
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "curl exited $LASTEXITCODE for $Url"
+            continue
+        }
+        # Reject the interstitial by shape before the digest gate, so the
+        # failure names the real cause instead of a size mismatch.
+        $Head = [byte[]]::new(512)
+        $Stream = [IO.File]::OpenRead($Dmg)
+        try { $Read = $Stream.Read($Head, 0, 512) } finally { $Stream.Dispose() }
+        $Text = [Text.Encoding]::ASCII.GetString($Head, 0, $Read)
+        if ($Text -match '(?i)<!doctype html|<html') {
+            Write-Host "$Url served an HTML page, not the disk image"
+            continue
+        }
+        $Fetched = $true
+        break
+    }
+    if (-not $Fetched) {
+        throw ('fpc disk image could not be fetched from any pinned url: ' +
+            ($Urls -join ', '))
+    }
 }
 
 $Size = (Get-Item -LiteralPath $Dmg).Length
