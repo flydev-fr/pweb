@@ -1,0 +1,60 @@
+# Pinned Free Pascal Compiler toolchain for the macOS build hosts (CAP-7M0).
+#
+# Windows and Linux do NOT read this file. Those two jobs take FPC from a
+# pinned action (setup-lazarus 3.4 -> FPC 3.2.2) and from the ubuntu-24.04
+# distro package respectively, both of which predate this lock and are left
+# exactly as they are. macOS has no such pinned source: `brew install fpc`
+# is a floating pin by construction and the runner image ships no FPC at
+# all, so the artifact is pinned here by sha256 and fetched by
+# tools/get-fpc-macos.ps1.
+#
+# Changing any pin below is a deliberate, reviewed act.
+
+version = 3.2.2
+
+# ONE artifact for BOTH architectures. fpc-3.2.2.intelarm64-macosx.dmg
+# installs NATIVE ppcx64 (x86_64-darwin) and ppca64 (aarch64-darwin)
+# compilers, so the x64 and the arm64 job fetch the same bytes and each one
+# then runs the compiler that is native to it. Nothing is ever cross-hosted
+# and nothing runs under Rosetta.
+#
+# The URL is version-qualified and never a "latest" redirect, but integrity
+# rests on the digests, not on the URL. BOTH are verified: sha256 is recorded
+# here from the fetched bytes, and md5 is the value SourceForge publishes for
+# this file in its own listing - an independent corroboration that the bytes
+# recorded here are the bytes upstream published, not merely the bytes some
+# mirror served once.
+macos-url = https://downloads.sourceforge.net/project/freepascal/Mac%20OS%20X/3.2.2/fpc-3.2.2.intelarm64-macosx.dmg
+macos-sha256 = 05d4510c8c887e3c68de20272abf62171aa5b2ef1eba6bce25e4c0bc41ba8b7d
+macos-md5 = 50babbde74790a5b86bc63c1fa3250d0
+macos-size = 274206896
+
+# Layout inside the disk image, asserted after attach so a re-rolled image
+# cannot silently install something else.
+macos-volume = fpc-3.2.2.intelarm64-macosx
+macos-package = fpc-3.2.2-intelarm64-macosx.mpkg
+
+# What the install must produce. Both are asserted present even on the job
+# that will only use one of them: an image that stopped shipping the second
+# native compiler is a changed artifact, and this shard is the thing that
+# would otherwise discover it as a mysterious link failure.
+macos-compiler-x64 = ppcx64
+macos-compiler-arm64 = ppca64
+macos-prefix = /usr/local
+
+# The Xcode selection - PROPOSED by CAP-7M0, ratified at Checkpoint 1.
+#
+# This is a MEASURED VARIABLE, not a detail. FPC 3.2.2 predates every Xcode
+# listed here and has open, unresolved linker failures on recent ones:
+# aarch64 + Xcode 16.3 fails with `ld` exit -11, and Intel + Xcode 16.2 fails
+# to build. Both are therefore excluded outright rather than kept as
+# fallbacks - a "fallback" onto a known-broken toolchain only converts a
+# clear failure into an obscure one.
+#
+# The candidates are tried in order; the FIRST one present as
+# /Applications/Xcode_<version>.app wins and is exported through
+# DEVELOPER_DIR. If NONE is present the job fails after printing every Xcode
+# the image actually carries, so the next pin is chosen from evidence. The
+# runner's default selection is never used, which is the whole point.
+macos-xcode-candidates = 16.4 16.1
+macos-xcode-known-bad = 16.3 16.2

@@ -21,14 +21,57 @@ linux-webkitgtk-api = 4.1
 linux-gtk-api = 3.0
 linux-soname = libwebview.so.0.12
 
-# SHA256 of the ratified CAP-7L src/lib platform-block patch. src/lib stays
-# pinned by BOTH freeze sweeps at their ORIGINAL CAP-1/CAP-3 baselines; instead
-# of requiring an empty diff they require EXACTLY this patch, so the anchors
-# survive and any drift past the ratified three lines still fails. The hash is
-# taken over `git diff --no-color --no-ext-diff --full-index <baseline> --
-# src/lib` with line endings normalised to LF and one trailing LF, which is
-# stable on both the Windows and the Linux runner.
-cap7l-binding-patch-sha256 = 3bd45f60703f91f6fc32697efd21f77c8d5d2470bfa97784beec6f223c84434b
+# PWeb macOS baseline (CAP-7M0 -- MEASUREMENT SHARD, awaiting ratification).
+# Nothing here is autodetected and nothing is left to the runner's Xcode SDK.
+#
+# The dylib names come from the SAME pinned upstream version that already
+# produced linux-soname: core/include/webview/version.h is 0.12.0, so CMake's
+# VERSION is 0.12.0 and its SOVERSION (WEBVIEW_VERSION_COMPATIBILITY) is 0.12.
+# On Apple that yields the real file libwebview.0.12.0.dylib plus the
+# compatibility name libwebview.0.12.dylib and the link-time name
+# libwebview.dylib. macos-dylib is what the chet [Platform.Mac*] LibraryName
+# says and therefore what FPC asks the linker for; macos-dylib-versioned is
+# what the LC_LOAD_DYLIB command ends up naming, exactly as DT_NEEDED records
+# the SONAME and not the chet name on Linux.
+#
+# macos-install-name-prefix is the ratified STRATEGY, not a measurement: the
+# artifact must carry an @rpath-relative install name so a bundle can resolve
+# it through LC_RPATH from @executable_path. An absolute build-tree install
+# name fails tools/build-webview-dylib.sh. The exact observed string is
+# recorded by that script (otool -D) rather than pinned here, because M3
+# measures it.
+#
+# The deployment target is PROPOSED by this shard, not yet ratified: 12.0 is
+# the first macOS branch carrying WebKit's "custom scheme handled origins
+# should be considered secure" change, which is the whole basis for expecting
+# pweb://app to be a secure context. M15/M16 must confirm both halves before
+# CAP-7M may rely on it.
+macos-dylib = libwebview.dylib
+macos-dylib-versioned = libwebview.0.12.dylib
+macos-dylib-real = libwebview.0.12.0.dylib
+macos-install-name-prefix = @rpath/
+macos-deployment-target = 12.0
+macos-runner-x64 = macos-15-intel
+macos-runner-arm64 = macos-15
+macos-arch-x64 = x86_64
+macos-arch-arm64 = arm64
+
+# SHA256 of the ratified src/lib platform-block patch. src/lib stays pinned by
+# BOTH freeze sweeps at their ORIGINAL CAP-1/CAP-3 baselines; instead of
+# requiring an empty diff they require EXACTLY this patch, so the anchors
+# survive and any drift past the ratified lines still fails. The hash is taken
+# over `git diff --no-color --no-ext-diff --full-index <baseline> -- src/lib`
+# with line endings normalised to LF and one trailing LF, which is stable on
+# the Windows, the Linux and the macOS runner.
+#
+# CAP-7M0 re-derived this value: the patch now carries the Linux branch AND
+# the two Darwin branches ([Platform.MacARM]/[Platform.MacIntel] enabled in
+# the committed chet config, regenerated through
+# tools/regen-webview-binding.ps1). The key name is unchanged so both sweeps
+# keep reading one value; re-deriving it was verified to produce the SAME hash
+# from both baselines, which is the only thing that makes the two-sweep
+# arrangement work.
+cap7l-binding-patch-sha256 = 255927608d7e6b1172211ddb8ce9e0057699ec117c6d0455c4c0c789d7d81988
 
 # SHA256 of the public C API headers at the pinned commit (cross-check on fetch).
 sha256:core/include/webview/api.h = 71a6a96a91828a7f4dbbe3d19376bfaa9ff88fce34002c5a7475a07348020a72

@@ -18,6 +18,12 @@ const
   {$IF Defined(WIN64)}
   LIB_WEBVIEW = 'webview.dll';
   _PU = '';
+  {$ELSEIF Defined(DARWIN) and Defined(CPUAARCH64) and not Defined(IOS)}
+  LIB_WEBVIEW = 'libwebview.dylib';
+  _PU = '';
+  {$ELSEIF Defined(DARWIN) and Defined(CPUX64) and not Defined(IOS)}
+  LIB_WEBVIEW = 'libwebview.dylib';
+  _PU = '';
   {$ELSEIF Defined(LINUX)}
   LIB_WEBVIEW = 'libwebview.so';
   _PU = '';

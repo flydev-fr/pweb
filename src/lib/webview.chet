@@ -21,14 +21,14 @@ DebugLibraryName=
 Prefix=
 
 [Platform.MacARM]
-Enabled=0
-LibraryName=
+Enabled=1
+LibraryName=libwebview.dylib
 DebugLibraryName=
 Prefix=
 
 [Platform.MacIntel]
-Enabled=0
-LibraryName=
+Enabled=1
+LibraryName=libwebview.dylib
 DebugLibraryName=
 Prefix=
 

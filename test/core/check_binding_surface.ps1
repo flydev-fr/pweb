@@ -78,6 +78,34 @@ foreach ($f in $RawFiles) {
 }
 Report-Section 'section 3 (raw layer purity)' $s
 
+# --- 3b. CAP-7M0: the platform block speaks FPC, not Delphi ----------------------
+# ChetCLI is a Delphi tool and emits Delphi conditional symbols for its
+# [Platform.*] sections. For Win64 and Linux64 that is invisible, because
+# WIN64 and LINUX mean the same thing to both compilers; for macOS it is not,
+# and a Darwin branch guarded by MACOS64/CPUARM64 is DEAD under FPC while
+# looking entirely correct on the page. The committed post-process in
+# tools/regen-webview-binding.ps1 translates it - but that script is a
+# dev-host tool, so without this section nothing in CI would ever notice a
+# regeneration that skipped it. This is the Windows job's copy of that check,
+# and it is deliberately here rather than in a macOS-only gate: the defect is
+# introduced on the dev host, in a file the Windows job already reads.
+$s = $Failures.Count
+$Binding = [System.IO.File]::ReadAllText((Join-Path $RepoRoot 'src\lib\pweb.lib.webview.pas'))
+foreach ($delphiOnly in @('MACOS64', 'CPUARM64')) {
+    if ($Binding -match [regex]::Escape($delphiOnly)) {
+        $Failures.Add("generated binding carries the Delphi-only symbol $delphiOnly (FPC never defines it, so the Darwin branch is dead) -- regenerate with tools/regen-webview-binding.ps1")
+    }
+}
+foreach ($required in @('DARWIN', 'CPUAARCH64')) {
+    if ($Binding -notmatch [regex]::Escape($required)) {
+        $Failures.Add("generated binding is missing the FPC symbol $required -- the Darwin platform block is absent or untranslated")
+    }
+}
+if ($Binding -notmatch "LIB_WEBVIEW = 'libwebview\.dylib'") {
+    $Failures.Add('generated binding does not name libwebview.dylib for Darwin')
+}
+Report-Section 'section 3b (Darwin platform block is FPC-shaped)' $s
+
 # --- 4. Phase-0 freeze isolation ------------------------------------------------
 # The isolation invariants are about CODE (uses clauses, identifiers), not
 # about prose: the frozen units legitimately document the rules in comments.

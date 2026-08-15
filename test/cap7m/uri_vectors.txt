@@ -1,0 +1,77 @@
+# CAP-7M0 PROBE F (M12): the canonical pweb:// vector list.
+#
+# Format: <expect> <uri>          expect is `accept` or `reject`
+#
+# These are fed to test/cap7m/uri_oracle.pas, which calls the SHARED
+# PWebParseAppUri - the same routine Windows and Linux call. They are listed
+# here as well as driven from the page because WebKit normalises or refuses
+# some of them before the scheme handler ever sees them. That is welcome
+# defence in depth and it is recorded as such, but it is NOT a substitute for
+# the routine's own verdict: the moment PWeb relies on the engine to have
+# already rejected something, the engine's normalisation rules become part of
+# the security model, and they are not.
+#
+# Blank lines and comments are ignored by the oracle.
+
+# --- what a real page legitimately asks for ---------------------------------
+accept pweb://app/index.html
+accept pweb://app/probe.js
+accept pweb://app/probe.css
+accept pweb://app/assets/app.js
+accept pweb://app/assets/nested/deep/file.txt
+# scheme and authority match case-insensitively (RFC 3986)
+accept PWEB://APP/index.html
+accept pweb://App/index.html
+# the root maps to the default document in the URI layer only
+accept pweb://app/
+accept pweb://app
+# query and fragment are cut before decoding
+accept pweb://app/index.html?v=1
+accept pweb://app/index.html#top
+# a single decode is applied to the path
+accept pweb://app/a%20b.txt
+
+# --- wrong authority ---------------------------------------------------------
+reject pweb://evil/x
+reject pweb://evil.app/index.html
+reject pweb://app.evil.com/index.html
+reject pweb://appx/index.html
+# userinfo and port are authority components, and neither is 'app'
+reject pweb://user@app/index.html
+reject pweb://app:8080/index.html
+
+# --- missing authority -------------------------------------------------------
+reject pweb:///x
+reject pweb:/x
+reject pweb://
+reject pweb://x
+
+# --- wrong scheme ------------------------------------------------------------
+reject http://app/index.html
+reject https://app/index.html
+reject file:///etc/passwd
+reject pwebpost://app/probe
+reject data:text/html,<b>x</b>
+
+# --- traversal, encoded and double-encoded -----------------------------------
+reject pweb://app/../secret
+reject pweb://app/%2e%2e/secret
+reject pweb://app/%2E%2E/secret
+reject pweb://app/%252e%252e/secret
+reject pweb://app/assets/../../secret
+reject pweb://app/./index.html
+reject pweb://app//index.html
+reject PWEB://APP/../../etc/passwd
+
+# --- separators, NUL and malformed escapes -----------------------------------
+reject pweb://app/a\b
+reject pweb://app/a%5Cb
+reject pweb://app/a%00b
+reject pweb://app/a%zz
+reject pweb://app/a%2
+reject pweb://app/a%
+# a literal '%' surviving the single decode is refused by the store validator
+reject pweb://app/a%25b
+# drive letters and ADS colons are not canonical logical paths
+reject pweb://app/c:/windows/win.ini
+reject pweb://app/file.txt:stream

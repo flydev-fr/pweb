@@ -1658,3 +1658,417 @@ jobs:
             build/cap7l/gui/
             build/cap7l/release/
             build/cap7l/webview-build/CMakeCache.txt
+
+  # ================== CAP-7M0: macOS feasibility (x86_64) ==================
+  # TWO SEPARATE JOBS, not a matrix. Every step above stays exactly where it
+  # is: `windows:` and `linux:` are byte-untouched, nothing here needs
+  # anything from either, and a macOS failure never obscures one of theirs
+  # (nor the reverse). The two macOS legs are separate from EACH OTHER for
+  # the same reason - "one arch failing is reported, never silently dropped"
+  # is an acceptance criterion, and a matrix leg that quietly reuses the
+  # other's cache is exactly how that goes wrong.
+  #
+  # THIS SHARD MEASURES. It builds no macOS adapter, ports no example and
+  # packages nothing: the artifacts are the export gate, the paired ABI
+  # probe, a throwaway Objective-C++ feasibility probe and a throwaway
+  # bundle. What it produces is a record.
+  #
+  # NOTHING IS INHERITED FROM THE RUNNER. FPC comes from a sha256-pinned
+  # artifact (fpc.lock, never `brew install`), Xcode is selected from a
+  # pinned candidate list rather than left at the image default, and the
+  # deployment target is passed on every compile and link instead of being
+  # decided by whatever SDK the image happens to ship.
+  #
+  # There is no conditional SKIP on the GUI gates, unlike their Windows
+  # siblings. A hosted Windows runner may genuinely lack a WebView2 runtime
+  # or a desktop session; a hosted macOS runner always has a real
+  # WindowServer/Aqua session, so a real WKWebView opening is a precondition
+  # and every failure gates.
+  #
+  # COST: the repository is private and this workflow has no branch filter,
+  # so every push now runs four jobs, and macOS minutes bill at 10x the
+  # included-minute rate. Batch probe changes into one push rather than
+  # iterating one gate at a time.
+  macos-x64:
+    name: macos-x64 (Cocoa + WKWebView)
+    runs-on: macos-15-intel
+    # JOB-LEVEL, never workflow-level: a workflow-level concurrency group
+    # would also govern `windows:` and `linux:`, and those two jobs are
+    # byte-untouched by this shard. Superseded macOS runs are cancelled
+    # because they bill at 10x and a stale one proves nothing.
+    concurrency:
+      group: cap7m-macos-x64-${{ github.ref }}
+      cancel-in-progress: true
+    env:
+      # Asserted by every gate before it accepts a result. A job that thinks
+      # it is the x64 leg while running somewhere else is precisely the
+      # failure that would otherwise be reported as parity.
+      CAP7M_EXPECT_ARCH: x86_64
+      CAP7M_RUNNER_LABEL: macos-15-intel
+    # A healthy full run is a few minutes: the library build is one
+    # translation unit and the probe is watchdog-bounded. This is a hang
+    # ceiling with room for the ~260 MB pinned toolchain fetch.
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Guard - no floating upstream ref in the macOS build/gate path
+        shell: bash
+        run: |
+          # The same invariant the Windows and Linux jobs enforce over their
+          # own scripts, extended to the ones CAP-7M0 adds. Patterns are
+          # concatenated so they cannot literally match their own source.
+          pat="git[[:space:]]+(cl""one|pu""ll|ls-rem""ote)"
+          pat="${pat}|re""fs/(he""ads|ta""gs)"
+          pat="${pat}|webview/web""view@"
+          files="tools/build-webview-dylib.sh tools/get-fpc-macos.ps1"
+          files="${files} test/cap7m/cap7m_common.sh test/cap7m/build_cap7m.sh"
+          files="${files} test/cap7m/check_abi.sh test/cap7m/check_webview_exports.sh"
+          files="${files} test/cap7m/run_cap7m_probes.sh"
+          files="${files} test/cap7m/check_release_layout.sh"
+          files="${files} test/cap7m/check_cap7m_nonetwork.sh"
+          files="${files} test/cap7m/summarize_cap7m.sh"
+          bad=0
+          for f in ${files}; do
+            # EXISTENCE FIRST. grep on a missing path exits 2, the `if` takes
+            # the false branch, and the loop concludes "clean" for a file it
+            # never read - so a renamed or deleted gate would silently empty
+            # this guard instead of failing it.
+            if [ ! -f "${f}" ]; then
+              echo "MISSING GUARD TARGET: ${f}"
+              bad=1
+              continue
+            fi
+            if grep -nEi "${pat}" "${f}"; then
+              echo "VIOLATION: ${f}"
+              bad=1
+            fi
+          done
+          [ "${bad}" -eq 0 ] || { echo 'floating upstream ref detected'; exit 1; }
+          echo "guard: no floating upstream ref in the macOS path ($(echo ${files} | wc -w) files)"
+          # the lock this job introduces pins by digest, not by URL
+          grep -qE '^macos-sha256 = [0-9a-f]{64}$' fpc.lock ||
+            { echo 'fpc.lock does not pin a full sha256 for the macOS artifact'; exit 1; }
+
+      # M19: the runner is identified BEFORE any gate is accepted, so a
+      # measurement can never be attributed to the wrong machine after the
+      # fact. The arch assertion is here as well as inside every gate
+      # because a mislabelled runner must fail the job, not a probe.
+      - name: CAP-7M0 record the runner (M19)
+        shell: bash
+        run: |
+          echo "runner label: macos-15-intel"
+          echo "uname -m:     $(uname -m)"
+          sw_vers
+          echo "xcode (image default, NOT what the gates use):"
+          xcodebuild -version || true
+          echo "available Xcode installs:"
+          ls -1 /Applications | grep -i '^Xcode' || true
+          [ "$(uname -m)" = "${CAP7M_EXPECT_ARCH}" ] ||
+            { echo "runner is $(uname -m), expected ${CAP7M_EXPECT_ARCH}"; exit 1; }
+          # THE ANTI-ROSETTA GATE BELONGS HERE, on the x64 leg. A translated
+          # process reports x86_64 from `uname -m` perfectly honestly, so it
+          # is THIS job - not the arm64 one - that an Apple Silicon runner
+          # under Rosetta would silently satisfy, and a translated run is
+          # never authoritative x64 evidence. On the arm64 leg the same check
+          # is unreachable by construction: nothing translated ever reports
+          # arm64, so `uname -m` = arm64 already settles it there.
+          if [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)" = "1" ]; then
+            echo 'this job is running under Rosetta'; exit 1
+          fi
+          if [ "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" = "1" ]; then
+            echo 'this runner is Apple Silicon but reports x86_64 -- translated shell'
+            exit 1
+          fi
+          echo 'arch: native x86_64, not translated'
+
+      # pwsh is preinstalled on the hosted macOS images, so the pinned
+      # fetch/verify logic stays SINGLE-SOURCE: the exact same scripts the
+      # Windows and Linux jobs run, with the same sha256 and exact-SHA
+      # checks. A bash twin of a security-critical verifier is precisely
+      # what this avoids.
+      - name: Fetch pinned webview/webview (exact SHA, checksum verified)
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/get-webview.ps1
+
+      - name: Fetch pinned mORMot2 (exact SHA + sha256-pinned statics)
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/get-mormot.ps1
+
+      # The pinned FPC disk image is ~262 MiB and both macOS jobs fetch the
+      # same bytes on every push. It is keyed on fpc.lock, so a re-pin
+      # invalidates it automatically, and get-fpc-macos.ps1 re-verifies the
+      # sha256 AND the md5 of whatever it finds before using it - a poisoned
+      # or truncated cache entry fails the same way a bad download does.
+      - name: CAP-7M0 cache the pinned FPC disk image
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: build/cap7m/toolchain/fpc-macos.dmg
+          key: cap7m-fpc-dmg-${{ hashFiles('fpc.lock') }}
+
+      - name: CAP-7M0 install pinned FPC and select the pinned Xcode
+        shell: pwsh
+        timeout-minutes: 25
+        run: pwsh -NoProfile -File tools/get-fpc-macos.ps1
+
+      # The acceptance criterion in the flesh: the macOS path reaches
+      # pweb://app through a PWeb-owned seam outside the library, so the
+      # dependency tree must be pristine - the CAP-4W patch is Windows-only
+      # and this job never applies it.
+      - name: CAP-7M0 deps/webview carries no macOS patch
+        shell: bash
+        run: |
+          dirty="$(git -C deps/webview status --porcelain)"
+          if [ -n "${dirty}" ]; then
+            echo "${dirty}"
+            echo 'deps/webview was modified on the macOS path'
+            exit 1
+          fi
+          echo 'deps/webview: pristine at the pinned commit'
+
+      - name: CAP-7M0 build libwebview.dylib from pinned source (M1/M3/M16)
+        shell: bash
+        timeout-minutes: 20
+        run: tools/build-webview-dylib.sh
+
+      - name: CAP-7M0 public ABI remains exactly 17 exports (M2)
+        shell: bash
+        run: test/cap7m/check_webview_exports.sh
+
+      - name: CAP-7M0 paired ABI probes + Mach-O presence and dlopen gates (M4/M5)
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap7m/check_abi.sh
+
+      - name: CAP-7M0 compile the binding, mORMot core and the probe (M17)
+        shell: bash
+        timeout-minutes: 20
+        run: test/cap7m/build_cap7m.sh
+
+      # A REAL WKWebView on a real Aqua session. No mocked WebKit, no browser
+      # substitute, no headless-DOM stand-in, no SKIP path.
+      # Three cycles: one of each shutdown shape, plus a third so the M6 leak
+      # bound has a baseline that is not the cache-populating first cycle.
+      - name: CAP-7M0 feasibility probes (M6-M15)
+        shell: bash
+        timeout-minutes: 25
+        run: test/cap7m/run_cap7m_probes.sh 3
+
+      - name: CAP-7M0 bundle layout measured from an unrelated CWD (M18)
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap7m/check_release_layout.sh
+
+      - name: CAP-7M0 zero-transport proof (M20)
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap7m/check_cap7m_nonetwork.sh
+
+      - name: CAP-7M0 per-arch headline facts to the run summary
+        if: always()
+        shell: bash
+        run: test/cap7m/summarize_cap7m.sh
+
+      # if-no-files-found: ERROR, not ignore. The measurement IS the
+      # deliverable of this shard, so a job that produced none and uploaded
+      # nothing must not also report this step green - that is the shape of a
+      # gate that passes while measuring nothing.
+      - name: CAP-7M0 measurements (always uploaded - the shard's whole output)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap7m-measurements-x64
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            build/cap7m/measurements.txt
+
+      - name: CAP-7M0 diagnostics on failure (permissive by design)
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap7m-diagnostics-x64
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            build/cap7m/webview-dist/measurements.txt
+            build/cap7m/webview-build/CMakeCache.txt
+            build/cap7m/abi/abi_c.txt
+            build/cap7m/abi/abi_pascal.txt
+            build/cap7m/probe/
+            build/cap7m/release/
+            build/cap7m/nonetwork/
+
+  # ================= CAP-7M0: macOS feasibility (arm64) ====================
+  # The x64 sibling above, on Apple Silicon. Everything that differs is the
+  # runner label and the expected architecture; everything that matters is
+  # measured separately, because "it works on macOS" is not a claim this
+  # project is allowed to make from one architecture.
+  macos-arm64:
+    name: macos-arm64 (Cocoa + WKWebView)
+    runs-on: macos-15
+    concurrency:
+      group: cap7m-macos-arm64-${{ github.ref }}
+      cancel-in-progress: true
+    env:
+      CAP7M_EXPECT_ARCH: arm64
+      CAP7M_RUNNER_LABEL: macos-15
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Guard - no floating upstream ref in the macOS build/gate path
+        shell: bash
+        run: |
+          pat="git[[:space:]]+(cl""one|pu""ll|ls-rem""ote)"
+          pat="${pat}|re""fs/(he""ads|ta""gs)"
+          pat="${pat}|webview/web""view@"
+          files="tools/build-webview-dylib.sh tools/get-fpc-macos.ps1"
+          files="${files} test/cap7m/cap7m_common.sh test/cap7m/build_cap7m.sh"
+          files="${files} test/cap7m/check_abi.sh test/cap7m/check_webview_exports.sh"
+          files="${files} test/cap7m/run_cap7m_probes.sh"
+          files="${files} test/cap7m/check_release_layout.sh"
+          files="${files} test/cap7m/check_cap7m_nonetwork.sh"
+          files="${files} test/cap7m/summarize_cap7m.sh"
+          bad=0
+          for f in ${files}; do
+            # EXISTENCE FIRST. grep on a missing path exits 2, the `if` takes
+            # the false branch, and the loop concludes "clean" for a file it
+            # never read - so a renamed or deleted gate would silently empty
+            # this guard instead of failing it.
+            if [ ! -f "${f}" ]; then
+              echo "MISSING GUARD TARGET: ${f}"
+              bad=1
+              continue
+            fi
+            if grep -nEi "${pat}" "${f}"; then
+              echo "VIOLATION: ${f}"
+              bad=1
+            fi
+          done
+          [ "${bad}" -eq 0 ] || { echo 'floating upstream ref detected'; exit 1; }
+          echo "guard: no floating upstream ref in the macOS path ($(echo ${files} | wc -w) files)"
+          grep -qE '^macos-sha256 = [0-9a-f]{64}$' fpc.lock ||
+            { echo 'fpc.lock does not pin a full sha256 for the macOS artifact'; exit 1; }
+
+      - name: CAP-7M0 record the runner (M19)
+        shell: bash
+        run: |
+          echo "runner label: macos-15"
+          echo "uname -m:     $(uname -m)"
+          sw_vers
+          echo "xcode (image default, NOT what the gates use):"
+          xcodebuild -version || true
+          echo "available Xcode installs:"
+          ls -1 /Applications | grep -i '^Xcode' || true
+          [ "$(uname -m)" = "${CAP7M_EXPECT_ARCH}" ] ||
+            { echo "runner is $(uname -m), expected ${CAP7M_EXPECT_ARCH}"; exit 1; }
+          # No proc_translated check here, deliberately: nothing running under
+          # Rosetta ever reports arm64, so the assertion above already
+          # excludes translation on this leg. The check that matters lives in
+          # the x64 job, which is the one a translated process could pass.
+          echo 'arch: native arm64 (translation cannot report arm64)'
+
+      - name: Fetch pinned webview/webview (exact SHA, checksum verified)
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/get-webview.ps1
+
+      - name: Fetch pinned mORMot2 (exact SHA + sha256-pinned statics)
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/get-mormot.ps1
+
+      # The pinned FPC disk image is ~262 MiB and both macOS jobs fetch the
+      # same bytes on every push. It is keyed on fpc.lock, so a re-pin
+      # invalidates it automatically, and get-fpc-macos.ps1 re-verifies the
+      # sha256 AND the md5 of whatever it finds before using it - a poisoned
+      # or truncated cache entry fails the same way a bad download does.
+      - name: CAP-7M0 cache the pinned FPC disk image
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: build/cap7m/toolchain/fpc-macos.dmg
+          key: cap7m-fpc-dmg-${{ hashFiles('fpc.lock') }}
+
+      - name: CAP-7M0 install pinned FPC and select the pinned Xcode
+        shell: pwsh
+        timeout-minutes: 25
+        run: pwsh -NoProfile -File tools/get-fpc-macos.ps1
+
+      - name: CAP-7M0 deps/webview carries no macOS patch
+        shell: bash
+        run: |
+          dirty="$(git -C deps/webview status --porcelain)"
+          if [ -n "${dirty}" ]; then
+            echo "${dirty}"
+            echo 'deps/webview was modified on the macOS path'
+            exit 1
+          fi
+          echo 'deps/webview: pristine at the pinned commit'
+
+      - name: CAP-7M0 build libwebview.dylib from pinned source (M1/M3/M16)
+        shell: bash
+        timeout-minutes: 20
+        run: tools/build-webview-dylib.sh
+
+      - name: CAP-7M0 public ABI remains exactly 17 exports (M2)
+        shell: bash
+        run: test/cap7m/check_webview_exports.sh
+
+      - name: CAP-7M0 paired ABI probes + Mach-O presence and dlopen gates (M4/M5)
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap7m/check_abi.sh
+
+      - name: CAP-7M0 compile the binding, mORMot core and the probe (M17)
+        shell: bash
+        timeout-minutes: 20
+        run: test/cap7m/build_cap7m.sh
+
+      # Three cycles: one of each shutdown shape, plus a third so the M6 leak
+      # bound has a baseline that is not the cache-populating first cycle.
+      - name: CAP-7M0 feasibility probes (M6-M15)
+        shell: bash
+        timeout-minutes: 25
+        run: test/cap7m/run_cap7m_probes.sh 3
+
+      - name: CAP-7M0 bundle layout measured from an unrelated CWD (M18)
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap7m/check_release_layout.sh
+
+      - name: CAP-7M0 zero-transport proof (M20)
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap7m/check_cap7m_nonetwork.sh
+
+      - name: CAP-7M0 per-arch headline facts to the run summary
+        if: always()
+        shell: bash
+        run: test/cap7m/summarize_cap7m.sh
+
+      - name: CAP-7M0 measurements (always uploaded - the shard's whole output)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap7m-measurements-arm64
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            build/cap7m/measurements.txt
+
+      - name: CAP-7M0 diagnostics on failure (permissive by design)
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap7m-diagnostics-arm64
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            build/cap7m/webview-dist/measurements.txt
+            build/cap7m/webview-build/CMakeCache.txt
+            build/cap7m/abi/abi_c.txt
+            build/cap7m/abi/abi_pascal.txt
+            build/cap7m/probe/
+            build/cap7m/release/
+            build/cap7m/nonetwork/

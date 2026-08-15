@@ -86,6 +86,11 @@ _FOSSIL_
 # SourceCodeRep artifact
 *.txt
 !test/cap4w/CMakeLists.txt
+# CAP-7M0: the canonical pweb:// vector list is a committed GATE INPUT, not
+# an artifact. Without this negation it is silently unignorable and
+# test/cap7m/run_cap7m_probes.sh dies with "vector list missing" on the
+# first macOS run - after the runner has already been paid for.
+!test/cap7m/uri_vectors.txt
 
 backup/
 .idea/
