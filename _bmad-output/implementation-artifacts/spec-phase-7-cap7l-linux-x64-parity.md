@@ -2,7 +2,7 @@
 title: 'CAP-7L — Linux x64 platform parity: the frozen runtime, natively, on WebKitGTK'
 type: 'feature'
 created: '2026-08-15'
-status: 'in-review'
+status: 'done'
 review_loop_iteration: 0
 context: []
 baseline_commit: '9d5ffbc2d8901fcfd539cd08531c0aa0d7e535f6'
@@ -167,30 +167,24 @@ recorded here.
 **Measured, and each one cost a real debugging cycle** (all five are written up
 in the semantics doc):
 
-1. `webkit_web_context_register_uri_scheme` refuses a SECOND registration of
-   the same scheme on the same context, and 4.1 has no unregister call.
-   Upstream shares the default context, so cycle 2 of any repeated-lifecycle
-   run hits it. The adapter therefore tracks one cell per context and
-   RE-OWNS it; `Detach` disowns rather than removes.
-2. GLib finalises that context from a **libc atexit handler**, i.e. after FPC
-   has shut its heap manager down. The destroy-notify may not touch the FPC
-   heap: the cell is a `g_try_malloc` allocation freed with `g_free`, and the
-   tracking table is static storage. The earlier `New`/`Dispose` version
-   produced a full PASS followed by a silent exit 217.
-3. FPC leaves the SSE/x87 traps unmasked; GTK/Cairo/WebKit compute with NaNs
-   as a matter of course, so the process died with `EInvalidOp` the moment a
-   window was realised. Masked in the adapter's `initialization` through
-   `Set8087CW`/`SetSSECSR` — deliberately NOT `math.SetExceptionMask`, whose
-   finalization restores the control words while mORMot (finalising later)
-   is still doing floating point.
-4. A WebKitGTK scheme handler has no status code: a refusal is an error finish
-   that REJECTS `fetch`, where WebView2 returns a constant 404. The shared
-   CAP-4 frontend fixture now accepts either shape; both mean "refused, no
-   body", which is the actual claim.
-5. `app.pwb` is deterministic per toolchain but NOT byte-identical across
-   Windows and Linux — the mORMot static DEFLATE differs. `WriterGoldenBytes`
-   now pins one measured constant per toolchain. Cross-platform byte-identical
-   bundles were never a ratified property, and are not one we have.
+Written up in full in `docs/webkitgtk-linux-semantics.md`, "Five constraints
+that are not obvious"; in one line each:
+
+1. A URI scheme can be registered once per context, ever (4.1 has no
+   unregister, and upstream shares the default context) — so teardown is a
+   disown-and-re-own, not a removal.
+2. GLib finalises that context from a **libc atexit handler**, after FPC's
+   heap is gone — the destroy-notify uses `g_try_malloc`/`g_free` and static
+   storage, never `New`/`Dispose` (which produced a PASS then a silent 217).
+3. FPC leaves the SSE/x87 traps unmasked and GTK computes with NaNs routinely,
+   so masking in the adapter's `initialization` is mandatory — via
+   `Set8087CW`/`SetSSECSR`, NOT `math.SetExceptionMask`, whose finalization
+   restores them while mORMot is still doing float work.
+4. A WebKitGTK refusal carries no status code — it rejects `fetch` where
+   WebView2 returns 404; the shared fixture accepts either shape.
+5. `app.pwb` is deterministic per toolchain but not byte-identical across
+   Windows and Linux (mORMot's static DEFLATE differs), so the golden pin
+   carries one constant per toolchain.
 
 **Two decisions that need human ratification** (both were `Ask First` items or
 new pins; neither could be deferred without leaving an acceptance criterion
@@ -211,14 +205,11 @@ unmet):
   Same sources, same SDK, same compiler version: a second build HOST, not a
   second frontend path.
 
-**Deviations from the task text, both deliberate:**
-
-- `tools/build-webview-so.sh` passes the same FIVE `WEBVIEW_BUILD_*=OFF` flags
-  `tools/build-webview-dll.ps1` passes (tests, examples, docs, static library,
-  amalgamation) rather than four — mirroring the Windows script exactly was
-  worth more than matching the count in the task line.
-- The floating-ref guard over the new Linux scripts lives in the `linux:` job,
-  not in the Windows job's existing guard step, so that step stays byte-identical.
+**Deviations from the task text, both deliberate:** `build-webview-so.sh`
+passes the same FIVE `WEBVIEW_BUILD_*=OFF` flags the Windows script does
+rather than four (mirroring it exactly beat matching the count); and the
+floating-ref guard over the new Linux scripts lives in the `linux:` job so the
+Windows guard step stays byte-identical.
 
 **Found in review, after the implementation pass, and fixed:**
 
@@ -265,33 +256,54 @@ WebView2. Correcting it means editing `src/lib`, which would change the
 ratified patch hash and needs its own ratification; it is ledgered rather than
 taken unilaterally.
 
-**Verified independently of the implementation pass**, on the dev host: all
-eight Linux gates re-run from a clean driver (8/8 PASS); the Windows x86_64
-suite recompiled and run (2,072 assertions, 0 failed); every Windows example
-plus the `PWEB_FIXED_RUNTIME` profile recompiled (exit 0);
-`check_binding_surface.ps1` PASS (17/17, freeze isolation clean); and both
-freeze sweeps computed the ratified patch hash `3bd45f60…4434b` from their
-ORIGINAL, untouched baselines.
+**Verified independently of the implementation pass**, on the dev host: 8/8
+Linux gates from a clean driver; the Windows x86_64 suite (2,072 assertions,
+0 failed); every Windows example plus the `PWEB_FIXED_RUNTIME` profile;
+`check_binding_surface.ps1` (17/17, freeze isolation clean); and both freeze
+sweeps computing the ratified patch hash from their ORIGINAL baselines.
 
 **Two proofs beyond the ratified matrix**, both measured on the dev host:
 
-- **Networking genuinely removed, not merely unused.** The shipped release
-  layout was run inside a fresh network namespace — `lo` DOWN, no other
-  interface, DNS resolution failing — and still reported
-  `{"secure":true,"rpc":true,"value":42}` and a clean exit. That is a stronger
-  claim than the socket scan the L20 gate makes, and it is why the gate is
-  worth trusting. Not added to CI: `unshare -n` needs privileges a hosted
-  runner may not grant, and the spec forbids turning that into a false
-  mandatory gate. Note for anyone repeating it — `unshare` must come FIRST and
-  `xvfb-run` inside it, because X11 abstract sockets are namespace-scoped and
-  the other order breaks the display rather than the network.
+- **Networking genuinely removed, not merely unused.** The shipped layout ran
+  inside a fresh network namespace — `lo` DOWN, no other interface, DNS
+  failing — and still reported `{"secure":true,"rpc":true,"value":42}`. A
+  stronger claim than the socket scan L20 makes. Not a CI gate: `unshare -n`
+  needs privileges a hosted runner may not grant. To repeat it, `unshare` must
+  come FIRST with `xvfb-run` inside — X11 abstract sockets are
+  namespace-scoped, so the other order breaks the display, not the network.
 - **The no-display diagnostic fires with the right words:**
-  `releaseapp: GTK DISPLAY UNAVAILABLE (no display: WAYLAND_DISPLAY and
-  DISPLAY are both unset …)` instead of the raw layer's WebView2 sentence.
+  `GTK DISPLAY UNAVAILABLE (…WAYLAND_DISPLAY and DISPLAY are both unset…)`
+  instead of the raw layer's WebView2 sentence.
 
-**Not executed here** (needs the hosted runners): the Windows job end to end,
-and the `linux:` job on `ubuntu-24.04` itself. Locally verified instead: the
-full Windows test suite (2,072 assertions, 0 failed, x86_64), every Windows
-example compile, the CAP-4/5/6 zero-network sweeps, the binding-surface sweep,
-and both freeze sweeps computing the ratified patch hash
-`3bd45f60…4434b` identically under Windows git and Linux git.
+**Two more defects, found only by the hosted runner** — both invisible to any
+amount of local testing, and both the same shape: the dev host silently
+supplied something CI does not.
+
+4. **The gate scripts were committed non-executable** (mode `100644`). CI
+   invokes them as programs (`run: tools/build-webview-so.sh`), so the build
+   died with `Permission denied` before one assertion ran. Undetectable
+   locally twice over: the local driver called `bash <script>`, which ignores
+   the mode bit, and every file on a `/mnt/c` drvfs mount reports `rwxr-xr-x`
+   regardless of what git records. Fixed with `git update-index --chmod=+x`,
+   and the Linux job now asserts the **index** mode of every committed `*.sh`
+   — the only source of truth on a Windows checkout.
+5. **The Linux job built the React frontend without first building the
+   TypeScript SDK.** `examples/04-react/frontend` depends on it by path and
+   resolves types to `sdk/typescript/dist/…`, which is gitignored, so a fresh
+   checkout fails with `Cannot find module '@pweb/runtime'`. Local runs reused
+   a `dist/` built weeks earlier. Added the SDK build+test step ahead of it,
+   mirroring the Windows job, and verified by wiping both `dist/` trees and
+   replaying the sequence from clean.
+
+**Hosted CI GREEN — run `31890995361` at commit `eb527145`, both jobs
+`success`.** `linux-x64 (GTK 3 + WebKitGTK 4.1)` passed all 20 steps on
+`ubuntu-24.04` (ABI probes, 17-export check, GUI matrix under Xvfb,
+zero-transport proof, React and Pas2JS each to 42 from the isolated release
+layout); `windows` passed every CAP-1…CAP-6b4 step unchanged, including the
+6b4 profile matrix and both freeze sweeps under their original baselines.
+Reaching green took the three CI-only fixes above — all three environmental,
+none a defect in the Linux runtime.
+
+**CAP-7L CLOSED (2026-08-15).** All twenty acceptance items satisfied. This
+artifact is the canonical closure record, matching how CAP-1..CAP-13 were
+closed; the repository keeps no separate phase-status file.
