@@ -2,7 +2,7 @@
 title: 'CAP-7M0 — macOS feasibility and architecture lock: measuring the frozen stack on Cocoa/WKWebView before CAP-7M'
 type: 'feature'
 created: '2026-08-15'
-status: 'in-review'
+status: 'done'
 review_loop_iteration: 0
 context: []
 baseline_commit: '5cb564da741a9e073f30a9d0a76f85e40170f0fc'
@@ -161,24 +161,51 @@ honestly without it:
 
 ## Checkpoint 1
 
-### VERDICT: WITHHELD — the instrument is complete, the measurement is not taken
+### VERDICT: CAP-7M0 PASS — MACOS FEASIBILITY LOCKED
 
-The acceptance criterion begins *"Given the measurements"*. The dev host is
-Windows, no macOS machine was in reach, and a shard whose purpose is to
-replace inference with measurement cannot close on inference about itself.
-What exists is the instrument — every gate, pin and marker, with the parts a
-Windows host *can* execute already executed (below). What is missing is one
-run of `macos-x64` and `macos-arm64`.
+Closed 2026-08-16 against hosted run **`31912129480`**, in which **all four
+jobs are green**: `macos-x64`, `macos-arm64`, `linux-x64` and `windows`. The
+verdict below was WITHHELD in its first drafting because the acceptance
+criterion begins *"Given the measurements"* and the dev host is Windows; the
+measurements now exist, on both native architectures, and the last
+outstanding item — the Windows regression proof — is green too.
 
-**The verdict becomes PASS** when both jobs are green: the `webview_*` export
-set is exactly the pinned 17 on each arch (the *total* is not equal across
-arches — see below), 36 ABI facts with exactly the two documented deltas,
-`CAP7M_M10 precreate_seam_ran=1` in every cycle with `pweb://app/index.html`
-served, `CAP7M_M7 … worker_distinct=1` and `CAP7M_M8 echoes=8 errors=1
-outstanding=1` once per cycle, `"secure":true` in `CAP7M_REPORT`,
-`caught_exceptions=0`, a determinate `CAP7M_M14 ownership=…`, zero URI leaks,
-`CAP7M_M6_LEAK` growth within budget, and `CAP7M_M18` running from `/` with no
-`DYLD_*` hint of any kind.
+Every condition this section named as the PASS threshold was met and is
+recorded in `cap7m-measurements-<arch>`:
+
+- the `webview_*` export set is exactly the pinned 17 on **each** arch
+  (`arm64 total=17 other=0`, `x86_64 total=25 other=8`, every extra matching
+  `^_ZT[IS]` — constraint 8, and the reason the gate asserts the contract
+  rather than a count);
+- 36 ABI facts with exactly the two documented signedness deltas, and the
+  fcntl block with **zero** deltas (`O_RDONLY=0 O_NOFOLLOW=256
+  O_DIRECTORY=1048576`);
+- `CAP7M_M10 precreate_seam_ran=1` in every cycle, with
+  `pweb://app/index.html` served, while seam A was accepted and never
+  consulted (`postcreate_hits=0`);
+- `CAP7M_M7 gui_affine=1 worker_distinct=1 direct_return=1` and `CAP7M_M8
+  echoes=8 errors=1 outstanding=1`, once per cycle;
+- `{"protocol":"pweb:","host":"app","origin":"pweb://app","secure":true}` in
+  `CAP7M_REPORT`, stated by the page;
+- `caught_exceptions=0`, `poststop_throws=1`, `abort_delivered=1`;
+- `CAP7M_M14 ownership=webkit-copies-at-handoff` — determinate, as the matrix
+  required;
+- zero URI leaks across 44 vectors plus every observed URL;
+- `CAP7M_M6_LEAK growth_kb=256` (arm64) / `304` (x86_64) against a `65536`
+  budget;
+- `CAP7M_M18` running from `/` with all three `DYLD_*` stripped, and a
+  missing dylib producing a deterministic `exit 134` that names it;
+- `minos=12.0` and the job's own architecture on every produced Mach-O.
+
+One recorded nuance that the semantics doc already anticipated:
+`configuration_is_same_object` came back `1, 1, 0` across the three cycles.
+Pointer identity cannot distinguish "same object" from "fresh allocation at a
+freed address", which is exactly why it was never load-bearing — the pair that
+carries the seam-A refusal is *accepted yet never consulted*.
+
+**CAP-7M0 adds no production macOS code**, and none was added: the shard's
+output is the instrument, the measurements and this record. The production
+adapter is CAP-7M1.
 
 **The verdict becomes BLOCKED** on any of: `"secure":false` (M15 — reported
 exactly, never waived); the pre-create seam never running or `pweb://app`
@@ -650,15 +677,27 @@ installer it was already downloading from SourceForge (`fpc.lock`
 be reverted independently of the shard. Same Lazarus 3.4, same FPC 3.2.2,
 `Assert FPC 3.2.2` and the other 77 steps byte-untouched.
 
-**So the Windows criterion is still UNVERIFIED, not satisfied.** It becomes
-checkable on the next run, and until that run is green the criterion should
-be read as outstanding — the freeze sweeps in particular (`src/lib` against
-both baselines) have never executed against the re-derived hash on a runner.
+**RESOLVED — run `31912129480`: the `windows:` job is green.** The criterion
+is satisfied, not waived. All 79 steps ran, including the two freeze sweeps,
+which executed against the re-derived `src/lib` hash on a runner for the first
+time and agreed from **both** baselines (`709bf0fe` and `4653ba77`) — the one
+property that keeps the two-sweep arrangement working. `linux-x64` is green in
+the same run, so every CAP-1…CAP-7L gate is confirmed unaffected by this
+shard.
 
-### Known risk
+### Closing note
 
-The `.mm` probe still has not compiled — run `31904189177` stopped at the
-Pascal link, upstream of it. A clang diagnostic under `-Wall -Wextra -Werror`
-remains the likeliest next failure, and round 1 added roughly 150 lines of
-Objective-C++. macOS minutes bill at 10x, so batch fixes rather than iterating
-gate by gate.
+The `.mm` probe compiled, linked and ran on both architectures from run
+`31909938201` onward; the "Known risk" recorded here while it had not yet
+built is discharged. The cost guidance stands for successor shards: macOS
+minutes bill at 10×, so batch changes into one push rather than iterating gate
+by gate.
+
+**Carried into CAP-7M1, and worth naming because this shard could not have
+seen it.** M0 *compiled* `src/assets/pweb.assets.folder.pas` on Darwin (round
+5, constraint 10) but never *constructed* a store. The POSIX branch re-proves
+confinement through `/proc/self/fd/<n>` (`:348`, `:355`), which macOS does not
+have, so `TFolderAssetStore.Create` raises at `:405-407` on Darwin. A
+compile-only isolation gate cannot detect that, and the folder store is
+therefore still unproven on macOS at this shard's close. It is CAP-7M1's
+first blocking finding, not a defect in what M0 measured.
