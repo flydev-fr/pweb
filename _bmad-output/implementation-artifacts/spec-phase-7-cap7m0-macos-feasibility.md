@@ -630,6 +630,31 @@ as a regression rather than relied on: it is one measurement, on one
 OS/toolchain pair, of an API that documents no such contract, and the failure
 mode if it ever changes is silent corruption of served assets.
 
+### The Windows regression proof was blocked, and by what
+
+One acceptance criterion is *"when the Windows and Linux jobs run, then every
+CAP-1..CAP-7L gate is still green"*. **Linux is green** (run `31910596792`).
+**Windows could not be checked at all for this entire shard**, and the reason
+had nothing to do with CAP-7M0.
+
+`gcarreno/setup-lazarus` fetches a package list from
+`packages.lazarus-ide.org` even when zero packages are requested. That host
+went down — DNS resolved, TCP connect refused, whole site including `www`,
+third parties too — so the job died at step 6 of 79 and **no PWeb step ever
+ran**. Nothing in this shard touches the Windows path, but nothing in this
+shard could demonstrate that either.
+
+Unblocked by replacing the action with a pinned fetch+install of the same
+installer it was already downloading from SourceForge (`fpc.lock`
+`windows-*`, `tools/get-fpc-windows.ps1`), committed **separately** so it can
+be reverted independently of the shard. Same Lazarus 3.4, same FPC 3.2.2,
+`Assert FPC 3.2.2` and the other 77 steps byte-untouched.
+
+**So the Windows criterion is still UNVERIFIED, not satisfied.** It becomes
+checkable on the next run, and until that run is green the criterion should
+be read as outstanding — the freeze sweeps in particular (`src/lib` against
+both baselines) have never executed against the re-derived hash on a runner.
+
 ### Known risk
 
 The `.mm` probe still has not compiled — run `31904189177` stopped at the

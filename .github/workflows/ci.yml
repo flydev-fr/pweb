@@ -151,6 +151,7 @@ jobs:
           $files = 'tools/get-webview.ps1', 'tools/get-mormot.ps1',
                    'tools/build-webview-dll.ps1',
                    'tools/patch-cap4w-webview.ps1',
+                   'tools/get-fpc-windows.ps1',
                    '.github/workflows/ci.yml'
           $bad = @()
           foreach ($f in $files) {
@@ -166,10 +167,26 @@ jobs:
           }
           Write-Host 'guard: no floating upstream ref'
 
-      - name: Install FPC (Lazarus 3.4 ships FPC 3.2.2)
-        uses: gcarreno/setup-lazarus@d633fa79b45e29794ab46ec31f7543e44e02efef # v3
-        with:
-          lazarus-version: "3.4"
+      # Was gcarreno/setup-lazarus. That action fetches a package list from
+      # packages.lazarus-ide.org even when ZERO packages are requested, and
+      # when that host went down (DNS resolves, TCP connect refused, whole
+      # site including www, third parties too) it held this entire job hostage
+      # indefinitely - no PWeb step ran at all. The installer itself was
+      # reachable throughout on SourceForge, which is where the pinned fetch
+      # below gets it. Same Lazarus 3.4 bundle, same FPC 3.2.2, so the assert
+      # step below and every other step are unchanged.
+      - name: Install FPC (pinned Lazarus 3.4 installer, sha256-verified)
+        shell: pwsh
+        timeout-minutes: 20
+        run: |
+          $bin = pwsh -NoProfile -File tools/get-fpc-windows.ps1 |
+            Select-Object -Last 1
+          if ($LASTEXITCODE -ne 0) { throw 'pinned FPC install FAILED' }
+          if (-not (Test-Path -LiteralPath $bin)) {
+            throw "get-fpc-windows.ps1 did not report a usable bin directory: $bin"
+          }
+          Write-Host "adding to PATH: $bin"
+          $bin | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
 
       - name: Assert FPC 3.2.2
         shell: pwsh

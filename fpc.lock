@@ -1,17 +1,57 @@
-# Pinned Free Pascal Compiler toolchain for the macOS build hosts (CAP-7M0).
+# Pinned Free Pascal Compiler toolchain for the macOS and Windows build hosts.
 #
-# Windows and Linux do NOT read this file. Those two jobs take FPC from a
-# pinned action (setup-lazarus 3.4 -> FPC 3.2.2) and from the ubuntu-24.04
-# distro package respectively, both of which predate this lock and are left
-# exactly as they are. macOS has no such pinned source: `brew install fpc`
-# is a floating pin by construction and the runner image ships no FPC at
-# all, so the artifact is pinned here by sha256 and fetched by
-# tools/get-fpc-macos.ps1.
+# Linux does NOT read this file: the ubuntu-24.04 job takes FPC from a distro
+# package, which predates this lock and is left exactly as it is.
+#
+# macOS was pinned here first (CAP-7M0): `brew install fpc` is a floating pin
+# by construction and the runner image ships no FPC at all.
+#
+# Windows joined it on 2026-08-16, for a different and more pointed reason.
+# The job used gcarreno/setup-lazarus, which fetches a package list from
+# packages.lazarus-ide.org even when zero packages are requested. That host
+# went down - DNS resolves (37.97.187.115 / 2a01:7c8:aac1:2f0::1 via both the
+# local resolver and 1.1.1.1) but TCP connect fails, curl (7) not (6), for the
+# whole site including www, for third parties as well as for us, and the
+# runners get ECONNREFUSED on the same address. One unrelated outage held the
+# entire Windows gate hostage indefinitely, and no PWeb step ran for a whole
+# session. The installer itself lives on SourceForge and was reachable
+# throughout - the action was downloading it successfully - so the dependency
+# that broke us was the package list, not the toolchain.
+#
+# The lesson is the one this repository already applies everywhere else: an
+# unpinned intermediary is a availability dependency as well as a supply-chain
+# one. tools/get-fpc-windows.ps1 fetches the same installer directly.
 #
 # Changing any pin below is a deliberate, reviewed act.
 
 version = 3.2.2
 
+# --- Windows x64 build host --------------------------------------------------
+#
+# The exact installer gcarreno/setup-lazarus was itself downloading (visible
+# in the CI log), fetched directly instead. It is an Inno Setup package
+# (verified: the binary carries the Inno Setup / JR.Inno.Setup markers), which
+# is what makes /VERYSILENT /SP- /DIR=<path> the right silent-install
+# contract - the same switches the action invoked.
+#
+# sha256 and size were MEASURED from the downloaded bytes on 2026-08-16, not
+# copied from anywhere. The size is also exactly the Content-Length the server
+# advertised, which is a second, independent check that the transfer was
+# complete; the file begins MZ, not an HTML interstitial.
+windows-url = https://downloads.sourceforge.net/project/lazarus/Lazarus%20Windows%2064%20bits/Lazarus%203.4/lazarus-3.4-fpc-3.2.2-win64.exe
+windows-url-fallback = https://sourceforge.net/projects/lazarus/files/Lazarus%20Windows%2064%20bits/Lazarus%203.4/lazarus-3.4-fpc-3.2.2-win64.exe/download
+windows-sha256 = 6ede48350b9890929088bd33aa441e1bf4cf813b21bc38149e3df3bbe673bbd3
+windows-size = 213944118
+
+# What the install must produce. The FPC bin directory is what the job puts on
+# PATH, and asserting it is how a re-rolled installer that moved the layout
+# fails here rather than as a mysterious "fpc not found" three steps later.
+windows-lazarus-version = 3.4
+windows-fpc-bindir = fpc/3.2.2/bin/x86_64-win64
+windows-compiler = fpc.exe
+
+# --- macOS build hosts (CAP-7M0) ---------------------------------------------
+#
 # ONE artifact for BOTH architectures. fpc-3.2.2.intelarm64-macosx.dmg
 # installs NATIVE ppcx64 (x86_64-darwin) and ppca64 (aarch64-darwin)
 # compilers, so the x64 and the arm64 job fetch the same bytes and each one
