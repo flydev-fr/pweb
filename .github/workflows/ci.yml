@@ -1455,6 +1455,23 @@ jobs:
           [ "${bad}" -eq 0 ] || { echo 'floating upstream ref detected'; exit 1; }
           echo 'guard: no floating upstream ref in the Linux path'
 
+          # Every gate below is invoked as a program, not as `bash <file>`, so
+          # a script committed 100644 fails with 'Permission denied' before a
+          # single assertion runs - and it does so identically whether the
+          # gate would have passed or failed. A dev host never notices,
+          # because calling `bash script.sh` ignores the mode bit entirely.
+          # Assert the committed MODE, not the working-tree mode: on a
+          # Windows checkout the filesystem has no executable bit and only
+          # git's index carries the truth.
+          nonexec="$(git ls-files -s -- '*.sh' | awk '$1 != "100755" { print $4 }')"
+          if [ -n "${nonexec}" ]; then
+            echo 'shell gates committed without the executable bit:'
+            printf '  %s\n' ${nonexec}
+            echo 'fix with: git update-index --chmod=+x <file>'
+            exit 1
+          fi
+          echo "guard: all $(git ls-files -- '*.sh' | wc -l) committed shell gates are executable"
+
       - name: Install the ratified WebKitGTK stack and FPC (distro packages)
         shell: bash
         timeout-minutes: 15
