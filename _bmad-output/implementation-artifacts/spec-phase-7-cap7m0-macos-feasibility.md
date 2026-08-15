@@ -545,6 +545,40 @@ The initial values come from Apple's published `xnu` `bsd/sys/fcntl.h`
 and the probe is what makes that provenance irrelevant from the first run
 onward, since a disagreement with the actual SDK blocks.
 
+### Round 6 — run `31909456486`: the link line, and a hypothesis that did not hold
+
+`pweb.assets.folder.pas` compiles on Darwin; the frontier moved to the
+`signature_pin` **link**. All 17 symbols undefined — `signature_pin` takes
+every entry point's address, where `abi_probe` references none and linked
+cleanly. The same asymmetry as constraint 9, seen from the other side.
+
+Fixed by passing `-k-L<dist> -k-lwebview` to every FPC binary that references
+a webview symbol, mirroring the clang line that already worked for the
+ObjC++ probe. The message was also split: a LINK failure now says the library
+did not reach the linker, because "binding signatures drifted" is the one
+thing that failure did not mean.
+
+**The proposed mechanism did not survive checking, and I did not adopt it.**
+The reasoning offered was that FPC emits no `-l` for `external` on Mach-O.
+FPC 3.2.2's own source says otherwise: `t_bsd.pas:355-369` emits `-l<lib>`
+from `SharedLibFiles`, `:132` puts Darwin on the direct-command-line path,
+and `t_linux.pas:565-576` is the **same code** on the platform that works.
+The observed `symbol(s) not found` (rather than `library not found for -l…`)
+also rules out a wrongly-spelled `-l`. The live candidate is that
+`SharedLibFiles` is empty for this build; why, is open.
+
+So the fix ships and the mechanism is recorded rather than asserted:
+`build_cap7m.sh` now runs one `fpc -va` link with the explicit flags
+**withheld** and records what FPC passed unaided as `CAP7M_LINKLINE`. The
+doc marks the failure MEASURED and the mechanism EXPECTED.
+
+One consequence worth stating because it was not obvious: linking
+`abi_probe` with the explicit `-l` too — for consistency, so the two stop
+differing by accident — means a load command appearing on it is no longer
+evidence about how `external` binds. `CAP7M_LINKLINE` is now the instrument
+that keeps constraint 9's mechanism observable, and the M5 record says
+`linked_with_explicit_l=yes` so no later reader misreads it.
+
 ### Known risk
 
 The `.mm` probe still has not compiled — run `31904189177` stopped at the

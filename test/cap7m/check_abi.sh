@@ -92,11 +92,17 @@ clang -O1 -Wall -Wextra -Werror -Wno-type-limits \
 # must then contribute no argument at all. See set_fpc_arch_link_flags in
 # cap7m_common.sh for the measured aarch64 link failure it works around.
 # shellcheck disable=SC2086
+# -k-L/-k-lwebview: abi_probe does not NEED them today - it references no
+# webview symbol, which is exactly why it links where signature_pin did not
+# (constraint 9, and now 11). It is linked the same way anyway, so the two
+# stop differing by accident rather than by intent; the day someone adds a
+# reference to this probe, it should not be the day they discover this.
 fpc -Sh -B -FU"${abi}/units" -FE"${abi}/bin" \
     -Fu"${repo_root}/src/lib" \
     -Fi"${repo_root}/deps/mormot2/src" \
     "-WM${deployment_target}" \
     -Fl"${dist}" -k-rpath -k@executable_path \
+    "-k-L${dist}" -k-lwebview \
     ${CAP7M_FPC_ARCH_LINK_FLAGS} \
     "${repo_root}/test/core/abi_probe.pas" > "${abi}/abi_pascal.log" 2>&1 ||
     { cat "${abi}/abi_pascal.log" >&2; die 'core Pascal ABI probe failed to compile'; }
@@ -173,16 +179,23 @@ printf '[CAP-7M0] core ABI: %s facts, 2 documented deltas, 0 blocking (%s)\n' \
 # unmodified on every platform, and making it call in to satisfy a gate would
 # change what it measures. Nor is the dependency manufactured with
 # -needed_library, which would fabricate the measurement instead of taking it.
+# NOTE, since this changed meaning in run 31909456486: abi_probe is now
+# linked with an EXPLICIT -L/-lwebview, so a load command appearing here is
+# no longer evidence about how `external` binds - it would simply be the flag
+# doing its job. The live instrument for that mechanism is CAP7M_LINKLINE in
+# build_cap7m.sh, which deliberately withholds the explicit flags. What is
+# still asserted here is the invariant that matters either way: whatever this
+# binary loads must be the versioned dylib.
 abi_loaded="$(otool -L "${abi}/bin/abi_probe" |
     awk '/libwebview/ { print $1; exit }')"
 if [ -n "${abi_loaded}" ]; then
-    record_measurement "CAP7M_M5 binary=abi_probe references_dylib=yes load=${abi_loaded}"
+    record_measurement "CAP7M_M5 binary=abi_probe references_dylib=yes linked_with_explicit_l=yes load=${abi_loaded}"
     case "${abi_loaded}" in
         *"${dylib_versioned}") ;;
         *) die "abi_probe loads '${abi_loaded}', expected a path ending ${dylib_versioned}" ;;
     esac
 else
-    record_measurement "CAP7M_M5 binary=abi_probe references_dylib=no load=<none> note=mach-o-records-LC_LOAD_DYLIB-only-when-a-symbol-is-referenced (ELF records DT_NEEDED unconditionally: CAP-7L measured libwebview.so.0.12 from this same probe)"
+    record_measurement "CAP7M_M5 binary=abi_probe references_dylib=no linked_with_explicit_l=yes load=<none> note=the probe references no webview symbol; Mach-O records LC_LOAD_DYLIB by USE where ELF records DT_NEEDED by declaration (CAP-7L measured libwebview.so.0.12 from this same probe)"
 fi
 
 # --- 1b. fcntl constants: the folder store's hand-declared Darwin block ------

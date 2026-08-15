@@ -118,7 +118,7 @@ M10 (`CAP7M_M10 precreate_seam_ran=1` plus a served main document).
 Escalation only, and only with evidence that B failed. No patch exists in this
 tree and none may be written before ratification.
 
-## Ten constraints that are not obvious
+## Eleven constraints that are not obvious
 
 ### 1. `WKURLSchemeTask` throws. Nothing in the GLib model carries over
 
@@ -481,6 +481,61 @@ Two details that would quietly break the measurement:
 `O_RDONLY` is probed too, though BaseUnix supplies it everywhere: it is what
 both call sites `or` the other two into, so a probe without it would not be
 measuring the argument actually passed to `FpOpen`.
+
+### 11. An FPC binary that CALLS into the dylib needs an explicit `-L`/`-l`
+
+**MEASURED**, run `31909456486` — the failure. **EXPECTED**, the mechanism:
+the cause is not yet established, and this section says so rather than
+inventing one.
+
+```
+"_webview_version", referenced from:
+    _TC_$P$SIGNATURE_PIN_$$_PIN_VERSION in signature_pin.o
+ld: symbol(s) not found for architecture arm64
+```
+
+All 17 undefined. `signature_pin` takes the address of every entry point;
+`abi_probe`, linked with the same flags, references none and linked cleanly —
+the same asymmetry as constraint 9, from the other side. `-Fl` supplies a
+search **path**; something has to put the library itself on the line.
+
+**The fix is settled: pass `-k-L<dir> -k-lwebview`** to every FPC binary that
+references a webview symbol, mirroring what the clang line already does for
+the ObjC++ probe. `-lwebview` resolves `libwebview.dylib`, whose install name
+is `@rpath/libwebview.0.12.dylib`, so the resulting `LC_LOAD_DYLIB` is the
+one M16 already asserts. It is correct whether or not FPC also emits its own
+`-l`, since a duplicate resolves once.
+
+**The mechanism is NOT settled, and the obvious explanation does not survive
+reading the compiler.** "FPC emits no `-l` for `external` on Mach-O" is not
+supported by FPC 3.2.2's source:
+
+- `compiler/systems/t_bsd.pas:355-369` emits `-l<lib>` from `SharedLibFiles`,
+  stripping `target_info.sharedlibext`;
+- `:132` sets `LdSupportsNoResponseFile` true for `systems_darwin`, so those
+  arguments go straight onto the command line;
+- `compiler/systems/t_linux.pas:565-576` is the **same code**, and Linux
+  demonstrably works.
+
+And the observed error was `symbol(s) not found`, not `library not found for
+-l…` — which is what an emitted-but-unresolvable `-l` would have produced. So
+a wrongly-spelled `-l` is also ruled out. The remaining candidate is that
+`SharedLibFiles` is empty for this build, and *why* is open.
+
+`test/cap7m/build_cap7m.sh` therefore runs one `fpc -va` link with the
+explicit flags deliberately **withheld** and records what FPC passed unaided
+as `CAP7M_LINKLINE` (`fpc_emits_l_webview=yes|no`, the matched tokens, and
+the linker invocation). That is a standing instrument, not a one-off: it is
+also what keeps constraint 9's mechanism observable now that `abi_probe` is
+linked with an explicit `-l` and can no longer demonstrate it.
+
+**Consequence for CAP-7M, whatever the mechanism turns out to be:** the
+production application links Pascal against the dylib and calls into it, so
+it needs these flags too. Both this and constraint 9 are the same underlying
+difference — *Darwin binds by use where ELF binds by declaration* — and the
+practical rule that falls out of it is: on Mach-O, what a binary needs at run
+time follows its call graph, and what reaches the linker must be stated
+explicitly rather than inferred from a declaration.
 
 ## Threading
 

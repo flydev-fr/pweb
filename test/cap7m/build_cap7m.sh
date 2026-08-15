@@ -84,6 +84,22 @@ link_webview=(
     "-Fl${dist}"
     -k-rpath
     -k@executable_path
+    # MEASURED, run 31909456486: without these, every FPC binary that actually
+    # REFERENCES a webview symbol fails to link with "symbol(s) not found",
+    # while abi_probe - which references nothing - links cleanly. `-Fl` is a
+    # search PATH only; something has to put the library itself on the line.
+    #
+    # This mirrors exactly what the clang line below already does for the
+    # ObjC++ probe (-L"${dist}" -lwebview), and -lwebview resolves
+    # libwebview.dylib, whose install name is @rpath/libwebview.0.12.dylib -
+    # so the resulting LC_LOAD_DYLIB is the one M16 already asserts.
+    #
+    # Supplying it explicitly is correct whether or not FPC would also emit
+    # its own -l: a duplicate -l for the same dylib resolves once. What FPC
+    # passes unaided is measured separately as CAP7M_LINKLINE below, because
+    # the mechanism is NOT yet established - see constraint 11.
+    "-k-L${dist}"
+    -k-lwebview
 )
 # Unquoted on purpose: empty on x86_64, and must then add no argument at all.
 # On aarch64 this is -k-no_fixup_chains; the measured link failure it works
@@ -120,10 +136,74 @@ for unit in support folder zip; do
 done
 
 # --- compile-only ABI gate ----------------------------------------------------
+# --- MEASURED: what FPC puts on the link line UNAIDED ------------------------
+#
+# Run BEFORE the real compile, with the explicit -L/-l deliberately withheld,
+# so it records what FPC does on its own rather than what we made it do.
+# Entirely non-fatal: this is an instrument, not a gate, and it is expected to
+# fail to link on a toolchain where the explicit flags are needed.
+#
+# It exists because the mechanism is genuinely open. Reading FPC 3.2.2's
+# source, compiler/systems/t_bsd.pas:355-369 DOES emit `-l<lib>` from
+# SharedLibFiles for Darwin (LdSupportsNoResponseFile is true for
+# systems_darwin at :132), and t_linux.pas:565-576 is the SAME code - so
+# "FPC emits no -l on Mach-O" is not something the source supports. Yet the
+# observed failure was "symbol(s) not found", not "library not found for
+# -l…", which is what an emitted-but-unresolvable -l would produce. Something
+# else is going on, and this records it instead of guessing.
+step 'MEASURED: the link line FPC produces unaided (CAP7M_LINKLINE)'
+linkline_dir="${repo_root}/build/cap7m/linkline"
+mkdir -p -- "${linkline_dir}/units" "${linkline_dir}/bin"
+set +e
+# shellcheck disable=SC2086
+fpc -va -Sh -B -FU"${linkline_dir}/units" -FE"${linkline_dir}/bin" \
+    -Fusrc/lib -Fideps/mormot2/src \
+    "-WM${deployment_target}" "-Fl${static_dir}" "-Fl${dist}" \
+    -k-rpath -k@executable_path ${CAP7M_FPC_ARCH_LINK_FLAGS} \
+    test/core/signature_pin.pas > "${linkline_dir}/fpc-va.log" 2>&1
+linkline_rc=$?
+set -e
+record_measurement "CAP7M_LINKLINE unaided_exit=${linkline_rc}"
+# Every distinct way the library could appear on the line, recorded verbatim.
+for pattern in '\-lwebview' '\-llibwebview' 'libwebview' '\-L'; do
+    hits="$(grep -aoE "[^[:space:]]*${pattern}[^[:space:]]*" \
+        "${linkline_dir}/fpc-va.log" 2>/dev/null | LC_ALL=C sort -u | head -n 8 || true)"
+    if [ -n "${hits}" ]; then
+        printf '%s\n' "${hits}" | while IFS= read -r h; do
+            [ -n "${h}" ] && record_measurement "CAP7M_LINKLINE token=${h}" > /dev/null
+        done
+    fi
+done
+if grep -aqE '(^|[[:space:]])-lwebview([[:space:]]|$)' "${linkline_dir}/fpc-va.log"; then
+    record_measurement 'CAP7M_LINKLINE fpc_emits_l_webview=yes'
+else
+    record_measurement 'CAP7M_LINKLINE fpc_emits_l_webview=no'
+fi
+# the linker invocation itself, if -va printed one
+ld_line="$(grep -aE 'ld|clang' "${linkline_dir}/fpc-va.log" |
+    grep -aE '\-o[[:space:]]|\-arch|\-L' | tail -n 1 || true)"
+if [ -n "${ld_line}" ]; then
+    record_measurement "CAP7M_LINKLINE ld_invocation=$(printf '%s' "${ld_line}" | cut -c1-600)"
+else
+    record_measurement 'CAP7M_LINKLINE ld_invocation=<not printed by -va>'
+fi
+
 step 'signature pin (all 17 prototypes)'
-fpc -Sh -B -FUbuild/cap7m/units -FEbuild/cap7m/bin -Fusrc/lib \
-    -Fideps/mormot2/src "${link_webview[@]}" test/core/signature_pin.pas ||
-    die 'signature pin failed: binding signatures drifted'
+# COMPILE failure and LINK failure mean opposite things here, and conflating
+# them sends the next reader to the wrong place: "binding signatures drifted"
+# was the message for a link error that had nothing to do with signatures.
+sigpin_log="${repo_root}/build/cap7m/signature_pin.log"
+if ! fpc -Sh -B -FUbuild/cap7m/units -FEbuild/cap7m/bin -Fusrc/lib \
+        -Fideps/mormot2/src "${link_webview[@]}" test/core/signature_pin.pas \
+        > "${sigpin_log}" 2>&1; then
+    cat "${sigpin_log}" >&2
+    if grep -qaE 'Error while linking|^ld: |symbol\(s\) not found|library not found' \
+            "${sigpin_log}"; then
+        die 'signature_pin failed to LINK: the webview library did not reach the linker. This is NOT a signature drift -- see CAP7M_LINKLINE and constraint 11 in docs/wkwebview-macos-semantics.md'
+    fi
+    die 'signature_pin failed to COMPILE: the binding signatures drifted'
+fi
+cat "${sigpin_log}"
 
 # --- the URI oracle -----------------------------------------------------------
 # Also PROBE J's "mORMot core compiles" leg: this pulls mormot.core.base and
