@@ -187,11 +187,25 @@ printf '[CAP-7M0] DEVELOPER_DIR=%s (pinned Xcode %s)\n' \
 # The same WEBVIEW_BUILD_* set the Windows and Linux scripts pass: only the
 # shared core is ever built, so no test, example, doc, static-library or
 # amalgamation target can pull an unreviewed dependency into this build.
+#
+# WEBVIEW_ENABLE_CHECKS=OFF is the one flag the siblings do not need. MEASURED
+# (hosted run 31903389675): configuring deps/webview directly makes it a
+# TOP-LEVEL build, so WEBVIEW_ENABLE_CHECKS defaults ON, and webview_init ->
+# webview_find_clang_format then hard-fails with
+#   Could not find WEBVIEW_CLANG_FORMAT_EXE using the following names:
+#   clang-format
+# because the Xcode toolchain does not ship clang-format. ubuntu-24.04 and the
+# Windows image happen to carry one, which is the only reason the two sibling
+# scripts never had to say this out loud. These are upstream's own LINT
+# targets, not part of the library: turning them off changes nothing about the
+# artifact, and the alternative -- brew-installing clang-format -- would add an
+# unpinned build dependency to satisfy a check PWeb never runs.
 rm -rf -- "${build_dir}"
 cmake -B "${build_dir}" -S "${src}" \
     -DCMAKE_BUILD_TYPE=Release \
     "-DCMAKE_OSX_ARCHITECTURES=${want_arch}" \
     "-DCMAKE_OSX_DEPLOYMENT_TARGET=${deployment_target}" \
+    -DWEBVIEW_ENABLE_CHECKS=OFF \
     -DWEBVIEW_BUILD_TESTS=OFF \
     -DWEBVIEW_BUILD_EXAMPLES=OFF \
     -DWEBVIEW_BUILD_DOCS=OFF \
