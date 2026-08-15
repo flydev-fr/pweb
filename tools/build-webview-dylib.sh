@@ -229,12 +229,15 @@ cache_value() {
 # "CMAKE_SYSTEM_NAME is '', expected Darwin". The Darwin-ness of the result is
 # proven below from the artifact itself (lipo/otool/vtool), which is a
 # measurement rather than a restatement of what we passed in.
-got_sysroot_early="$(cache_value CMAKE_OSX_SYSROOT)"
-case "${got_sysroot_early}" in
-    *MacOSX*.sdk|*MacOSX.sdk) ;;
-    *) die "CMake cache CMAKE_OSX_SYSROOT is '${got_sysroot_early}', expected a macOS SDK" ;;
-esac
-
+# Only two things in this cache are worth asserting, and they are the two we
+# passed in explicitly, so they are genuinely written: the architecture and the
+# deployment target. CMAKE_SYSTEM_NAME and CMAKE_OSX_SYSROOT are both EMPTY on
+# a native build (measured, runs 31903670698 and 31903945363) -- CMake caches
+# the first only under a cross-compiling toolchain file and leaves the second
+# blank to mean "the default SDK". Asserting either one failed a correct build
+# twice. The SDK actually in force is resolved above from xcrun and recorded;
+# everything else about the result is measured from the Mach-O below, which is
+# the only evidence that is not just a restatement of our own inputs.
 got_archs="$(cache_value CMAKE_OSX_ARCHITECTURES)"
 [ "${got_archs}" = "${want_arch}" ] ||
     die "CMake cache CMAKE_OSX_ARCHITECTURES is '${got_archs}', expected '${want_arch}'"
