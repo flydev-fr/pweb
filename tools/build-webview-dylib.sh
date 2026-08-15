@@ -221,9 +221,19 @@ cache_value() {
 }
 
 # --- assert what the configure actually RESOLVED -----------------------------
-got_system="$(cache_value CMAKE_SYSTEM_NAME)"
-[ "${got_system}" = 'Darwin' ] ||
-    die "CMake cache CMAKE_SYSTEM_NAME is '${got_system}', expected Darwin"
+# NOT CMAKE_SYSTEM_NAME: MEASURED (hosted run 31903670698) it is absent from
+# CMakeCache.txt on a native build -- CMake only caches it when a toolchain
+# file cross-compiles, which is exactly what upstream's own
+# cmake/toolchains/universal-macos-llvm.cmake does and this build deliberately
+# does not. Asserting it made a correct native configure fail with
+# "CMAKE_SYSTEM_NAME is '', expected Darwin". The Darwin-ness of the result is
+# proven below from the artifact itself (lipo/otool/vtool), which is a
+# measurement rather than a restatement of what we passed in.
+got_sysroot_early="$(cache_value CMAKE_OSX_SYSROOT)"
+case "${got_sysroot_early}" in
+    *MacOSX*.sdk|*MacOSX.sdk) ;;
+    *) die "CMake cache CMAKE_OSX_SYSROOT is '${got_sysroot_early}', expected a macOS SDK" ;;
+esac
 
 got_archs="$(cache_value CMAKE_OSX_ARCHITECTURES)"
 [ "${got_archs}" = "${want_arch}" ] ||
