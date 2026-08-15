@@ -1559,6 +1559,29 @@ jobs:
         with:
           node-version: 24.11.1
 
+      # The React example depends on the SDK by PATH
+      # ("@pweb/runtime": "file:../../../sdk/typescript"), and that package
+      # resolves its types to ./dist/src/index.d.ts - a tsc output that is
+      # gitignored. So the SDK must be BUILT before the frontend typechecks,
+      # exactly as the Windows job does it; skipping it fails with
+      # "Cannot find module '@pweb/runtime'" rather than anything Linux.
+      # npm test is npm run build plus the SDK's own suite, so this proves
+      # the TypeScript SDK on Linux node while producing what React needs.
+      - name: CAP-7L TypeScript SDK build + tests
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          v="$(node --version)"
+          [ "${v}" = 'v24.11.1' ] || { echo "expected node v24.11.1, got ${v}"; exit 1; }
+          cd sdk/typescript
+          npm ci
+          npm test
+          cd ../..
+          for f in sdk/typescript/dist/src/index.js \
+                   sdk/typescript/dist/src/index.d.ts; do
+            [ -f "${f}" ] || { echo "SDK build output missing: ${f}"; exit 1; }
+          done
+
       - name: CAP-7L React frontend build (pinned lockfile, offline bundle)
         shell: bash
         timeout-minutes: 10
