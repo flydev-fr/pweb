@@ -131,6 +131,71 @@ assert_fpc_target() {
     printf '[CAP-7M0] fpc %s targeting %s/%s\n' "${v}" "${os}" "${cpu}"
 }
 
+# --- the aarch64-only Pascal link flag (MEASURED, run 31904189177) -----------
+#
+# FPC 3.2.2 cannot link on aarch64-darwin at a deployment target of 12.0 or
+# later. Measured on macos-15 (macOS 15.7.7, Xcode 16.4, Apple clang 17.0.0),
+# linking the plain console test/core/abi_probe.pas:
+#
+#     ld: pointer not aligned in 'FPC_THREADVARTABLES'+0x4 (abi_probe.o)
+#
+# CAUSE: Apple turns on the chained-fixups format for every binary whose
+# deployment target is macOS 12+. Chained fixups store the next-fixup offset
+# inside the pointer word itself, so on arm64 the pointer data must be 8-byte
+# aligned; FPC 3.2.2 emits FPC_THREADVARTABLES 4-byte aligned. Under the old
+# ld64 that was a warning (FPC issue 31696, 2017); under ld_prime - the linker
+# in every Xcode from 15 onward - it is a hard error. It is unconditional:
+# FPC_THREADVARTABLES is RTL data emitted for every program, threads or not.
+# It is also arm64-only, which is exactly why the x86_64 leg linked cleanly.
+# No Xcode available on the runner avoids it.
+#
+# (This is NOT Lazarus issue 41570, `ld` exit -11 on FPC 3.3.1 - a different
+# bug with a different fix. Do not conflate the two when re-reading this.)
+#
+# THE FIX TAKEN: -no_fixup_chains, the remedy the linker's own message names.
+# It reverts to classic rebase/bind opcodes, which every supported macOS
+# loads, and it leaves -WM12.0 alone - so LC_BUILD_VERSION minos stays 12.0
+# and the ratified floor survives intact.
+#
+# THE FIX DELIBERATELY NOT TAKEN: -WM11.0. Lowering the deployment target
+# below the chained-fixups threshold is the better-sourced remedy for this
+# exact FPC 3.2.2 error (MacPorts ticket 68368), but it CONTRADICTS this
+# shard's own proposed floor. 12.0 was chosen because WebKit's "custom scheme
+# handled origins should be considered secure" change first ships in the
+# macOS 12 branch, and that is the entire basis for expecting pweb://app to be
+# a secure context. Linking at 11.0 would emit binaries claiming to run on a
+# system where the shard's central premise does not hold - trading a
+# ratifiable toolchain fact for an unsound support claim.
+#
+# APPLIED TO aarch64 ONLY. x86_64 links cleanly without it, and passing a flag
+# an architecture does not need would contaminate that architecture's
+# measurement with a workaround for the other one's defect.
+#
+# CAVEAT, recorded rather than hidden: -no_fixup_chains is an ld_prime flag
+# with no guaranteed lifetime. -ld_classic is NOT a fallback - deprecated in
+# Xcode 16 and removed in Xcode 27 - so if this flag ever goes away the
+# answer is a newer FPC, not an older linker.
+#
+# A space-separated STRING, not an array, so it expands to nothing at all when
+# empty: macOS still ships bash 3.2, where "${arr[@]}" under `set -u` on an
+# empty array is an error. The single member never contains whitespace.
+CAP7M_FPC_ARCH_LINK_FLAGS=''
+
+set_fpc_arch_link_flags() {
+    local cpu
+    cpu="$(fpc -iTP | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+    case "${cpu}" in
+        aarch64)
+            CAP7M_FPC_ARCH_LINK_FLAGS='-k-no_fixup_chains'
+            printf '[CAP-7M0] aarch64 Pascal link: adding %s (chained fixups vs FPC_THREADVARTABLES alignment)\n' \
+                "${CAP7M_FPC_ARCH_LINK_FLAGS}"
+            ;;
+        *)
+            CAP7M_FPC_ARCH_LINK_FLAGS=''
+            ;;
+    esac
+}
+
 # --- M19: record the environment BEFORE any gate is accepted -----------------
 # Called by EVERY gate, not just the probe driver: "recorded before any gate
 # is accepted" is not satisfied by recording it after the dylib build, the

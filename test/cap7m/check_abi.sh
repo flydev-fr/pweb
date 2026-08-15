@@ -49,6 +49,7 @@ set -euo pipefail
 assert_native_arch "${CAP7M_EXPECT_ARCH:-}"
 assert_fpc_target
 record_environment
+set_fpc_arch_link_flags
 
 abi="${work}/abi"
 
@@ -84,11 +85,16 @@ clang -O1 -Wall -Wextra -Werror -Wno-type-limits \
 "${abi}/bin/abi_probe_c" > "${abi}/abi_c.txt" ||
     die 'core C ABI probe exited nonzero'
 
+# CAP7M_FPC_ARCH_LINK_FLAGS is UNQUOTED on purpose: it is empty on x86_64 and
+# must then contribute no argument at all. See set_fpc_arch_link_flags in
+# cap7m_common.sh for the measured aarch64 link failure it works around.
+# shellcheck disable=SC2086
 fpc -Sh -B -FU"${abi}/units" -FE"${abi}/bin" \
     -Fu"${repo_root}/src/lib" \
     -Fi"${repo_root}/deps/mormot2/src" \
     "-WM${deployment_target}" \
     -Fl"${dist}" -k-rpath -k@executable_path \
+    ${CAP7M_FPC_ARCH_LINK_FLAGS} \
     "${repo_root}/test/core/abi_probe.pas" > "${abi}/abi_pascal.log" 2>&1 ||
     { cat "${abi}/abi_pascal.log" >&2; die 'core Pascal ABI probe failed to compile'; }
 "${abi}/bin/abi_probe" > "${abi}/abi_pascal.txt" ||

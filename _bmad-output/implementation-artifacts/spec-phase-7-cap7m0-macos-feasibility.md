@@ -170,8 +170,9 @@ What exists is the instrument — every gate, pin and marker, with the parts a
 Windows host *can* execute already executed (below). What is missing is one
 run of `macos-x64` and `macos-arm64`.
 
-**The verdict becomes PASS** when both jobs are green: 17/17 exports in the
-export trie on each arch, 36 ABI facts with exactly the two documented deltas,
+**The verdict becomes PASS** when both jobs are green: the `webview_*` export
+set is exactly the pinned 17 on each arch (the *total* is not equal across
+arches — see below), 36 ABI facts with exactly the two documented deltas,
 `CAP7M_M10 precreate_seam_ran=1` in every cycle with `pweb://app/index.html`
 served, `CAP7M_M7 … worker_distinct=1` and `CAP7M_M8 echoes=8 errors=1
 outstanding=1` once per cycle, `"secure":true` in `CAP7M_REPORT`,
@@ -225,7 +226,7 @@ ObjC interop adds a second overlapping mechanism (and FPC 3.2.2 ships no
 WebKit units for `WKWebView`/`WKURLSchemeHandler`), while a dylib adds a
 shipped, signed, versioned artifact for a problem a linked object solves.
 
-### The one proposed macOS floor
+### The one proposed macOS floor — and its measured toolchain consequence
 
 **12.0.** Justified by the only measurement that would make `pweb://app`
 viable at all: WebKit treats custom-scheme-handled origins as potentially
@@ -234,6 +235,31 @@ Safari 15 / macOS 12 branch. It also clears arm64's own 11.0 floor. Passed
 explicitly on every compile and link (`CMAKE_OSX_DEPLOYMENT_TARGET`,
 `-mmacosx-version-min`, FPC `-WM`) and read back out of `LC_BUILD_VERSION`, so
 the SDK never decides it silently.
+
+**RATIFY THIS TOO — the floor now has a linker flag attached to it.**
+MEASURED, run `31904189177`: **FPC 3.2.2 cannot link on aarch64-darwin at a
+deployment target of 12.0 or later** — `ld: pointer not aligned in
+'FPC_THREADVARTABLES'+0x4`. Chained fixups (on for every macOS 12+ target)
+need 8-byte-aligned pointer data on arm64; FPC 3.2.2 emits that RTL symbol
+4-byte aligned. Unconditional, arm64-only, and unavoidable by Xcode choice.
+Mechanism, sources and the non-conflation with Lazarus 41570 are in
+`docs/wkwebview-macos-semantics.md`, constraint 7.
+
+The decision to ratify, stated as a trade:
+
+- **Taken — `-k-no_fixup_chains`, aarch64 link only.** Keeps `-WM12.0`, so
+  `minos` stays 12.0 and the floor survives.
+- **Refused — `-WM11.0`**, though it is the better-sourced fix for this exact
+  error (MacPorts 68368): it contradicts the floor's own justification, since
+  binaries would claim to run on macOS 11 where the secure-origin premise does
+  not hold. A tidier build is not worth an unsound support claim.
+- **Caveats that belong in the ratification, not a code comment:**
+  `-no_fixup_chains` is an `ld_prime` flag with no guaranteed lifetime, and
+  `-ld_classic` is *not* a fallback (deprecated Xcode 16, removed Xcode 27).
+  If it goes, the answer is a newer FPC, not an older linker.
+
+So the human choice is: accept a one-architecture toolchain workaround to keep
+the 12.0 floor, or lower the floor and revisit the secure-origin premise.
 
 ### The runner labels
 
@@ -329,57 +355,66 @@ perfectly honestly and would otherwise be filed as x64 evidence.
 
 ### Review round 1 — 30 findings, all applied
 
-Grouped by what they were, since the fixes live in the files themselves:
+By class; the fixes are in the files, and the ones with lasting design
+consequences are written up in `docs/wkwebview-macos-semantics.md`:
 
-- **Four gates could not run or could pass while measuring nothing.**
-  `.gitignore:87` (`*.txt`) made `uri_vectors.txt` unaddable, so the first
-  macOS run would have died on a missing gate input; the vector loop, the M8
-  loop and both measurement uploads all passed vacuously on empty input. Every
-  count is now asserted *before* the thing it counts is compared, against a
-  ratified 44 for the vectors and against the cycle count for the per-cycle
-  markers — the CAP-7L silent-skip defect, found in four new places.
-- **Six measurements would have produced a wrong verdict rather than a
-  missing one.** M14 and the abort were ANDed into the page's `ok`, so the
-  *informative* answer ("WebKit keeps the pointer") would have aborted the
-  shard; M9 was derived from a page-side boolean that is constant `false` by
-  construction; the AbortController could never fire because `fetch` resolves
-  at `didReceiveResponse`; the Rosetta guard sat on the arm64 job where it is
-  unreachable instead of the x64 job it protects; the export gate read `nm
-  -gU` (static table) instead of the export trie; and the fact-count equality
-  used `grep -c .`, which ignores blank lines.
-- **Five lifetime and hang defects.** The watchdog did not terminate on
-  failure and had no deadline covering the shutdown itself; the `dispatch_after`
-  block charged its exceptions to the *next* cycle's stack frame; the tracked-task
-  set was never reset between cycles although task addresses are reused; and
-  `strtol(req + 1, …)` read past the terminator on an empty `req`.
-- **Eight toolchain and environment gaps.** `DEVELOPER_DIR` was never
-  asserted, so a skipped selection step would have built under a possibly
-  known-bad Xcode while the record said "runner default"; the pinned commit
-  was never compared to the actual checkout; the deployment-target read-back
-  lacked the `LC_VERSION_MIN_MACOSX` fallback on exactly the binaries most
-  likely to need it; `record_environment` ran after three gates had already
-  been believed and wrote only to stdout; the FPC version was hardcoded rather
-  than read from `fpc.lock`; the residue guard checked one Delphi symbol of
-  two; and the translation was enforced only by a dev-host script until
-  `check_binding_surface.ps1` gained section 3b.
-- **Seven correctness, cost and reporting improvements.** All three `DYLD_*`
-  hints are now stripped in the negative half of M18; signing and quarantine
-  facts are *recorded* (never performed); the sweep list is asserted to cover
-  everything under `test/cap7m/`; the probe runs all cycles and aggregates
-  instead of returning at the first failure; M6 gained the RSS leak bound the
-  matrix always promised; and the two macOS jobs gained job-level
-  `concurrency` and a `fpc.lock`-keyed cache for the 262 MiB disk image.
-- **One claim was downgraded rather than fixed.** `id_ptr_reused` cannot
-  support "proven copy-only": a `0` is indistinguishable from an allocator
-  that simply did not reuse an address, and the only way to strengthen it
-  would be to re-read a possibly-freed buffer on purpose. It is now recorded
-  as evidence and never asserted on, and the wording in the semantics doc says
-  exactly what is measured.
+- **Four gates could not run, or could pass while measuring nothing** —
+  `.gitignore:87` (`*.txt`) made `uri_vectors.txt` unaddable; the vector loop,
+  the M8 loop and both uploads passed vacuously on empty input. Every count is
+  now asserted *before* the thing it counts is compared (ratified 44 for
+  vectors, cycle count for per-cycle markers). The CAP-7L silent-skip defect,
+  in four new places.
+- **Six wrong verdicts rather than missing ones** — M14 and the abort were
+  ANDed into `out.ok`, so the *informative* answer would have aborted the
+  shard; M9 came from a page-side boolean that is constant `false`; the abort
+  could never fire because `fetch` resolves at `didReceiveResponse`; the
+  Rosetta guard sat on the arm64 job where it is unreachable; the export gate
+  read the static symbol table; the fact-count equality ignored blank lines.
+- **Five lifetime/hang defects** — no terminate on failure and no deadline on
+  the shutdown itself; the `dispatch_after` block charged exceptions to the
+  next cycle's frame; the task set was never reset though addresses are
+  reused; `strtol(req + 1, …)` overran an empty `req`.
+- **Eight toolchain/environment gaps** — `DEVELOPER_DIR` unasserted; the pin
+  never compared to the checkout; no `LC_VERSION_MIN_MACOSX` fallback; the
+  environment recorded after three gates had been believed, to stdout only;
+  the FPC version hardcoded instead of read from `fpc.lock`; one Delphi
+  residue symbol of two checked; the translation enforced only on the dev host
+  until `check_binding_surface.ps1` gained section 3b.
+- **Seven correctness/cost/reporting** — all three `DYLD_*` stripped in M18's
+  negative half; signing and quarantine facts recorded (never performed);
+  sweep coverage asserted over `test/cap7m/`; all cycles run and aggregate;
+  M6 gained the RSS leak bound the matrix always promised; job-level
+  `concurrency` and a `fpc.lock`-keyed cache for the 262 MiB image.
+- **One claim downgraded rather than fixed** — `id_ptr_reused` cannot support
+  "proven copy-only" (a `0` is indistinguishable from an allocator that did
+  not reuse an address, and strengthening it means re-reading a possibly-freed
+  buffer on purpose). Recorded as evidence, never asserted on.
+
+### Round 2 — first hosted run (`31904189177`), two measured findings
+
+The dylib built on **both** architectures and produced `measurements.txt`.
+Both findings are real facts about the platform, not script defects, and both
+are written up in the semantics doc (constraints 7 and 8):
+
+1. **The export surface differs between architectures** — arm64 exports 17,
+   x86_64 exports 25. The eight extras are libc++ `_ZTI…`/`_ZTS…` typeinfo
+   records for upstream's `std::function` instantiations; they are weak,
+   carry no code and cannot be invoked. The gate now asserts what the contract
+   actually says — the `webview_*` set is exactly 17 on both arches, every
+   other export is `^_ZT[IS]`, and the full list is recorded per arch as
+   `CAP7M_EXPORTS`. **No compiler flag was added to make the count match**:
+   `-fvisibility=hidden` would change how the pinned upstream is built,
+   diverge from Windows and Linux, and hide a measured fact.
+2. **FPC 3.2.2 cannot link on aarch64 at the 12.0 floor** — chained fixups
+   versus `FPC_THREADVARTABLES` alignment. Fixed with `-k-no_fixup_chains` on
+   the aarch64 link only, which preserves the floor; `-WM11.0` was refused
+   because it would contradict the floor's own justification. This is a
+   Checkpoint 1 ratification item, above, not an implementation detail.
 
 ### Known risk
 
-The `.mm` probe has never been compiled: no macOS host was available. Its
-logic, markers and surrounding gates were verified as far as a Windows host
-allows, but a clang diagnostic under `-Wall -Wextra -Werror` is the likeliest
-first-run failure — cheap, but macOS minutes bill at 10x, so batch any fix
-rather than iterating gate by gate.
+The `.mm` probe still has not compiled — run `31904189177` stopped at the
+Pascal link, upstream of it. A clang diagnostic under `-Wall -Wextra -Werror`
+remains the likeliest next failure, and round 1 added roughly 150 lines of
+Objective-C++. macOS minutes bill at 10x, so batch fixes rather than iterating
+gate by gate.

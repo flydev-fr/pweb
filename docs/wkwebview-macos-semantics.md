@@ -24,9 +24,16 @@ statement carries where it comes from:
 | **EXPECTED** | Predicted from Apple's documentation or upstream's code, with the gate that will settle it named. **Not yet a fact.** |
 
 Nothing below is marked MEASURED on the strength of a hosted run that has not
-happened. When the first `macos-x64` / `macos-arm64` run completes, each
-EXPECTED line is either promoted to MEASURED with its observed value or
-becomes the finding that blocks CAP-7M.
+happened. As each `macos-x64` / `macos-arm64` run gets further, EXPECTED lines
+are either promoted to MEASURED with their observed values or become the
+finding that blocks CAP-7M.
+
+**Run `31904189177` got as far as building the dylib on both architectures.**
+It promoted constraints 7 and 8 to MEASURED — an aarch64 linker failure at the
+proposed floor, and an export surface that genuinely differs between
+architectures — and neither was predicted here. Everything downstream of the
+Pascal link (the seam, the threading contract, the origin, the URI verdicts)
+is still EXPECTED.
 
 ## The seam: the whole architectural question, and not the Linux one
 
@@ -111,7 +118,7 @@ M10 (`CAP7M_M10 precreate_seam_ran=1` plus a served main document).
 Escalation only, and only with evidence that B failed. No patch exists in this
 tree and none may be written before ratification.
 
-## Six constraints that are not obvious
+## Eight constraints that are not obvious
 
 ### 1. `WKURLSchemeTask` throws. Nothing in the GLib model carries over
 
@@ -229,14 +236,14 @@ before comparing — and treats an exported symbol *without* it as a finding.
 --defined-only` reads the dynamic symbol table — the list the loader actually
 publishes. Mach-O's equivalent is the export trie, and `dyld_info -exports`
 is what reads it; `nm -gU` reads the *static* table's global defined entries,
-which for a C++-built dylib can also hold `___clang_call_terminate` and weak
-ODR symbols that are not exports. Gating on `nm` would fail with "someone
-patched upstream" for a library nobody touched. `nm -gU` is still run, and the
-difference between the two lists is **recorded** (`CAP7M_M2 export_trie=…
-nm_gU=…`) rather than gated.
+which is a different and larger set. `nm -gU` is still run, and the difference
+between the two lists is **recorded** (`CAP7M_M2 export_trie=… nm_gU=…`)
+rather than gated.
 
 Upstream sets `CMAKE_CXX_VISIBILITY_PRESET hidden` (`cmake/internal.cmake:28`),
-which is why exactly 17 symbols reach the trie at all.
+which is why only the 17 `WEBVIEW_API` entry points reach the trie as
+*callable* exports — see constraint 8 for the C++ RTTI records that
+accompany them on x86_64 and not on arm64.
 
 ### 5. FPC records the install name, exactly as it records the SONAME
 
@@ -275,6 +282,92 @@ present as `/Applications/Xcode_<v>.app`, exports `DEVELOPER_DIR`, and — if
 none is present — prints every Xcode the image actually carries and fails, so
 the next pin is chosen from evidence rather than from whatever the image
 defaults to.
+
+### 7. FPC 3.2.2 cannot link on aarch64 at the proposed floor without a flag
+
+**MEASURED**, run `31904189177` on `macos-15` (macOS 15.7.7, Xcode 16.4,
+Apple clang 17.0.0), linking the plain console `test/core/abi_probe.pas`:
+
+```
+ld: pointer not aligned in 'FPC_THREADVARTABLES'+0x4 (…/abi_probe.o)
+```
+
+Apple enables the **chained-fixups** format for every binary whose deployment
+target is macOS 12 or later. Chained fixups store the next-fixup offset inside
+the pointer word itself, so on arm64 the pointer data must be 8-byte aligned;
+FPC 3.2.2 emits `FPC_THREADVARTABLES` 4-byte aligned. Under the old `ld64`
+this was a warning (FPC issue 31696, 2017); under `ld_prime` — the linker in
+every Xcode from 15 onward — it is a hard error.
+
+Three properties make this a baseline fact rather than a nuisance:
+
+- **Unconditional.** `FPC_THREADVARTABLES` is RTL data emitted for every
+  program, threads or not.
+- **arm64-only.** Which is precisely why the x86_64 leg linked cleanly and
+  the problem could have been missed by a single-architecture shard.
+- **Unavoidable by Xcode choice.** Every Xcode on the runner is 15 or newer.
+
+**The remedy taken: `-k-no_fixup_chains`, on the aarch64 link only.** It is
+the flag the linker's own message names, it reverts to classic rebase/bind
+opcodes that every supported macOS loads, and — decisively — it leaves
+`-WM12.0` alone, so `LC_BUILD_VERSION minos` stays 12.0 and the ratified floor
+survives. It is applied to aarch64 only: x86_64 links cleanly without it, and
+passing a flag one architecture does not need would contaminate that
+architecture's measurement with a workaround for the other one's defect.
+
+**The remedy deliberately NOT taken: `-WM11.0`.** Lowering the deployment
+target below the chained-fixups threshold is the better-sourced fix for this
+exact FPC 3.2.2 error (MacPorts ticket 68368), and it is still the wrong one
+here, because it contradicts the floor this shard proposes. 12.0 was chosen
+because WebKit's custom-scheme secure-origin change first ships in the macOS
+12 branch — the entire basis for expecting `pweb://app` to be a secure
+context. Linking at 11.0 would emit binaries claiming to run on a system where
+that premise does not hold: an unsound support claim traded for a tidier
+build.
+
+**Recorded caveats.** `-no_fixup_chains` is an `ld_prime` flag with no
+guaranteed lifetime. `-ld_classic` is **not** a fallback — deprecated in Xcode
+16 and removed in Xcode 27 — so if this flag ever disappears the answer is a
+newer FPC, not an older linker. And this is **not** Lazarus issue 41570
+(`ld` exit −11 on FPC 3.3.1), which is a different bug with a different fix;
+conflating the two is easy and would send the next reader after the wrong
+remedy.
+
+The decision lives in one place, `set_fpc_arch_link_flags` in
+`test/cap7m/cap7m_common.sh`, and is consumed by every Pascal *program* link
+this shard performs (`check_abi.sh`'s `abi_probe`, and `build_cap7m.sh`'s
+`signature_pin` and `uri_oracle`).
+
+### 8. The export surface is not the same on both architectures
+
+**MEASURED**, same run, and it is C++ RTTI rather than anything to do with the
+webview API:
+
+```
+arm64    17 exports - the 17 webview entry points, nothing else
+x86_64   25 exports - the same 17, plus 8 libc++ typeinfo records
+```
+
+The eight extras are `_ZTI…` / `_ZTS…` typeinfo and typeinfo-name symbols for
+the `std::function` instantiations upstream creates (`bool()`, `void()`,
+`void(string,string,void*)`) and for `std::bad_function_call`. They are weak,
+coalesced, carry no code and cannot be invoked; the x86_64 toolchain emits
+them into the image where the arm64 one does not. Linux never showed this
+because ELF resolves the same typeinfos out of libstdc++ instead of emitting
+them into the `.so`.
+
+**This is why the gate does not simply count to 17.** The contract is "never
+an 18th *public webview* export", so `test/cap7m/check_webview_exports.sh`
+asserts (a) the `webview_*` set is exactly the pinned 17 on both arches, and
+(b) every other export matches `^_ZT[IS]` — anything else blocks and is named,
+because an export that is neither an entry point nor RTTI *is* the "someone
+patched upstream" case. The complete list and count are recorded per
+architecture as `CAP7M_EXPORTS`.
+
+Note what was **not** done: no `-fvisibility=hidden` or any other compiler
+flag was added to make the count match. That would change how the pinned
+upstream is built, diverge from the Windows and Linux builds, and convert a
+measured fact into a hidden one.
 
 ## Threading
 
@@ -419,7 +512,7 @@ and diffing two artifacts by hand.
 | Probe | Gate | Marker to read |
 |---|---|---|
 | A (M1–M3) | `tools/build-webview-dylib.sh` | `CAP7M_PIN` (lock = checkout), `CAP7M_ARCH`, `CAP7M_DEPLOYMENT_TARGET`, `CAP7M_XCODE`, `CAP7M_INSTALL_NAME`, `CAP7M_LC_RPATH`, `CAP7M_OTOOL_L` |
-| A (M2) | `check_webview_exports.sh` | `CAP7M_M2 export_trie=17 nm_gU=…` — identical set on both arches |
+| A (M2) | `check_webview_exports.sh` | `CAP7M_EXPORTS arch=… total=… webview_api=17 other=…`; the `webview_*` set is identical on both arches, the total is **not** (constraint 8) |
 | B (M4/M5) | `check_abi.sh` | 36 facts, exactly 2 documented deltas, `CAP7M_DLSYM` |
 | C (M6) | `run_cap7m_probes.sh` | `CAP7M_M6 shutdown=terminate` *and* `=window-close`; `CAP7M_RSS`, `CAP7M_M6_LEAK` |
 | D (M7/M8) | `run_cap7m_probes.sh` | `CAP7M_M7`, `CAP7M_M8` (one marker per cycle, asserted) |

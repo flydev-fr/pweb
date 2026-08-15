@@ -38,6 +38,7 @@ cd -- "${repo_root}"
 assert_native_arch "${CAP7M_EXPECT_ARCH:-}"
 assert_fpc_target
 record_environment
+set_fpc_arch_link_flags
 
 command -v clang++ >/dev/null 2>&1 || die 'required tool not found: clang++'
 command -v otool >/dev/null 2>&1 || die 'required tool not found: otool'
@@ -77,6 +78,12 @@ link_webview=(
     -k-rpath
     -k@executable_path
 )
+# Unquoted on purpose: empty on x86_64, and must then add no argument at all.
+# On aarch64 this is -k-no_fixup_chains; the measured link failure it works
+# around, and the -WM11.0 alternative deliberately not taken, are documented
+# at set_fpc_arch_link_flags in cap7m_common.sh.
+# shellcheck disable=SC2206
+link_webview+=( ${CAP7M_FPC_ARCH_LINK_FLAGS} )
 
 # --- raw binding layer --------------------------------------------------------
 step 'binding units (the regenerated 4-branch platform block, Darwin arm)'
@@ -115,9 +122,12 @@ fpc -Sh -B -FUbuild/cap7m/units -FEbuild/cap7m/bin -Fusrc/lib \
 # Also PROBE J's "mORMot core compiles" leg: this pulls mormot.core.base and
 # links the Darwin statics for this architecture.
 step 'URI oracle (the shared PWebParseAppUri, on Darwin)'
+# links a Pascal program, so it needs the same arch-conditional link flag
+# shellcheck disable=SC2086
 fpc -MObjFPC -Sh -B -FUbuild/cap7m/units -FEbuild/cap7m/bin \
     -Fusrc/assets "${mormot_core[@]}" "-WM${deployment_target}" \
-    "-Fl${static_dir}" test/cap7m/uri_oracle.pas ||
+    "-Fl${static_dir}" ${CAP7M_FPC_ARCH_LINK_FLAGS} \
+    test/cap7m/uri_oracle.pas ||
     die 'uri_oracle failed to compile'
 
 # --- the feasibility probe ----------------------------------------------------
