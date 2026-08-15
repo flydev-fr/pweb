@@ -273,6 +273,37 @@ step, and inside every gate via `assert_native_arch`. The arm64 job also
 refuses `sysctl.proc_translated = 1` — a Rosetta-hosted run reports `x86_64`
 perfectly honestly and would otherwise be filed as x64 evidence.
 
+### A scope decision that needs ratifying: editing shared asset code
+
+**This shard now edits `src/assets/pweb.assets.folder.pas`, which is shared
+production code, not probe scaffolding.** Stating that plainly because it is
+the one change here that a reasonable reviewer might place outside the
+shard's boundary.
+
+MEASURED, run `31908958453`: the isolation compile fails on Darwin because
+FPC 3.2.2's Darwin BaseUnix declares neither `O_DIRECTORY` nor `O_NOFOLLOW`,
+though its Linux BaseUnix declares both. Both call sites are confinement
+code — a file passed as the asset root, and a symlink swapped in between the
+walk and the open (semantics doc, constraint 10).
+
+**Recommended — declare the two constants** (`{$ifdef DARWIN}`, in the
+interface, no call site touched) and verify them every run against the
+runner's `<fcntl.h>` with a zero-delta paired probe. It is a portability
+constant block, not a macOS asset handler, so it reads as inside the shard's
+"MAY add" list.
+
+**The alternative — drop `pweb.assets.folder.pas` from M0's compile set** and
+hand the whole question to CAP-7M. That keeps this shard's diff confined to
+`test/cap7m/` and `tools/`, at a specific cost: CAP-7M would then begin with
+an *unmeasured unknown in confinement-critical code* — precisely the class of
+discovery-during-implementation this shard exists to prevent, and precisely
+how CAP-7L's expensive surprises arose.
+
+Recommending the constants for that reason. If the human prefers the
+alternative, the revert is mechanical: remove the interface block and drop
+the unit from `build_cap7m.sh`'s isolation list; the probe pair can stay,
+since it measures the SDK either way.
+
 ### Ask-First items, all taken, none ratified
 
 1. **The Darwin platform block.** Enabled and regenerated through the
@@ -491,6 +522,28 @@ The same pre-existing shape in `tools/build-webview-so.sh` and five
 `test/cap7l/*.sh` scripts is out of scope — ledgered in `deferred-work.md`
 with all seven line numbers and with the assert-empty-unless-`--clean` design
 named as the pattern to lift.
+
+### Round 5 — run `31908958453`: M4/M5 pass, the frontier moves to M17
+
+M4 and M5 now pass on both arches. The next failure was **not** the `.mm`
+probe but the Pascal isolation compile: `O_DIRECTORY` and `O_NOFOLLOW` are
+undeclared by FPC 3.2.2's Darwin BaseUnix although its Linux BaseUnix
+declares both, so the POSIX branch CAP-7L hardened does not compile on
+Darwin. Written up as constraint 10; the scope question it raises is above,
+under "A scope decision that needs ratifying".
+
+The constants were declared rather than the branch weakened, and the values
+are **verified, not transcribed**: `test/cap7m/abi_probe_fcntl.c` prints what
+`<fcntl.h>` defines on the runner, `abi_probe_fcntl.pas` prints what the unit
+declares, and `check_abi.sh` diffs them with zero permitted deltas. The
+asymmetry is the point — a wrong `O_DIRECTORY` stops the store constructing,
+while a wrong `O_NOFOLLOW` quietly stops refusing symlinks with every test
+still green.
+
+The initial values come from Apple's published `xnu` `bsd/sys/fcntl.h`
+(`O_NOFOLLOW 0x00000100`, `O_DIRECTORY 0x00100000`), not from recollection —
+and the probe is what makes that provenance irrelevant from the first run
+onward, since a disagreement with the actual SDK blocks.
 
 ### Known risk
 

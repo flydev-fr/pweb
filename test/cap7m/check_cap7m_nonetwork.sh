@@ -56,6 +56,8 @@ step 'zero-transport source sweep over the CAP-7M0 surface'
 cap7m_files=(
     test/cap7m/cap7m_probe.mm
     test/cap7m/uri_oracle.pas
+    test/cap7m/abi_probe_fcntl.c
+    test/cap7m/abi_probe_fcntl.pas
     test/cap7m/cap7m_common.sh
     test/cap7m/build_cap7m.sh
     test/cap7m/run_cap7m_probes.sh

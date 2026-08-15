@@ -185,6 +185,54 @@ else
     record_measurement "CAP7M_M5 binary=abi_probe references_dylib=no load=<none> note=mach-o-records-LC_LOAD_DYLIB-only-when-a-symbol-is-referenced (ELF records DT_NEEDED unconditionally: CAP-7L measured libwebview.so.0.12 from this same probe)"
 fi
 
+# --- 1b. fcntl constants: the folder store's hand-declared Darwin block ------
+#
+# MEASURED, run 31908958453: FPC 3.2.2's Darwin BaseUnix declares neither
+# O_DIRECTORY nor O_NOFOLLOW, although its Linux BaseUnix declares both, so
+# the POSIX branch CAP-7L hardened does not compile on Darwin. Both are
+# security code (a file passed as the asset root; a symlink swapped in
+# between the walk and the open), so the branch was not weakened - the
+# constants are declared in the unit's interface and verified HERE.
+#
+# ZERO permitted delta, unlike the core probe pair above. There is no
+# legitimate difference between what <fcntl.h> defines and what the unit
+# declares, and the failure mode is asymmetric: a wrong O_DIRECTORY stops the
+# store constructing, but a wrong O_NOFOLLOW just silently stops refusing
+# symlinks while every other test still passes.
+step 'fcntl constant probe (declared block vs the SDK, zero deltas allowed)'
+# No -std=…: a strict-ISO mode sets __STRICT_ANSI__, which lowers
+# __DARWIN_C_LEVEL and can hide O_NOFOLLOW behind its _DARWIN_C_SOURCE guard.
+clang -O1 -Wall -Wextra -Werror \
+    -arch "${host_arch}" "-mmacosx-version-min=${deployment_target}" \
+    "${repo_root}/test/cap7m/abi_probe_fcntl.c" -o "${abi}/bin/abi_probe_fcntl_c" ||
+    die 'fcntl C probe failed to compile'
+"${abi}/bin/abi_probe_fcntl_c" > "${abi}/fcntl_c.txt" ||
+    die 'fcntl C probe exited nonzero'
+
+# shellcheck disable=SC2086
+fpc -MObjFPC -Sh -B -FU"${abi}/units" -FE"${abi}/bin" \
+    -Fu"${repo_root}/src/assets" \
+    -Fi"${repo_root}/deps/mormot2/src" \
+    -Fu"${repo_root}/deps/mormot2/src/core" \
+    -Fu"${repo_root}/deps/mormot2/src/lib" \
+    "-WM${deployment_target}" ${CAP7M_FPC_ARCH_LINK_FLAGS} \
+    "${repo_root}/test/cap7m/abi_probe_fcntl.pas" > "${abi}/fcntl_pascal.log" 2>&1 ||
+    { cat "${abi}/fcntl_pascal.log" >&2; die 'fcntl Pascal probe failed to compile'; }
+"${abi}/bin/abi_probe_fcntl" > "${abi}/fcntl_pas.txt" ||
+    die 'fcntl Pascal probe exited nonzero'
+
+fcntl_facts="$(grep -c . "${abi}/fcntl_c.txt" || true)"
+[ "${fcntl_facts}" -eq 3 ] ||
+    die "fcntl C probe emitted ${fcntl_facts} facts, expected 3"
+if ! diff -u "${abi}/fcntl_c.txt" "${abi}/fcntl_pas.txt" > "${abi}/fcntl.diff"; then
+    cat "${abi}/fcntl.diff" >&2
+    die 'the folder store declares an fcntl value the SDK does not -- O_NOFOLLOW drift silently disables the symlink refusal'
+fi
+while IFS= read -r line; do
+    [ -n "${line}" ] && record_measurement "CAP7M_FCNTL ${line}"
+done < "${abi}/fcntl_c.txt"
+printf '[CAP-7M0] fcntl constants: %s facts identical, 0 deltas\n' "${fcntl_facts}"
+
 # --- 2. Mach-O presence gate --------------------------------------------------
 
 step 'Mach-O presence gate over the generated binding'

@@ -48,6 +48,40 @@ uses
   pweb.assets.intf,
   pweb.assets.support;
 
+{$ifdef DARWIN}
+const
+  { CAP-7M0. FPC 3.2.2's Darwin BaseUnix declares NEITHER of these, although
+    its Linux BaseUnix declares both - so the POSIX branch below, hardened
+    for CAP-7L, does not compile on Darwin without them. They are POSIX by
+    name and by behaviour; they are simply not portable through FPC's RTL.
+
+    BOTH CALL SITES ARE SECURITY CODE, which is why they are declared rather
+    than the branch weakened:
+
+      O_DIRECTORY  makes "a file was passed as the asset root" a
+                   construction-time refusal instead of a silent 404 later;
+      O_NOFOLLOW   makes a symlink swapped in between the walk and the open
+                   FAIL, instead of resolving somewhere else.
+
+    A wrong O_NOFOLLOW would not fail loudly - it would silently stop
+    refusing symlinks, which is a confinement hole rather than a bug. So the
+    values are NOT transcribed from memory or documentation: they are
+    verified on every macOS CI run against the values <fcntl.h> actually
+    defines on the runner's SDK, by the paired probe
+    test/cap7m/abi_probe_fcntl.c + .pas via test/cap7m/check_abi.sh, which
+    permits ZERO delta. That probe is why these constants live in the
+    INTERFACE - the same reason CAP-7L put its hand-declared GTK aliases in
+    pweb.platform.webkitgtk's interface.
+
+    Values as published by Apple in xnu, bsd/sys/fcntl.h (O_NOFOLLOW under
+    the _DARWIN_C_SOURCE guard, O_DIRECTORY under __DARWIN_C_LEVEL >=
+    200809L; both are visible to a default-configured compile). If a future
+    FPC adds them to Darwin BaseUnix, this block shadows it with the same
+    value and the probe keeps proving that. }
+  O_DIRECTORY = $00100000;
+  O_NOFOLLOW  = $00000100;
+{$endif DARWIN}
+
 type
   EPWebFolderAssetStore = class(Exception);
 

@@ -118,7 +118,7 @@ M10 (`CAP7M_M10 precreate_seam_ran=1` plus a served main document).
 Escalation only, and only with evidence that B failed. No patch exists in this
 tree and none may be written before ratification.
 
-## Nine constraints that are not obvious
+## Ten constraints that are not obvious
 
 ### 1. `WKURLSchemeTask` throws. Nothing in the GLib model carries over
 
@@ -427,6 +427,60 @@ time" is a question about the *call graph*, not about the link line. A future
 adapter that stops calling a library stops depending on it, silently — which
 is convenient for packaging and treacherous for anyone porting a Linux
 assumption across.
+
+### 10. `O_DIRECTORY` and `O_NOFOLLOW` are POSIX by name, not by RTL
+
+**MEASURED**, run `31908958453`, and it stopped the isolation compile dead:
+
+```
+pweb.assets.folder.pas(362,40) Error: Identifier not found "O_DIRECTORY"
+pweb.assets.folder.pas(441,35) Error: Identifier not found "O_NOFOLLOW"
+```
+
+FPC 3.2.2's **Linux** BaseUnix declares both; its **Darwin** BaseUnix
+declares neither. So the POSIX branch CAP-7L hardened — the one that makes
+the dev folder store behave like the packaged archive store rather than like
+whatever filesystem sits underneath it — simply does not compile on Darwin.
+
+Both uses are confinement code, which is why the branch was not weakened:
+
+- `O_DIRECTORY` (`:362`) makes *a file was passed as the asset root* a
+  construction-time refusal instead of a silent 404 stream later;
+- `O_NOFOLLOW` (`:441`) makes a symlink swapped in between the walk and the
+  open **fail**, instead of resolving somewhere else.
+
+The constants are therefore declared for Darwin only, `{$ifdef DARWIN}`
+guarded, in the unit's **interface** — the same placement, for the same
+reason, that CAP-7L used for its hand-declared GTK aliases: a probe has to be
+able to see them. Linux keeps taking BaseUnix's, and no call site changed.
+
+**The values are measured, not transcribed.** The failure modes are
+asymmetric and that asymmetry is the whole argument:
+
+| Wrong constant | What happens |
+|---|---|
+| `O_DIRECTORY` | the store stops constructing — loud, immediate |
+| `O_NOFOLLOW` | the open quietly stops refusing symlinks, and every test still passes |
+
+A confinement guarantee that disappears silently is worse than one that was
+never claimed, so `test/cap7m/abi_probe_fcntl.c` prints what `<fcntl.h>`
+actually defines on the runner's SDK, `abi_probe_fcntl.pas` prints what the
+unit declares, and `check_abi.sh` compares them line by line with **zero**
+permitted deltas — unlike the core webview pair, which has two documented
+signedness lines, there is no legitimate difference here. Values are recorded
+as `CAP7M_FCNTL`.
+
+Two details that would quietly break the measurement:
+
+- the C probe is compiled with **no** `-std=…`. A strict-ISO mode sets
+  `__STRICT_ANSI__`, which lowers `__DARWIN_C_LEVEL` and can hide
+  `O_NOFOLLOW` behind its `_DARWIN_C_SOURCE` guard;
+- a missing macro is a `#error`, not an absent line, so a broken measurement
+  cannot present itself as a diff.
+
+`O_RDONLY` is probed too, though BaseUnix supplies it everywhere: it is what
+both call sites `or` the other two into, so a probe without it would not be
+measuring the argument actually passed to `FpOpen`.
 
 ## Threading
 
