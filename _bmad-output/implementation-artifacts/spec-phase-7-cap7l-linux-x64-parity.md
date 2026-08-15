@@ -120,25 +120,14 @@ Also ratified: GTK 3 + WebKitGTK API 4.1; the no-patch `BROWSER_CONTROLLER` seam
 
 The four Checkpoint-1 probes all PASSED against the pinned revision before any production code; the measured record belongs in `docs/webkitgtk-linux-semantics.md` (written as a task here, mirroring `docs/webview-upstream-semantics.md`). The load-bearing conclusions:
 
-- **A.** `cmake -DWEBVIEW_WEBKITGTK_API=4.1` on the pinned SHA → `webkit2gtk-4.1 2.52.3` + `gtk+-3.0 3.24.41`, C++11, `libwebview.so.0.12.0`, SONAME `libwebview.so.0.12`, exactly 17 default-visibility exports, no version script. The two CAP-4W-patched files are Windows-only and inert here.
-- **B.** FPC records `DT_NEEDED = libwebview.so.0.12` — the SONAME, **not** the chet `LibraryName` — so the release layout ships `libwebview.so.0.12` (Linux convention; the bare `.so` is a dev-only symlink). `-k"-rpath=$ORIGIN"` gives `RUNPATH=$ORIGIN`; the program runs from an unrelated CWD with only the `.so` beside it and no `LD_LIBRARY_PATH`, and hiding it fails deterministically with exit 127 naming the soname.
-- **C.** Bind callback tid == GUI tid; a detached worker calling `webview_return` **directly** resolves the promise; 8 concurrent invocations all resolve; `status != 0` rejects with the payload intact. Upstream makes this sound: `webview_return` → `engine_base::resolve` → `dispatch` → `g_idle_add_full`, so no GTK call runs on the worker.
-- **D.** No upstream patch. `webview_create` builds the `WebKitWebView` and navigates nowhere, so registration fits cleanly before the first `webview_navigate`, through the public ABI only:
+- **A.** `-DWEBVIEW_WEBKITGTK_API=4.1` on the pinned SHA → `webkit2gtk-4.1 2.52.3` + `gtk+-3.0 3.24.41`, C++11, `libwebview.so.0.12.0`, exactly 17 default-visibility exports. The CAP-4W-patched files are Windows-only and inert here.
+- **B.** FPC records `DT_NEEDED = libwebview.so.0.12` — the SONAME, **not** the chet `LibraryName` — so that is the file the layout ships; `-k"-rpath=$ORIGIN"` gives `RUNPATH=$ORIGIN` (`docs/webkitgtk-linux-semantics.md`, "Linkage, sonames and the release layout").
+- **C.** Bind callback tid == GUI tid; a detached worker calling `webview_return` **directly** resolves the promise; 8 concurrent invocations all resolve; `status != 0` rejects with payload intact (same doc, "Threading").
+- **D.** No upstream patch: `webview_create` builds the `WebKitWebView` and navigates nowhere, so the scheme is registered through the public ABI before the first `webview_navigate` — the exact six-call sequence is in the doc's "The seam" section. JS then reported `{"protocol":"pweb:","host":"app","origin":"pweb://app","secure":true}` with CSS applied and `fetch('pweb://evil/x')` blocked, reproduced under `xvfb-run` with `DISPLAY`/`WAYLAND_DISPLAY` unset.
 
-```
-ctrl = webview_get_native_handle(w, BROWSER_CONTROLLER)   -> WebKitWebView* (== UI_WIDGET on GTK)
-ctx  = webkit_web_view_get_context(ctrl)
-sec  = webkit_web_context_get_security_manager(ctx)
-webkit_security_manager_register_uri_scheme_as_secure(sec, "pweb")
-webkit_security_manager_register_uri_scheme_as_cors_enabled(sec, "pweb")
-webkit_web_context_register_uri_scheme(ctx, "pweb", handler, NULL, NULL)
-```
+**The one documented ABI delta** (doc, "The one documented ABI delta"): gcc types the two all-non-negative enums unsigned where MSVC and the Pascal `Integer` are signed. Both 4 bytes, values 0..3, calling convention untouched. The gate compares all 36 facts and permits **exactly** those two lines.
 
-  JS then reported `{"protocol":"pweb:","host":"app","origin":"pweb://app","secure":true}`, CSS applied, `fetch('pweb://evil/x')` blocked — the same classification Windows gets from `HasAuthorityComponent` + `TreatAsSecure`. Reproduced under `xvfb-run` with `DISPLAY` and `WAYLAND_DISPLAY` unset: the hosted-runner condition.
-
-**The one documented ABI delta.** MSVC types every C enum as signed `int`; gcc picks unsigned when no enumerator is negative. Linux C reports `signed.webview_hint_t=0` and `signed.webview_native_handle_kind_t=0` where the Pascal binding (`Integer`) reports `1`; `webview_error_t` is signed on both. Width is 4 bytes everywhere and every transported value is 0..3, so the calling convention is untouched. The gate compares all 36 facts and permits **exactly** those two lines with exactly those values.
-
-**Trap to avoid.** `webkit_uri_scheme_request_get_path()` returns `/x` for `pweb://evil/x` — using it would hand a wrong-authority request to `IAssetStore` as a valid path. Only `..._get_uri()` is safe, because only `PWebParseAppUri` checks the authority.
+**Trap to avoid.** `webkit_uri_scheme_request_get_path()` returns `/x` for `pweb://evil/x` — it discards the authority. Only `..._get_uri()` is safe, because only `PWebParseAppUri` checks the authority.
 
 **Proposed release layout** (mirrors `dist/windows/…`, smallest possible):
 
@@ -253,6 +242,22 @@ unmet):
    Linux failure (a headless host, a CI step that forgot `xvfb-run`) is named
    before `webview_create` can mislabel it. No new public interface, no frozen
    file touched.
+
+3. **The pinned header checksums were host-specific, and had been since CAP-1**
+   — found by the first hosted Linux run, all six mismatching. The commit-SHA
+   assertion runs first and had passed, so the tree was right and only the
+   bytes differed: the values were recorded on a Windows checkout with
+   `core.autocrlf=true`, so they hashed CRLF text where upstream stores LF.
+   6-for-6 confirmed by reproducing the runner's "got" values locally. A
+   **pre-existing defect in the pin, not a CAP-7L one** — CAP-7L is merely the
+   first thing to run the verifier off Windows. `tools/get-webview.ps1` now
+   hashes CRLF→LF-normalised bytes and `webview.lock` records the LF values,
+   verified to equal `git cat-file` blob content at the pinned commit; the
+   rationale is in the script's own header comment. Self-guarding: a
+   re-recorded CRLF value now fails on Windows too. Audited — that line was
+   the only place hashing git-checked-out text; every other `Get-FileHash`
+   takes a downloaded archive or generated artifact, and the CAP-4W patch is
+   `-text` pinned, so `cap4w-patch-sha256` is unaffected.
 
 **Residual, deliberately not fixed:** if `webview_create` still returns nil
 with a display present, the message is the frozen raw layer's and names

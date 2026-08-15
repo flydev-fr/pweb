@@ -82,13 +82,50 @@ $Head = git -C $Checkout rev-parse HEAD
 if ($Head -ne $Sha) { throw "checkout mismatch: HEAD=$Head expected=$Sha" }
 
 # --- verify recorded header checksums ---------------------------------------
+# The recorded value is the sha256 of the file with LF line endings, i.e. of
+# the UPSTREAM BLOB CONTENT, so one pin is correct on every host.
+#
+# It has to be normalised rather than hashed raw. Git for Windows defaults to
+# core.autocrlf=true, so this checkout materialises these headers with CRLF
+# while a Linux checkout materialises them with LF - the same commit, two
+# different byte streams, and a raw hash can only ever match one of them.
+# CAP-7L is simply the first thing to run this verifier off Windows; the pin
+# was host-specific from the day it was recorded.
+#
+# This does not weaken the pin in any way that matters: the authoritative
+# identity is the exact commit SHA asserted above, these checksums are a
+# cross-check on top of it, and the only difference a normalised hash can
+# miss is the line endings the consumer's own git config just chose.
+function Get-NormalisedSha256([string]$Path) {
+    # byte level on purpose - no text decode, no encoding round-trip, no BOM
+    # guessing; only the two-byte CRLF sequence collapses to LF, exactly
+    # reversing what autocrlf did on checkout
+    $bytes = [IO.File]::ReadAllBytes($Path)
+    $out = [byte[]]::new($bytes.Length)
+    $n = 0
+    for ($i = 0; $i -lt $bytes.Length; $i++) {
+        if (($bytes[$i] -eq 13) -and ($i + 1 -lt $bytes.Length) -and
+            ($bytes[$i + 1] -eq 10)) { continue }
+        $out[$n] = $bytes[$i]
+        $n++
+    }
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $digest = $sha.ComputeHash($out, 0, $n)
+    }
+    finally {
+        $sha.Dispose()
+    }
+    return ([BitConverter]::ToString($digest)).Replace('-', '').ToLowerInvariant()
+}
+
 $Failures = @()
 foreach ($key in $ShaKeys) {
     $Rel  = $key.Substring(7)
     $Path = Join-Path $Checkout $Rel
     if (-not (Test-Path $Path)) { $Failures += "pinned file missing: $Rel"; continue }
-    $Hash = (Get-FileHash -Algorithm SHA256 $Path).Hash.ToLowerInvariant()
-    if ($Hash -ne $Lock[$key]) {
+    $Hash = Get-NormalisedSha256 $Path
+    if ($Hash -cne $Lock[$key]) {
         $Failures += "checksum mismatch for ${Rel}: got $Hash expected $($Lock[$key])"
     }
 }

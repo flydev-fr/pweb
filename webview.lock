@@ -31,9 +31,9 @@ linux-soname = libwebview.so.0.12
 cap7l-binding-patch-sha256 = 3bd45f60703f91f6fc32697efd21f77c8d5d2470bfa97784beec6f223c84434b
 
 # SHA256 of the public C API headers at the pinned commit (cross-check on fetch).
-sha256:core/include/webview/api.h = afd355232bd1828013f7e3b11448701b2bb8102e0e8cda67a98c7262c5dc3b1c
-sha256:core/include/webview/errors.h = 52a9b0ce3e435ed910222e8a00e1787a1606e1360e084a0cdb774b6a9218e2fe
-sha256:core/include/webview/types.h = f62e5f42faa110a68df845cea80517d270a966ed5a6a5951b31cad283ad25272
-sha256:core/include/webview/macros.h = e916b32175bd0da7b51144a8a962d994c6ce0ec89cfd019b9df1dcb114413a08
-sha256:core/include/webview/version.h = b0abe8334fec1c43769b9f4f0853f16847e2c40b2dbd77047c997a8ae8c2258c
-sha256:core/include/webview/webview.h = 8e73b67b52cd51a81d0ce826d238a0d3d5e3ab69ed08ab02e917f81242f02933
+sha256:core/include/webview/api.h = 71a6a96a91828a7f4dbbe3d19376bfaa9ff88fce34002c5a7475a07348020a72
+sha256:core/include/webview/errors.h = 492b14ba2db78d65bb451e9c09427b1291d8d50e0ad781962cbc3cf9d02964bc
+sha256:core/include/webview/types.h = 63e11036a290a70cf7ab26ae715e67c90a5477ac3082555a73827389ca932164
+sha256:core/include/webview/macros.h = 3dc74205a50f0fa56dbcd023cf966821eb2a74d4cb5c1ed6f3a830fbeafcd7cc
+sha256:core/include/webview/version.h = 359069c519a520bfc60bd63e966efaca8ce89e0767480f2c0828ea8815ab45bf
+sha256:core/include/webview/webview.h = 3749abef074b5d19bb9ea5f8b9deda25f0bce88f571313f827873f318fe32671
