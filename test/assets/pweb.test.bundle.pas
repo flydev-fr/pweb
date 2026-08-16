@@ -486,12 +486,21 @@ const
   // same bytes", and WriterDeterminism proves that separately on each
   // platform. What this constant pins is drift, and it can only do
   // that against a value measured on the same toolchain - hence two.
+  // CAP-7M1 added the Darwin arm. MEASURED, run 31919274985: the golden
+  // archive hashes to the SAME value on x86_64-darwin and aarch64-darwin,
+  // so macOS needs ONE constant where Windows and Linux need one each -
+  // the two Darwin statics emit byte-identical DEFLATE output for this
+  // corpus, which is a fact worth stating rather than a coincidence to
+  // rely on silently. Without this arm Darwin fell into the {$else} and
+  // was compared against the WINDOWS digest, which is how it surfaced.
   GOLDEN_SHA256: RawUtf8 =
-    {$ifdef LINUX}
+    {$if defined(DARWIN)}
+    '39399116f7f111b12833e27b49b34380fdc1447c43c733fac9e2be7589e6d8dd';
+    {$elseif defined(LINUX)}
     'dcf5f272ec0e19615deb132642a8688287650e9f263c23354cf9cdab20f8499a';
     {$else}
     '4f7c040485e9af880023f9543479b0a015d5cb1db98ec158fc83d287835091a2';
-    {$endif LINUX}
+    {$endif}
 var
   err: RawUtf8;
   target: TFileName;
