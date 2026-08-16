@@ -152,8 +152,12 @@ const
   LOG_PREFIX = 'releaseapp';
   { The canonical runtime verdict, spelled ONCE: it is printed to stdout and
     written to the --pweb-verdict file, and two spellings of one marker is
-    how a gate ends up grepping for a line nobody emits. }
-  VERDICT_PASS = 'app.pwb -> pweb://app -> SDK -> mORMot -> 42 PASS';
+    how a gate ends up grepping for a line nobody emits. The leading ': '
+    is part of the literal ON PURPOSE: the CAP-6b1 marker-contract check
+    (test/cap6b1/check_cap6b1_contracts.ps1) requires this file to carry the
+    exact producer substring beginning ': app.pwb', so the separator lives
+    inside the constant rather than at each use site. }
+  VERDICT_PASS = ': app.pwb -> pweb://app -> SDK -> mORMot -> 42 PASS';
   { CAP-7M2 optional arguments (all platforms; see the header comment) }
   ARG_VERDICT = '--pweb-verdict=';
   ARG_AUTOCLOSE = '--pweb-autoclose-ms=';
@@ -755,7 +759,7 @@ begin
     end;
 
     if ReportState = 1 then
-      WriteLn(LOG_PREFIX, ': ', VERDICT_PASS)
+      WriteLn(LOG_PREFIX, VERDICT_PASS)
     else
     begin
       WriteLn(StdErr, 'FAIL: page/runtime verdict was not successful ',
@@ -812,7 +816,7 @@ begin
   if verdictFile <> '' then
     try
       if ExitCode = 0 then
-        WriteVerdictFile(verdictFile, LOG_PREFIX + ': ' + VERDICT_PASS)
+        WriteVerdictFile(verdictFile, LOG_PREFIX + VERDICT_PASS)
       else
         WriteVerdictFile(verdictFile, LOG_PREFIX + ': FAIL (exit=' +
           IntToStr(ExitCode) + ')');

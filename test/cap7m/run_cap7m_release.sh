@@ -537,7 +537,12 @@ assemble_product() {
     record_measurement "${PWEB_MACOS_MACHO_FACT}"
     local scanned
     for scanned in "${exe}" "${app}/Contents/MacOS/${PWEB_MACOS_DYLIB_VERSIONED}"; do
-        if otool -L "${scanned}" | grep -Fq "${repo_root}"; then
+        # `tail -n +2` is load-bearing: otool -L prints the INSPECTED FILE's
+        # own absolute path as its first line (the buildenv note beside
+        # pweb_macos_assert_macho documents this exact trap), and dist/
+        # lives inside the checkout - so without the skip this scan matches
+        # the file's own path and fails a perfectly clean binary.
+        if otool -L "${scanned}" | tail -n +2 | grep -Fq "${repo_root}"; then
             otool -L "${scanned}" >&2
             die "${app_name}: a bundled Mach-O references a path inside the checkout"
         fi
