@@ -128,6 +128,52 @@ baseline_commit: '529f01794fa67e339c38d1fc85c30fc7c6ae0f56'
 - Given a released or never-armed handler, when WebKit calls back, then the handle does not resolve, no Pascal code runs, the task is refused, and no exception crosses either boundary — proven deterministically and in a real `WKWebView`.
 - Given this shard closes, when the tree is inspected, then no release packaging, signing, `.app` bundling, React/Pas2JS macOS application or CAP-8/10/11/12 code exists in it.
 
+## Implementation record
+
+**HALTED — GitHub Actions billing, not a code failure.** Run `31920869910`
+started none of its four jobs: *"The job was not started because recent
+account payments have failed or your spending limit needs to be increased."*
+Acceptance items 19 and 20 (hosted x64 / arm64 green) are unreachable until
+that is resolved. Everything is committed and pushed at `472db3b`; the next
+push resumes exactly where this stopped.
+
+**Proven on hosted runners, on both native architectures.**
+
+| | Evidence |
+|---|---|
+| Pinned dylib, exactly 17 `webview_*` exports, ABI probes M4/M5 | run `31918375036` |
+| Production ObjC++ bridge compiles under `-Wall -Wextra -Werror`; private-seam export gate passes | `CAP7M1_BRIDGE arch=… minos=12.0 seam_text_exports=18` |
+| `fcntl(F_GETPATH)` round trip: C side == the production Pascal routine | `CAP7M_FCNTL fcntl.F_GETPATH_ROUNDTRIP=/Users/runner/work/pweb/pweb/webview.lock`, identical on x86_64 **and** aarch64 — the variadic-ABI risk is measured, not assumed |
+| Darwin fcntl constants, zero permitted delta | `O_RDONLY=0 O_NOFOLLOW=256 O_DIRECTORY=1048576 F_GETPATH=50 PATH_BOUND=1024` |
+| Whole Pascal stack compiles **and links**: adapter, harness, test case, suite + bridge | run `31919274985` |
+| Full PWeb suite on Darwin | run `31920073153`: **0 / 2,302 assertions failed** |
+| Cocoa adapter test case | **0 / 731**: hostile URI matrix 129, canonical resolution 19, wrong-authority-never-reaches-store 4, content-type parity 13, response-body lifetime 520, handle-registry generations 13, seam confinement 2, task state machine 31 |
+| Acceptance criterion 3, gated rather than asserted in prose | `CAP7M1 M3: 11 scripts carry no inline macOS flag` |
+| Windows and Linux regressions | green in runs `31919274985` and `31920073153` |
+
+**Outstanding, never run once.** The folder-confinement probe, the entire
+real-`WKWebView` runtime leg (secure origin, RPC 42 over folder and ZIP, the
+threading proof, lifecycle cycles, the unrelated-CWD/`DYLD_*` rerun), the
+retained M0 probe and the bundle-layout gate. The last commit before the halt
+— `472db3b`, creating the folder probe's `-FU`/`-FE` output directories — is
+itself unverified.
+
+**Three defects that only Darwin could surface**, all pre-existing, none
+caused by the adapter: `pweb.test.binding.pas` guarded `baseunix` with
+`{$ifdef LINUX}`, so the guard-page proof did not compile there;
+`pweb.test.bundle.pas` compared Darwin against the **Windows** golden digest
+(the two Darwin statics agree with each other, so macOS needs one constant
+where Windows and Linux need one each); and `run_cap7m_gates.sh` never created
+the directories FPC's `-FU`/`-FE` refuse to create themselves.
+
+**A Windows flake, confirmed as a flake rather than assumed to be one.** Run
+`31918375036` failed `CAP-6b3 fixed setup gates` with *"uninstall left 12
+file(s) behind: d3dcompiler_47.dll, dxcompiler.dll, dxil.dll, ffmpeg.dll,
+mip_core_gn.dll…"* — WebView2 Fixed Runtime DLLs, in a path this shard does
+not touch (`git diff --name-only` against the baseline shows no `cap6b`,
+setup, WebView2 or InnoSetup file changed). It passed on both later runs. No
+PWeb runtime code was changed to chase it.
+
 ## Design Notes
 
 **The adapter's shape differs from its siblings, and the difference is forced.** Windows and Linux construct their handler *after* `webview_create` because both engines expose a post-create seam. Cocoa does not: upstream builds the `WKWebViewConfiguration` and the `WKWebView` inside `webview_create` (`cocoa_webkit.hh:450,486`), and M0 measured seam A being **accepted, compared equal, and never consulted** — the worst shape a wrong seam can take. So the macOS adapter is two-phase:
