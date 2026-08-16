@@ -67,6 +67,28 @@ cap7m_files=(
     test/cap7m/summarize_cap7m.sh
     tools/build-webview-dylib.sh
     tools/get-fpc-macos.ps1
+    # --- CAP-7M1 ---------------------------------------------------------
+    # THE PRODUCTION SURFACE, which this sweep did not cover at all until now.
+    # The Linux sibling has always swept its adapter
+    # (test/cap7l/check_cap7l_nonetwork.sh:45,
+    # src/platform/linux/pweb.platform.webkitgtk.pas); the macOS gate swept
+    # only probes and build tools, so the one unit that actually serves
+    # pweb://app on this platform was outside the no-transport claim it is
+    # supposed to be making.
+    src/platform/macos/pweb.platform.cocoa.pas
+    src/platform/macos/pweb_cocoa_bridge.mm
+    src/platform/macos/pweb_cocoa_bridge.h
+    tools/macos-buildenv.sh
+    tools/build-macos-bridge.sh
+    test/cap7m/cap7m_runtime.pas
+    test/cap7m/run_cap7m_gates.sh
+    test/cap7m/run_cap7m_runtime.sh
+    # The served fixture itself: it is the content a real WKWebView loads, so
+    # a localhost or http:// URL sneaking in there would be exactly the
+    # regression this gate exists to catch.
+    test/cap7m/fixture/index.html
+    test/cap7m/fixture/probe.css
+    test/cap7m/fixture/probe.js
 )
 
 # The two files deliberately NOT swept, and why. Both reasons are the same
@@ -79,9 +101,18 @@ cap7m_files=(
 #                              tell those apart from real usage.
 #   check_cap7m_nonetwork.sh - this file, which carries the forbidden pattern
 #                              itself and would match on its own definition.
+#   fixture/assets/*.bin     - binary asset fixtures, not source. allbytes.bin
+#                              is a byte corpus (every value 0..255, by
+#                              construction) and empty.bin is zero bytes:
+#                              grepping either for a transport keyword tests
+#                              nothing, and a corpus that is MEANT to contain
+#                              arbitrary byte sequences is a false positive
+#                              waiting to happen the day it is regenerated.
 sweep_exempt=(
     test/cap7m/uri_vectors.txt
     test/cap7m/check_cap7m_nonetwork.sh
+    test/cap7m/fixture/assets/allbytes.bin
+    test/cap7m/fixture/assets/empty.bin
 )
 
 for f in "${cap7m_files[@]}"; do

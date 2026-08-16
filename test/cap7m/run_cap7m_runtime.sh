@@ -125,13 +125,14 @@ assert_run() {
     readback="$(sed -n 's/^CAP7M1_SEAM .*readback=\([a-z][a-z]*\).*$/\1/p' \
         "${log}" | LC_ALL=C sort -u | tr '\n' ',' | sed 's/,$//')"
     record_measurement "CAP7M1_READBACK store=${rec} observed=${readback:-<none>}"
-    case ",${readback}," in
-        *,foreign,*)
-            # unreachable - Attach raises - but a marker that says otherwise
-            # means the refusal did not happen, and that must not be recorded
-            # as a passing measurement
-            die "${label}: a FOREIGN pweb:// handler was observed on a view that still attached" ;;
-    esac
+    # PROMOTED from recorded to gated. Run 31952514083 reported readback=ours
+    # on every cycle on BOTH architectures, which was the ledgered condition:
+    # the configuration a WKWebView hands back DOES carry the scheme-handler
+    # registration, so 'absent' is no longer an ambiguous platform answer -
+    # it is drift, and so is 'foreign'. Anything but 'ours' fails here, and
+    # Attach itself refuses first.
+    [ "${readback}" = 'ours' ] ||
+        die "${label}: per-view seam read-back is '${readback:-<none>}', expected 'ours' on every cycle"
 
     # P17: the secure origin, STATED by the page, in EVERY cycle - never once
     # and never inferred from "it rendered".

@@ -1056,22 +1056,29 @@ begin
   if controller = nil then
     raise EPWebCocoaAssetHandler.Create(
       'borrowed browser controller is unavailable');
-  // Only the UNAMBIGUOUS answer refuses. pcrForeign means another handler
-  // owns pweb:// on this view, which is never acceptable and never a matter
-  // of interpretation. pcrAbsent cannot distinguish "nothing is installed"
-  // from "the configuration copy this view hands back does not carry the
-  // scheme-handler map" - and which of those it is has NOT been measured on
-  // this platform (CAP-7M0 measured only that WRITING there is ineffective).
-  // Refusing on it would fail a correct adapter on an unverified assumption,
-  // so it is RECORDED and the caller decides. The runtime evidence that this
-  // view is really served is that pweb://app/index.html gets requested and
-  // the page states its own verdict; this read-back strengthens that, it does
-  // not stand in for it.
+  // NOW A HARD GATE, and it was not always one. This started as
+  // refuse-on-pcrForeign-only, because pcrAbsent could not distinguish
+  // "nothing is installed" from "the configuration copy this view hands back
+  // does not carry the scheme-handler map" - CAP-7M0 measured only that
+  // WRITING to that copy is ineffective, which says nothing about reading it.
+  // Gating an unmeasured assumption would have failed a correct adapter, so
+  // the first runs RECORDED the answer instead.
+  //
+  // MEASURED, run 31952514083: `readback=ours` on every cycle, on x86_64 AND
+  // aarch64. The copy does carry the registration, the ambiguity is gone, and
+  // the promotion the ledger described is taken here. Attach now proves what
+  // its name claims - that THIS view routes pweb:// to THIS handler - rather
+  // than that a process-global counter moved.
   fReadback := PWebCocoaHandlerInstalledOn(controller);
   if fReadback = pcrForeign then
     raise EPWebCocoaAssetHandler.Create(
       'another pweb:// scheme handler is installed on THIS WebView - ' +
       'something else constructed its configuration');
+  if fReadback <> pcrOurs then
+    raise EPWebCocoaAssetHandler.Create(
+      'the pre-create seam ran, but THIS WebView does not report our ' +
+      'pweb:// handler - measured as reachable on both architectures, so ' +
+      'an absent read-back is drift, not the platform being coy');
   fWebView := AWebView; // borrowed - never destroyed here
   fAttached := True;
 end;
