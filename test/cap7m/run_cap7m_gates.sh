@@ -53,6 +53,12 @@ gates="${repo_root}/build/cap7m/gates"
     die "${PWEB_MACOS_DYLIB_VERSIONED} was not staged beside pwebtests"
 
 cap7m_prepare_dir "${gates}"
+# FPC's -FU and -FE do NOT create their target: they fail with
+# `Error: Path "..." does not exist` before compiling anything. Create both
+# here, beside the prepare, rather than next to the compile several hundred
+# lines below - cap7m_prepare_dir has just guaranteed ${gates} is ours and
+# empty, which is the only moment these are unambiguously safe to make.
+mkdir -p -- "${gates}/units" "${gates}/bin"
 
 # --- 0. "no macOS flag is written anywhere but the one helper" ----------------
 #
