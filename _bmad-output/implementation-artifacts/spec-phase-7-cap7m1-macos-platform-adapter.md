@@ -2,7 +2,7 @@
 title: 'CAP-7M1 — production macOS platform adapter: the measured M0 architecture as a private Cocoa/WKWebView adapter'
 type: 'feature'
 created: '2026-08-16'
-status: 'in-review'
+status: 'done'
 review_loop_iteration: 0
 context: []
 baseline_commit: '529f01794fa67e339c38d1fc85c30fc7c6ae0f56'
@@ -130,14 +130,60 @@ baseline_commit: '529f01794fa67e339c38d1fc85c30fc7c6ae0f56'
 
 ## Implementation record
 
-**HALTED — GitHub Actions billing, not a code failure.** Run `31920869910`
-started none of its four jobs: *"The job was not started because recent
-account payments have failed or your spending limit needs to be increased."*
-Acceptance items 19 and 20 (hosted x64 / arm64 green) are unreachable until
-that is resolved. Everything is committed and pushed at `472db3b`; the next
-push resumes exactly where this stopped.
+**GREEN — run `31953707173`, all four jobs, commit `1886121`.** `windows`,
+`linux-x64`, `macos-x64` and `macos-arm64` all succeeded, every step of both
+macOS jobs included.
 
-**Proven on hosted runners, on both native architectures.**
+CI moved to the **public** `flydev-fr/poueb` mirror partway through: the
+private repository hit a hard GitHub Actions billing stop (run `31920869910`
+started none of its four jobs — *"recent account payments have failed or your
+spending limit needs to be increased"*). Public repositories get free standard
+runners and `macos-15`/`macos-15-intel` are standard, so the mirror runs the
+identical workflow at no cost. The branch is pushed to both remotes; the
+authoritative history and the freeze belong on the private one.
+
+**Measured, both architectures, run `31953707173`:**
+
+| | x86_64 | arm64 |
+|---|---|---|
+| `webview_*` exports / total | 17 / 25 (8 weak `_ZT[IS]`) | 17 / 17 |
+| deployment target | `pinned=12.0 minos=12.0` | same |
+| bridge object | `minos=12.0 seam_text_exports=19` | same |
+| PWeb suite on Darwin | `0 / 2,302` | `0 / 2,302` |
+| Cocoa adapter case | `0 / 731` | `0 / 731` |
+| folder confinement | `vectors=14 cwd_independent=yes` | same |
+| URI cross-check, per store | `observed=60 served=21 refused=39 leaks=0` | same |
+| per-view seam read-back | `ours` (folder, zip, stripped) | same |
+| FPU traps | `traps_masked=1` (all three legs) | same |
+| RSS growth vs 65536 budget | 332 / 224 / 312 KiB | 352 / 208 / 208 KiB |
+| unrelated CWD + stripped `DYLD_*` | `cwd=/ dyld_hints=stripped result=pass` | same |
+| threading, every cycle | `gui_affine=1 worker_distinct=1 direct_return=1` | same |
+| shutdown shapes | `terminate` and `window-close`, `clean=1` | same |
+| M0 regression | `seam_a_effective=no`, `ownership=webkit-copies-at-handoff` | same |
+
+`CAP7M1_PASS store=folder cycles=3` and `store=zip cycles=3` on both. The
+page's `"ok":true` — asserted once per cycle per store — is the conjunction of
+the secure-origin object, the complete hostile matrix, the zero-byte and
+all-byte assets, concurrency, the rejected invocation with its payload intact,
+and `CalculatorService.Add({a:20,b:22}) === 42`.
+
+**Six defects found, five of them invisible to any other platform.** In order:
+`pweb.test.binding.pas` guarded `baseunix` with `{$ifdef LINUX}`, so the
+guard-page proof did not compile on Darwin; `pweb.test.bundle.pas` compared
+Darwin against the **Windows** golden digest (the two Darwin statics agree
+with each other, so macOS needs one constant where Windows and Linux need one
+each); `run_cap7m_gates.sh` never created the directories FPC's `-FU`/`-FE`
+refuse to create themselves; FPC leaves the FPU **trapping** and WebKit
+computes on NaNs, killing every cycle with `EInvalidOp` (constraint 16);
+`local a="$1" b="${a}x"` does not work under macOS's bash 3.2, which expands
+every word before assigning any; and the zero-transport sweep list had gone
+stale, which also revealed that the sweep covered **no `src/` file at all** on
+macOS while the Linux sibling had always swept its adapter.
+
+**Superseded record.** The earlier state of this section reported the shard
+HALTED at `472db3b` with the runtime leg never once executed. That is no
+longer true and is kept only as history: the runtime leg is the part now
+carrying the most evidence.
 
 | | Evidence |
 |---|---|
