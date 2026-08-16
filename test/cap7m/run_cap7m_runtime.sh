@@ -99,6 +99,14 @@ assert_run() {
     [ "${n}" = "${cycles}" ] ||
         die "${label}: expected ${cycles} passing cycles, saw ${n}"
 
+    # MEASURED, run 31951505821: with FPC's default FPU state every cycle died
+    # with EInvalidOp before serving one asset, because WebKit computes on
+    # NaNs. Asserted rather than assumed - a process that merely SURVIVED
+    # proves nothing about why.
+    grep -q "^CAP7M1_FPU store=${label} traps_masked=1$" "${log}" ||
+        die "${label}: the FPU was not put in its non-trapping default state"
+    record_measurement "CAP7M1_FPU store=${rec} traps_masked=1"
+
     n="$(grep -c '^CAP7M1_SEAM cycle=[0-9]* seam_ran=1 ' "${log}" || true)"
     [ "${n}" = "${cycles}" ] ||
         die "${label}: the pre-create seam ran in only ${n}/${cycles} cycles"

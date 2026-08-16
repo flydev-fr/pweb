@@ -230,6 +230,24 @@ void pweb_cocoa_get_stats(pweb_cocoa_stats_t *out);
    offset does not fail - it returns a plausible number, which is exactly how
    a leak bound quietly stops measuring anything. task_info() is two lines in
    a file that already includes <mach/mach.h> correctly. */
+/* Put this thread's FPU in the C default (non-trapping) state. Returns 0 on
+   success.
+
+   MANDATORY BEFORE ANY WEBKIT WORK, and measured: FPC enables the
+   invalid-operation, divide-by-zero and overflow traps at startup on BOTH
+   architectures, while WebKit/CoreGraphics/AppKit compute with NaNs and
+   infinities as ordinary intermediate values - so the first such computation
+   kills an FPC-hosted process (`EInvalidOp`). CAP-7L hit this on
+   Linux/WebKitGTK; the remedy there is x86-only, which is why it did not
+   transfer.
+
+   PER THREAD, which is why the adapter calls it twice: once at unit
+   initialization (the main thread, before any worker exists, so workers
+   inherit the masked state) and again in TCocoaAssetHandler.Create, which
+   runs on the thread that will actually host WebKit and is not guaranteed by
+   contract to be the same one. */
+int pweb_cocoa_mask_fpu_traps(void);
+
 uint64_t pweb_cocoa_rss_kb(void);
 
 /* ======================================================================== *

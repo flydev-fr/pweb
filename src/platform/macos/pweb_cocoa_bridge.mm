@@ -29,6 +29,7 @@
 #import <Foundation/Foundation.h>
 #import <WebKit/WebKit.h>
 
+#include <fenv.h>
 #include <mach/mach.h>
 #include <objc/runtime.h>
 
@@ -688,6 +689,50 @@ int pweb_cocoa_seam_is_confined(void) {
     }
   }
   return ok;
+}
+
+int pweb_cocoa_mask_fpu_traps(void) {
+  /* MEASURED, run 31951505821 on macos-x64: without this, EVERY cycle of the
+     production runtime harness dies with
+     `EInvalidOp: Invalid floating point operation` before a single asset is
+     served - three cycles, three identical failures.
+
+     This is CAP-7L's Linux defect on a second platform, and it did not
+     transfer because the Linux remedy is x86-only. FPC does not leave the FPU
+     in the C default state: it deliberately ENABLES the invalid-operation,
+     divide-by-zero and overflow traps at startup on both architectures
+     (rtl/aarch64/aarch64.inc:133 sets fpu_ioe|fpu_dze|fpu_ofe in FPCR; the
+     x86_64 RTL does the equivalent to the x87 control word and MXCSR).
+     WebKit, CoreGraphics and AppKit compute with NaNs, infinities and
+     denormals as ordinary intermediate values - entirely legal IEEE-754
+     arithmetic - so the first such computation traps inside a C frame that
+     has no handler and the process dies.
+
+     Note what the same run proves from the other side: `cap7m_probe`, the
+     retained M0 instrument, drives a real WKWebView through the identical
+     path and PASSES - because it is a pure C++ program that never had the
+     traps enabled. Only the FPC-hosted process dies. That asymmetry is the
+     diagnosis.
+
+     fesetenv(FE_DFL_ENV) IS THE WHOLE FIX, and it is deliberately not
+     hand-written bit-twiddling. The x86_64 remedy (x87 CW bits 0..5, MXCSR
+     bits 7..12) and the AArch64 one (FPCR bits 8..12 and 15) are different
+     registers with OPPOSITE polarity - 1 means "masked" on x86, 1 means
+     "trap enabled" on ARM - and getting that backwards would silently leave
+     the traps live on one architecture. FE_DFL_ENV is the C99 default
+     environment, which by IEEE-754 has every trap disabled, and libc knows
+     which register it lives in. FPC's getfpcr/setfpcr are not an option:
+     they are implementation-internal to the system unit and are not exported
+     by systemh.inc.
+
+     It also normalises the rounding mode to FE_TONEAREST. That is not a
+     behaviour change: FPC already rounds to nearest on both targets
+     (rtl/aarch64/aarch64.inc:129 clears the FPCR rounding bits). As on Linux,
+     this changes only how the FPU REPORTS exceptional results, never the
+     results themselves.
+
+     Returns 0 on success, which the caller treats as mandatory. */
+  return fesetenv(FE_DFL_ENV);
 }
 
 uint64_t pweb_cocoa_rss_kb(void) {

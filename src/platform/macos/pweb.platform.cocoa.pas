@@ -280,6 +280,14 @@ function PWebCocoaHandlerInstalledOn(AWebView: Pointer): TPWebCocoaReadback;
 /// 'ours' | 'absent' | 'foreign', for the measurement record
 function PWebCocoaReadbackName(AValue: TPWebCocoaReadback): RawUtf8;
 
+/// did unit initialization put the FPU in its non-trapping default state?
+// - MEASURED: with the traps left as FPC sets them, every runtime cycle dies
+// with EInvalidOp the moment WebKit does arithmetic on a NaN. This reports
+// that the remedy ran, so the gate can STATE it rather than infer it from the
+// absence of a crash - see the initialization section and
+// pweb_cocoa_mask_fpu_traps in the bridge.
+function PWebCocoaFpuTrapsMasked: Boolean;
+
 /// is the +new override confined to WKWebViewConfiguration's own metaclass?
 // - asserts the one line in this whole shard that could quietly swizzle +new
 // for EVERY class in the process: WKWebViewConfiguration's metaclass +new is
@@ -384,6 +392,8 @@ function pweb_cocoa_seam_is_confined: LongInt; cdecl;
   external name 'pweb_cocoa_seam_is_confined';
 function pweb_cocoa_rss_kb: QWord; cdecl;
   external name 'pweb_cocoa_rss_kb';
+function pweb_cocoa_mask_fpu_traps: LongInt; cdecl;
+  external name 'pweb_cocoa_mask_fpu_traps';
 
 function pweb_cocoa_stub_task_create(url: PAnsiChar): QWord; cdecl;
   external name 'pweb_cocoa_stub_task_create';
@@ -434,6 +444,10 @@ var
   PWebCocoaRegistry: array[0 .. PWEB_COCOA_MAX_HANDLERS - 1] of TPWebCocoaSlot;
   PWebCocoaLock: TRTLCriticalSection;
   PWebCocoaNextGeneration: QWord;
+
+  /// set by unit initialization: did the FPU reach its non-trapping default?
+  // - read through PWebCocoaFpuTrapsMasked; see the initialization section
+  PWebCocoaFpuMasked: Boolean;
 
   PWebCocoaObserving: Boolean;
   PWebCocoaObserved: array[0 .. PWEB_COCOA_OBSERVED_RING - 1] of TPWebCocoaObservation;
@@ -903,6 +917,11 @@ begin
   Result := pweb_cocoa_seam_is_confined <> 0;
 end;
 
+function PWebCocoaFpuTrapsMasked: Boolean;
+begin
+  Result := PWebCocoaFpuMasked;
+end;
+
 function PWebCocoaResidentKb: QWord;
 begin
   Result := pweb_cocoa_rss_kb;
@@ -951,6 +970,15 @@ begin
   if AStore = nil then
     raise EPWebCocoaAssetHandler.Create('asset store is nil');
   fThreadId := GetCurrentThreadId; // Cocoa/WebKit calls are GUI-affine
+  // AGAIN, on the thread that will actually host WebKit. The initialization
+  // block below masks the traps on whichever thread loads the unit - normally
+  // the main thread, which is also the GUI thread - but FPU control is PER
+  // THREAD and nothing in the contract says the handler must be constructed
+  // on the same thread the unit initialised on. Idempotent and free.
+  if pweb_cocoa_mask_fpu_traps <> 0 then
+    raise EPWebCocoaAssetHandler.Create(
+      'could not put the FPU in its non-trapping default state - WebKit ' +
+      'would kill this process on its first NaN');
   fStore := AStore;
   fReadback := pcrAbsent; // nothing observed until Attach looks
   // the seam is installed once per process and never removed; teardown
@@ -1081,6 +1109,42 @@ begin
 end;
 
 initialization
+  { MEASURED, run 31951505821, and not optional: without this EVERY cycle of
+    the production runtime harness died with 'EInvalidOp: Invalid floating
+    point operation' before one asset was served.
+
+    FPC starts a process with the invalid-operation, divide-by-zero and
+    overflow traps ENABLED - on x86_64 and on aarch64 alike. WebKit,
+    CoreGraphics and AppKit compute with NaNs, infinities and denormals as
+    ordinary intermediate values, so the first such computation traps inside a
+    C frame with no handler and the process dies.
+
+    This is CAP-7L's Linux finding on a second backend, and the reason it was
+    not simply copied is that CAP-7L's remedy - Set8087CW + SetSSECSR - is
+    x86-only and would not compile for aarch64-darwin, where the same state
+    lives in FPCR with the OPPOSITE polarity. The masking therefore happens in
+    the bridge through fesetenv(FE_DFL_ENV), where libc knows which register
+    it is; see pweb_cocoa_mask_fpu_traps.
+
+    It belongs HERE, in the engine adapter's initialization, for exactly the
+    reason CAP-7L gives: linking this unit IS the decision to host WebKit in
+    this process. An application that never uses the macOS WebView never pays
+    for it, and one that does cannot forget it. It runs before any application
+    code, so no window can be created ahead of it, and before any worker
+    thread exists, so workers inherit the masked state.
+
+    Deliberately NOT math.SetExceptionMask - the CAP-7L measurement that made
+    that choice applies unchanged here: math's finalization restores the FPU
+    control words, and mORMot's units initialise earlier and therefore
+    finalise LATER, performing floating point with the traps live again. That
+    produced a completely successful run that then exited 217. Going through
+    libc leaves nothing to unwind. }
+  // RECORDED rather than raised. A unit initialization that raises takes the
+  // process down with a message nobody can attribute to a cause;
+  // TCocoaAssetHandler.Create re-applies and DOES raise, which is where a
+  // caller can actually see it. The flag exists so the runtime gate can state
+  // the fix ran rather than infer it from the absence of a crash.
+  PWebCocoaFpuMasked := pweb_cocoa_mask_fpu_traps = 0;
   // Initialised and never destroyed, deliberately: a WebKit callback can in
   // principle still arrive while the process is tearing down, and a critical
   // section finalised out from under it would be worse than one leaked for a

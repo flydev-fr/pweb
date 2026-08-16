@@ -807,6 +807,18 @@ begin
 
     WriteLn('CAP7M1_ENV store=', mode, ' cycles=', cycles,
       ' gui_thread=', PtrUInt(GuiThreadId), ' fixture=', fixture);
+    // STATED, not inferred from the absence of a crash. With the traps as FPC
+    // sets them every cycle died with EInvalidOp the moment WebKit touched a
+    // NaN, so "the process is still alive" is exactly the kind of evidence
+    // this shard refuses to accept for anything else either.
+    WriteLn('CAP7M1_FPU store=', mode, ' traps_masked=',
+      Ord(PWebCocoaFpuTrapsMasked));
+    if not PWebCocoaFpuTrapsMasked then
+    begin
+      WriteLn(StdErr, 'CAP7M1_FAIL store=', mode,
+        ' reason=the FPU could not be put in its non-trapping default state');
+      Halt(1);
+    end;
 
     for cycle := 1 to cycles do
     begin

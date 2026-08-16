@@ -820,6 +820,65 @@ a synchronous handler — the gate says so in as many words rather than
 reporting a passing race test. That distinction is the whole reason the
 deterministic leg exists.
 
+### 16. FPC enables FPU traps; WebKit computes on NaNs. The process dies
+
+**MEASURED**, run `31951505821` on `macos-x64`, and it killed every cycle of
+the production runtime harness before a single asset was served:
+
+```
+CAP7M1_FAIL cycle=1 store=folder reason=EInvalidOp: Invalid floating point operation
+CAP7M1_FAIL cycle=2 store=folder reason=EInvalidOp: Invalid floating point operation
+CAP7M1_FAIL cycle=3 store=folder reason=EInvalidOp: Invalid floating point operation
+```
+
+This is CAP-7L's Linux finding on a second backend
+(`webkitgtk-linux-semantics.md`, and the `initialization` block of
+`pweb.platform.webkitgtk.pas`). FPC does not leave the FPU in the C default
+state: it deliberately **enables** the invalid-operation, divide-by-zero and
+overflow traps at startup — on `aarch64` explicitly at
+`rtl/aarch64/aarch64.inc:133`, which ORs `fpu_ioe|fpu_dze|fpu_ofe` into FPCR,
+and equivalently on `x86_64` through the x87 control word and MXCSR. WebKit,
+CoreGraphics and AppKit compute with NaNs, infinities and denormals as
+ordinary intermediate values — entirely legal IEEE-754 arithmetic — so the
+first such computation traps inside a C frame with no handler.
+
+**The same run proves it from the other side.** `cap7m_probe`, the retained M0
+instrument, drives a real `WKWebView` through the identical path in the same
+job and **passes** — because it is a pure C++ program that never had the traps
+enabled. Only the FPC-hosted process dies. That asymmetry is the diagnosis,
+and it is also why CAP-7M0 could never have found this: M0 had no Pascal
+program that opened a window.
+
+**Why CAP-7L's remedy could not be copied.** `Set8087CW` + `SetSSECSR` are
+x86-only and would not compile for `aarch64-darwin`, where the same state
+lives in FPCR — with the **opposite polarity**: `1` means *masked* on x86 and
+*trap enabled* on ARM, so hand-writing both would risk silently leaving the
+traps live on one architecture. FPC's own `getfpcr`/`setfpcr` are not an
+option either: they are implementation-internal to the system unit and are not
+exported by `systemh.inc`.
+
+**The remedy taken:** `fesetenv(FE_DFL_ENV)` in the bridge
+(`pweb_cocoa_mask_fpu_traps`), where libc knows which register it is. It is
+C99, it is the environment the C runtime starts in, and by IEEE-754 that
+environment has every trap disabled. It also normalises rounding to
+`FE_TONEAREST`, which is not a behaviour change — FPC already rounds to
+nearest on both targets (`rtl/aarch64/aarch64.inc:129` clears the FPCR
+rounding bits).
+
+**Deliberately NOT `math.SetExceptionMask`** — CAP-7L's measurement applies
+unchanged: `math`'s finalization restores the control words, mORMot's units
+initialise earlier and therefore finalise later, and the result was a
+completely successful run that then exited 217.
+
+**Applied twice, because FPU control is per thread.** Once at unit
+initialization — before any application code, so no window can be created
+ahead of it, and before any worker exists, so workers inherit the masked
+state — and again in `TCocoaAssetHandler.Create`, which runs on the thread
+that will actually host WebKit and is not guaranteed by contract to be the
+one the unit initialised on. The gate asserts
+`CAP7M1_FPU store=… traps_masked=1` rather than accepting a process that
+merely survived.
+
 ## Threading
 
 **MEASURED**, run `31909938201` (`gui_affine=1 worker_distinct=1 direct_return=1`, `echoes=8 errors=1 outstanding=1`), and re-proven rather than adapted. The frozen model is the same
