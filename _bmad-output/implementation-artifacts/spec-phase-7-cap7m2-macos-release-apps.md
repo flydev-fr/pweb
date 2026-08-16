@@ -95,6 +95,51 @@ baseline_commit: '30c80a76b8da5e4b90994ba4702f6e678d0e011b'
 - Given the compare job, when both macOS jobs upload, then the logical app.pwb inventories, plist semantics and frontend revision are identical across architectures, and the job fails on any divergence.
 - Given the tree at close, when inspected, then no Universal 2, installer, signing-identity, notarization, CAP-7F/8/10/11/12 or frontend/SDK/adapter change exists, and no macOS flag is written outside `tools/macos-buildenv.sh`.
 
+## Implementation record
+
+**GREEN — run `31968338053`, all five jobs, commit `366eecc`** (public
+`flydev-fr/poueb` mirror; nothing pushed to the private origin per the
+no-budget constraint): `windows`, `linux-x64`, `macos-x64`, `macos-arm64`
+and the new `macos-release-inventory` compare job all succeeded.
+
+**Measured, both architectures (identical values unless split):**
+
+| | x86_64 | arm64 |
+|---|---|---|
+| React direct / warm / LaunchServices | pass / pass / pass | same |
+| Pas2JS direct / warm / LaunchServices | pass / pass / pass | same |
+| listening TCP sockets (sampled to exit) | 0 | 0 |
+| argv-over-env autoclose | `argv_wins=yes` (8 s vs 55 s) | same |
+| refusal matrix (missing/truncated/garbage/hidden-dylib/bad-arg/FAIL-verdict) | all pass | same |
+| app.pwb determinism (rebuild after mtime touch) | identical | same |
+| app.pwb sha256 react / pas2js | `2e36fd9e…` / `78d82971…` | **byte-identical to x64** |
+| logical inventory sha256 react / pas2js | `1bd9c287…` / `1ef786cf…` | identical |
+| exe/dylib parity across products | `exe_identical=yes dylib_identical=yes` | same |
+| product Mach-Os | `arch=x86_64 minos=12.0 @rpath + @executable_path` | `arch=arm64`, same rest |
+| codesign state (recorded, never product signing) | `unsigned`, ran unsigned | `adhoc (linker-signed)`, dylib verify pass, bundle-level verify fail-or-unsigned, LS launched without any post-assembly `codesign -s -` |
+| staged Pas2JS 3.0.1 | upstream binary, `x86_64 minos=10.8` | **compiled natively from FPC repo `f27c414b`**, `arm64 minos=11.0`, `-iV=3.0.1` |
+
+The compare job's verdict line: *"cross-architecture release inventory:
+identical logical corpus, plist semantics and frontend rev on both
+architectures"* — app.pwb came out byte-identical across arches, stronger
+than the semantic equality the spec required.
+
+**Two defects found by the first hosted run (`31967748216`), both fixed in
+`366eecc`:** the CAP-6b1 marker-contract checker requires the literal
+`': app.pwb -> … 42 PASS'` inside `releaseapp.pas`, which the marker
+centralization had split (fixed by folding `': '` into the constant); and
+the new checkout-path scan matched `otool -L`'s first line — the inspected
+file's own path — because `dist/` lives inside the checkout (fixed with
+`tail -n +2`, the exact trap `tools/macos-buildenv.sh:454-461` documents).
+Sixteen review findings were patched before the first push; the review's
+YAML-splice finding (the compare job swallowing a displaced diagnostics
+path line) would have made the compare job fail unconditionally.
+
+**Secure origin** is proven as the ratified conjunction: the release
+verdict's `"secure":true` on all four legs plus the M1 runtime
+origin-object gates (`protocol=pweb:`, `host=app`, `origin=pweb://app`,
+`secure=true` per cycle) green in the same run on both architectures.
+
 ## Spec Change Log
 
 ## Design Notes
