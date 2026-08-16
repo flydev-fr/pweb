@@ -155,6 +155,18 @@ jobs:
                    '.github/workflows/ci.yml'
           $bad = @()
           foreach ($f in $files) {
+            # EXISTENCE FIRST (CAP-7M1, closing the CAP-7M0 ledger entry).
+            # Select-String on a missing path writes an error and yields
+            # nothing, the `if` takes the false branch, and the loop concludes
+            # "clean" for a file it never read - so deleting or renaming a
+            # guarded script silently REMOVED it from the guard instead of
+            # failing it. The macOS jobs have had this precondition since
+            # CAP-7M0; it could not be taken here then without touching the
+            # byte-stability that shard's acceptance asserted.
+            if (-not (Test-Path -LiteralPath $f -PathType Leaf)) {
+              $bad += "MISSING GUARD TARGET: $f"
+              continue
+            }
             $hit = Select-String -Path $f -Pattern $pat
             if ($hit) { $bad += "${f}: $($hit[0].Line.Trim())" }
           }
@@ -640,14 +652,58 @@ jobs:
       # Windows and the Linux runner, and --full-index removes the only
       # other source of variation (abbreviated blob ids scale with the
       # object count of the clone).
-      - name: Freeze sweep - raw ABI layer equals the ratified CAP-7L platform block (CAP-1 baseline)
+      # CAP-7M1: the src/lib patch key was renamed to
+      # `srclib-platform-patch-sha256`. The old name began with the CAP-7L
+      # capability id and named ONE platform for a patch that carries three.
+      # The VALUE is byte-preserved (both baselines were re-verified to
+      # produce the same hash), so this is a rename and never a
+      # re-ratification. A rename with no rejection gate leaves the old name
+      # working by accident: this step is that gate, and it runs BEFORE the
+      # two sweeps so the failure names the cause rather than the symptom.
+      #
+      # The old spelling is CONCATENATED, like the floating-ref guard's
+      # patterns, so this file cannot match itself and the ledgered
+      # "the old name appears nowhere" property stays checkable with a plain
+      # git grep.
+      - name: Freeze sweep - the renamed src/lib patch key, and only that name
+        shell: pwsh
+        run: |
+          $old = 'cap7l-bind' + 'ing-patch-sha256'
+          $lock = Get-Content webview.lock
+          if ($lock | Select-String -Pattern $old -SimpleMatch) {
+            throw "webview.lock still carries the OLD key name $old"
+          }
+          # TREE-WIDE, not lock-only. The ledgered property is that the old
+          # name survives nowhere but the frozen _bmad-output/ artifacts, which
+          # are historical records and are deliberately left alone. A gate
+          # scoped to webview.lock would pass while a script, a workflow or a
+          # doc still read the retired key.
+          $hits = @(git grep -l -F -- $old)
+          # `git grep` exits 1 when it finds NOTHING, which is the outcome this
+          # gate wants. The Actions pwsh wrapper ends the step with
+          # `exit $LASTEXITCODE`, and Write-Host does not reset it - so without
+          # this line a completely clean tree would fail the step. Cleared
+          # deliberately, immediately, and only for this call.
+          $global:LASTEXITCODE = 0
+          $stale = $hits | Where-Object { $_ -and ($_ -notlike '_bmad-output/*') }
+          if ($stale) {
+            $stale | ForEach-Object { Write-Host "STALE KEY REFERENCE: $_" }
+            throw "the retired key name $old survives outside _bmad-output/"
+          }
+          $new = @($lock | Select-String -Pattern '^srclib-platform-patch-sha256\s*=')
+          if ($new.Count -ne 1) {
+            throw "webview.lock must carry exactly one srclib-platform-patch-sha256 line, found $($new.Count)"
+          }
+          Write-Host 'freeze key: srclib-platform-patch-sha256 present, old name absent'
+
+      - name: Freeze sweep - raw ABI layer equals the ratified platform block (CAP-1 baseline)
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force build/freeze | Out-Null
           $expected = ((Select-String -Path webview.lock `
-            -Pattern '^cap7l-binding-patch-sha256\s*=').Line -split '=', 2)[1].Trim()
+            -Pattern '^srclib-platform-patch-sha256\s*=').Line -split '=', 2)[1].Trim()
           if ($expected -cnotmatch '^[0-9a-f]{64}$') {
-            throw 'webview.lock has no full lowercase cap7l-binding-patch-sha256'
+            throw 'webview.lock has no full lowercase srclib-platform-patch-sha256'
           }
           $lines = @(git --no-pager diff --no-color --no-ext-diff --full-index `
             709bf0fee715d0cf9b8c475b4f801947fc0f4a65 -- src/lib)
@@ -659,7 +715,7 @@ jobs:
           Write-Host "src/lib patch sha256: $actual"
           if ($actual -cne $expected) {
             Write-Host $text
-            throw 'src/lib drifted beyond the ratified CAP-7L platform block'
+            throw 'src/lib drifted beyond the ratified platform block'
           }
 
       - name: CAP-3 freeze sweep - Phase-0/1/2 implementation boundaries
@@ -680,9 +736,9 @@ jobs:
           # this sweep's own untouched baseline
           New-Item -ItemType Directory -Force build/freeze | Out-Null
           $expected = ((Select-String -Path webview.lock `
-            -Pattern '^cap7l-binding-patch-sha256\s*=').Line -split '=', 2)[1].Trim()
+            -Pattern '^srclib-platform-patch-sha256\s*=').Line -split '=', 2)[1].Trim()
           if ($expected -cnotmatch '^[0-9a-f]{64}$') {
-            throw 'webview.lock has no full lowercase cap7l-binding-patch-sha256'
+            throw 'webview.lock has no full lowercase srclib-platform-patch-sha256'
           }
           $lines = @(git --no-pager diff --no-color --no-ext-diff --full-index `
             4653ba77ef03f0a37b0b0b0c4205ed6ecfe7e0f5 -- src/lib)
@@ -694,7 +750,7 @@ jobs:
           Write-Host "src/lib patch sha256: $actual"
           if ($actual -cne $expected) {
             Write-Host $text
-            throw 'src/lib drifted beyond the ratified CAP-7L platform block'
+            throw 'src/lib drifted beyond the ratified platform block'
           }
 
       - name: Compile smoke example and stage its DLL
@@ -1464,6 +1520,16 @@ jobs:
           files="${files} test/cap7l/check_cap7l_nonetwork.sh"
           bad=0
           for f in ${files}; do
+            # EXISTENCE FIRST (CAP-7M1, closing the CAP-7M0 ledger entry).
+            # grep on an absent path exits 2, the `if` takes the false branch,
+            # and the loop concludes "clean" for a file it never read - so
+            # deleting or renaming a guarded script silently REMOVED it from
+            # the guard instead of failing it.
+            if [ ! -f "${f}" ]; then
+              echo "MISSING GUARD TARGET: ${f}"
+              bad=1
+              continue
+            fi
             if grep -nEi "${pat}" "${f}"; then
               echo "VIOLATION: ${f}"
               bad=1
@@ -1723,9 +1789,14 @@ jobs:
       CAP7M_EXPECT_ARCH: x86_64
       CAP7M_RUNNER_LABEL: macos-15-intel
     # A healthy full run is a few minutes: the library build is one
-    # translation unit and the probe is watchdog-bounded. This is a hang
-    # ceiling with room for the ~260 MB pinned toolchain fetch.
-    timeout-minutes: 60
+    # translation unit and every GUI leg is watchdog-bounded. This is a hang
+    # ceiling with room for the ~260 MB pinned toolchain fetch. CAP-7M1 raised
+    # it from 60 because the per-step budgets it adds (10 bridge + 20 headless
+    # + 30 runtime) no longer fit under the old ceiling; as everywhere else in
+    # this workflow the JOB budget is a BACKSTOP, and what actually protects a
+    # hang is the per-step budget, which lets the failure diagnostics upload
+    # still run.
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -1734,15 +1805,19 @@ jobs:
         shell: bash
         run: |
           # The same invariant the Windows and Linux jobs enforce over their
-          # own scripts, extended to the ones CAP-7M0 adds. Patterns are
-          # concatenated so they cannot literally match their own source.
+          # own scripts, extended to the ones CAP-7M0 and CAP-7M1 add.
+          # Patterns are concatenated so they cannot literally match their own
+          # source.
           pat="git[[:space:]]+(cl""one|pu""ll|ls-rem""ote)"
           pat="${pat}|re""fs/(he""ads|ta""gs)"
           pat="${pat}|webview/web""view@"
           files="tools/build-webview-dylib.sh tools/get-fpc-macos.ps1"
+          files="${files} tools/macos-buildenv.sh tools/build-macos-bridge.sh"
           files="${files} test/cap7m/cap7m_common.sh test/cap7m/build_cap7m.sh"
           files="${files} test/cap7m/check_abi.sh test/cap7m/check_webview_exports.sh"
           files="${files} test/cap7m/run_cap7m_probes.sh"
+          files="${files} test/cap7m/run_cap7m_gates.sh"
+          files="${files} test/cap7m/run_cap7m_runtime.sh"
           files="${files} test/cap7m/check_release_layout.sh"
           files="${files} test/cap7m/check_cap7m_nonetwork.sh"
           files="${files} test/cap7m/summarize_cap7m.sh"
@@ -1863,11 +1938,30 @@ jobs:
         # No --clean: fresh workspace (see the dylib build step).
         run: test/cap7m/check_abi.sh
 
+      # ONE SHIPPED DYLIB, ONE LINKED OBJECT, NOTHING ELSE. The production
+      # Cocoa bridge is an object file linked into each binary that hosts a
+      # macOS WebView - deps/webview stays unpatched and the public export
+      # surface stays at exactly 17.
+      - name: CAP-7M1 compile the production Cocoa bridge (one object)
+        shell: bash
+        timeout-minutes: 10
+        run: tools/build-macos-bridge.sh
+
       - name: CAP-7M0 compile the binding, mORMot core and the probe (M17)
         shell: bash
         timeout-minutes: 20
         # No --clean: fresh workspace (see the dylib build step).
         run: test/cap7m/build_cap7m.sh
+
+      # The full PWeb suite on Darwin, including the CAP-7M1 adapter cases and
+      # - for the first time - TTestAssetStores, which could not even
+      # construct here before FinalPathOfFd grew an fcntl(F_GETPATH) body.
+      # Plus the real-symlink folder-confinement probe the Windows junction
+      # fixture cannot express, run twice from two working directories.
+      - name: CAP-7M1 headless gates (suite + folder confinement)
+        shell: bash
+        timeout-minutes: 20
+        run: test/cap7m/run_cap7m_gates.sh
 
       # A REAL WKWebView on a real Aqua session. No mocked WebKit, no browser
       # substitute, no headless-DOM stand-in, no SKIP path.
@@ -1878,6 +1972,16 @@ jobs:
         timeout-minutes: 25
         # No --clean: fresh workspace (see the dylib build step).
         run: test/cap7m/run_cap7m_probes.sh 3
+
+      # THE ACCEPTANCE CRITERION IN THE FLESH: a real WKWebView, the
+      # production adapter, folder AND zip stores over one corpus, the frozen
+      # scheduler/binding/mORMot path to 42, both shutdown shapes, and the
+      # whole thing again from `/` with every DYLD_* hint stripped. No mocked
+      # WebKit, no browser substitute, no SKIP path.
+      - name: CAP-7M1 production runtime gates (real WKWebView, folder + zip)
+        shell: bash
+        timeout-minutes: 30
+        run: test/cap7m/run_cap7m_runtime.sh 3
 
       - name: CAP-7M0 bundle layout measured from an unrelated CWD (M18)
         shell: bash
@@ -1920,7 +2024,10 @@ jobs:
             build/cap7m/webview-build/CMakeCache.txt
             build/cap7m/abi/abi_c.txt
             build/cap7m/abi/abi_pascal.txt
+            build/cap7m/abi/fcntl.diff
             build/cap7m/probe/
+            build/cap7m/gates/
+            build/cap7m/runtime/
             build/cap7m/release/
             build/cap7m/nonetwork/
 
@@ -1938,7 +2045,8 @@ jobs:
     env:
       CAP7M_EXPECT_ARCH: arm64
       CAP7M_RUNNER_LABEL: macos-15
-    timeout-minutes: 60
+    # See the x64 sibling: raised from 60 by CAP-7M1 for the same reason.
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -1950,9 +2058,12 @@ jobs:
           pat="${pat}|re""fs/(he""ads|ta""gs)"
           pat="${pat}|webview/web""view@"
           files="tools/build-webview-dylib.sh tools/get-fpc-macos.ps1"
+          files="${files} tools/macos-buildenv.sh tools/build-macos-bridge.sh"
           files="${files} test/cap7m/cap7m_common.sh test/cap7m/build_cap7m.sh"
           files="${files} test/cap7m/check_abi.sh test/cap7m/check_webview_exports.sh"
           files="${files} test/cap7m/run_cap7m_probes.sh"
+          files="${files} test/cap7m/run_cap7m_gates.sh"
+          files="${files} test/cap7m/run_cap7m_runtime.sh"
           files="${files} test/cap7m/check_release_layout.sh"
           files="${files} test/cap7m/check_cap7m_nonetwork.sh"
           files="${files} test/cap7m/summarize_cap7m.sh"
@@ -2049,11 +2160,30 @@ jobs:
         # No --clean: fresh workspace (see the dylib build step).
         run: test/cap7m/check_abi.sh
 
+      # ONE SHIPPED DYLIB, ONE LINKED OBJECT, NOTHING ELSE. The production
+      # Cocoa bridge is an object file linked into each binary that hosts a
+      # macOS WebView - deps/webview stays unpatched and the public export
+      # surface stays at exactly 17.
+      - name: CAP-7M1 compile the production Cocoa bridge (one object)
+        shell: bash
+        timeout-minutes: 10
+        run: tools/build-macos-bridge.sh
+
       - name: CAP-7M0 compile the binding, mORMot core and the probe (M17)
         shell: bash
         timeout-minutes: 20
         # No --clean: fresh workspace (see the dylib build step).
         run: test/cap7m/build_cap7m.sh
+
+      # The full PWeb suite on Darwin, including the CAP-7M1 adapter cases and
+      # - for the first time - TTestAssetStores, which could not even
+      # construct here before FinalPathOfFd grew an fcntl(F_GETPATH) body.
+      # Plus the real-symlink folder-confinement probe the Windows junction
+      # fixture cannot express, run twice from two working directories.
+      - name: CAP-7M1 headless gates (suite + folder confinement)
+        shell: bash
+        timeout-minutes: 20
+        run: test/cap7m/run_cap7m_gates.sh
 
       # Three cycles: one of each shutdown shape, plus a third so the M6 leak
       # bound has a baseline that is not the cache-populating first cycle.
@@ -2062,6 +2192,16 @@ jobs:
         timeout-minutes: 25
         # No --clean: fresh workspace (see the dylib build step).
         run: test/cap7m/run_cap7m_probes.sh 3
+
+      # THE ACCEPTANCE CRITERION IN THE FLESH: a real WKWebView, the
+      # production adapter, folder AND zip stores over one corpus, the frozen
+      # scheduler/binding/mORMot path to 42, both shutdown shapes, and the
+      # whole thing again from `/` with every DYLD_* hint stripped. No mocked
+      # WebKit, no browser substitute, no SKIP path.
+      - name: CAP-7M1 production runtime gates (real WKWebView, folder + zip)
+        shell: bash
+        timeout-minutes: 30
+        run: test/cap7m/run_cap7m_runtime.sh 3
 
       - name: CAP-7M0 bundle layout measured from an unrelated CWD (M18)
         shell: bash
@@ -2100,6 +2240,9 @@ jobs:
             build/cap7m/webview-build/CMakeCache.txt
             build/cap7m/abi/abi_c.txt
             build/cap7m/abi/abi_pascal.txt
+            build/cap7m/abi/fcntl.diff
             build/cap7m/probe/
+            build/cap7m/gates/
+            build/cap7m/runtime/
             build/cap7m/release/
             build/cap7m/nonetwork/

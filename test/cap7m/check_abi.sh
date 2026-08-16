@@ -52,7 +52,6 @@ eval "$(cap7m_take_clean_flag "$@")"
 assert_native_arch "${CAP7M_EXPECT_ARCH:-}"
 assert_fpc_target
 record_environment
-set_fpc_arch_link_flags
 
 abi="${work}/abi"
 
@@ -62,10 +61,11 @@ done
 [ -f "${repo_root}/deps/webview/core/include/webview/api.h" ] ||
     die 'pinned headers missing -- fetch deps/webview first'
 
-dylib_link="$(lock_get macos-dylib)"
-dylib_versioned="$(lock_get macos-dylib-versioned)"
-deployment_target="$(lock_get macos-deployment-target)"
-host_arch="$(uname -m)"
+# Every one of these used to be fetched here; they now come from
+# tools/macos-buildenv.sh, which is the single source for all of them.
+dylib_link="${PWEB_MACOS_DYLIB}"
+dylib_versioned="${PWEB_MACOS_DYLIB_VERSIONED}"
+host_arch="${PWEB_MACOS_HOST_ARCH}"
 
 [ -f "${dist}/${dylib_link}" ] ||
     die "staged webview dylib missing -- run tools/build-webview-dylib.sh first (${dist})"
@@ -80,30 +80,27 @@ cp -f -- "${dist}/${dylib_versioned}" "${abi}/bin/"
 # --- 1. core paired probe -----------------------------------------------------
 
 step 'core paired ABI probe (the unmodified CAP-1 pair, on Darwin)'
-clang -O1 -Wall -Wextra -Werror -Wno-type-limits \
-    -arch "${host_arch}" "-mmacosx-version-min=${deployment_target}" \
+# -Wno-type-limits is a portable warning switch, not a macOS decision, and is
+# the ONE flag a call site here still writes: abi_probe.c measures signedness
+# with ((type)-1 < 0), and for an enum the compiler made unsigned that
+# comparison is provably false - which IS the fact being measured.
+clang "${PWEB_MACOS_CLANG_WARNINGS[@]}" -Wno-type-limits \
+    "${PWEB_MACOS_CLANG_FLAGS[@]}" \
     -I"${repo_root}/deps/webview/core/include" \
     "${repo_root}/test/core/abi_probe.c" -o "${abi}/bin/abi_probe_c" ||
     die 'core C ABI probe failed to compile'
 "${abi}/bin/abi_probe_c" > "${abi}/abi_c.txt" ||
     die 'core C ABI probe exited nonzero'
 
-# CAP7M_FPC_ARCH_LINK_FLAGS is UNQUOTED on purpose: it is empty on x86_64 and
-# must then contribute no argument at all. See set_fpc_arch_link_flags in
-# cap7m_common.sh for the measured aarch64 link failure it works around.
-# shellcheck disable=SC2086
-# -k-L/-k-lwebview: abi_probe does not NEED them today - it references no
-# webview symbol, which is exactly why it links where signature_pin did not
+# The full webview link set: abi_probe does not NEED it today - it references
+# no webview symbol, which is exactly why it links where signature_pin did not
 # (constraint 9, and now 11). It is linked the same way anyway, so the two
 # stop differing by accident rather than by intent; the day someone adds a
 # reference to this probe, it should not be the day they discover this.
 fpc -Sh -B -FU"${abi}/units" -FE"${abi}/bin" \
     -Fu"${repo_root}/src/lib" \
     -Fi"${repo_root}/deps/mormot2/src" \
-    "-WM${deployment_target}" \
-    -Fl"${dist}" -k-rpath -k@executable_path \
-    "-k-L${dist}" -k-lwebview \
-    ${CAP7M_FPC_ARCH_LINK_FLAGS} \
+    "${PWEB_MACOS_FPC_FLAGS[@]}" "${PWEB_MACOS_FPC_LINK_WEBVIEW[@]}" \
     "${repo_root}/test/core/abi_probe.pas" > "${abi}/abi_pascal.log" 2>&1 ||
     { cat "${abi}/abi_pascal.log" >&2; die 'core Pascal ABI probe failed to compile'; }
 "${abi}/bin/abi_probe" > "${abi}/abi_pascal.txt" ||
@@ -212,34 +209,48 @@ fi
 # declares, and the failure mode is asymmetric: a wrong O_DIRECTORY stops the
 # store constructing, but a wrong O_NOFOLLOW just silently stops refusing
 # symlinks while every other test still passes.
-step 'fcntl constant probe (declared block vs the SDK, zero deltas allowed)'
+#
+# CAP-7M1 added F_GETPATH, the PATH_MAX-sized buffer bound, and a ROUND TRIP.
+# The round trip is not decoration: macOS has no /proc, so the store's
+# open-descriptor confinement re-proof is fcntl(fd, F_GETPATH, buf), and
+# fcntl is VARIADIC in C - Apple's arm64 ABI passes variadic arguments on the
+# stack where its x86_64 ABI passes them in registers. A declaration that is
+# right on one architecture can be wrong on the other, and no constant
+# comparison would ever reveal that. Both probes are handed the SAME file and
+# must report the same kernel-resolved path, on each architecture separately.
+step 'fcntl probe (declared block + F_GETPATH round trip, zero deltas allowed)'
+# The subject of the round trip: a real file that exists on every runner and
+# whose resolved path both probes must agree on. Passed as an absolute path,
+# though the answer would be identical however it were spelled - that is the
+# point of asking the kernel.
+fcntl_subject="${repo_root}/webview.lock"
+[ -f "${fcntl_subject}" ] || die "fcntl round-trip subject missing: ${fcntl_subject}"
+
 # No -std=…: a strict-ISO mode sets __STRICT_ANSI__, which lowers
 # __DARWIN_C_LEVEL and can hide O_NOFOLLOW behind its _DARWIN_C_SOURCE guard.
-clang -O1 -Wall -Wextra -Werror \
-    -arch "${host_arch}" "-mmacosx-version-min=${deployment_target}" \
+clang "${PWEB_MACOS_CLANG_WARNINGS[@]}" "${PWEB_MACOS_CLANG_FLAGS[@]}" \
     "${repo_root}/test/cap7m/abi_probe_fcntl.c" -o "${abi}/bin/abi_probe_fcntl_c" ||
     die 'fcntl C probe failed to compile'
-"${abi}/bin/abi_probe_fcntl_c" > "${abi}/fcntl_c.txt" ||
+"${abi}/bin/abi_probe_fcntl_c" "${fcntl_subject}" > "${abi}/fcntl_c.txt" ||
     die 'fcntl C probe exited nonzero'
 
-# shellcheck disable=SC2086
 fpc -MObjFPC -Sh -B -FU"${abi}/units" -FE"${abi}/bin" \
     -Fu"${repo_root}/src/assets" \
     -Fi"${repo_root}/deps/mormot2/src" \
     -Fu"${repo_root}/deps/mormot2/src/core" \
     -Fu"${repo_root}/deps/mormot2/src/lib" \
-    "-WM${deployment_target}" ${CAP7M_FPC_ARCH_LINK_FLAGS} \
+    "${PWEB_MACOS_FPC_FLAGS[@]}" "${PWEB_MACOS_FPC_LINK_MORMOT[@]}" \
     "${repo_root}/test/cap7m/abi_probe_fcntl.pas" > "${abi}/fcntl_pascal.log" 2>&1 ||
     { cat "${abi}/fcntl_pascal.log" >&2; die 'fcntl Pascal probe failed to compile'; }
-"${abi}/bin/abi_probe_fcntl" > "${abi}/fcntl_pas.txt" ||
+"${abi}/bin/abi_probe_fcntl" "${fcntl_subject}" > "${abi}/fcntl_pas.txt" ||
     die 'fcntl Pascal probe exited nonzero'
 
 fcntl_facts="$(grep -c . "${abi}/fcntl_c.txt" || true)"
-[ "${fcntl_facts}" -eq 3 ] ||
-    die "fcntl C probe emitted ${fcntl_facts} facts, expected 3"
+[ "${fcntl_facts}" -eq 6 ] ||
+    die "fcntl C probe emitted ${fcntl_facts} facts, expected 6"
 if ! diff -u "${abi}/fcntl_c.txt" "${abi}/fcntl_pas.txt" > "${abi}/fcntl.diff"; then
     cat "${abi}/fcntl.diff" >&2
-    die 'the folder store declares an fcntl value the SDK does not -- O_NOFOLLOW drift silently disables the symlink refusal'
+    die 'the folder store disagrees with the SDK about fcntl -- O_NOFOLLOW drift silently disables the symlink refusal, and an F_GETPATH round-trip mismatch means the variadic call is wrong on THIS architecture'
 fi
 while IFS= read -r line; do
     [ -n "${line}" ] && record_measurement "CAP7M_FCNTL ${line}"
@@ -335,8 +346,7 @@ step 'M5: dynamic resolution gate (dlopen + dlsym, the loader itself)'
     printf '  return bad ? 1 : 0;\n}\n'
 } > "${abi}/dlprobe.c"
 
-clang -O1 -Wall -Wextra -Werror \
-    -arch "${host_arch}" "-mmacosx-version-min=${deployment_target}" \
+clang "${PWEB_MACOS_CLANG_WARNINGS[@]}" "${PWEB_MACOS_CLANG_FLAGS[@]}" \
     "${abi}/dlprobe.c" -o "${abi}/bin/dlprobe" ||
     die 'dlopen probe failed to compile'
 dlresult="$("${abi}/bin/dlprobe" "${dist}/${dylib_versioned}")" ||

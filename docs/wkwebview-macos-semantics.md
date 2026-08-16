@@ -45,6 +45,11 @@ refused. It also produced constraint 12 — the one assertion that failed.
 What is still EXPECTED is now narrow: the mechanism behind constraint 11, and
 whatever CAP-7M measures beyond this shard's matrix.
 
+**CAP-7M1 built the production adapter on top of these measurements** and
+added three constraints of its own — 13, 14 and 15 — which are the surprises
+a reader porting from either sibling platform will hit first. Everything
+CAP-7M0 measured is carried forward unchanged; nothing below reopens it.
+
 ## The seam: the whole architectural question, and not the Linux one
 
 **DERIVED.** Upstream builds the configuration *and* the web view inside
@@ -152,7 +157,7 @@ M10 (`CAP7M_M10 precreate_seam_ran=1` plus a served main document).
 Escalation only, and only with evidence that B failed. No patch exists in this
 tree and none may be written before ratification.
 
-## Twelve constraints that are not obvious
+## Fifteen constraints that are not obvious
 
 ### 1. `WKURLSchemeTask` throws. Nothing in the GLib model carries over
 
@@ -383,10 +388,16 @@ newer FPC, not an older linker. And this is **not** Lazarus issue 41570
 conflating the two is easy and would send the next reader after the wrong
 remedy.
 
-The decision lives in one place, `set_fpc_arch_link_flags` in
-`test/cap7m/cap7m_common.sh`, and is consumed by every Pascal *program* link
-this shard performs (`check_abi.sh`'s `abi_probe`, and `build_cap7m.sh`'s
-`signature_pin` and `uri_oracle`).
+The decision lives in one place — `tools/macos-buildenv.sh`, where CAP-7M1
+moved it from `test/cap7m/cap7m_common.sh` — and is consumed by every Pascal
+*program* link this project performs. It was the ONE macOS flag that was
+already centralized; **that file is now the single source for all of them**
+(the deployment target, the architecture, the mORMot static directory, the
+clang flags, the FPC compile and link flags, the frameworks, the rpath, the
+bridge object and the CMake OSX cache variables). Before CAP-7M1 the
+deployment target was written at twelve call sites and fetched from the lock
+four times; adding an adapter on top of that would have inherited twenty
+places for the ratified floor to drift from.
 
 ### 8. The export surface is not the same on both architectures
 
@@ -635,6 +646,180 @@ that surfaces in a user's application code rather than in any gate here.
 meaningless without status codes, since 206, 416 and `Content-Range` have
 nowhere to live on an `NSURLResponse`.
 
+### 13. `/proc/self/fd` has no Darwin equivalent, and the folder store needed one
+
+**MEASURED**, CAP-7M1, and it is the blocker CAP-7M0 could not see because it
+only ever *compiled* `pweb.assets.folder.pas` — it never constructed a store.
+
+The hardened POSIX branch re-proves confinement on the **open descriptor**:
+after walking each segment with `lstat` and opening the final component
+`O_NOFOLLOW`, it asks the kernel what it actually opened and requires the
+answer to equal the expected path byte-exactly. On Linux that question is
+`readlink("/proc/self/fd/N")`. **macOS has no `/proc`**, so `FinalPathOfFd`
+returned `''`, the constructor raised at its root-canonicalization step, and
+`TFolderAssetStore` could not be created at all. The whole CAP-7L confinement
+branch was, until CAP-7M1, dead on macOS — and with it the ten published
+`TTestAssetStores` cases, which take the suite down in `Setup`.
+
+The replacement is the direct counterpart, not a different algorithm:
+
+| | "what did I actually open?" |
+|---|---|
+| **Windows** | `GetFinalPathNameByHandleW(h, …)` |
+| **Linux** | `readlink("/proc/self/fd/N")` |
+| **macOS** | `fcntl(fd, F_GETPATH, buf)` — `buf` at least `PATH_MAX` (1024) |
+
+Both call sites and the confinement algorithm are **byte-identical** across
+the two POSIX systems; only the way the question is asked differs.
+
+**Three things about it are easy to get wrong, and all three are gated.**
+
+- **`fcntl` is variadic in C, and Apple's two ABIs disagree about variadics.**
+  `int fcntl(int, int, ...)` passes its third argument **on the stack** on
+  arm64 and **in a register** on x86_64. A plain three-argument `cdecl`
+  external would therefore be correct on Intel and silently wrong on Apple
+  Silicon. The declaration uses FPC's `varargs`, and — because "the
+  declaration is right" is an *architecture-specific* claim — the paired probe
+  now performs a **round trip**: `test/cap7m/abi_probe_fcntl.c` and
+  `.pas` are handed the same file and must report the same kernel-resolved
+  path, on each architecture separately. FPC 3.2.2's Darwin `BaseUnix` offers
+  only the integer-argument `FpFcntl` forms, which would truncate a 64-bit
+  pointer to 32 bits, so there is nothing in the RTL to use instead.
+- **macOS resolves firmlinks.** A root under `/tmp` canonicalizes to
+  `/private/tmp/...`, and `/var` to `/private/var/...`. That is not a defect —
+  it is exactly why the root is canonicalized *through the descriptor* in the
+  first place — but a gate that builds fixtures must compare on `pwd -P`
+  output or it will construct link targets that never compare equal.
+- **An unlinked file reports its last path with no `(deleted)` marker**,
+  unlike Linux. Neither system's answer is an escape (the fd was opened
+  `O_NOFOLLOW` at a walked-and-`lstat`'d path), but the difference is real and
+  a reader porting the Linux reasoning across will not expect it.
+
+**The failure mode is loud, unlike `O_NOFOLLOW`'s.** A wrong `F_GETPATH` stops
+the store constructing and fails every read's re-proof, so nothing is servable
+at all. That asymmetry is an argument for caring *more* about `O_NOFOLLOW`,
+never for measuring `F_GETPATH` less: the probe covers both, with zero
+permitted deltas.
+
+**What the re-proof does NOT close, stated so nobody infers otherwise.** A
+**hard link** inside the root pointing at an inode outside it is served — on
+Linux exactly as on Darwin. The ratified model is *no symlink on the resolved
+chain, and the opened descriptor's kernel path equals the expected path*, and
+a hard link satisfies both by construction: `lstat` sees a regular file, and
+`F_GETPATH` (like `/proc/self/fd`) reports the path the descriptor was
+*opened by*, which is the in-root path. Neither mechanism was ever going to
+close that, and reading `F_GETPATH` as if it did is the mistake this paragraph
+exists to prevent; closing it needs a different invariant (same-device plus
+inode-set membership, or an `openat`-relative walk from a root descriptor),
+which is a change to CAP-7L's algorithm rather than a Darwin body for it.
+Ledgered.
+
+### 14. The bridge holds a generation-checked handle, never a Pascal pointer
+
+**DERIVED**, and it is the one place the macOS adapter is deliberately
+*stronger* than its siblings rather than merely different.
+
+The Linux adapter disowns by clearing an interlocked owner **pointer** in a
+GLib-owned cell. That works, and it depends on the store being ordered
+correctly relative to the free. The Cocoa bridge instead receives a `uint64_t`
+packing a slot index and a generation counter, and resolves it through a
+Pascal-side registry that bumps the generation on **both claim and release**.
+So a handle minted for a handler that has since been detached does not resolve
+to a stale object, or to whatever now occupies the slot — it does not resolve
+at all.
+
+```
+Detach:  disown (the bridge stops calling out)
+      -> claim and fail every live task (no request is left waiting forever)
+      -> release the slot (the handle becomes unresolvable)
+      -> only now may webview_destroy run
+```
+
+That makes "no callback after handler destruction" a property of the
+*representation* rather than of the teardown order, and it is what the
+`HandleRegistryGenerations` case asserts by re-occupying the slot and
+requiring the old handle to stay dead.
+
+The reverse direction has one rule and one owner: a response body is allocated
+by Pascal through `pweb_cocoa_alloc` and belongs to the **bridge** from the
+moment the resolve callback returns non-zero, whether the task is served or
+abandoned. Pairing the allocator with the deallocator on one side of the seam
+is why those two entry points exist at all — Pascal never has to assume which
+libc allocator the Objective-C++ side frees with.
+
+`Attach` is the other half of the same idea, and it takes **two** steps
+because the first one alone is nearly vacuous:
+
+1. the bridge's seam-invocation counter must have moved across
+   `webview_create`. Cheap, and safe on a handle that is not really a webview
+   — but process-global and monotonic, so *any* unrelated
+   `+[WKWebViewConfiguration new]` anywhere in the process would satisfy it;
+2. the view's own configuration must report **our** handler for the `pweb`
+   scheme, read through the public
+   `-[WKWebViewConfiguration urlSchemeHandlerForURLScheme:]` reached via
+   `webview_get_native_handle(w, BROWSER_CONTROLLER)`.
+
+Step 2 is what turns "a counter moved" into "this view will route `pweb://` to
+us". Note that it does not contradict constraint A: CAP-7M0 measured that
+*writing* to the configuration a `WKWebView` hands back is silently
+ineffective, which is a statement about mutation — reading back a registration
+the configuration was **copied with** is a different operation. Constraint 12's
+lesson generalises: on this backend the dangerous failures are the quiet ones,
+so both steps raise and neither warns.
+
+`Detach` and `Attach` additionally refuse to run off the thread that created
+the handler. That is not defensive tidiness: `Detach` sends
+`didFailWithError:` to any still-live `WKURLSchemeTask`, and those are
+main-thread-only.
+
+### 15. A synchronous main-thread handler, and the honest claim about races
+
+**DERIVED, and stated narrowly on purpose.**
+
+Every request is resolved and completed inside `startURLSchemeTask:` on the
+main thread. `stopURLSchemeTask:` therefore cannot interleave with serving,
+the tracked-task set is empty between calls, and most of the race surface
+constraint 1 documents is **structurally absent rather than merely untested**.
+
+The claim-once state machine is still built and still gated, for two reasons:
+"structurally absent" is a property of *this* implementation that a future
+chunked or deferred delivery would remove — CAP-12's `Range` plane will need
+one — and the invariants are cheap to hold and expensive to retrofit.
+
+**The claim and the removal are separate steps, and that separation is the
+whole guard.** A task moves `New → Serving → Completed|Cancelled`; the claim
+is the transition *out of* a non-terminal state and succeeds exactly once, but
+the task stays **tracked** until it is settled, after the terminal callback
+has actually been delivered. Claiming and removing in one step would mean an
+`NSException` out of `didReceiveResponse:` leaves a task that is untracked
+*and* unterminated — a resource WebKit waits on forever, invisible because
+`live_tasks` already reads 0 and every gate stays green. The states are
+load-bearing rather than decorative: `stops_while_serving` counts a stop that
+arrived on a `Serving` task specifically, which is the interleaving this
+handler cannot produce and a chunked one will.
+
+It is proven two ways, and only one of them is a race test:
+
+- **Deterministically**, in `test/platform/pweb.test.cocoa.pas`, by driving
+  the real handler with a bridge-internal stub task: a second terminal is
+  suppressed, a post-stop delivery is suppressed *before the call is made*, a
+  second cancel is a no-op, teardown claims and fails a task deliberately left
+  live, and a disowned handler serves nothing and reaches no Pascal code. The
+  stub **mimics WebKit's documented raising behaviour**, so a guard that
+  stopped working would surface as a raised misuse rather than as silence — a
+  stub that quietly accepted misuse would let the claim gate be deleted with
+  every test still green.
+- **In a real `WKWebView`**, by `test/cap7m/run_cap7m_runtime.sh`, which
+  asserts zero suppressed terminals, zero caught exceptions, zero unresolved
+  handles and an empty task set at every teardown, across both shutdown
+  shapes.
+
+**What the real leg does *not* prove is recorded as a limitation.** If it
+records zero `stopURLSchemeTask:` arrivals — which is the expected outcome of
+a synchronous handler — the gate says so in as many words rather than
+reporting a passing race test. That distinction is the whole reason the
+deterministic leg exists.
+
 ## Threading
 
 **MEASURED**, run `31909938201` (`gui_affine=1 worker_distinct=1 direct_return=1`, `echoes=8 errors=1 outstanding=1`), and re-proven rather than adapted. The frozen model is the same
@@ -790,6 +975,10 @@ and diffing two artifacts by hand.
 | K (M18) | `check_release_layout.sh` | `CAP7M_M18`, `CAP7M_M18_SIGNING` |
 | L (M19) | **every** gate | `CAP7M_ENV gate=…` — one tagged block per gate, including the selected `DEVELOPER_DIR` |
 | M20 | `check_cap7m_nonetwork.sh` | sample count, zero owned listeners |
+| CAP-7M1 bridge | `tools/build-macos-bridge.sh` | `CAP7M_MACHO binary=pweb_cocoa_bridge.o arch=… minos=…`; the object exports only `_pweb_cocoa_*` |
+| CAP-7M1 headless | `run_cap7m_gates.sh` | `CAP7M1_SUITE`, `CAP7M1_CONFINEMENT vectors=… cwd_independent=yes` |
+| CAP-7M1 runtime | `run_cap7m_runtime.sh` | `CAP7M1_SEAM`, `CAP7M1_REPORT`, `CAP7M1_THREADS`, `CAP7M1_INVOKE`, `CAP7M1_STATS`, `CAP7M1_REGISTRY`, `CAP7M1_SHUTDOWN`, `CAP7M1_LEAK`, `CAP7M1_URI store=… leaks=0`, `CAP7M1_CWD` |
+| CAP-7M1 fcntl | `check_abi.sh` | `CAP7M_FCNTL` — now **6** facts including `F_GETPATH`, `PATH_BOUND` and the round trip (constraint 13) |
 
 ## The one ABI delta, expected to be the same two lines
 

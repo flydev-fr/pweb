@@ -1,0 +1,3 @@
+/* An exact computed value, so "the stylesheet was served and applied" is a
+   fact the page can STATE rather than something inferred from a screenshot. */
+#verdict { color: rgb(1, 2, 3); }

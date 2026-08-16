@@ -64,14 +64,26 @@ macos-arch-arm64 = arm64
 # with line endings normalised to LF and one trailing LF, which is stable on
 # the Windows, the Linux and the macOS runner.
 #
-# CAP-7M0 re-derived this value: the patch now carries the Linux branch AND
-# the two Darwin branches ([Platform.MacARM]/[Platform.MacIntel] enabled in
-# the committed chet config, regenerated through
-# tools/regen-webview-binding.ps1). The key name is unchanged so both sweeps
-# keep reading one value; re-deriving it was verified to produce the SAME hash
-# from both baselines, which is the only thing that makes the two-sweep
-# arrangement work.
-cap7l-binding-patch-sha256 = 255927608d7e6b1172211ddb8ce9e0057699ec117c6d0455c4c0c789d7d81988
+# CAP-7M0 re-derived this VALUE: the patch carries the Linux branch AND the
+# two Darwin branches ([Platform.MacARM]/[Platform.MacIntel] enabled in the
+# committed chet config, regenerated through
+# tools/regen-webview-binding.ps1). Re-deriving it was verified to produce the
+# SAME hash from both baselines, which is the only thing that makes the
+# two-sweep arrangement work.
+#
+# CAP-7M1 renamed the KEY. The previous name began with the CAP-7L capability
+# id, which named ONE platform for a patch that now carries three - a misnomer
+# CAP-7M0 ledgered rather than fixed, because renaming it rewrites the exact
+# `windows:` steps whose byte-stability CAP-7M0's acceptance asserted. The
+# VALUE is byte-preserved: this is a rename, never a re-ratification, and both
+# baselines were re-verified to produce this same hash.
+#
+# The old spelling is deliberately NOT written out anywhere in this file. A
+# dedicated `windows:` gate FAILS if it reappears here at all - a rename with
+# no rejection gate leaves the old name working by accident - and that gate
+# builds the string it searches for by concatenation so it cannot match its
+# own source, exactly as the floating-upstream-ref guards do.
+srclib-platform-patch-sha256 = 255927608d7e6b1172211ddb8ce9e0057699ec117c6d0455c4c0c789d7d81988
 
 # SHA256 of the public C API headers at the pinned commit (cross-check on fetch).
 sha256:core/include/webview/api.h = 71a6a96a91828a7f4dbbe3d19376bfaa9ff88fce34002c5a7475a07348020a72

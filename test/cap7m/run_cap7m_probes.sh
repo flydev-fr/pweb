@@ -252,8 +252,9 @@ paste "${logs}/verdicts.txt" "${logs}/oracle-in.txt" > "${logs}/oracle.tsv"
 # execute, and this gate would print "0 canonical vectors, every verdict as
 # ratified" and exit 0 - the CAP-7L silent-skip defect in a new place.
 # Changing uri_vectors.txt is a deliberate act that updates this number in
-# the same commit.
-CAP7M_RATIFIED_VECTORS=44
+# the same commit - and CAP-7M1 moved it to test/cap7m/cap7m_common.sh, since
+# a second gate (run_cap7m_runtime.sh) now compares against the same list and
+# two copies of a ratified count is a second place to forget one.
 vector_count="$(awk '{ sub(/\r$/, "") } !/^#/ && NF >= 2' "${vectors}" | grep -c . || true)"
 [ "${vector_count}" = "${CAP7M_RATIFIED_VECTORS}" ] ||
     die "uri_vectors.txt carries ${vector_count} vectors, the ratified count is ${CAP7M_RATIFIED_VECTORS}"

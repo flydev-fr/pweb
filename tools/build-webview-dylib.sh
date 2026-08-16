@@ -50,7 +50,16 @@
 set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-repo_root="$(cd -- "${script_dir}/.." && pwd)"
+
+# THE single source for every macOS compile and link decision, including the
+# two CMake OSX cache variables this script passes. Sourcing it is why this
+# file no longer spells the deployment target, the architecture map or the
+# lock reader itself. It lives under tools/ precisely so a BUILD tool can
+# reach it without depending on the test tree.
+# shellcheck source=tools/macos-buildenv.sh
+. "${script_dir}/macos-buildenv.sh"
+
+repo_root="${PWEB_MACOS_REPO_ROOT}"
 
 src="${repo_root}/deps/webview"
 build_dir="${repo_root}/build/cap7m/webview-build"
@@ -160,29 +169,11 @@ done
 set -- ${cap7m_args[@]+"${cap7m_args[@]}"}
 
 # --- read a lock (strict: one 'key = value' per non-comment line) ------------
-_lock_get() {
-    local file="$1" wanted="$2" line key value found='' result=''
-    [ -f "${file}" ] || die "lock file missing: ${file}"
-    while IFS= read -r line || [ -n "${line}" ]; do
-        line="${line%$'\r'}"
-        line="$(printf '%s' "${line}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
-        [ -z "${line}" ] && continue
-        case "${line}" in '#'*) continue ;; esac
-        case "${line}" in *=*) ;; *) die "$(basename "${file}") line is malformed: ${line}" ;; esac
-        key="$(printf '%s' "${line%%=*}" | sed -e 's/[[:space:]]*$//')"
-        value="$(printf '%s' "${line#*=}" | sed -e 's/^[[:space:]]*//')"
-        if [ "${key}" = "${wanted}" ]; then
-            [ -n "${found}" ] && die "$(basename "${file}") contains duplicate key '${wanted}'"
-            found=1
-            result="${value}"
-        fi
-    done < "${file}"
-    [ -n "${found}" ] || die "$(basename "${file}") has no '${wanted}' entry"
-    printf '%s' "${result}"
-}
-
-lock_get() { _lock_get "${lock_file}" "$1"; }
-fpc_lock_get() { _lock_get "${fpc_lock_file}" "$1"; }
+# The reader itself now lives in tools/macos-buildenv.sh, so the build tool and
+# the gates read a lock exactly one way. These two names are kept because the
+# rest of this script already uses them.
+lock_get() { pweb_macos_lock_read "${lock_file}" "$1"; }
+fpc_lock_get() { pweb_macos_lock_read "${fpc_lock_file}" "$1"; }
 
 [ -f "${lock_file}" ] || die "webview.lock missing: ${lock_file}"
 [ -f "${src}/CMakeLists.txt" ] || die 'deps/webview missing -- run tools/get-webview.ps1 first'
@@ -204,13 +195,20 @@ checkout_commit="$(git -C "${src}" rev-parse HEAD 2>/dev/null || printf '')"
 [ "${checkout_commit}" = "${pinned_commit}" ] ||
     die "deps/webview is at ${checkout_commit}, webview.lock pins ${pinned_commit}"
 
-dylib_link="$(lock_get macos-dylib)"
-dylib_versioned="$(lock_get macos-dylib-versioned)"
-dylib_real="$(lock_get macos-dylib-real)"
-install_name_prefix="$(lock_get macos-install-name-prefix)"
-deployment_target="$(lock_get macos-deployment-target)"
-arch_x64="$(lock_get macos-arch-x64)"
-arch_arm64="$(lock_get macos-arch-arm64)"
+# --- native architecture, never Rosetta, never a cross build -----------------
+# pweb_macos_init asserts Darwin, resolves every lock value, validates the
+# host architecture against the two ratified names and REFUSES a cross build.
+# `$1` is the architecture the caller believes it is building for.
+host_arch="$(uname -m)"
+want_arch="${1:-${host_arch}}"
+pweb_macos_init "${want_arch}"
+
+dylib_link="${PWEB_MACOS_DYLIB}"
+dylib_versioned="${PWEB_MACOS_DYLIB_VERSIONED}"
+dylib_real="${PWEB_MACOS_DYLIB_REAL}"
+install_name_prefix="${PWEB_MACOS_INSTALL_NAME_PREFIX}"
+deployment_target="${PWEB_MACOS_DEPLOYMENT_TARGET}"
+arch_arm64="${PWEB_MACOS_ARCH_ARM64}"
 
 # The ratified names are FACTS of this capability, not variables: a lock that
 # says something else is a deliberate re-ratification and must not be honoured
@@ -223,18 +221,11 @@ arch_arm64="$(lock_get macos-arch-arm64)"
 [ "${install_name_prefix}" = '@rpath/' ] ||
     die "unexpected macos-install-name-prefix pin '${install_name_prefix}'"
 
-# --- native architecture, never Rosetta, never a cross build -----------------
-host_arch="$(uname -m)"
-want_arch="${1:-${host_arch}}"
-case "${want_arch}" in
-    "${arch_x64}"|"${arch_arm64}") ;;
-    *) die "unsupported architecture '${want_arch}' (expected ${arch_x64} or ${arch_arm64})" ;;
-esac
-[ "${want_arch}" = "${host_arch}" ] ||
-    die "refusing to cross-build: asked for ${want_arch} on a ${host_arch} host"
-
 # `uname -m` alone is NOT an anti-Rosetta gate: a translated process on Apple
-# Silicon reports x86_64 quite honestly. These two do settle it.
+# Silicon reports x86_64 quite honestly. These two do settle it, and they stay
+# here rather than in the helper because they are GATE POLICY, not a build
+# flag - the helper is the single source for what to compile with, not for
+# what a run has to prove about itself.
 if [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || printf '0')" = '1' ]; then
     die 'this process is running under Rosetta -- a translated run is never authoritative'
 fi
@@ -242,8 +233,6 @@ if [ "$(sysctl -n hw.optional.arm64 2>/dev/null || printf '0')" = '1' ] &&
    [ "${host_arch}" != "${arch_arm64}" ]; then
     die "host is Apple Silicon but uname -m says ${host_arch} -- translated shell"
 fi
-
-[ "$(uname -s)" = 'Darwin' ] || die "this script is macOS only, host is $(uname -s)"
 
 for tool in cmake otool lipo nm xcrun; do
     command -v "${tool}" >/dev/null 2>&1 || die "required tool not found: ${tool}"
@@ -303,8 +292,7 @@ printf '[CAP-7M0] DEVELOPER_DIR=%s (pinned Xcode %s)\n' \
 cap7m_prepare_dir "${build_dir}"
 cmake -B "${build_dir}" -S "${src}" \
     -DCMAKE_BUILD_TYPE=Release \
-    "-DCMAKE_OSX_ARCHITECTURES=${want_arch}" \
-    "-DCMAKE_OSX_DEPLOYMENT_TARGET=${deployment_target}" \
+    "${PWEB_MACOS_CMAKE_FLAGS[@]}" \
     -DWEBVIEW_ENABLE_CHECKS=OFF \
     -DWEBVIEW_BUILD_TESTS=OFF \
     -DWEBVIEW_BUILD_EXAMPLES=OFF \
@@ -358,25 +346,18 @@ real_lib="${build_dir}/core/${dylib_real}"
 [ -f "${real_lib}" ] || die "expected shared library not found: ${real_lib}"
 
 # --- assert the Mach-O, then RECORD what cannot be assumed -------------------
-got_slices="$(lipo -archs "${real_lib}")"
-[ "${got_slices}" = "${want_arch}" ] ||
-    die "built Mach-O carries slices '${got_slices}', expected exactly '${want_arch}'"
-
-# LC_BUILD_VERSION on anything modern; LC_VERSION_MIN_MACOSX only on very old
-# toolchains. Accept either shape and read the minimum out of it.
-minos="$(otool -l "${real_lib}" |
-    awk '/LC_BUILD_VERSION/ { b = 1 } b && /^ *minos / { print $2; exit }')"
-if [ -z "${minos}" ]; then
-    minos="$(otool -l "${real_lib}" |
-        awk '/LC_VERSION_MIN_MACOSX/ { b = 1 } b && /^ *version / { print $2; exit }')"
-fi
-[ -n "${minos}" ] ||
-    die 'the built dylib carries no LC_BUILD_VERSION/LC_VERSION_MIN_MACOSX at all'
-# "12.0" and "12.0.0" are the same floor written two ways
-case "${minos}" in
-    "${deployment_target}"|"${deployment_target}".0) ;;
-    *) die "built dylib minos is '${minos}', expected '${deployment_target}'" ;;
-esac
+# ONE architecture slice, and the ratified minos - both asserted by the shared
+# helper rather than by a copy of the awk here. A universal binary fails: fat
+# artifacts are deliberately not a CAP-7 requirement, and one would let an
+# arm64 run masquerade as an x86_64 proof.
+pweb_macos_assert_macho "${real_lib}"
+# The MEASURED values, exported by the helper. Recording want_arch here would
+# record the REQUEST - and in a shard whose deliverable is a set of
+# measurements, restating an input as an output is recording nothing. Scraping
+# them back out of the human-readable fact string would be almost as bad: a
+# format change would silently empty them.
+got_slices="${PWEB_MACOS_MACHO_ARCH}"
+minos="${PWEB_MACOS_MACHO_MINOS}"
 
 # A Cocoa/WKWebView build - and only a Cocoa build - links WebKit.framework.
 deps="$(otool -L "${real_lib}")"

@@ -80,6 +80,27 @@ const
     value and the probe keeps proving that. }
   O_DIRECTORY = $00100000;
   O_NOFOLLOW  = $00000100;
+
+  { CAP-7M1. THE reason the POSIX branch could not construct at all on
+    Darwin: it re-proves confinement by reading /proc/self/fd/<n>, and macOS
+    has no /proc. FinalPathOfFd therefore returned '' and the constructor
+    raised before a single asset was ever looked up - so the whole POSIX
+    confinement branch CAP-7L hardened was, until now, dead on macOS. CAP-7M0
+    only ever COMPILED this unit; it never constructed a store.
+
+    fcntl(fd, F_GETPATH, buf) is the direct counterpart of
+    readlink("/proc/self/fd/N") and of Windows' GetFinalPathNameByHandleW: it
+    answers "what did I actually open?". The buffer must be at least
+    MAXPATHLEN bytes (Apple, fcntl(2)), which is PATH_MAX = 1024 on Darwin.
+
+    F_GETPATH is bsd/sys/fcntl.h's "return the full path of the fd". Unlike
+    O_NOFOLLOW, a wrong value here fails LOUDLY rather than silently: the
+    constructor cannot canonicalize its root and refuses, and every read
+    fails its open-descriptor re-proof, so nothing is servable at all. It is
+    verified by the paired probe anyway - the asymmetry is an argument for
+    caring MORE about O_NOFOLLOW, never for measuring this one less. }
+  F_GETPATH = 50;
+  PWEB_DARWIN_PATH_MAX = 1024;
 {$endif DARWIN}
 
 type
@@ -112,6 +133,31 @@ type
     function TryRead(const Path: RawUtf8;
       out Asset: TAssetResponse): Boolean;
   end;
+
+{$ifdef DARWIN}
+/// the kernel's own absolute path for an open descriptor, '' on failure
+// - THE Darwin body of the confinement re-proof: the direct counterpart of
+// Linux's readlink('/proc/self/fd/N') and of Windows'
+// GetFinalPathNameByHandleW. Both call sites - the constructor's one-time
+// root canonicalization and ReadWholeFile's open-descriptor re-proof - keep
+// their exact shape, so Linux and Windows behaviour is byte-identical and the
+// confinement algorithm is unchanged.
+// - EXPOSED, rather than left private, for the same reason the constants
+// above are: test/cap7m/abi_probe_fcntl.pas measures the PRODUCTION routine
+// on both architectures instead of a copy of it. That matters more here than
+// for a constant, because the call it makes is variadic in C
+// (`int fcntl(int, int, ...)`) and Apple's arm64 ABI passes variadic
+// arguments on the STACK where its x86_64 ABI passes them in registers - so
+// "the declaration is right" is an architecture-specific claim, and it is
+// measured on each architecture rather than assumed from the other.
+// - TWO DARWIN DIFFERENCES, recorded rather than assumed away. macOS resolves
+// firmlinks, so a root under /tmp canonicalizes to /private/tmp/... - which
+// is exactly why the root is canonicalized through the descriptor in the
+// first place. And an unlinked file reports its last path with NO '(deleted)'
+// marker, unlike Linux; neither is an escape (the fd was opened O_NOFOLLOW at
+// a walked-and-lstat'd path), but the difference is real.
+function PWebDarwinFinalPathOfFd(AFd: LongInt): RawByteString;
+{$endif DARWIN}
 
 implementation
 
@@ -334,14 +380,64 @@ uses
       on-disk bytes, never by asking the filesystem to match a name -
       the dev host mounts the repository on DrvFs and CI images can
       carry ext4 casefold or an NTFS mount, all of which fold case;
-    - confinement is re-proven on the OPEN descriptor via /proc/self/fd,
-      the direct counterpart of the Windows GetFinalPathNameByHandleW
-      re-proof, so a component swapped for a link between check and open
-      cannot serve a file from somewhere else.
+    - confinement is re-proven on the OPEN descriptor, the direct
+      counterpart of the Windows GetFinalPathNameByHandleW re-proof, so a
+      component swapped for a link between check and open cannot serve a
+      file from somewhere else. The QUESTION is portable POSIX; the way to
+      ask it is not, and that is the only Darwin/Linux split in this
+      branch: Linux reads /proc/self/fd/<n>, Darwin has no /proc and uses
+      fcntl(fd, F_GETPATH, buf). Both call sites and the confinement
+      algorithm itself are byte-identical on the two systems.
 
   Only regular files are ever served: any special inode that happens to
   sit in frontend/dist/ - a device node, a FIFO, a named endpoint - is a
   miss, never something the handler starts reading from. }
+
+{$ifdef DARWIN}
+
+// fcntl(2) is VARIADIC in C - `int fcntl(int, int, ...)` - and its F_GETPATH
+// form takes a char* third argument. It is declared with `varargs` rather
+// than as a plain three-argument cdecl external, and that is not cosmetic:
+// Apple's arm64 ABI passes variadic arguments on the STACK while its x86_64
+// ABI passes them in registers, so a non-variadic declaration would put the
+// buffer pointer in x2 on Apple Silicon while libc read it off the stack.
+// FPC's `varargs` follows the platform's C variadic convention on both.
+//
+// FPC 3.2.2's Darwin BaseUnix offers only the integer-argument FpFcntl forms,
+// so there is nothing in the RTL to use instead: an FpFcntl(fd, cmd, cint)
+// would truncate a 64-bit pointer to 32 bits.
+function pweb_darwin_fcntl(fd: cint; cmd: cint): cint; cdecl; varargs;
+  external name 'fcntl';
+
+function PWebDarwinFinalPathOfFd(AFd: LongInt): RawByteString;
+var
+  buf: array[0 .. PWEB_DARWIN_PATH_MAX - 1] of AnsiChar;
+  n: PtrInt;
+begin
+  Result := '';
+  FillChar(buf{%H-}, SizeOf(buf), 0);
+  if pweb_darwin_fcntl(cint(AFd), F_GETPATH, @buf[0]) <> 0 then
+    exit;
+  n := 0;
+  while (n < PWEB_DARWIN_PATH_MAX) and
+        (buf[n] <> #0) do
+    Inc(n);
+  // an unterminated or relative answer is not something to reason about:
+  // fail closed, exactly as an empty readlink does on Linux
+  if (n = 0) or
+     (n >= PWEB_DARWIN_PATH_MAX) or
+     (buf[0] <> '/') then
+    exit;
+  SetString(Result, PAnsiChar(@buf[0]), n);
+end;
+
+// kernel-resolved absolute path of an open descriptor, '' on failure.
+function FinalPathOfFd(fd: cint): RawByteString; inline;
+begin
+  Result := PWebDarwinFinalPathOfFd(LongInt(fd));
+end;
+
+{$else}
 
 const
   /// the kernel's own answer to "what did I actually open?"
@@ -357,6 +453,8 @@ begin
      (Result[1] <> '/') then
     Result := '';
 end;
+
+{$endif DARWIN}
 
 // byte-exact comparison against a NUL-terminated directory entry, the
 // POSIX twin of WideEquals above

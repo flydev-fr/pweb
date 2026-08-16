@@ -7,3 +7,19 @@ tools/cap4w/webview2-custom-scheme.patch -text whitespace=-trailing-space
 # would break the shebang line and every heredoc, so pin these to LF
 # regardless of platform or local git configuration.
 *.sh text eol=lf
+
+# CAP-7M1: the macOS runtime fixture is ONE corpus served by TWO stores, and
+# the ZIP is built from the same working-tree bytes the folder store reads.
+# A line-ending rewrite on checkout would change the served bytes (and the
+# archive's CRCs) depending on whose machine checked it out.
+#
+# The DEFAULT for the whole subtree is binary, and the text members opt back
+# in by extension. That direction is deliberate: naming each file individually
+# means the next fixture added silently inherits nothing, and the one asset
+# whose entire purpose is to prove that every byte value survives the seam is
+# exactly the kind of file someone adds without editing this list.
+test/cap7m/fixture/** -text
+test/cap7m/fixture/**/*.html text eol=lf
+test/cap7m/fixture/**/*.css text eol=lf
+test/cap7m/fixture/**/*.js text eol=lf
+test/cap7m/fixture/**/*.json text eol=lf

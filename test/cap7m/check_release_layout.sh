@@ -46,8 +46,12 @@ record_environment
 
 command -v otool >/dev/null 2>&1 || die 'required tool not found: otool'
 
-dylib_versioned="$(lock_get macos-dylib-versioned)"
-deployment_target="$(lock_get macos-deployment-target)"
+# From tools/macos-buildenv.sh, never re-fetched here: LSMinimumSystemVersion
+# in the plist below and the deployment target every compile was given are the
+# SAME decision, and a bundle claiming a floor its binaries do not carry is
+# exactly the drift one source of truth exists to prevent.
+dylib_versioned="${PWEB_MACOS_DYLIB_VERSIONED}"
+deployment_target="${PWEB_MACOS_DEPLOYMENT_TARGET}"
 bin='build/cap7m/bin'
 logs='build/cap7m/release'
 

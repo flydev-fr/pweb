@@ -14,6 +14,13 @@
 #           assert_fpc_target, record_environment, record_measurement,
 #           and the standard paths.
 #
+# CAP-7M1 moved every macOS COMPILE AND LINK DECISION out of here (and out of
+# the gates) into tools/macos-buildenv.sh, which this file sources. What is
+# left here is gate POLICY - the anti-Rosetta assertions, the pinned-FPC
+# assertion, the environment record, the working-directory refusal and the
+# deletion guard. The split is deliberate and load-bearing: a BUILD tool must
+# be able to reach the flags without depending on the test tree.
+#
 # It is committed executable like every other *.sh in this repository (the
 # Linux job asserts the index mode of all of them), even though it is only
 # ever sourced.
@@ -23,10 +30,18 @@
 cap7m_script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${cap7m_script_dir}/../.." && pwd)"
 
+# shellcheck source=tools/macos-buildenv.sh
+. "${repo_root}/tools/macos-buildenv.sh"
+
 lock_file="${repo_root}/webview.lock"
 fpc_lock_file="${repo_root}/fpc.lock"
-dist="${repo_root}/build/cap7m/webview-dist"
 work="${repo_root}/build/cap7m"
+
+# Resolved once, at source time, so every gate sees the same values whether or
+# not it has reached its own assert_native_arch yet. The staged-artifact path
+# is the helper's, never a second spelling of it.
+pweb_macos_init
+dist="${PWEB_MACOS_DIST}"
 
 # THE measurement record. This shard's deliverable is a set of measurements,
 # so they go to a file that is uploaded whether the job passes or fails -
@@ -41,10 +56,11 @@ step() { printf '\n[CAP-7M0] === %s\n' "$*"; }
 # The gate currently running, used to tag its block in the record.
 cap7m_gate="$(basename -- "${0:-cap7m}")"
 
+# Delegates to tools/macos-buildenv.sh so the build tool and the gates append
+# to the record exactly one way (the same argument that moved the lock reader
+# there). The name is kept because every gate already calls it.
 record_measurement() {
-    mkdir -p -- "${work}"
-    printf '%s\n' "$*" >> "${measurements}"
-    printf '%s\n' "$*"
+    pweb_macos_record "$*"
 }
 
 # --- working directories: ASSERT EMPTY, do not wipe --------------------------
@@ -178,46 +194,25 @@ cap7m_rm_tree() {
     rm -rf -- "${resolved}"
 }
 
-# strict 'key = value' reader, identical in behaviour to the one in
-# tools/build-webview-dylib.sh and tools/build-webview-so.sh
-_lock_get() {
-    local file="$1" wanted="$2" line key value found='' result=''
-    [ -f "${file}" ] || die "lock file missing: ${file}"
-    while IFS= read -r line || [ -n "${line}" ]; do
-        line="${line%$'\r'}"
-        line="$(printf '%s' "${line}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
-        [ -z "${line}" ] && continue
-        case "${line}" in '#'*) continue ;; esac
-        case "${line}" in *=*) ;; *) die "$(basename "${file}") line is malformed: ${line}" ;; esac
-        key="$(printf '%s' "${line%%=*}" | sed -e 's/[[:space:]]*$//')"
-        value="$(printf '%s' "${line#*=}" | sed -e 's/^[[:space:]]*//')"
-        if [ "${key}" = "${wanted}" ]; then
-            [ -n "${found}" ] && die "$(basename "${file}") contains duplicate key '${wanted}'"
-            found=1
-            result="${value}"
-        fi
-    done < "${file}"
-    [ -n "${found}" ] || die "$(basename "${file}") has no '${wanted}' entry"
-    printf '%s' "${result}"
-}
-
-lock_get() { _lock_get "${lock_file}" "$1"; }
-fpc_lock_get() { _lock_get "${fpc_lock_file}" "$1"; }
+# The strict 'key = value' reader now lives in tools/macos-buildenv.sh, so the
+# build tool and the gates read a lock exactly one way. These two names are
+# kept because every gate already uses them.
+lock_get() { pweb_macos_lock_read "${lock_file}" "$1"; }
+fpc_lock_get() { pweb_macos_lock_read "${fpc_lock_file}" "$1"; }
 
 # --- the anti-Rosetta gate (M19) ---------------------------------------------
 # A Rosetta-hosted execution is never authoritative x64 proof: it reports
 # x86_64 from `uname -m` quite honestly while running on Apple Silicon. Three
 # facts settle it, and every gate asserts them before it accepts a result.
+#
+# The Darwin check, the supported-architecture set and the caller's expected
+# architecture are pweb_macos_init's job (one place for every architecture
+# decision); the two sysctl assertions are gate POLICY and stay here.
 assert_native_arch() {
-    [ "$(uname -s)" = 'Darwin' ] || die "macOS only, host is $(uname -s)"
-
-    host_arch="$(uname -m)"
-    arch_x64="$(lock_get macos-arch-x64)"
-    arch_arm64="$(lock_get macos-arch-arm64)"
-    case "${host_arch}" in
-        "${arch_x64}"|"${arch_arm64}") ;;
-        *) die "unsupported host architecture '${host_arch}'" ;;
-    esac
+    pweb_macos_init "${1:-}"
+    host_arch="${PWEB_MACOS_HOST_ARCH}"
+    arch_x64="${PWEB_MACOS_ARCH_X64}"
+    arch_arm64="${PWEB_MACOS_ARCH_ARM64}"
 
     if [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || printf '0')" = '1' ]; then
         die 'running under Rosetta -- a translated run is never authoritative'
@@ -225,13 +220,6 @@ assert_native_arch() {
     if [ "$(sysctl -n hw.optional.arm64 2>/dev/null || printf '0')" = '1' ] &&
        [ "${host_arch}" != "${arch_arm64}" ]; then
         die "host is Apple Silicon but uname -m says ${host_arch} -- translated shell"
-    fi
-
-    # If the caller named an expected architecture, it must be THIS one. A job
-    # that thinks it is the x64 leg while running somewhere else is precisely
-    # the failure that would otherwise be reported as parity.
-    if [ -n "${1:-}" ] && [ "$1" != "${host_arch}" ]; then
-        die "job expects ${1} but this host is ${host_arch}"
     fi
     printf '[CAP-7M0] native arch: %s (not translated)\n' "${host_arch}"
 }
@@ -243,89 +231,51 @@ assert_native_arch() {
 # and the two halves of the pin would disagree in silence.
 assert_fpc_target() {
     command -v fpc >/dev/null 2>&1 || die 'required tool not found: fpc'
-    local v want os cpu arch
+    local v want os arch
     want="$(fpc_lock_get version)"
     v="$(fpc -iV | tr -d '[:space:]')"
     [ "${v}" = "${want}" ] ||
         die "fpc reports ${v}, fpc.lock pins ${want}"
     os="$(fpc -iTO | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
-    cpu="$(fpc -iTP | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
     [ "${os}" = 'darwin' ] || die "expected FPC target darwin, got ${os}"
-    # FPC spells the architectures its own way; map to the lock's names
-    case "${cpu}" in
-        x86_64) arch="$(lock_get macos-arch-x64)" ;;
-        aarch64) arch="$(lock_get macos-arch-arm64)" ;;
-        *) die "unsupported FPC target CPU ${cpu}" ;;
+    # The FPC-CPU -> lock-architecture map and the mORMot static directory it
+    # implies existed TWICE before CAP-7M1. Both now come from one place, and
+    # this is also where every FPC compile/link flag array is resolved.
+    pweb_macos_init_fpc
+    case "${PWEB_MACOS_FPC_CPU}" in
+        x86_64) arch="${PWEB_MACOS_ARCH_X64}" ;;
+        aarch64) arch="${PWEB_MACOS_ARCH_ARM64}" ;;
+        *) die "unsupported FPC target CPU ${PWEB_MACOS_FPC_CPU}" ;;
     esac
-    [ "${arch}" = "$(uname -m)" ] ||
-        die "fpc targets ${cpu} (${arch}) but the host is $(uname -m)"
-    printf '[CAP-7M0] fpc %s targeting %s/%s\n' "${v}" "${os}" "${cpu}"
+    [ "${arch}" = "${PWEB_MACOS_HOST_ARCH}" ] ||
+        die "fpc targets ${PWEB_MACOS_FPC_CPU} (${arch}) but the host is ${PWEB_MACOS_HOST_ARCH}"
+    printf '[CAP-7M0] fpc %s targeting %s/%s\n' "${v}" "${os}" \
+        "${PWEB_MACOS_FPC_CPU}"
 }
 
-# --- the aarch64-only Pascal link flag (MEASURED, run 31904189177) -----------
+# --- the aarch64-only Pascal link flag ---------------------------------------
 #
-# FPC 3.2.2 cannot link on aarch64-darwin at a deployment target of 12.0 or
-# later. Measured on macos-15 (macOS 15.7.7, Xcode 16.4, Apple clang 17.0.0),
-# linking the plain console test/core/abi_probe.pas:
+# DELETED here, not renamed. It MOVED to tools/macos-buildenv.sh, which now
+# folds -k-no_fixup_chains into every FPC link array it exports and ASSERTS
+# on aarch64 that all four carry it.
 #
-#     ld: pointer not aligned in 'FPC_THREADVARTABLES'+0x4 (abi_probe.o)
+# The forwarding shim this file briefly carried (CAP7M_FPC_ARCH_LINK_FLAGS +
+# set_fpc_arch_link_flags) is exactly why its absence from those arrays looked
+# wired: every gate still called the setter, so the variable was populated and
+# reached nothing but a non-fatal `fpc -va` diagnostic. A name that is still
+# there is indistinguishable from a name that still works. There is no
+# replacement to call - the flag arrives with the link set.
 #
-# CAUSE: Apple turns on the chained-fixups format for every binary whose
-# deployment target is macOS 12+. Chained fixups store the next-fixup offset
-# inside the pointer word itself, so on arm64 the pointer data must be 8-byte
-# aligned; FPC 3.2.2 emits FPC_THREADVARTABLES 4-byte aligned. Under the old
-# ld64 that was a warning (FPC issue 31696, 2017); under ld_prime - the linker
-# in every Xcode from 15 onward - it is a hard error. It is unconditional:
-# FPC_THREADVARTABLES is RTL data emitted for every program, threads or not.
-# It is also arm64-only, which is exactly why the x86_64 leg linked cleanly.
-# No Xcode available on the runner avoids it.
-#
-# (This is NOT Lazarus issue 41570, `ld` exit -11 on FPC 3.3.1 - a different
-# bug with a different fix. Do not conflate the two when re-reading this.)
-#
-# THE FIX TAKEN: -no_fixup_chains, the remedy the linker's own message names.
-# It reverts to classic rebase/bind opcodes, which every supported macOS
-# loads, and it leaves -WM12.0 alone - so LC_BUILD_VERSION minos stays 12.0
-# and the ratified floor survives intact.
-#
-# THE FIX DELIBERATELY NOT TAKEN: -WM11.0. Lowering the deployment target
-# below the chained-fixups threshold is the better-sourced remedy for this
-# exact FPC 3.2.2 error (MacPorts ticket 68368), but it CONTRADICTS this
-# shard's own proposed floor. 12.0 was chosen because WebKit's "custom scheme
-# handled origins should be considered secure" change first ships in the
-# macOS 12 branch, and that is the entire basis for expecting pweb://app to be
-# a secure context. Linking at 11.0 would emit binaries claiming to run on a
-# system where the shard's central premise does not hold - trading a
-# ratifiable toolchain fact for an unsound support claim.
-#
-# APPLIED TO aarch64 ONLY. x86_64 links cleanly without it, and passing a flag
-# an architecture does not need would contaminate that architecture's
-# measurement with a workaround for the other one's defect.
-#
-# CAVEAT, recorded rather than hidden: -no_fixup_chains is an ld_prime flag
-# with no guaranteed lifetime. -ld_classic is NOT a fallback - deprecated in
-# Xcode 16 and removed in Xcode 27 - so if this flag ever goes away the
-# answer is a newer FPC, not an older linker.
-#
-# A space-separated STRING, not an array, so it expands to nothing at all when
-# empty: macOS still ships bash 3.2, where "${arr[@]}" under `set -u` on an
-# empty array is an error. The single member never contains whitespace.
-CAP7M_FPC_ARCH_LINK_FLAGS=''
+# The MEASURED rationale (run 31904189177: FPC 3.2.2 emits
+# FPC_THREADVARTABLES 4-byte aligned, ld_prime's chained fixups need 8 on
+# arm64, -WM11.0 the remedy deliberately NOT taken) lives with the flag.
 
-set_fpc_arch_link_flags() {
-    local cpu
-    cpu="$(fpc -iTP | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
-    case "${cpu}" in
-        aarch64)
-            CAP7M_FPC_ARCH_LINK_FLAGS='-k-no_fixup_chains'
-            printf '[CAP-7M0] aarch64 Pascal link: adding %s (chained fixups vs FPC_THREADVARTABLES alignment)\n' \
-                "${CAP7M_FPC_ARCH_LINK_FLAGS}"
-            ;;
-        *)
-            CAP7M_FPC_ARCH_LINK_FLAGS=''
-            ;;
-    esac
-}
+# --- the ratified canonical URI vector count ---------------------------------
+# ONE source for both gates that compare against test/cap7m/uri_vectors.txt
+# (run_cap7m_probes.sh and run_cap7m_runtime.sh). Changing the vector list is
+# a deliberate act that updates this number in the same commit; two copies of
+# a ratified count is a second place for one of them to be forgotten.
+CAP7M_RATIFIED_VECTORS=44
 
 # --- M19: record the environment BEFORE any gate is accepted -----------------
 # Called by EVERY gate, not just the probe driver: "recorded before any gate

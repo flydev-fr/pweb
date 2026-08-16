@@ -64,7 +64,7 @@ record_environment
 lib="${1:-${dist}/$(lock_get macos-dylib-versioned)}"
 [ -f "${lib}" ] || die "webview dylib missing: ${lib} -- run tools/build-webview-dylib.sh first"
 
-host_arch="$(uname -m)"
+host_arch="${PWEB_MACOS_HOST_ARCH}"
 
 expected="$(printf '%s\n' \
     webview_bind webview_create webview_destroy webview_dispatch \

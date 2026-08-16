@@ -33,6 +33,10 @@ uses
   ,
   pweb.test.webkitgtk
   {$endif LINUX}
+  {$ifdef DARWIN}
+  ,
+  pweb.test.cocoa
+  {$endif DARWIN}
   {$ifdef PWEB_CALLMETHOD_UNWIND_PROBE}
   ,
   pweb.test.mormot.bridge,
@@ -56,6 +60,9 @@ type
     {$ifdef LINUX}
     procedure WebKitGtkAdapter;
     {$endif LINUX}
+    {$ifdef DARWIN}
+    procedure CocoaAdapter;
+    {$endif DARWIN}
     {$ifdef PWEB_CALLMETHOD_UNWIND_PROBE}
     procedure MormotBridge;
     {$endif PWEB_CALLMETHOD_UNWIND_PROBE}
@@ -133,6 +140,22 @@ begin
   AddCase([TTestWebKitGtkAdapter]);
 end;
 {$endif LINUX}
+
+{$ifdef DARWIN}
+procedure TPWebTests.CocoaAdapter;
+begin
+  // CAP-7M1, macOS-private: the pweb://app adapter's own routines and its
+  // REAL Objective-C++ bridge - the URI gate over the CAP-4 hostile vectors
+  // (with a counting store proving a refused URI never costs a lookup),
+  // deterministic MIME parity, the bridge-owned response body, the
+  // generation-checked handle registry, and the WKURLSchemeTask state
+  // machine driven deterministically over a stub task (claim-once terminals,
+  // post-stop suppression, idempotent cancel, teardown drain, disowned
+  // handler) - no window, no NSApplication, no display and no
+  // webview_create needed
+  AddCase([TTestCocoaAdapter]);
+end;
+{$endif DARWIN}
 
 procedure TPWebTests.InvocationPipeline;
 begin
