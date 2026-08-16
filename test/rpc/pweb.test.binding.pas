@@ -33,9 +33,19 @@ uses
   {$ifdef OSWINDOWS}
   windows, // VirtualAlloc/VirtualProtect for the guard-page scan test
   {$endif OSWINDOWS}
-  {$ifdef LINUX}
-  baseunix, // mmap/mprotect: the same guard-page proof on Linux (CAP-7L)
-  {$endif LINUX}
+  {$ifdef UNIX}
+  // mmap/mprotect: the same guard-page proof on every POSIX target.
+  //
+  // CAP-7M1: this guard was {$ifdef LINUX} and therefore gave Darwin nothing,
+  // so the unit failed to compile there with eight "Identifier not found"
+  // errors the moment the suite was first built for macOS. Nothing about the
+  // branch below is Linux-specific: FPC declares FpMMap/FpMProtect/FpMUnmap
+  // in the BaseUnix interface for all POSIX targets (rtl/unix/bunxh.inc) and
+  // implements them for BSD/Darwin (rtl/bsd/ossysc.inc), and MAP_PRIVATE,
+  // MAP_ANONYMOUS and the PROT_* set are defined in rtl/bsd/ostypes.inc. The
+  // symbol was simply too narrow.
+  baseunix,
+  {$endif UNIX}
   sysutils,
   classes,
   syncobjs,
