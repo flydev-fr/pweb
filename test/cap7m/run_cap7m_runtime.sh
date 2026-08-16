@@ -258,7 +258,14 @@ assert_run() {
 # PWebParseAppUri ACCEPTS, plus the canonical vector list
 # ---------------------------------------------------------------------------
 assert_uri_leak() {
-    local label="$1" log="$2" observed="${logs}/${label}-observed.tsv"
+    # TWO statements, deliberately. `local a="$1" b="${a}x"` does NOT work on
+    # macOS: bash 3.2 - which IS /bin/bash on every runner - expands every word
+    # of the command BEFORE performing any of the assignments, so ${label} is
+    # still unset when ${observed} is built, and `set -u` turns that into
+    # `label: unbound variable`. Newer bash assigns left to right and hides it,
+    # which is why this survived review on a Linux/Windows dev host.
+    local label="$1" log="$2"
+    local observed="${logs}/${label}-observed.tsv"
     local oracle_in="${logs}/${label}-oracle-in.txt"
     local oracle_out="${logs}/${label}-oracle-out.txt"
     local verdicts="${logs}/${label}-verdicts.txt"
