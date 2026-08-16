@@ -22,3 +22,26 @@ rootdir = pas2js-win64-x86_64-3.0.1
 linux-url = https://getpas2js.freepascal.org/downloads/linux/pas2js-linux-x86_64-3.0.1.zip
 linux-sha256 = cd1ed3dcb5a8370c22b4638be70e154a8306d5911f308c0677684824f438cee1
 linux-rootdir = pas2js-linux-x86_64-3.0.1
+
+# macOS build hosts (CAP-7M2). The SAME pinned compiler version, for two more
+# BUILD HOSTS - never a second frontend path. Both Darwin architectures
+# install into deps/pas2js-darwin.
+#
+# Upstream publishes Pas2JS 3.0.1 for Darwin as a THIN x86_64 binary only:
+# no aarch64 binary, no universal slice and no source archive exist on
+# getpas2js.freepascal.org (measured, fetched twice, stable digest below).
+# Rosetta is banned by the ratified no-translation invariant, so the arm64
+# host compiles the SAME pinned logical version natively from the FPC
+# repository revision whose pastojs IS 3.0.1 (the pas2js/fixes_3_0 branch
+# head: packages/pastojs reports VersionMajor=3 VersionMinor=0
+# VersionRelease=1, utils/pas2js/pas2js.pp present). The source pin is an
+# exact commit SHA, fetched by SHA and never by branch or tag, and the
+# result is asserted afterwards by BOTH `-iV` = version and
+# `lipo -archs` = host arch - a leftover x86_64 binary can never run under
+# Rosetta silently. RTL packages/ and pas2js.cfg come from the x86_64 zip on
+# both architectures; only bin/pas2js is host-specific.
+darwin-url = https://getpas2js.freepascal.org/downloads/darwin/pas2js-darwin-x86_64-3.0.1.zip
+darwin-sha256 = 4b0b2fb02e181563a06d0c588c7f3813bfb3eb8e9b45d616078ab152c882ee32
+darwin-rootdir = pas2js-darwin-x86_64-3.0.1
+darwin-arm64-source-url = https://gitlab.com/freepascal.org/fpc/source.git
+darwin-arm64-source-commit = f27c414bad8c3082abb4c31c0682e9648e42d7ec

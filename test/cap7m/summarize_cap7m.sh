@@ -90,6 +90,48 @@ arch="$(uname -m 2>/dev/null || printf 'unknown')"
     else
         printf '_the page never reported_\n'
     fi
+
+    # CAP-7M2: the release facts must reach the step summary, not only the
+    # artifact - Checkpoint reads the verdicts here, per frontend.
+    printf '\n### CAP-7M2 release .app products\n\n'
+    if [ -f "${measurements}" ] && grep -q '^CAP7M2' "${measurements}"; then
+        printf '| Product | direct / warm / LS | listeners (cold+warm samples) | inventory sha256 | plist sha256 | codesign (exe) |\n'
+        printf '|---|---|---|---|---|---|\n'
+        for fe in react pas2js; do
+            printf '| %s | %s / %s / %s | %s (%s+%s) | `%s` | `%s` | %s (verify=%s) |\n' \
+                "${fe}" \
+                "$(field "${measurements}" "^CAP7M2 product=${fe} " direct)" \
+                "$(field "${measurements}" "^CAP7M2 product=${fe} " warm)" \
+                "$(field "${measurements}" "^CAP7M2 product=${fe} " ls)" \
+                "$(field "${measurements}" "^CAP7M2 product=${fe} " listeners)" \
+                "$(field "${measurements}" "^CAP7M2 product=${fe} " samples_cold)" \
+                "$(field "${measurements}" "^CAP7M2 product=${fe} " samples_warm)" \
+                "$(field "${measurements}" "^CAP7M2_HASHES product=${fe} " inventory)" \
+                "$(field "${measurements}" "^CAP7M2_HASHES product=${fe} " plist_semantic)" \
+                "$(field "${measurements}" "^CAP7M2_CODESIGN product=${fe} role=exe " codesign_state)" \
+                "$(field "${measurements}" "^CAP7M2_CODESIGN product=${fe} role=exe " codesign_verify)"
+        done
+        printf '\n| Fact | Value |\n|---|---|\n'
+        printf '| host parity (exe / dylib identical) | %s / %s |\n' \
+            "$(field "${measurements}" '^CAP7M2_PARITY ' exe_identical)" \
+            "$(field "${measurements}" '^CAP7M2_PARITY ' dylib_identical)"
+        printf '| refusal matrix (missing/truncated/garbage/hidden dylib/bad arg) | %s/%s/%s/%s/%s |\n' \
+            "$(field "${measurements}" '^CAP7M2_REFUSALS ' missing)" \
+            "$(field "${measurements}" '^CAP7M2_REFUSALS ' truncated)" \
+            "$(field "${measurements}" '^CAP7M2_REFUSALS ' garbage)" \
+            "$(field "${measurements}" '^CAP7M2_REFUSALS ' hidden_dylib)" \
+            "$(field "${measurements}" '^CAP7M2_REFUSALS ' bad_arg)"
+        printf '| argv autoclose beats env (react / pas2js, elapsed s) | %s (%ss) / %s (%ss) |\n' \
+            "$(field "${measurements}" '^CAP7M2_AUTOCLOSE product=react ' argv_wins)" \
+            "$(field "${measurements}" '^CAP7M2_AUTOCLOSE product=react ' elapsed_s)" \
+            "$(field "${measurements}" '^CAP7M2_AUTOCLOSE product=pas2js ' argv_wins)" \
+            "$(field "${measurements}" '^CAP7M2_AUTOCLOSE product=pas2js ' elapsed_s)"
+        printf '| app.pwb determinism (react / pas2js) | %s / %s |\n' \
+            "$(field "${measurements}" '^CAP7M2_DETERMINISM product=react ' rebuild_identical)" \
+            "$(field "${measurements}" '^CAP7M2_DETERMINISM product=pas2js ' rebuild_identical)"
+    else
+        printf '_no CAP-7M2 release measurements recorded_\n'
+    fi
 } >> "${out}"
 
 printf '[CAP-7M0] headline facts written to %s\n' "${out}"

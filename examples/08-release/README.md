@@ -44,3 +44,46 @@ Delete `app.pwb` and run again: exit nonzero with
 The backend is line-identical to the CAP-5 hosts apart from the bundle
 loading, window title and log prefix — no backend code branches on
 frontend kind, and this host imports no folder store at all.
+
+## macOS (CAP-7M2)
+
+The SAME release host ships as two `.app` products per architecture —
+`PWebReleaseReact.app` (`dev.pweb.release.react`) and
+`PWebReleasePas2js.app` (`dev.pweb.release.pas2js`) — differing only in
+`app.pwb` and Info.plist identity: `releaseapp` and
+`libwebview.0.12.dylib` are byte-identical across both, which is the
+hash-proven form of "no frontend-kind branch". Two identifiers because
+WebKit keys persistent state by bundle identifier, so per-frontend state
+stays disjoint. Inside a bundle the layout is exactly:
+
+```
+Contents/Info.plist
+Contents/MacOS/releaseapp
+Contents/MacOS/libwebview.0.12.dylib      @rpath + @executable_path
+Contents/Resources/app.pwb                <exedir>/../Resources, never CWD
+Contents/Resources/LICENSE.webview
+```
+
+The Cocoa platform seam is two-phase (the handler is constructed BEFORE
+`webview_create` and `Attach`-proven just after — upstream builds the
+WKWebViewConfiguration inside `webview_create`), and the pre-create
+check is the FPU-trap gate over `PWebCocoaFpuTrapsMasked`.
+`test/cap7m/build_cap7m_release.sh` compiles host and bundler;
+`test/cap7m/run_cap7m_release.sh` assembles, gates and runs both
+products (direct and via LaunchServices) on both architectures.
+
+## Optional arguments (all platforms)
+
+`releaseapp [--pweb-verdict=<file>] [--pweb-autoclose-ms=<N>]`
+
+- `--pweb-verdict=<file>` — write the canonical PASS/FAIL verdict line
+  to `<file>` atomically (temp + rename) on every exit path. This exists
+  because `open -W` on macOS forwards neither stdout nor the exit code
+  and LaunchServices does not inherit the caller's environment, so a
+  file path passed in argv is the only deterministic evidence channel
+  for a LaunchServices launch.
+- `--pweb-autoclose-ms=<N>` — auto-close bound; the argument wins over
+  the `PWEB_SMOKE_AUTOCLOSE_MS` environment variable.
+
+Unknown arguments are refused with a nonzero exit, exactly as the old
+no-arguments rule refused everything.

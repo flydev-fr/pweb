@@ -87,6 +87,8 @@ flag_scan="${flag_scan} test/cap7m/run_cap7m_probes.sh test/cap7m/run_cap7m_gate
 flag_scan="${flag_scan} test/cap7m/run_cap7m_runtime.sh"
 flag_scan="${flag_scan} test/cap7m/check_release_layout.sh"
 flag_scan="${flag_scan} test/cap7m/check_cap7m_nonetwork.sh"
+flag_scan="${flag_scan} test/cap7m/build_cap7m_release.sh"
+flag_scan="${flag_scan} test/cap7m/run_cap7m_release.sh"
 flag_bad=0
 for f in ${flag_scan}; do
     # EXISTENCE FIRST, for the same reason the CI guards now check it: a

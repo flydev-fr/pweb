@@ -969,6 +969,65 @@ not anyone looked. The gate records `codesign -dvv`, whether
 an ad-hoc one the toolchain applied, and any `com.apple.quarantine` attribute
 (`CAP7M_M18_SIGNING`). It signs, re-signs, strips and staples nothing.
 
+## The release `.app` products (CAP-7M2)
+
+CAP-7M2 turns the M18 measurements into two shipped products per
+architecture — `PWebReleaseReact.app` (`dev.pweb.release.react`) and
+`PWebReleasePas2js.app` (`dev.pweb.release.pas2js`) — assembled and gated by
+`test/cap7m/run_cap7m_release.sh`. Four platform facts shape that gate, and
+they belong here because each one cost a measurement to learn.
+
+**LaunchServices delivers argv, and nothing else.** `open -W` waits for the
+launched instance but forwards **neither its stdout nor its exit code**, and
+a LaunchServices launch does **not** inherit the caller's environment — so
+neither `PWEB_SMOKE_AUTOCLOSE_MS` nor any capture of the process's output
+can carry evidence out of an `open`-launched run. The only deterministic
+channel is a file path passed **in argv**: the shared release host gained
+`--pweb-verdict=<file>` (the canonical PASS/FAIL line, written atomically as
+temp + rename on every exit path) and `--pweb-autoclose-ms=<N>` (argv wins
+over the environment, because argv is all LaunchServices delivers). Direct
+launches keep the real exit code and stderr, so both launch shapes stay
+gated.
+
+**`Contents/Resources` is the bundle's data directory, resolved from the
+executable.** Inside a `.app` the executable lives in `Contents/MacOS` and
+`app.pwb` in `Contents/Resources`; the host resolves it as
+`<exedir>/../Resources/app.pwb` through `ExpandFileName` over
+`Executable.ProgramFilePath` — an already-absolute path, so the working
+directory is never consulted. Every **42-verdict** launch (direct and
+LaunchServices alike) runs from `cwd=/` with all three `DYLD_*` hints
+stripped, against a relocated copy under a path carrying a space and a
+non-ASCII character, so that rule is measured rather than assumed; the
+refusal-matrix launches (R4–R6) deliberately run the in-checkout dist
+product instead — still from `cwd=/` with the hints stripped — because what
+they mutate and restore is the real product tree.
+
+**Codesign state is recorded per architecture, never performed as product
+signing.** On arm64 the linker applies an ad-hoc signature unasked (the M18
+finding); on x86_64 the binaries may run unsigned. `run_cap7m_release.sh`
+records `codesign -dvv` / `--verify` per product binary
+(`CAP7M2_CODESIGN`). If — and only if — a LaunchServices launch demonstrably
+refuses the product as built, a deterministic `codesign -s -` is applied to
+the **relocated copy** as recorded local prep (`role=local-prep`) and the
+launch retried exactly once; the dist products stay byte-untouched, which is
+what keeps the R8 exe/dylib parity hashes honest. Nothing here is Developer
+ID signing or notarization, and neither is claimed.
+
+**WebKit keys persistent state by bundle identifier.** A WKWebView's caches
+and website data land under `~/Library/WebKit/<bundle-id>` and
+`~/Library/Caches/<bundle-id>` — and network/cookie state under
+`~/Library/HTTPStorages/<bundle-id>` as well. That is *why* the two
+products carry distinct identifiers: per-frontend state is disjoint by
+construction, and a React-warmed cache can never stand in for a Pas2JS
+verdict (and LaunchServices instance identity stays unambiguous). The
+release gate removes exactly the first two per-identifier trees between
+frontends — through the guarded deleter with `$HOME/Library` as the
+explicit allowed root — and the warm rerun of the *same* product must still
+produce the full verdict, including the live RPC 42. `HTTPStorages` is
+deliberately **recorded, never cleaned** (`CAP7M2_WEBKIT_STATE`): the
+ratified matrix bounds the cleanup to the two named trees, and a cleanup
+that quietly grew a third would be a bound that stopped bounding.
+
 ## The URI is the whole URI, and there is exactly one validator
 
 **MEASURED**, on the dev host, against the real routine.
@@ -1038,6 +1097,8 @@ and diffing two artifacts by hand.
 | CAP-7M1 headless | `run_cap7m_gates.sh` | `CAP7M1_SUITE`, `CAP7M1_CONFINEMENT vectors=… cwd_independent=yes` |
 | CAP-7M1 runtime | `run_cap7m_runtime.sh` | `CAP7M1_SEAM`, `CAP7M1_REPORT`, `CAP7M1_THREADS`, `CAP7M1_INVOKE`, `CAP7M1_STATS`, `CAP7M1_REGISTRY`, `CAP7M1_SHUTDOWN`, `CAP7M1_LEAK`, `CAP7M1_URI store=… leaks=0`, `CAP7M1_CWD` |
 | CAP-7M1 fcntl | `check_abi.sh` | `CAP7M_FCNTL` — now **6** facts including `F_GETPATH`, `PATH_BOUND` and the round trip (constraint 13) |
+| CAP-7M2 release build | `build_cap7m_release.sh` | `CAP7M_MACHO binary=releaseapp …` / `binary=pwebbundle …` |
+| CAP-7M2 release gates | `run_cap7m_release.sh` | `CAP7M2 product=… direct=… warm=… ls=… listeners=0`, `CAP7M2_HASHES`, `CAP7M2_PARITY`, `CAP7M2_REFUSALS`, `CAP7M2_DETERMINISM`, `CAP7M2_CODESIGN`, `CAP7M2_PAS2JS` — plus `manifest-<frontend>.txt` / `inventory-<frontend>.txt` uploaded as `cap7m2-release-<arch>` for the R7 compare job |
 
 ## The one ABI delta, expected to be the same two lines
 

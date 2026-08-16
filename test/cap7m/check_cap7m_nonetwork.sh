@@ -89,6 +89,16 @@ cap7m_files=(
     test/cap7m/fixture/index.html
     test/cap7m/fixture/probe.css
     test/cap7m/fixture/probe.js
+    # --- CAP-7M2 ---------------------------------------------------------
+    # THE RELEASE SURFACE: the shared release host, the bundler that packs
+    # app.pwb, and the two scripts that assemble and run the .app products.
+    # The Linux job has always swept its release path
+    # (test/cap7l/check_cap7l_nonetwork.sh); the macOS release claim joins
+    # the same proof here.
+    examples/08-release/releaseapp.pas
+    tools/bundler/pwebbundle.pas
+    test/cap7m/build_cap7m_release.sh
+    test/cap7m/run_cap7m_release.sh
 )
 
 # The two files deliberately NOT swept, and why. Both reasons are the same

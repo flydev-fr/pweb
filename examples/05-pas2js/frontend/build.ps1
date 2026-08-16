@@ -7,10 +7,14 @@ $ErrorActionPreference = 'Stop'
 
 $FrontendDir = $PSScriptRoot
 $RepoRoot = (Resolve-Path (Join-Path $FrontendDir '../../..')).Path
-# CAP-7L: same pinned compiler, host-specific checkout (see pas2js.lock).
-# Not $IsWindows - that variable does not exist in Windows PowerShell 5.1.
+# CAP-7L/CAP-7M2: same pinned compiler, host-specific checkout (see
+# pas2js.lock). Not $IsWindows - that variable does not exist in Windows
+# PowerShell 5.1; off Windows the split is on `uname -s` for the same reason.
 if ($env:OS -eq 'Windows_NT') {
     $Compiler = Join-Path $RepoRoot 'deps/pas2js/bin/pas2js.exe'
+}
+elseif ((& uname -s | Out-String).Trim() -eq 'Darwin') {
+    $Compiler = Join-Path $RepoRoot 'deps/pas2js-darwin/bin/pas2js'
 }
 else {
     $Compiler = Join-Path $RepoRoot 'deps/pas2js-linux/bin/pas2js'

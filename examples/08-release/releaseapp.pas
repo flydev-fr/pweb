@@ -47,7 +47,42 @@ program releaseapp;
       webview_create returning nil, which WebViewCheckCreated turns into
       the same typed PWeb diagnostic on both platforms.
 
-    releaseapp            (no arguments) }
+  CAP-7M2 adds macOS (both native architectures). Still the SAME release
+  app; three things differ, all at the platform seam:
+    - the pweb://app handler is TCocoaAssetHandler, and it is TWO-PHASE
+      because Cocoa leaves no choice: upstream builds the
+      WKWebViewConfiguration and the WKWebView both inside
+      webview_create, so the handler is constructed (arming the
+      pre-create seam) BEFORE webview_create and Attach - which raises
+      unless the seam actually ran for THIS view - immediately after.
+      The construction site the other platforms use between
+      webview_set_size and webview_navigate is byte-unchanged for them;
+    - the pre-create check is CheckCocoaRuntimeUsable over
+      PWebCocoaFpuTrapsMasked: FPC starts with the FPU traps enabled and
+      WebKit computes on NaNs, so an unmasked FPU is refused loudly
+      before a window can exist instead of dying as EInvalidOp mid-render;
+    - inside a .app the executable lives in Contents/MacOS and the
+      bundle in Contents/Resources, so app.pwb resolves as
+      <exedir>/../Resources/app.pwb - from the EXECUTABLE location only,
+      never the CWD, exactly as on the other platforms.
+
+  CAP-7M2 also adds TWO optional command-line arguments, on ALL
+  platforms, because LaunchServices delivers argv but neither
+  environment variables nor stdout (`open -W` forwards neither the exit
+  code nor a byte of output):
+    --pweb-verdict=<file>    write the canonical PASS/FAIL verdict line
+                             to <file> atomically (temp + rename) on
+                             every exit path - the one deterministic
+                             evidence channel a LaunchServices launch
+                             leaves behind;
+    --pweb-autoclose-ms=<N>  auto-close bound; the argument WINS over
+                             the PWEB_SMOKE_AUTOCLOSE_MS environment
+                             variable, which LaunchServices cannot
+                             deliver.
+  Unknown arguments are still refused - there is no argument the release
+  host silently ignores.
+
+    releaseapp [--pweb-verdict=<file>] [--pweb-autoclose-ms=<N>] }
 
 {$I mormot.defines.inc}
 
@@ -76,6 +111,9 @@ uses
   pweb.webview.binding,
   pweb.assets.intf,
   pweb.assets.bundle,
+  {$ifdef DARWIN}
+  pweb.platform.cocoa
+  {$else}
   {$ifdef LINUX}
   pweb.platform.webkitgtk
   {$else}
@@ -86,23 +124,39 @@ uses
   pweb.platform.webview2.fixed
   {$endif PWEB_FIXED_RUNTIME}
   {$endif LINUX}
+  {$endif DARWIN}
   ;
 
 type
-  { The one platform-selected name in this file. Both handlers expose the
-    identical surface - Create(webview_t, IAssetStore), Detach, Destroy -
-    so every other line below is shared source. }
+  { The one platform-selected name in this file. The Windows and Linux
+    handlers expose the identical surface - Create(webview_t, IAssetStore),
+    Detach, Destroy - and the Cocoa one is the same surface split in two
+    (Create(IAssetStore) before webview_create, Attach(webview_t) after,
+    then the same Detach/Destroy), because upstream builds the WKWebView's
+    configuration inside webview_create and a post-create seam does not
+    exist there. Every other line below is shared source. }
+  {$ifdef DARWIN}
+  TPWebAssetHandler = TCocoaAssetHandler;
+  {$else}
   {$ifdef LINUX}
   TPWebAssetHandler = TWebKitGtkAssetHandler;
   {$else}
   TPWebAssetHandler = TWebView2AssetHandler;
   {$endif LINUX}
+  {$endif DARWIN}
 
 const
   MAX_AUTOCLOSE_MS = 60000;
   CLOSER_WAIT_MARGIN_MS = 10000;
   APP_TITLE = 'PWeb CAP-6 Release';
   LOG_PREFIX = 'releaseapp';
+  { The canonical runtime verdict, spelled ONCE: it is printed to stdout and
+    written to the --pweb-verdict file, and two spellings of one marker is
+    how a gate ends up grepping for a line nobody emits. }
+  VERDICT_PASS = 'app.pwb -> pweb://app -> SDK -> mORMot -> 42 PASS';
+  { CAP-7M2 optional arguments (all platforms; see the header comment) }
+  ARG_VERDICT = '--pweb-verdict=';
+  ARG_AUTOCLOSE = '--pweb-autoclose-ms=';
 
 type
   ICalculatorService = interface(IInvokable)
@@ -194,6 +248,31 @@ begin
     webview_dispatch(webview_t(handle), @TerminateOnGuiThread, nil);
 end;
 
+{$ifdef DARWIN}
+{ CAP-7M2: the macOS pre-create check. Like Linux there is no runtime to
+  PROVISION - WebKit ships with the OS - but there is one process state that
+  is knowable BEFORE webview_create and fatal after it: FPC starts every
+  process with the invalid-operation/divide-by-zero/overflow FPU traps
+  ENABLED, and WebKit, CoreGraphics and AppKit compute with NaNs as ordinary
+  intermediate values, so the first such computation would kill the process
+  with EInvalidOp from inside a C frame. pweb.platform.cocoa's unit
+  initialization masks the traps through libc (fesetenv) and RECORDS whether
+  that worked; this check turns that record into a typed refusal before any
+  window can exist. TCocoaAssetHandler.Create re-applies the mask on its own
+  thread and raises on failure, so the check here is the loud early half,
+  not the only line of defence. }
+procedure CheckCocoaRuntimeUsable;
+begin
+  if PWebCocoaFpuTrapsMasked then
+    exit;
+  WriteLn(StdErr, LOG_PREFIX,
+    ': COCOA RUNTIME UNUSABLE (fpu traps still enabled)');
+  raise Exception.Create(
+    'the FPU could not be put in its non-trapping default state - WebKit ' +
+    'would kill this process on its first NaN; no WebView was created');
+end;
+{$endif DARWIN}
+
 {$ifdef LINUX}
 { CAP-7L: the Linux pre-create check. There is no runtime to PROVISION -
   WebKitGTK is a distro package the application never installs, and a
@@ -219,10 +298,14 @@ begin
 end;
 {$endif LINUX}
 
+{$ifndef DARWIN}
 {$ifndef LINUX}
 { Everything from here to the matching endif is the WINDOWS
   runtime-provisioning pre-check, whose Linux counterpart is the display
-  check above.
+  check above and whose macOS counterpart is the FPU-trap check above
+  (CAP-7M2: before that check existed, the LINUX/else split alone selected
+  this Windows block on Darwin, which is why this file had never compiled
+  there).
 
   Note for editors: a compiler directive may not be written inside this
   comment. FPC reads a nested brace as a directive and ends the comment
@@ -330,8 +413,9 @@ begin
 end;
 {$endif PWEB_FIXED_RUNTIME}
 {$endif LINUX}
+{$endif DARWIN}
 
-{ Locate app.pwb beside the executable (never the CWD), then run the
+{ Locate app.pwb from the EXECUTABLE location (never the CWD), then run the
   full production gate BEFORE anything webview-related exists. On
   refusal the typed marker goes to stderr and the raised exception
   makes the process exit nonzero - zero bundle JS can ever execute. }
@@ -340,7 +424,16 @@ var
   bundleFile: TFileName;
   refusal: TPWebBundleRefusal;
 begin
+  {$ifdef DARWIN}
+  // CAP-7M2: inside a .app the executable lives in Contents/MacOS and the
+  // bundle in Contents/Resources. ExpandFileName only folds the '..' out of
+  // an already-absolute path here - ProgramFilePath is absolute - so the
+  // resolution never consults the working directory.
+  bundleFile := ExpandFileName(Executable.ProgramFilePath + '..' +
+    PathDelim + 'Resources' + PathDelim + 'app.pwb');
+  {$else}
   bundleFile := Executable.ProgramFilePath + 'app.pwb';
+  {$endif DARWIN}
   if not PWebBundleLoadFile(bundleFile, PWEB_SUPPORTED_PROTOCOLS,
        PWEB_RUNTIME_VERSION, Result, refusal) then
   begin
@@ -350,6 +443,115 @@ begin
       PWebBundleRefusalText(refusal), ')');
     raise Exception.Create('bundle refused - no WebView was created');
   end;
+end;
+
+{ CAP-7M2: the two optional arguments, parsed strictly in TWO PASSES.
+
+  Pass 1 only captures the verdict path, wherever it appears, and raises
+  nothing: the whole point of the verdict file is to carry evidence out of a
+  launch whose stdout nobody can see, and a refusal that fired BEFORE the
+  path was known would leave exactly the missing-file outcome the gate
+  cannot tell from a crash. Pass 2 then validates and refuses - unknown,
+  malformed, empty and REPEATED options all refuse alike, because an option
+  silently resolved last-one-wins is an argument the host half-ignores. So
+  even a refused command line still writes a FAIL verdict when a verdict
+  path was supplied anywhere on it.
+
+  AAutoCloseMs stays -1 when the argument is absent so the caller can tell
+  "not given" (fall back to the environment) from "given as 0". }
+procedure ParseArguments(out AVerdictFile: TFileName;
+  out AAutoCloseMs: Integer);
+var
+  i: Integer;
+  arg, value: string;
+  verdictSeen, autoCloseSeen: Boolean;
+begin
+  AVerdictFile := '';
+  AAutoCloseMs := -1;
+  verdictSeen := False;
+  autoCloseSeen := False;
+  // PASS 1: capture only. A duplicated verdict option is refused by pass 2,
+  // but the LAST path seen is where that refusal's FAIL verdict lands.
+  for i := 1 to ParamCount do
+  begin
+    arg := ParamStr(i);
+    if Copy(arg, 1, Length(ARG_VERDICT)) = ARG_VERDICT then
+    begin
+      value := Copy(arg, Length(ARG_VERDICT) + 1, MaxInt);
+      if value <> '' then
+        // Expanded ONCE, here, before anything can change the working
+        // directory - so a relative path from the caller stays anchored to
+        // the CWD the process was started with, deterministically.
+        AVerdictFile := ExpandFileName(value);
+    end;
+  end;
+  // PASS 2: validate and refuse.
+  for i := 1 to ParamCount do
+  begin
+    arg := ParamStr(i);
+    if Copy(arg, 1, Length(ARG_VERDICT)) = ARG_VERDICT then
+    begin
+      if verdictSeen then
+        raise Exception.Create('duplicate argument refused: ' + ARG_VERDICT);
+      verdictSeen := True;
+      value := Copy(arg, Length(ARG_VERDICT) + 1, MaxInt);
+      if value = '' then
+        raise Exception.Create(ARG_VERDICT + ' requires a file path');
+    end
+    else if Copy(arg, 1, Length(ARG_AUTOCLOSE)) = ARG_AUTOCLOSE then
+    begin
+      if autoCloseSeen then
+        raise Exception.Create('duplicate argument refused: ' + ARG_AUTOCLOSE);
+      autoCloseSeen := True;
+      value := Copy(arg, Length(ARG_AUTOCLOSE) + 1, MaxInt);
+      AAutoCloseMs := StrToIntDef(value, -1);
+      if AAutoCloseMs < 0 then
+        raise Exception.Create(
+          ARG_AUTOCLOSE + ' requires a non-negative integer, got: ' + value);
+    end
+    else
+      raise Exception.Create('usage: ' + LOG_PREFIX +
+        ' [' + ARG_VERDICT + '<file>] [' + ARG_AUTOCLOSE + '<ms>]' +
+        ' -- unknown argument: ' + arg);
+  end;
+end;
+
+{ CAP-7M2: the verdict FILE - the one deterministic evidence channel a
+  LaunchServices launch leaves behind (`open -W` forwards neither stdout nor
+  the exit code, and LaunchServices does not inherit the caller's
+  environment). The full line goes to a per-process temp sibling first and
+  is then moved into place. On POSIX the move is rename(), which replaces
+  atomically: a reader sees the previous state or the complete line, never
+  a half-written one and never a missing file. On Windows RenameFile does
+  not replace an existing target, so an existing file is deleted first -
+  a short no-file window that exists on Windows only, accepted and stated
+  rather than dressed up as atomicity. }
+procedure WriteVerdictFile(const AFile: TFileName; const ALine: string);
+var
+  tmp: TFileName;
+  t: Text;
+begin
+  // per-process unique: two concurrent instances aimed at one verdict path
+  // must never write through a shared temp sibling - each renames its own,
+  // and the target ends up as ONE complete line from one of them
+  tmp := AFile + '.' + IntToStr(GetProcessID) + '.tmp';
+  AssignFile(t, tmp);
+  Rewrite(t);
+  try
+    WriteLn(t, ALine);
+  finally
+    CloseFile(t);
+  end;
+  {$ifdef OSWINDOWS}
+  // Windows-only: RenameFile fails on an existing target there. POSIX
+  // rename() replaces atomically, so no delete - and no window - exists
+  // off Windows.
+  if FileExists(AFile) then
+    DeleteFile(AFile);
+  {$endif OSWINDOWS}
+  if not RenameFile(tmp, AFile) then
+    raise Exception.Create('unable to move the verdict file into place: ' +
+      string(AFile));
 end;
 
 var
@@ -366,7 +568,8 @@ var
   limits: TPWebSourceLimits;
   opts: TPWebWebViewBindingOptions;
   context: TInvocationContext;
-  autoCloseMs: Integer;
+  autoCloseMs, argAutoCloseMs: Integer;
+  verdictFile: TFileName;
   closerId, closerHandle: system.TThreadID; // mormot.core.os shadows it
   closerStarted, safeToDestroy, schedulerDrained: Boolean;
 begin
@@ -377,11 +580,15 @@ begin
   closerStarted := False;
   safeToDestroy := True;
   schedulerDrained := False;
+  verdictFile := '';
+  argAutoCloseMs := -1;
   InterlockedExchange(GuiThreadId, LongInt(GetCurrentThreadId));
   try
-    if ParamCount <> 0 then
-      raise Exception.Create('usage: ' + LOG_PREFIX +
-        ' (loads app.pwb from beside the executable)');
+    // CAP-7M2: parsed FIRST, so the verdict file is known before anything
+    // can fail - a refused bundle still leaves a FAIL verdict behind when a
+    // verdict file was asked for. Unknown arguments are refused exactly as
+    // the old "no arguments" rule refused everything.
+    ParseArguments(verdictFile, argAutoCloseMs);
     store := LoadReleaseBundle;
 
     server := TRestServerFullMemory.CreateWithOwnModel([]);
@@ -400,6 +607,18 @@ begin
     limits.MaxQueueSize := 32;
     source := scheduler.RegisterSource(limits);
 
+    {$ifdef DARWIN}
+    // CAP-7M2: the same call site, for the same reason as its siblings -
+    // one cause that is knowable BEFORE webview_create, refused with a
+    // typed marker instead of dying mid-render.
+    CheckCocoaRuntimeUsable;
+    // THE ONE FORCED ORDERING DIFFERENCE: Cocoa's pweb://app seam is armed
+    // by CONSTRUCTION, and only a webview created after it can be served -
+    // upstream builds the WKWebViewConfiguration inside webview_create and
+    // exposes no post-create seam. Attach below proves the seam actually
+    // ran for the view that came back.
+    assetHandler := TCocoaAssetHandler.Create(store);
+    {$else}
     {$ifdef LINUX}
     // CAP-7L: the same call site, for the same reason. There is no
     // runtime to provision on Linux, but there is still one cause that
@@ -412,9 +631,16 @@ begin
     // webview_create can collapse every bad state into one nil
     CheckWebView2RuntimeUsable;
     {$endif LINUX}
+    {$endif DARWIN}
 
     w := WebViewCheckCreated(webview_create(0, nil));
     try
+      {$ifdef DARWIN}
+      // raises unless the pre-create seam RAN and THIS view's own
+      // configuration reports OUR handler for pweb:// - a seam that
+      // silently stopped running can never again present as success
+      assetHandler.Attach(w);
+      {$endif DARWIN}
       {$ifdef PWEB_FIXED_RUNTIME}
       // CAP-6b3: identity is OBSERVED, not inferred - and it is
       // observed here, before webview_navigate can load anything
@@ -437,16 +663,27 @@ begin
       // proven native seam, then navigate - never any injected HTML.
       // CAP-4W borrowed-controller seam on Windows, CAP-7L
       // BROWSER_CONTROLLER -> WebKitWebContext seam on Linux; the
-      // attach point itself is unchanged on both
+      // attach point itself is unchanged on both. On Darwin the handler
+      // already exists (created BEFORE webview_create, Attach-proven just
+      // after it) - the two-phase seam is the platform's shape, not a
+      // frontend branch, and there is nothing to construct here.
+      {$ifndef DARWIN}
       {$ifdef LINUX}
       assetHandler := TWebKitGtkAssetHandler.Create(w, store);
       {$else}
       assetHandler := TWebView2AssetHandler.Create(w, store);
       {$endif LINUX}
+      {$endif DARWIN}
       WebViewCheck(webview_navigate(w, 'pweb://app/'), 'webview_navigate');
 
-      autoCloseMs := StrToIntDef(
-        GetEnvironmentVariable('PWEB_SMOKE_AUTOCLOSE_MS'), 0);
+      // CAP-7M2: the argument WINS over the environment - LaunchServices
+      // delivers argv but no environment, so argv is the channel a
+      // machine-checked launch actually controls.
+      if argAutoCloseMs >= 0 then
+        autoCloseMs := argAutoCloseMs
+      else
+        autoCloseMs := StrToIntDef(
+          GetEnvironmentVariable('PWEB_SMOKE_AUTOCLOSE_MS'), 0);
       if autoCloseMs > MAX_AUTOCLOSE_MS then
         autoCloseMs := MAX_AUTOCLOSE_MS;
       if autoCloseMs > 0 then
@@ -518,8 +755,7 @@ begin
     end;
 
     if ReportState = 1 then
-      WriteLn(LOG_PREFIX,
-        ': app.pwb -> pweb://app -> SDK -> mORMot -> 42 PASS')
+      WriteLn(LOG_PREFIX, ': ', VERDICT_PASS)
     else
     begin
       WriteLn(StdErr, 'FAIL: page/runtime verdict was not successful ',
@@ -544,14 +780,49 @@ begin
         ExitCode := 1;
       end;
     end;
-  binding := nil;
-  source := nil;
-  schedulerRef := nil;
-  scheduler := nil;
-  bridge := nil;
-  realBridge := nil; // frees owned server after worker drain
-  store := nil;
-  server.Free;
+  // CAP-7M2: the trailing release chain runs under its own guard so that
+  // control ALWAYS reaches the verdict write below - an exception raised by
+  // an interface release or by server.Free must become a FAIL verdict, not
+  // a missing file the LaunchServices gate cannot tell from a crash.
+  try
+    binding := nil;
+    source := nil;
+    schedulerRef := nil;
+    scheduler := nil;
+    bridge := nil;
+    realBridge := nil; // frees owned server after worker drain
+    store := nil;
+    server.Free;
+  except
+    on E: Exception do
+    begin
+      WriteLn(StdErr, 'FAIL: final teardown: ', E.ClassName, ': ', E.Message);
+      ExitCode := 1;
+    end;
+  end;
+  // CAP-7M2: EVERY exit path ends here - the success path, the runtime FAIL
+  // path and every exception path above all fall through to this line - so a
+  // requested verdict file always exists when the process is gone, carrying
+  // either the canonical PASS marker or a typed FAIL line. A failure to
+  // write it is itself a failure: a gate reading a missing file must find a
+  // nonzero exit behind it, never a silently green one. The one exit shape
+  // no user code can write a verdict for is death by SIGNAL (a kill, a
+  // loader abort): the file is then simply absent, which the gate reads as
+  // failure - fail-closed in the only direction available.
+  if verdictFile <> '' then
+    try
+      if ExitCode = 0 then
+        WriteVerdictFile(verdictFile, LOG_PREFIX + ': ' + VERDICT_PASS)
+      else
+        WriteVerdictFile(verdictFile, LOG_PREFIX + ': FAIL (exit=' +
+          IntToStr(ExitCode) + ')');
+    except
+      on E: Exception do
+      begin
+        WriteLn(StdErr, 'FAIL: verdict file write: ', E.Message);
+        ExitCode := 1;
+      end;
+    end;
   if ExitCode = 0 then
     WriteLn(LOG_PREFIX, ': clean exit');
 end.

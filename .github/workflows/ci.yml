@@ -1792,11 +1792,12 @@ jobs:
     # translation unit and every GUI leg is watchdog-bounded. This is a hang
     # ceiling with room for the ~260 MB pinned toolchain fetch. CAP-7M1 raised
     # it from 60 because the per-step budgets it adds (10 bridge + 20 headless
-    # + 30 runtime) no longer fit under the old ceiling; as everywhere else in
-    # this workflow the JOB budget is a BACKSTOP, and what actually protects a
-    # hang is the per-step budget, which lets the failure diagnostics upload
-    # still run.
-    timeout-minutes: 90
+    # + 30 runtime) no longer fit under the old ceiling; CAP-7M2 raised it
+    # again (frontend toolchains + the release build and gates add their own
+    # per-step budgets). As everywhere else in this workflow the JOB budget is
+    # a BACKSTOP, and what actually protects a hang is the per-step budget,
+    # which lets the failure diagnostics upload still run.
+    timeout-minutes: 120
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -1821,6 +1822,8 @@ jobs:
           files="${files} test/cap7m/check_release_layout.sh"
           files="${files} test/cap7m/check_cap7m_nonetwork.sh"
           files="${files} test/cap7m/summarize_cap7m.sh"
+          files="${files} test/cap7m/build_cap7m_release.sh"
+          files="${files} test/cap7m/run_cap7m_release.sh"
           bad=0
           for f in ${files}; do
             # EXISTENCE FIRST. grep on a missing path exits 2, the `if` takes
@@ -1983,6 +1986,88 @@ jobs:
         timeout-minutes: 30
         run: test/cap7m/run_cap7m_runtime.sh 3
 
+      # ------------------- CAP-7M2: release .app products -------------------
+      # The frontends are built HERE, on this runner, from the same pinned
+      # toolchains the Windows and Linux jobs use: Node 24.11.1 for the
+      # TypeScript SDK and the React dist, Pas2JS 3.0.1 for the Pascal dist.
+      # On this leg the pinned darwin x86_64 pas2js binary runs natively; the
+      # arm64 sibling compiles the SAME pinned logical version from the
+      # pinned FPC-repo revision because no aarch64 artifact exists upstream
+      # and Rosetta is banned.
+      - name: CAP-7M2 setup pinned Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.11.1
+
+      - name: CAP-7M2 TypeScript SDK build + tests
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          v="$(node --version)"
+          [ "${v}" = 'v24.11.1' ] || { echo "expected node v24.11.1, got ${v}"; exit 1; }
+          cd sdk/typescript
+          npm ci
+          npm test
+          cd ../..
+          for f in sdk/typescript/dist/src/index.js \
+                   sdk/typescript/dist/src/index.d.ts; do
+            [ -f "${f}" ] || { echo "SDK build output missing: ${f}"; exit 1; }
+          done
+
+      - name: CAP-7M2 React frontend build (pinned lockfile, offline bundle)
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          v="$(node --version)"
+          [ "${v}" = 'v24.11.1' ] || { echo "expected node v24.11.1, got ${v}"; exit 1; }
+          cd examples/04-react/frontend
+          npm ci
+          npm run typecheck
+          npm run build
+          cd ../../..
+          for f in examples/04-react/frontend/dist/index.html \
+                   examples/04-react/frontend/dist/assets/app.js; do
+            [ -f "${f}" ] || { echo "react frontend output missing: ${f}"; exit 1; }
+          done
+
+      - name: CAP-7M2 fetch pinned pas2js (sha256 + native arch) and build its frontend
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File tools/get-pas2js.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'pinned pas2js fetch FAILED' }
+          pwsh -NoProfile -File examples/05-pas2js/frontend/build.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'pas2js frontend build FAILED' }
+          foreach ($f in 'examples/05-pas2js/frontend/dist/index.html',
+                         'examples/05-pas2js/frontend/dist/assets/app.js') {
+            if (-not (Test-Path $f)) { throw "pas2js frontend output missing: $f" }
+          }
+
+      - name: CAP-7M2 compile the release host and bundler
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap7m/build_cap7m_release.sh
+
+      - name: CAP-7M2 release .app gates - assembly, refusals, direct + LaunchServices to 42
+        shell: bash
+        timeout-minutes: 30
+        run: test/cap7m/run_cap7m_release.sh
+
+      # The R7 inputs for the cross-architecture compare job. ERROR, not
+      # ignore: a release gate that passed while emitting no inventory is the
+      # shape of a proof that proved nothing.
+      - name: CAP-7M2 release manifests and inventories
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap7m2-release-x64
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            build/cap7m/release-apps/manifest-react.txt
+            build/cap7m/release-apps/manifest-pas2js.txt
+            build/cap7m/release-apps/inventory-react.txt
+            build/cap7m/release-apps/inventory-pas2js.txt
+
       - name: CAP-7M0 bundle layout measured from an unrelated CWD (M18)
         shell: bash
         timeout-minutes: 15
@@ -2029,6 +2114,7 @@ jobs:
             build/cap7m/gates/
             build/cap7m/runtime/
             build/cap7m/release/
+            build/cap7m/release-apps/
             build/cap7m/nonetwork/
 
   # ================= CAP-7M0: macOS feasibility (arm64) ====================
@@ -2045,8 +2131,9 @@ jobs:
     env:
       CAP7M_EXPECT_ARCH: arm64
       CAP7M_RUNNER_LABEL: macos-15
-    # See the x64 sibling: raised from 60 by CAP-7M1 for the same reason.
-    timeout-minutes: 90
+    # See the x64 sibling: raised from 60 by CAP-7M1 and again by CAP-7M2,
+    # for the same reasons.
+    timeout-minutes: 120
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -2067,6 +2154,8 @@ jobs:
           files="${files} test/cap7m/check_release_layout.sh"
           files="${files} test/cap7m/check_cap7m_nonetwork.sh"
           files="${files} test/cap7m/summarize_cap7m.sh"
+          files="${files} test/cap7m/build_cap7m_release.sh"
+          files="${files} test/cap7m/run_cap7m_release.sh"
           bad=0
           for f in ${files}; do
             # EXISTENCE FIRST. grep on a missing path exits 2, the `if` takes
@@ -2203,6 +2292,83 @@ jobs:
         timeout-minutes: 30
         run: test/cap7m/run_cap7m_runtime.sh 3
 
+      # ------------------- CAP-7M2: release .app products -------------------
+      # The x64 sibling's block, on Apple Silicon. One real difference, and
+      # it is the ratified one: no aarch64-darwin Pas2JS 3.0.1 binary exists
+      # upstream and Rosetta is banned, so tools/get-pas2js.ps1 compiles the
+      # SAME pinned logical version natively from the pinned FPC-repo
+      # revision, then asserts -iV AND lipo -archs before anything uses it.
+      - name: CAP-7M2 setup pinned Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.11.1
+
+      - name: CAP-7M2 TypeScript SDK build + tests
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          v="$(node --version)"
+          [ "${v}" = 'v24.11.1' ] || { echo "expected node v24.11.1, got ${v}"; exit 1; }
+          cd sdk/typescript
+          npm ci
+          npm test
+          cd ../..
+          for f in sdk/typescript/dist/src/index.js \
+                   sdk/typescript/dist/src/index.d.ts; do
+            [ -f "${f}" ] || { echo "SDK build output missing: ${f}"; exit 1; }
+          done
+
+      - name: CAP-7M2 React frontend build (pinned lockfile, offline bundle)
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          v="$(node --version)"
+          [ "${v}" = 'v24.11.1' ] || { echo "expected node v24.11.1, got ${v}"; exit 1; }
+          cd examples/04-react/frontend
+          npm ci
+          npm run typecheck
+          npm run build
+          cd ../../..
+          for f in examples/04-react/frontend/dist/index.html \
+                   examples/04-react/frontend/dist/assets/app.js; do
+            [ -f "${f}" ] || { echo "react frontend output missing: ${f}"; exit 1; }
+          done
+
+      - name: CAP-7M2 fetch pinned pas2js (sha256 + native compile) and build its frontend
+        shell: pwsh
+        timeout-minutes: 20
+        run: |
+          pwsh -NoProfile -File tools/get-pas2js.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'pinned pas2js fetch/native compile FAILED' }
+          pwsh -NoProfile -File examples/05-pas2js/frontend/build.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'pas2js frontend build FAILED' }
+          foreach ($f in 'examples/05-pas2js/frontend/dist/index.html',
+                         'examples/05-pas2js/frontend/dist/assets/app.js') {
+            if (-not (Test-Path $f)) { throw "pas2js frontend output missing: $f" }
+          }
+
+      - name: CAP-7M2 compile the release host and bundler
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap7m/build_cap7m_release.sh
+
+      - name: CAP-7M2 release .app gates - assembly, refusals, direct + LaunchServices to 42
+        shell: bash
+        timeout-minutes: 30
+        run: test/cap7m/run_cap7m_release.sh
+
+      - name: CAP-7M2 release manifests and inventories
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap7m2-release-arm64
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            build/cap7m/release-apps/manifest-react.txt
+            build/cap7m/release-apps/manifest-pas2js.txt
+            build/cap7m/release-apps/inventory-react.txt
+            build/cap7m/release-apps/inventory-pas2js.txt
+
       - name: CAP-7M0 bundle layout measured from an unrelated CWD (M18)
         shell: bash
         timeout-minutes: 15
@@ -2245,4 +2411,70 @@ jobs:
             build/cap7m/gates/
             build/cap7m/runtime/
             build/cap7m/release/
+            build/cap7m/release-apps/
             build/cap7m/nonetwork/
+
+  # ============ CAP-7M2: cross-architecture release inventory (R7) ============
+  # The mechanical form of the reconciliation the CAP-7M0 ledger called for,
+  # scoped to what CAP-7M2 ships: the logical app.pwb inventories (entry
+  # names, uncompressed sizes and sha256s - manifest.json included), the
+  # plist semantics and the frontend revision must be IDENTICAL across
+  # x86_64 and arm64, per frontend. Compressed container bytes and Mach-O
+  # hashes legitimately differ (two native toolchains, two architectures)
+  # and are deliberately NOT compared. Runs on ubuntu: it only diffs text
+  # artifacts, so no macOS minutes are spent on it.
+  macos-release-inventory:
+    name: macos release inventory (x64 = arm64)
+    needs: [macos-x64, macos-arm64]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download the x64 release inventory
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: cap7m2-release-x64
+          path: inv/x64
+
+      - name: Download the arm64 release inventory
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: cap7m2-release-arm64
+          path: inv/arm64
+
+      - name: R7 - logical inventories, plist semantics and frontend rev identical
+        shell: bash
+        run: |
+          bad=0
+          # EXISTENCE FIRST, same reasoning as every guard in this workflow:
+          # a diff against a missing file must fail the gate, not empty it.
+          for fe in react pas2js; do
+            for side in x64 arm64; do
+              for kind in manifest inventory; do
+                if [ ! -f "inv/${side}/${kind}-${fe}.txt" ]; then
+                  echo "MISSING: inv/${side}/${kind}-${fe}.txt"
+                  bad=1
+                fi
+              done
+            done
+          done
+          [ "${bad}" -eq 0 ] || { echo 'release inventory artifacts incomplete'; exit 1; }
+          for fe in react pas2js; do
+            if ! diff -u "inv/x64/manifest-${fe}.txt" "inv/arm64/manifest-${fe}.txt"; then
+              echo "DIVERGENCE: logical app.pwb inventory (${fe}) differs between architectures"
+              bad=1
+            fi
+            # The arch-stable identity keys. Empty on either side is a
+            # failure too: a key that vanished from both inventories would
+            # otherwise compare equal as '' and prove nothing.
+            for key in product bundle_id app_name version_pair frontend_rev \
+                       plist_semantic_sha256 logical_inventory_sha256; do
+              a="$(sed -n "s/^${key}=//p" "inv/x64/inventory-${fe}.txt")"
+              b="$(sed -n "s/^${key}=//p" "inv/arm64/inventory-${fe}.txt")"
+              if [ -z "${a}" ] || [ "${a}" != "${b}" ]; then
+                echo "DIVERGENCE: ${key} (${fe}): x64='${a}' arm64='${b}'"
+                bad=1
+              fi
+            done
+          done
+          [ "${bad}" -eq 0 ] || { echo 'cross-architecture release inventory FAILED'; exit 1; }
+          echo 'cross-architecture release inventory: identical logical corpus, plist semantics and frontend rev on both architectures'
