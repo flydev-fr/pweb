@@ -280,7 +280,12 @@ begin
     Check(r.Kind = prkSuccess, 'I1 success arm');
     CheckEqual(r.Value, '42', 'I1 value 42');
     CheckEqual(CalculatorCalls, 1, 'I1 service counter');
-    Check(CalculatorLastThreadId <> GetCurrentThreadId,
+    // Darwin-safe: TThreadID is a POINTER type there, so a naked
+    // comparison with the fixture's Cardinal does not compile. The
+    // fixture stores LongInt(GetCurrentThreadId) and reads it back as
+    // Cardinal, so this side mirrors the exact same truncation - the
+    // proven cross-platform pattern of releaseapp's ServiceThreadId.
+    Check(CalculatorLastThreadId <> Cardinal(LongInt(GetCurrentThreadId)),
       'I1 real service ran on a worker');
   finally
     StopPipeline;

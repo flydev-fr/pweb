@@ -40,7 +40,8 @@ var
 begin
   // rendered proves this pas2js-compiled code found and can drive the DOM
   verdict := New(['ok', False, 'handshake', False, 'secure', IsSecure,
-    'rendered', Display <> nil, 'rpc', False, 'errmap', False]);
+    'rendered', Display <> nil, 'rpc', False, 'errmap', False,
+    'denied', False]);
   try
     info := await(JSValue, PWebHandshake);
     verdict['handshake'] := (TPWebRuntimeInfo(info).Protocol = 1) and
@@ -57,6 +58,21 @@ begin
       on E2: EPWebError do
         verdict['errmap'] := (E2.Code = 'method_not_found') and
           (E2.Status = 404) and (E2.Data = JS.Null);
+    end;
+    // CAP-8A deny probe: an UNMAPPED method through the production
+    // contextual policy must come back as typed forbidden/403. The fact
+    // is REPORTED here and REQUIRED only by the release-side gates:
+    // under the deliberate allow-all hosts (examples 02-06) the same
+    // probe reaches the bridge and 404s, so `denied` stays False
+    // WITHOUT failing this page's own ok verdict. Same probe, same
+    // reporting shape as the React page - the two SDKs prove the same
+    // forbidden mapping.
+    try
+      await(JSValue, PWebInvoke('Denied.Probe', nil));
+    except
+      on E2: EPWebError do
+        verdict['denied'] := (E2.Code = 'forbidden') and
+          (E2.Status = 403) and (E2.Data = JS.Null);
     end;
     ok := (verdict['handshake'] = True) and (verdict['secure'] = True) and
       (verdict['rendered'] = True) and (verdict['rpc'] = True) and

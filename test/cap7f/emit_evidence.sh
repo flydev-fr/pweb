@@ -338,11 +338,17 @@ Darwin)
         die 'release run log carries no anchored "value":42 page report'
     grep -Fq 'pweb://app' "${react_log}" ||
         die 'release run log never named the pweb://app origin'
-    # CAP-8A runtime deny enforcement on the macOS react product too: the
-    # shared release host runs the same production policy, so the react
-    # page's unmapped probe must have come back typed forbidden/403
+    # CAP-8A runtime deny enforcement on BOTH macOS products: the shared
+    # release host runs the same production policy, and both acceptance
+    # pages (React SDK and pas2js SDK) carry the same Denied.Probe, so
+    # each product's own run log must show the typed forbidden verdict -
+    # an allow-all regression reports "denied":false (the probe 404s)
     grep -q '"denied":true' "${react_log}" ||
-        die 'release run log carries no "denied":true page report -- the production policy did not forbid the unmapped probe'
+        die 'react release run log carries no "denied":true page report -- the production policy did not forbid the unmapped probe'
+    p2j_log="${apps}/direct-pas2js-1.log"
+    [ -f "${p2j_log}" ] || die "release run log missing: ${p2j_log}"
+    grep -q '"denied":true' "${p2j_log}" ||
+        die 'pas2js release run log carries no "denied":true page report -- the production policy did not forbid the unmapped probe'
     origin='pweb://app'
     secure='true'
     rpc='42'
