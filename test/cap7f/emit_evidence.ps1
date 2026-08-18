@@ -104,8 +104,14 @@ if ($soname -notmatch '^libwebview\.so\.(\d+\.\d+)$') {
 $soversion = $Matches[1]
 $surface = "17/soname $soversion"
 
-$fpcVersion = (& fpc -iV 2>$null | Out-String).Trim()
-if (-not $fpcVersion) { $fpcVersion = '<absent>' }
+# fpc must exist and answer: an '<absent>' placeholder would compare EQUAL
+# across targets that are all missing the compiler, which is exactly the
+# false agreement the aggregator exists to refuse
+if (-not (Get-Command fpc -ErrorAction SilentlyContinue)) {
+    throw '[CAP-7F] fpc not found on PATH -- the toolchain evidence cannot be emitted'
+}
+$fpcVersion = (& fpc -iV | Out-String).Trim()
+if (-not $fpcVersion) { throw '[CAP-7F] fpc -iV answered nothing' }
 
 # --- logical inventory of the REAL app.pwb (React-only on Windows, ratified) --
 function Write-LogicalManifest([string]$PwbPath, [string]$OutFile) {
@@ -170,17 +176,33 @@ if ($manifestJson -notmatch '"protocol"\s*:\s*(\d+)') {
 $bundleProtocol = $Matches[1]
 
 # --- release layout, RE-ASSERTED (exe + app.pwb + dll, nothing else) -------
-$files = @(Get-ChildItem build/cap6/release -Recurse -File |
+# -Force so a hidden file breaks the exact-set claim, parity with `ls -A`
+$files = @(Get-ChildItem build/cap6/release -Recurse -File -Force |
     ForEach-Object Name | Sort-Object)
 $expectedLayout = @('app.pwb', 'releaseapp.exe', 'webview.dll')
 if (($files -join ',') -ne ($expectedLayout -join ',')) {
     throw "release dir is not the ratified triple: $($files -join ', ')"
 }
+# the SHIPPED bytes are the MEASURED bytes: the inventory below is taken
+# from build/cap6/app.pwb and the export set from build/webview-dist, so
+# both must be byte-identical to what the release dir actually ships
+foreach ($pair in @(
+    @{ A = 'build/cap6/app.pwb'; B = 'build/cap6/release/app.pwb' },
+    @{ A = 'build/webview-dist/webview.dll'; B = 'build/cap6/release/webview.dll' })) {
+    $ha = (Get-FileHash $pair.A -Algorithm SHA256).Hash
+    $hb = (Get-FileHash $pair.B -Algorithm SHA256).Hash
+    if ($ha -cne $hb) {
+        throw "shipped bytes differ from measured bytes: $($pair.A) ($ha) vs $($pair.B) ($hb)"
+    }
+}
 $releaseLayout = 'PASS'
 
 # --- zero-network source sweep, RE-EXECUTED (cheap, deterministic) ---------
-& pwsh -NoProfile -File test/cap6/check_cap6_nonetwork.ps1 | Out-Null
-if ($LASTEXITCODE -ne 0) { throw 'CAP-6 zero-network sweep FAILED under the emitter' }
+$sweepOut = & pwsh -NoProfile -File test/cap6/check_cap6_nonetwork.ps1 2>&1 | Out-String
+if ($LASTEXITCODE -ne 0) {
+    Write-Host $sweepOut
+    throw 'CAP-6 zero-network sweep FAILED under the emitter'
+}
 $noListener = 'PASS'
 
 # --- runtime verdict fields from the CAP-7F args gate (PASS/SKIP honest) ----
@@ -192,8 +214,8 @@ if ($hostArgsVerdict -eq 'PASS') {
     if ($passLog -notmatch '"secure":true') {
         throw 'args-gate PASS log carries no "secure":true page report'
     }
-    if ($passLog -notmatch '"value":42') {
-        throw 'args-gate PASS log carries no "value":42 page report'
+    if ($passLog -notmatch '"value":42([^0-9]|$)') {
+        throw 'args-gate PASS log carries no anchored "value":42 page report'
     }
     if ($passLog -notmatch [regex]::Escape('pweb://app')) {
         throw 'args-gate PASS log never named the pweb://app origin'

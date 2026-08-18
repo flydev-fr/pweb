@@ -1472,6 +1472,18 @@ jobs:
             build/cap7f/host-args.json
             build/cap7f/manifest-react.txt
 
+      - name: CAP-7F diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap7f-diagnostics-windows
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            build/cap7f/
+            build/cap7f-host-args.log
+            build/cap7f-evidence.log
+
       # same deliberate deviation as CAP-6b2/6b3: no ~200-276 MB setup
       # binary is uploaded - the logs and the release index identify any
       # defect, and every artifact is reproducible from the pinned locks
@@ -1791,6 +1803,16 @@ jobs:
             build/cap7f/host-args.json
             build/cap7f/manifest-react.txt
             build/cap7f/manifest-pas2js.txt
+
+      - name: CAP-7F diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap7f-diagnostics-linux
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            build/cap7f/
 
       - name: CAP-7L diagnostics on failure
         if: failure()
@@ -2165,6 +2187,16 @@ jobs:
           path: |
             build/cap7f/evidence.json
 
+      - name: CAP-7F diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap7f-diagnostics-macos-x64
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            build/cap7f/
+
       - name: CAP-7M0 per-arch headline facts to the run summary
         if: always()
         shell: bash
@@ -2482,6 +2514,16 @@ jobs:
           path: |
             build/cap7f/evidence.json
 
+      - name: CAP-7F diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap7f-diagnostics-macos-arm64
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            build/cap7f/
+
       - name: CAP-7M0 per-arch headline facts to the run summary
         if: always()
         shell: bash
@@ -2641,6 +2683,17 @@ jobs:
           pwsh -NoProfile -File test/cap7f/check_divergence.ps1
           if ($LASTEXITCODE -ne 0) { throw 'CAP-7F divergence sweep FAILED' }
 
+      # the failure branches are the product: every hosted run proves, on
+      # COPIES of the freshly downloaded evidence, that the aggregator and
+      # the sweep actually refuse (absent artifact, perturbed field, SKIP
+      # promotion, off-allowlist conditional) before the real aggregation
+      # is allowed to say PASS
+      - name: CAP-7F negative self-test of the aggregator and the sweep
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap7f/check_cap7f_selftest.ps1 -EvidenceRoot ev -MacosInventoryRoot inv
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-7F negative self-test FAILED' }
+
       - name: CAP-7F aggregate - four targets, field-by-field, or red
         shell: pwsh
         run: |
@@ -2659,3 +2712,13 @@ jobs:
           path: |
             build/cap7f/platform-matrix.json
             build/cap7f/divergence.txt
+
+      - name: CAP-7F diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap7f-diagnostics-aggregate
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            build/cap7f/

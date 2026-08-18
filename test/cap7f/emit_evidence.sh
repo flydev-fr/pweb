@@ -58,6 +58,11 @@ file_sha() {
     esac
 }
 
+# minimal JSON string escaper for interpolated free text (backslash, quote)
+json_escape() {
+    printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
 # The logical inventory formula - byte-identical to run_cap7m_release.sh
 # emit_manifest (see that script for the bracket-class rationale: unzip
 # treats the member name as a PATTERN).
@@ -122,7 +127,13 @@ case "${soversion}" in
 esac
 surface="17/soname ${soversion}"
 
-fpc_version="$(fpc -iV 2>/dev/null | tr -d '[:space:]' || printf '<absent>')"
+# fpc must exist and answer: a placeholder would compare EQUAL across
+# targets that are all missing the compiler - the false agreement the
+# aggregator exists to refuse
+command -v fpc >/dev/null 2>&1 ||
+    die 'fpc not found on PATH -- the toolchain evidence cannot be emitted'
+fpc_version="$(fpc -iV | tr -d '[:space:]')"
+[ -n "${fpc_version}" ] || die 'fpc -iV answered nothing'
 github_sha="${GITHUB_SHA:-$(git rev-parse HEAD)}"
 github_run_id="${GITHUB_RUN_ID:-<local>}"
 
@@ -155,10 +166,13 @@ Linux)
     cc_note="gcc ${gcc_version} (libwebview.so built by CMake + gcc; exports re-enumerated via nm -D)"
     engine="WebKitGTK $(lock_read webview.lock linux-webkitgtk-api)"
 
-    # release layout, re-asserted: exactly the ratified four files
+    # release layout, re-asserted: exactly the ratified four files, the
+    # shared-object name taken from the lock rather than spelled twice
+    layout_expected="$(printf '%s\n' LICENSE.webview app.pwb "${linux_soname}" releaseapp |
+        LC_ALL=C sort | tr '\n' ' ')"
     layout_listing="$(cd -- "${release}" && LC_ALL=C ls -A | LC_ALL=C sort | tr '\n' ' ')"
-    [ "${layout_listing}" = 'LICENSE.webview app.pwb libwebview.so.0.12 releaseapp ' ] ||
-        die "release layout is not the ratified four files: [${layout_listing}]"
+    [ "${layout_listing}" = "${layout_expected}" ] ||
+        die "release layout is not the ratified four files: got [${layout_listing}] expected [${layout_expected}]"
     release_layout='PASS'
 
     # no-listener: the L20 runtime gate ran earlier in this job; require its
@@ -197,8 +211,8 @@ Linux)
     host_args='PASS'
     grep -q '"secure":true' "${work}/host-args-pass.log" ||
         die 'args-gate PASS log carries no "secure":true page report'
-    grep -q '"value":42' "${work}/host-args-pass.log" ||
-        die 'args-gate PASS log carries no "value":42 page report'
+    grep -Eq '"value":42([^0-9]|$)' "${work}/host-args-pass.log" ||
+        die 'args-gate PASS log carries no anchored "value":42 page report'
     grep -Fq 'pweb://app' "${work}/host-args-pass.log" ||
         die 'args-gate PASS log never named the pweb://app origin'
     origin='pweb://app'
@@ -317,8 +331,8 @@ Darwin)
     [ -f "${react_log}" ] || die "release run log missing: ${react_log}"
     grep -q '"secure":true' "${react_log}" ||
         die 'release run log carries no "secure":true page report'
-    grep -q '"value":42' "${react_log}" ||
-        die 'release run log carries no "value":42 page report'
+    grep -Eq '"value":42([^0-9]|$)' "${react_log}" ||
+        die 'release run log carries no anchored "value":42 page report'
     grep -Fq 'pweb://app' "${react_log}" ||
         die 'release run log never named the pweb://app origin'
     origin='pweb://app'
@@ -338,17 +352,26 @@ Darwin)
 esac
 
 # ---------------------------- write the evidence -----------------------------
+# every interpolated free-text value goes through json_escape: the toolchain
+# banner lines especially are nobody's to promise quote-free
+cc_note="$(json_escape "${cc_note}")"
+engine_json="$(json_escape "${engine}")"
+runtime_prov="$(json_escape "${runtime_prov}")"
+no_listener_prov="$(json_escape "${no_listener_prov}")"
+fpc_json="$(json_escape "${fpc_version}")"
+surface_json="$(json_escape "${surface}")"
+pin_json="$(json_escape "${webview_pin}")"
 cat > "${work}/evidence.json" <<EOF
 {
   "schema": 1,
   "target": "${target}",
   "os": "$(printf '%s' "${os_name}" | tr '[:upper:]' '[:lower:]' | sed 's/darwin/macos/')",
   "arch": "${arch}",
-  "fpc": "${fpc_version}",
+  "fpc": "${fpc_json}",
   "cc": "${cc_note}",
-  "webview_pin": "${webview_pin}",
-  "webview_surface": "${surface}",
-  "engine": "${engine}",
+  "webview_pin": "${pin_json}",
+  "webview_surface": "${surface_json}",
+  "engine": "${engine_json}",
   "exports": ${exports_json},
   "extra_exports_rtti": ${extra_rtti},
   "origin": "${origin}",

@@ -34,11 +34,26 @@ $violations = New-Object System.Collections.Generic.List[string]
 
 # One directive occurrence = one count. The platform-symbol filter is what
 # separates {$ifdef DARWIN} from {$ifdef FPC} or {$ifdef PWEB_FIXED_RUNTIME}.
+# BOTH FPC directive spellings are scanned: the brace form {$ifdef X} and
+# the parenthesis-star comment form (*$ifdef X*), which is a legal directive
+# a brace-only scanner would silently wave through.
 $directiveRx = [regex]::new('\{\$\s*(?:ifdef|ifndef|elseif|if|else|endif)\b[^}]*\}',
     [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-$platformRx = [regex]::new(
-    '\b(WIN32|WIN64|WINDOWS|OSWINDOWS|MSWINDOWS|LINUX|DARWIN|UNIX|POSIX|BSD|FREEBSD|IOS|OSX|MACOS|HAIKU|CPUX86_64|CPUX64|CPUX86|CPUAARCH64|CPUARM64|CPUARM)\b',
+$directiveParenRx = [regex]::new('\(\*\$\s*(?:ifdef|ifndef|elseif|if|else|endif)\b[^*]*\*\)',
     [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+$platformRx = [regex]::new(
+    '\b(WIN32|WIN64|WINDOWS|OSWINDOWS|MSWINDOWS|LINUX|DARWIN|UNIX|POSIX|BSD|FREEBSD|NETBSD|OPENBSD|IOS|OSX|MACOS|HAIKU|ANDROID|SOLARIS|SUNOS|AIX|CPUX86_64|CPUX64|CPUX86|CPUAARCH64|CPUARM64|CPUARM|AARCH64|CPU32|CPU64)\b',
+    [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+
+function Get-PlatformDirectiveMatches([string]$Line) {
+    $hits = @()
+    foreach ($rx in @($directiveRx, $directiveParenRx)) {
+        foreach ($m in $rx.Matches($Line)) {
+            if ($platformRx.IsMatch($m.Value)) { $hits += $m.Value }
+        }
+    }
+    return $hits
+}
 
 # file (repo-relative, forward slashes) -> exact ratified directive count
 $allow = @{
@@ -79,11 +94,9 @@ foreach ($file in $pascalFiles) {
     $lineNo = 0
     foreach ($line in [System.IO.File]::ReadLines($file.FullName)) {
         $lineNo++
-        foreach ($m in $directiveRx.Matches($line)) {
-            if ($platformRx.IsMatch($m.Value)) {
-                if (-not $found.ContainsKey($rel)) { $found[$rel] = @() }
-                $found[$rel] += "${rel}:${lineNo}: $($m.Value)"
-            }
+        foreach ($hit in (Get-PlatformDirectiveMatches $line)) {
+            if (-not $found.ContainsKey($rel)) { $found[$rel] = @() }
+            $found[$rel] += "${rel}:${lineNo}: $hit"
         }
     }
 }
@@ -121,7 +134,7 @@ $sdkSniffRx = [regex]::new(
 if (Test-Path 'sdk/typescript') {
     $tsFiles = Get-ChildItem sdk/typescript -Recurse -File `
         -Include '*.ts', '*.tsx', '*.js', '*.mjs', '*.cjs' |
-        Where-Object { $_.FullName -notmatch '\\(node_modules|dist)\\' }
+        Where-Object { $_.FullName -notmatch '[\\/](node_modules|dist)[\\/]' }
     foreach ($file in $tsFiles) {
         $rel = Get-RelPath $file.FullName
         $lineNo = 0
@@ -142,11 +155,9 @@ if (Test-Path 'sdk/pas2js') {
         $lineNo = 0
         foreach ($line in [System.IO.File]::ReadLines($file.FullName)) {
             $lineNo++
-            foreach ($m in $directiveRx.Matches($line)) {
-                if ($platformRx.IsMatch($m.Value)) {
-                    $report.Add("${rel}:${lineNo}: $($m.Value)")
-                    $violations.Add("SDK PLATFORM CONDITIONAL (frozen zero) : ${rel}:${lineNo}: $($m.Value)")
-                }
+            foreach ($hit in (Get-PlatformDirectiveMatches $line)) {
+                $report.Add("${rel}:${lineNo}: $hit")
+                $violations.Add("SDK PLATFORM CONDITIONAL (frozen zero) : ${rel}:${lineNo}: $hit")
             }
         }
     }

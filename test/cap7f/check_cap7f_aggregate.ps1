@@ -48,11 +48,21 @@ $expectations = @{
     'macos-arm64'    = @{ os = 'macos'; arch = 'arm64'; engine = 'WKWebView' }
 }
 $required = @(
-    'schema', 'target', 'os', 'arch', 'fpc', 'webview_pin', 'webview_surface',
-    'engine', 'exports', 'origin', 'secure', 'bundle_protocol', 'rpc_add_20_22',
+    'schema', 'target', 'os', 'arch', 'fpc', 'cc', 'webview_pin',
+    'webview_surface', 'engine', 'exports', 'extra_exports_rtti', 'origin',
+    'secure', 'bundle_protocol', 'rpc_add_20_22', 'runtime_provenance',
     'host_args', 'release_layout', 'no_listener', 'app_pwb_react_sha256',
-    'logical_inventory_sha256_react', 'github_sha'
+    'logical_inventory_sha256_react', 'github_sha', 'github_run_id', 'waivers'
 )
+# absolute pins: equality across targets is not enough - four targets that
+# all drifted to protocol 2 would agree perfectly, and this matrix is the
+# CLOSURE record of the ratified values, not of whatever consensus emerged
+$absolutePins = @{
+    bundle_protocol = '1'
+    origin          = 'pweb://app'
+    secure          = 'true'
+    rpc_add_20_22   = '42'
+}
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
 $mustPass = @('release_layout', 'no_listener', 'host_args')
 # fields that must agree, value-for-value, across all four targets
@@ -110,6 +120,12 @@ foreach ($t in $evidence.Keys) {
             $failures.Add("REQUIRED-PASS FIELD NOT PASS: target=$t field=$f value='$v'")
         }
     }
+    foreach ($f in $absolutePins.Keys) {
+        $v = "$($e.$f)"
+        if ($v -cne $absolutePins[$f]) {
+            $failures.Add("ABSOLUTE PIN VIOLATED: target=$t field=$f value='$v' pinned='$($absolutePins[$f])'")
+        }
+    }
     # the export surface: exactly 17 webview_* names, no strays
     $ex = @($e.exports)
     if ($ex.Count -ne 17) {
@@ -158,10 +174,31 @@ if ($evidence.Count -eq $targets.Count -and $failures.Count -eq 0) {
     }
 }
 
-# --- independent macOS manifest cross-check ---------------------------------
-# The evidence value must equal the SHA-256 of the manifest ARTIFACT the
-# release gate uploaded, and the inventory row must agree - three sources,
-# one value, or the aggregate is red.
+# --- independent manifest cross-checks, ALL targets --------------------------
+# The evidence's logical_inventory_sha256 must equal the SHA-256 of the
+# manifest ARTIFACT the same job uploaded beside it - a field is never
+# taken at its word when the bytes it summarizes are sitting in the run.
+foreach ($check in @(
+    @{ dir = 'windows'; target = 'windows-x86_64'; frontends = @('react') },
+    @{ dir = 'linux'; target = 'linux-x86_64'; frontends = @('react', 'pas2js') })) {
+    foreach ($fe in $check.frontends) {
+        $manifest = Join-Path $EvidenceRoot (Join-Path $check.dir "manifest-$fe.txt")
+        if (-not (Test-Path $manifest)) {
+            $failures.Add("MANIFEST ARTIFACT ABSENT: $manifest")
+            continue
+        }
+        if (-not $evidence.Contains($check.target)) { continue }
+        $manifestSha = (Get-FileHash $manifest -Algorithm SHA256).Hash.ToLowerInvariant()
+        $evField = "logical_inventory_sha256_$fe"
+        $evSha = "$($evidence[$check.target].$evField)"
+        if ($manifestSha -cne $evSha) {
+            $failures.Add("FIELD DISAGREES: $evField ($($check.target)) -- evidence='$evSha' vs manifest-artifact sha256='$manifestSha'")
+        }
+    }
+}
+
+# macOS additionally cross-checks the inventory ROW the release gate wrote -
+# three sources, one value, or the aggregate is red.
 foreach ($pair in @(@{ dir = 'x64'; target = 'macos-x86_64' },
                     @{ dir = 'arm64'; target = 'macos-arm64' })) {
     foreach ($fe in @('react', 'pas2js')) {

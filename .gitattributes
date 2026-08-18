@@ -36,5 +36,19 @@ test/cap7m/fixture/**/*.json text eol=lf
 # CAP-7F cross-OS inventory equality gate is what caught the divergence and
 # is what now keeps it caught. The blob store is already LF (i/lf), so this
 # changes only the checkout, never the committed content.
-examples/04-react/frontend/src/index.html text eol=lf
-examples/05-pas2js/frontend/src/index.html text eol=lf
+#
+# Pinned as a CLASS, by text extension, under both frontend src trees: the
+# next .css or .json added beside index.html would otherwise inherit nothing
+# and reopen the exact divergence this block closes (the cap7m fixture block
+# above states the same rationale). Deliberately extension-scoped - a
+# potential binary (an image, a font) must never be declared text.
+examples/04-react/frontend/src/**/*.html text eol=lf
+examples/04-react/frontend/src/**/*.css text eol=lf
+examples/04-react/frontend/src/**/*.js text eol=lf
+examples/04-react/frontend/src/**/*.json text eol=lf
+examples/04-react/frontend/src/**/*.svg text eol=lf
+examples/05-pas2js/frontend/src/**/*.html text eol=lf
+examples/05-pas2js/frontend/src/**/*.css text eol=lf
+examples/05-pas2js/frontend/src/**/*.js text eol=lf
+examples/05-pas2js/frontend/src/**/*.json text eol=lf
+examples/05-pas2js/frontend/src/**/*.svg text eol=lf
