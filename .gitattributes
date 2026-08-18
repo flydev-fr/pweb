@@ -23,3 +23,18 @@ test/cap7m/fixture/**/*.html text eol=lf
 test/cap7m/fixture/**/*.css text eol=lf
 test/cap7m/fixture/**/*.js text eol=lf
 test/cap7m/fixture/**/*.json text eol=lf
+
+# CAP-7F: the frontend sources that ship VERBATIM inside app.pwb. The react
+# build cpSync's src/index.html into dist/ (the pas2js build copies its
+# sibling the same way) and pwebbundle packages those exact bytes, so a CRLF
+# checkout - Git for Windows defaults to core.autocrlf=true, on the hosted
+# windows runner as on the dev host - made the Windows logical bundle
+# inventory diverge from the Linux/macOS one by exactly the carriage returns
+# (MEASURED: index.html 188 bytes CRLF vs 177 LF; app.js and manifest.json
+# already byte-identical cross-OS). The committed corpus is ONE set of bytes
+# and every platform must check out, build and ship that same set; the
+# CAP-7F cross-OS inventory equality gate is what caught the divergence and
+# is what now keeps it caught. The blob store is already LF (i/lf), so this
+# changes only the checkout, never the committed content.
+examples/04-react/frontend/src/index.html text eol=lf
+examples/05-pas2js/frontend/src/index.html text eol=lf
