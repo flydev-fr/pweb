@@ -80,7 +80,7 @@ baseline_commit: '8f0d05aa42045a292af182f8a3f9287c148ae4e6'
 - [x] `test/cap7f/check_divergence.ps1` -- NEW: repo-wide sweep of production platform conditionals (`src/**`, `examples/08-release/`, `tools/bundler/`) against the explicit allowlist above; any new conditional in the zero-conditional core units fails naming file:line; emits `build/cap7f/divergence.txt`. Runs in the aggregation job (checkout only, no build) and locally.
 - [x] `test/cap7f/check_cap7f_aggregate.ps1` -- NEW: consumes 4 downloaded evidence files (+ macOS manifest/inventory artifacts): presence, schema, export-set equality across all targets, pin/protocol/origin/secure/rpc-42 equality, react `logical_inventory_sha256` equality across windows/linux/macos-x64/macos-arm64 (+ pas2js where present: linux/macOS), layout + no-listener + host-args = PASS per target, waiver labels intact; writes `build/cap7f/platform-matrix.json` + step summary.
 - [x] `.github/workflows/ci.yml` -- add per-job thin steps: windows (args gate + emitter + upload `cap7f-evidence-windows`, `if-no-files-found: error`), linux (args gate + emitter + upload `cap7f-evidence-linux`), macos-x64/arm64 (emitter + upload `cap7f-evidence-macos-{x64,arm64}`); new final job `cap7-aggregate` on `ubuntu-24.04`, `needs: [windows, linux, macos-x64, macos-arm64, macos-release-inventory]`, checkout + pinned download-artifact + divergence sweep + aggregator; heavy builds not duplicated.
-- [ ] `_bmad-output/implementation-artifacts/deferred-work.md` -- append: D1 CLOSED (args executed on Windows/Linux, run ID); record mirror-run unfetchability + superseding origin run `32013558592`; record cross-arch ABI-facts reconciliation remaining with CAP-11 where not covered here.
+- [x] `_bmad-output/implementation-artifacts/deferred-work.md` -- append: D1 CLOSED (args executed on Windows/Linux, run ID); record mirror-run unfetchability + superseding origin run `32013558592`; record cross-arch ABI-facts reconciliation remaining with CAP-11 where not covered here.
 - [ ] `_bmad-output/implementation-artifacts/spec-phase-7-cap7f-final-integration.md` -- after the aggregation job is green on hosted CI for the final shard commit: Design Notes gain the canonical matrices (platform closure, toolchain, ABI, origin, RPC, layout, no-network, waivers) + "**CAP-7 CLOSED**" paragraph with exact commits/run IDs; `status: done`. This artifact is the canonical CAP-7 closure record (repo keeps no separate status file).
 
 **Acceptance Criteria:**
@@ -101,6 +101,44 @@ baseline_commit: '8f0d05aa42045a292af182f8a3f9287c148ae4e6'
 - **Wrapper ABI:** no numeric constant exists; the matrix records `webview_surface=17/soname 0.12` as the ABI statement per target.
 - **Honesty invariants:** evidence emitted only by steps that run after the gates they summarize, inside the same job (a failed gate kills the job before upload); conditional Windows runtime keeps its SKIP path and the aggregator refuses SKIP — a runner regression turns the aggregate red, never silently green.
 - **Aggregator robustness:** copy the `macos-release-inventory` existence-check-before-diff pattern (ci.yml:2448-2460); pinned action SHAs like the existing compare job.
+
+### CAP-7 closure matrices (hosted run `32129242424`, commit `6b818de1a51027431c0ec9a67815ace4d467ad77`)
+
+**Run provenance — recorded honestly, never as first-try green:** shard commits `5f74ec5` (frontend `index.html` LF checkout pin) + `6b818de` (CAP-7F gates, emitters, aggregation) on `phase/cap-7/f-final-integration`, hosted run `32129242424` on flydev-fr/pweb. Attempt 1: five of six jobs green — `linux-x64` (including the NEW D1 args gate and evidence emitter), `macos-x64`, `macos-arm64`, `macos release inventory`; `windows` failed at the KNOWN CAP-6b3 fixed-setup uninstall-leftovers flake (`test/cap6b3/run_fixed_setup_gates.ps1:477`, 11 WebView2 browser DLLs held by a lingering `msedgewebview2.exe` child; same signature as run `31918375036` during CAP-7M1; gates 1–8 including runtime-selection 42 passed first; the CAP-7F diff touches nothing in CAP-6b3), which skipped `cap7-aggregate`. Attempt 2 (`gh run rerun --failed`): `windows` green, `cap7-aggregate` green — all six jobs success. `platform-matrix.json` + `divergence.txt` uploaded as `cap7f-platform-matrix`.
+
+**Platform closure matrix** (records referenced, not copied):
+
+| target | capabilities | closure record | hosted evidence |
+|---|---|---|---|
+| windows-x86_64 | CAP-1…6 + CAP-13 (6b0–6b4) | `spec-phase-6b4-windows-profile-integration.md:157`, commit `b18e88e` | run `31879087884`; re-exercised in `32129242424` |
+| linux-x86_64 | CAP-7L | `spec-phase-7-cap7l-linux-x64-parity.md:307`, closure `5cb564da` | run `31890995361`; re-exercised in `32129242424` |
+| macos-x86_64 / macos-arm64 | CAP-7M0/M1/M2 | closures `a6b28bb` / `30c80a7` / `8f0d05a` | origin run `32013558592` (mirror-era runs unfetchable, see ledger); re-exercised in `32129242424` |
+| cross-target | CAP-7F | this artifact | run `32129242424`, `cap7-aggregate` green |
+
+**Toolchain matrix** (from the four evidence artifacts, strict equality where shown): FPC `3.2.2` on all four targets (`fpc.lock`); cc = MSVC (windows) / gcc 13.3.0 (linux) / Apple clang 17.0.0 (both macOS arches); frontends built with node 24.11.1 + pas2js 3.0.1 (locks) on every target that ships them.
+
+**ABI matrix:** upstream pin `cbbdee44afff22867de9fd88a9fc8350d9bdd399` (`webview.lock:4`) on all four; wrapper ABI statement `webview_surface=17/soname 0.12` (no numeric constant exists — the surface pin + soname IS the contract); the 17-name `webview_*` export set re-enumerated per target (dumpbin / nm -D / dyld_info export trie) and SET-EQUAL across all four; macOS x86_64 additionally carries 8 weak `_ZT[IS]` libc++ RTTI records — the measured CAP-7M0 allowance, recorded as a count, never folded into the set; `srclib-platform-patch-sha256` `25592760…81988` (`webview.lock:86`) enforced by both freeze sweeps in the same run.
+
+**Origin/asset matrix:** `origin=pweb://app` + `secure=true` on all four targets (runtime-gate provenance: the page's own report line); bundle protocol `1` read from each target's real `app.pwb`; react `logical_inventory_sha256` = `1bd9c287857eec079086463f84e317a0a852febd3fb65f77ff5ded7c4f627af4` EQUAL ON ALL FOUR targets — the first cross-OS logical-corpus equality ever executed (see the CRLF note above: it caught a genuine divergence pre-push, fixed at the checkout root); pas2js `logical_inventory_sha256` = `1ef786cfa852e4e6b5bb9c6447d69d258667d892a8aaf9aec85332f96dbd1e5b` equal on linux/macos-x64/macos-arm64 (Windows is React-only, ratified CAP-6 shape); compressed container bytes remain per-toolchain only (waiver, below).
+
+**RPC matrix:** live `Add(20,22)=42` on all four targets, runtime-gate provenance (Windows/Linux: the CAP-7F args-gate PASS leg; macOS: the CAP-7M2 release runs); `method_not_found` taxonomy + envelope semantics proven by the shared `pwebtests` suite executed natively per target (unit-suite provenance, 2,302 tests) plus the CAP-5 smokes; threading/runtime parity carried by the prior shard records — CAP-7L `:27,48,125`, CAP-7M1 markers (`gui_affine=1 worker_distinct=1 direct_return=1`, both shutdown shapes), Windows CAP-2/3/5 suites — never faked as a new GUI measurement.
+
+**Release-layout matrix:** windows `exe + app.pwb + dll` exactly (CAP-6 gate + emitter re-assert); linux the four-file `dist/linux-x64/release` (CAP-7L gate + emitter re-assert); macOS exactly the two minimal `.app` products per arch (CAP-7M2 R1 + emitter re-assert) — `release_layout=PASS` on all four in the same hosted run.
+
+**No-network matrix:** windows CAP-5/CAP-6 zero-network source sweeps (re-executed by the emitter in the same job); linux L20 lifetime listener sampling under xvfb; macOS R11 whole-life `lsof` sampling on every direct release run + the M20 probe — `no_listener=PASS` on all four, runtime provenance recorded per target.
+
+**Host-argument coverage (D1):** executed on ALL FOUR targets in the closure run — Windows and Linux for the first time via `test/cap7f/run_host_args_gate.{ps1,sh}` (PASS leg verdict file, argv-over-env 55000→4000 proven by wall clock — 4.6 s hosted Windows, 4 s hosted Linux (from the uploaded `host-args.json` artifacts), far under the 45 s bound — and unknown/malformed/duplicate refusals each leaving a FAIL verdict), macOS by the CAP-7M2 release suite (R3 LaunchServices verdict file, R9 warm argv-wins rerun, refusal matrix incl. the R4 refusal-verdict proof).
+
+**Waivers and limitations (verbatim labels, never promoted to PASS):**
+- CAP-6b2 offline clean-machine VM gate — WAIVED (user decision 2026-08-13; ledger).
+- CAP-6b3 real-runtime Gates B/C (no-Evergreen instance; Windows 10 AppContainer) — WAIVED (user decision 2026-08-14; ledger).
+- CAP-7M1 sync scheme-serving only: `stop_arrivals=0` recorded as a LIMITATION (deferred to CAP-12).
+- macOS signing/notarization out of scope for CAP-7 (ad-hoc gate-local prep at most, recorded, never product signing).
+- Cross-toolchain `app.pwb` identity is LOGICAL only — compressed container bytes differ per toolchain by design.
+- Linux runtime dependency on distro WebKitGTK/GTK packages (ratified; no Linux CAP-13).
+- CAP-7M1/M2 mirror-era run IDs unfetchable (mirror deleted); superseded by origin runs `32013558592` / `32129242424` (ledger).
+
+**Closure state:** every acceptance criterion of this shard is met on hosted CI for the final shard commit; the canonical matrices above are the CAP-7 closure record. The `status: done` / "CAP-7 CLOSED" flip is deliberately left to human review of this record — it is the one remaining act of this artifact.
 
 ## Verification
 
