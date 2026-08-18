@@ -1434,6 +1434,44 @@ jobs:
             Tee-Object -FilePath build/cap6b4-matrix.log
           if ($LASTEXITCODE -ne 0) { throw 'CAP-6b4 profile matrix FAILED' }
 
+      # ------------------------- CAP-7F closure -------------------------
+      # Everything below is additive; no earlier step is altered. The args
+      # gate executes the CAP-7M2 host arguments on Windows for the first
+      # time (deferred-work D1), on the release triple the CAP-6 gates
+      # assembled above; the emitter then writes the per-target evidence
+      # the final cap7-aggregate job compares. Evidence honesty: these run
+      # AFTER every gate they summarize, in this same job, so a failed
+      # gate kills the job before any evidence uploads - and a conditional
+      # SKIP is recorded as SKIP, which the aggregator refuses.
+      - name: CAP-7F host-argument gate on the release triple (closes D1 on Windows)
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          pwsh -NoProfile -File test/cap7f/run_host_args_gate.ps1 2>&1 |
+            Tee-Object -FilePath build/cap7f-host-args.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-7F host-argument gate FAILED' }
+
+      - name: CAP-7F emit the Windows evidence artifact
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          pwsh -NoProfile -File test/cap7f/emit_evidence.ps1 2>&1 |
+            Tee-Object -FilePath build/cap7f-evidence.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-7F evidence emission FAILED' }
+
+      # ERROR, not ignore: an evidence step that produced nothing must
+      # never let the aggregate compare three targets and call it four
+      - name: CAP-7F upload the Windows evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap7f-evidence-windows
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            build/cap7f/evidence.json
+            build/cap7f/host-args.json
+            build/cap7f/manifest-react.txt
+
       # same deliberate deviation as CAP-6b2/6b3: no ~200-276 MB setup
       # binary is uploaded - the logs and the release index identify any
       # defect, and every artifact is reproducible from the pinned locks
@@ -1724,6 +1762,35 @@ jobs:
         shell: bash
         timeout-minutes: 10
         run: xvfb-run -a test/cap7l/check_cap7l_nonetwork.sh
+
+      # ------------------------- CAP-7F closure -------------------------
+      # Additive, after every existing gate: the args gate executes the
+      # CAP-7M2 host arguments on Linux for the first time (deferred-work
+      # D1), on the release layout run_release_layout.sh assembled above;
+      # the emitter then writes the per-target evidence for cap7-aggregate.
+      # No conditional SKIP here - the virtual display is real, so every
+      # failure gates, same policy as the other Linux GUI gates.
+      - name: CAP-7F host-argument gate on the release layout (closes D1 on Linux)
+        shell: bash
+        timeout-minutes: 10
+        run: xvfb-run -a test/cap7f/run_host_args_gate.sh
+
+      - name: CAP-7F emit the Linux evidence artifact
+        shell: bash
+        timeout-minutes: 10
+        run: test/cap7f/emit_evidence.sh
+
+      - name: CAP-7F upload the Linux evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap7f-evidence-linux
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            build/cap7f/evidence.json
+            build/cap7f/host-args.json
+            build/cap7f/manifest-react.txt
+            build/cap7f/manifest-pas2js.txt
 
       - name: CAP-7L diagnostics on failure
         if: failure()
@@ -2078,6 +2145,26 @@ jobs:
         timeout-minutes: 15
         run: test/cap7m/check_cap7m_nonetwork.sh
 
+      # CAP-7F: additive, after every gate it summarizes. macOS runs no new
+      # gate - the CAP-7M2 release suite above already executed the host
+      # arguments (LaunchServices --pweb-verdict, argv-beats-env, refusal
+      # verdicts) - so the emitter consumes measurements.txt, the release
+      # manifests/inventories and the run logs, and re-enumerates the
+      # export trie from the built dylib.
+      - name: CAP-7F emit the macOS x64 evidence artifact
+        shell: bash
+        timeout-minutes: 10
+        run: test/cap7f/emit_evidence.sh
+
+      - name: CAP-7F upload the macOS x64 evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap7f-evidence-macos-x64
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            build/cap7f/evidence.json
+
       - name: CAP-7M0 per-arch headline facts to the run summary
         if: always()
         shell: bash
@@ -2379,6 +2466,22 @@ jobs:
         timeout-minutes: 15
         run: test/cap7m/check_cap7m_nonetwork.sh
 
+      # CAP-7F: see the x64 sibling - the emitter summarizes gates that
+      # already ran above in this job and re-enumerates the export trie.
+      - name: CAP-7F emit the macOS arm64 evidence artifact
+        shell: bash
+        timeout-minutes: 10
+        run: test/cap7f/emit_evidence.sh
+
+      - name: CAP-7F upload the macOS arm64 evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap7f-evidence-macos-arm64
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            build/cap7f/evidence.json
+
       - name: CAP-7M0 per-arch headline facts to the run summary
         if: always()
         shell: bash
@@ -2478,3 +2581,81 @@ jobs:
           done
           [ "${bad}" -eq 0 ] || { echo 'cross-architecture release inventory FAILED'; exit 1; }
           echo 'cross-architecture release inventory: identical logical corpus, plist semantics and frontend rev on both architectures'
+
+  # ================= CAP-7F: final cross-platform aggregation =================
+  # The closure gate of CAP-7. Consumes the four per-target evidence
+  # artifacts plus both macOS release inventories, sweeps the production
+  # surface for platform divergence (checkout only, no build), and fails on
+  # ANY semantic disagreement: absent artifact, missing field, export-set or
+  # pin or origin or RPC or logical-inventory drift, or a SKIP/WAIVED
+  # verdict standing where the matrix requires PASS. Runs on ubuntu because
+  # it only reads text artifacts - no macOS minutes, no toolchain.
+  cap7-aggregate:
+    name: cap7 aggregate (windows = linux = macos-x64 = macos-arm64)
+    needs: [windows, linux, macos-x64, macos-arm64, macos-release-inventory]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Download the Windows evidence
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: cap7f-evidence-windows
+          path: ev/windows
+
+      - name: Download the Linux evidence
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: cap7f-evidence-linux
+          path: ev/linux
+
+      - name: Download the macOS x64 evidence
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: cap7f-evidence-macos-x64
+          path: ev/macos-x64
+
+      - name: Download the macOS arm64 evidence
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: cap7f-evidence-macos-arm64
+          path: ev/macos-arm64
+
+      - name: Download the x64 release inventory
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: cap7m2-release-x64
+          path: inv/x64
+
+      - name: Download the arm64 release inventory
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: cap7m2-release-arm64
+          path: inv/arm64
+
+      - name: CAP-7F divergence sweep over the production surface (checkout only)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap7f/check_divergence.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-7F divergence sweep FAILED' }
+
+      - name: CAP-7F aggregate - four targets, field-by-field, or red
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap7f/check_cap7f_aggregate.ps1 -EvidenceRoot ev -MacosInventoryRoot inv
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-7F aggregation FAILED' }
+
+      # ERROR, not ignore: the matrix IS this job's deliverable - a green
+      # aggregate that uploaded no matrix is the shape of a proof nobody
+      # can quote
+      - name: CAP-7F upload the platform matrix
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap7f-platform-matrix
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            build/cap7f/platform-matrix.json
+            build/cap7f/divergence.txt
