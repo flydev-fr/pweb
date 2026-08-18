@@ -15,6 +15,7 @@ interface Verdict {
   rendered: boolean;
   rpc: boolean;
   errmap: boolean;
+  denied: boolean;
   value?: number;
   error?: string;
 }
@@ -32,6 +33,7 @@ export function App(): JSX.Element {
         rendered: true, // this effect only fires after React committed the tree
         rpc: false,
         errmap: false,
+        denied: false,
       };
       try {
         const info = await handshake();
@@ -51,6 +53,21 @@ export function App(): JSX.Element {
             err instanceof PWebError &&
             err.code === "method_not_found" &&
             err.status === 404 &&
+            err.data === null;
+        }
+        // CAP-8A deny probe: an UNMAPPED method through the production
+        // contextual policy must come back as typed forbidden/403. The
+        // fact is REPORTED here and REQUIRED only by the release-side
+        // gates: under the deliberate allow-all hosts (examples 02-06)
+        // the same probe reaches the bridge and 404s, so `denied` stays
+        // false there WITHOUT failing this page's own `ok` verdict.
+        try {
+          await invoke("Denied.Probe", null);
+        } catch (err) {
+          verdict.denied =
+            err instanceof PWebError &&
+            err.code === "forbidden" &&
+            err.status === 403 &&
             err.data === null;
         }
         verdict.ok =

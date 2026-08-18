@@ -220,6 +220,12 @@ if ($hostArgsVerdict -eq 'PASS') {
     if ($passLog -notmatch [regex]::Escape('pweb://app')) {
         throw 'args-gate PASS log never named the pweb://app origin'
     }
+    # CAP-8A runtime deny enforcement, re-asserted at evidence time: an
+    # allow-all regression reports "denied":false (the unmapped probe
+    # 404s instead of being forbidden) and must never emit evidence
+    if ($passLog -notmatch '"denied":true') {
+        throw 'args-gate PASS log carries no "denied":true page report -- the production policy did not forbid the unmapped probe'
+    }
     $origin = 'pweb://app'
     $secure = 'true'
     $rpc = '42'
@@ -231,6 +237,33 @@ if ($hostArgsVerdict -eq 'PASS') {
     $rpc = 'SKIP'
     $runtimeProvenance = 'runtime-gate:SKIP (no usable WebView2/desktop session)'
 }
+
+# --- CAP-8A capability-policy verdict + decision digest ---------------------
+# capability-policy.txt is written by the pwebtests CAP-8A suite that ran
+# EARLIER IN THIS JOB (a failed suite kills the job before this emitter,
+# and CI checks out fresh so no stale file can survive a previous run);
+# its sha256 is the cross-target policy-decision digest the aggregator
+# requires to be identical on all four targets. The file's own trailing
+# verdict line is required too - honesty, not step order alone.
+$capPolicyFile = Join-Path $work 'capability-policy.txt'
+if (-not (Test-Path $capPolicyFile)) {
+    throw '[CAP-7F] capability-policy.txt missing -- the CAP-8A pwebtests suite has not run in this workspace'
+}
+$capLines = @(Get-Content $capPolicyFile)
+if ($capLines.Count -lt 2) {
+    # guarded BEFORE any index: an empty or one-line corpus must produce
+    # this diagnosis, never a StrictMode index/null error
+    throw "[CAP-7F] capability-policy.txt is empty or truncated ($($capLines.Count) line(s)) -- the CAP-8A suite did not write a full corpus"
+}
+if ($capLines[0] -cne 'schema=1') {
+    throw '[CAP-7F] capability-policy.txt carries no schema=1 header'
+}
+if ($capLines[-1] -cne 'verdict=PASS') {
+    throw '[CAP-7F] capability-policy.txt does not end in verdict=PASS'
+}
+$capabilityPolicy = 'PASS'
+$capabilityPolicyDigest = (Get-FileHash $capPolicyFile -Algorithm SHA256).Hash.ToLowerInvariant()
+Write-Host "[CAP-7F] capability_policy_digest: $capabilityPolicyDigest"
 
 # --- run identity -----------------------------------------------------------
 $sha = $env:GITHUB_SHA
@@ -256,6 +289,8 @@ $evidence = [ordered]@{
     rpc_add_20_22                   = $rpc
     runtime_provenance              = $runtimeProvenance
     host_args                       = $hostArgsVerdict
+    capability_policy               = $capabilityPolicy
+    capability_policy_digest        = $capabilityPolicyDigest
     release_layout                  = $releaseLayout
     no_listener                     = $noListener
     no_listener_provenance          = 'source-sweep re-executed (check_cap6_nonetwork.ps1); CAP-5/CAP-6 job gates precede this emitter'

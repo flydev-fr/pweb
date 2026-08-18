@@ -215,6 +215,9 @@ Linux)
         die 'args-gate PASS log carries no anchored "value":42 page report'
     grep -Fq 'pweb://app' "${work}/host-args-pass.log" ||
         die 'args-gate PASS log never named the pweb://app origin'
+    # CAP-8A runtime deny enforcement, re-asserted at evidence time
+    grep -q '"denied":true' "${work}/host-args-pass.log" ||
+        die 'args-gate PASS log carries no "denied":true page report -- the production policy did not forbid the unmapped probe'
     origin='pweb://app'
     secure='true'
     rpc='42'
@@ -335,6 +338,11 @@ Darwin)
         die 'release run log carries no anchored "value":42 page report'
     grep -Fq 'pweb://app' "${react_log}" ||
         die 'release run log never named the pweb://app origin'
+    # CAP-8A runtime deny enforcement on the macOS react product too: the
+    # shared release host runs the same production policy, so the react
+    # page's unmapped probe must have come back typed forbidden/403
+    grep -q '"denied":true' "${react_log}" ||
+        die 'release run log carries no "denied":true page report -- the production policy did not forbid the unmapped probe'
     origin='pweb://app'
     secure='true'
     rpc='42'
@@ -350,6 +358,23 @@ Darwin)
     die "unsupported platform for this emitter: ${os_name}"
     ;;
 esac
+
+# --- CAP-8A capability-policy verdict + decision digest (both POSIX targets) --
+# capability-policy.txt is written by the pwebtests CAP-8A suite that ran
+# earlier in this job (run_cap7l_gates.sh / run_cap7m_gates.sh; a failed
+# suite kills the job before this emitter). Its sha256 is the cross-target
+# policy-decision digest the aggregator requires to be identical on all
+# four targets; the file's own verdict line is required too.
+cap_policy_file="${work}/capability-policy.txt"
+[ -f "${cap_policy_file}" ] ||
+    die 'capability-policy.txt missing -- the CAP-8A pwebtests suite has not run in this workspace'
+head -n 1 "${cap_policy_file}" | grep -qx 'schema=1' ||
+    die 'capability-policy.txt carries no schema=1 header'
+tail -n 1 "${cap_policy_file}" | grep -qx 'verdict=PASS' ||
+    die 'capability-policy.txt does not end in verdict=PASS'
+capability_policy='PASS'
+capability_policy_digest="$(file_sha "${cap_policy_file}")"
+printf '[CAP-7F] capability_policy_digest: %s\n' "${capability_policy_digest}"
 
 # ---------------------------- write the evidence -----------------------------
 # every interpolated free-text value goes through json_escape: the toolchain
@@ -380,6 +405,8 @@ cat > "${work}/evidence.json" <<EOF
   "rpc_add_20_22": "${rpc}",
   "runtime_provenance": "${runtime_prov}",
   "host_args": "${host_args}",
+  "capability_policy": "${capability_policy}",
+  "capability_policy_digest": "${capability_policy_digest}",
   "release_layout": "${release_layout}",
   "no_listener": "${no_listener}",
   "no_listener_provenance": "${no_listener_prov}",

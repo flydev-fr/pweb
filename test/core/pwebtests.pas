@@ -10,6 +10,17 @@ program pwebtests;
 
 {$I mormot.defines.inc}
 
+{ CAP-8A: the capability integration gates drive the REAL mORMot
+  interface-service path, which on Win64 requires the prepared CAP-3U
+  trampoline (PWEB_CALLMETHOD_UNWIND_PROBE) exactly as the existing
+  mORMot cases do - so on Windows they register only inside that window
+  (CI runs them through cap3tests), while on Linux/macOS no trampoline
+  exists or is needed and they register unconditionally. This is what
+  puts the I1-I10 gates on all four CI targets. }
+{$if defined(PWEB_CALLMETHOD_UNWIND_PROBE) or not defined(OSWINDOWS)}
+  {$define PWEB_CAP8A_INTEGRATION}
+{$endif}
+
 {$ifdef OSWINDOWS}
   {$apptype console}
 {$endif OSWINDOWS}
@@ -22,7 +33,12 @@ uses
   pweb.test.binding,
   pweb.test.lifecycle,
   pweb.test.assets,
-  pweb.test.bundle
+  pweb.test.bundle,
+  pweb.test.capabilities
+  {$ifdef PWEB_CAP8A_INTEGRATION}
+  ,
+  pweb.test.capabilities.integration
+  {$endif PWEB_CAP8A_INTEGRATION}
   {$ifdef OSWINDOWS}
   ,
   pweb.test.webview2runtime,
@@ -52,6 +68,10 @@ type
     procedure InvocationPipeline;
     procedure AssetSystem;
     procedure BundleSystem;
+    procedure CapabilityPolicy;
+    {$ifdef PWEB_CAP8A_INTEGRATION}
+    procedure CapabilityPolicyIntegration;
+    {$endif PWEB_CAP8A_INTEGRATION}
     {$ifdef OSWINDOWS}
     procedure WebView2Runtime;
     procedure WebView2Provisioning;
@@ -89,6 +109,29 @@ begin
   // webview.dll and no WebView2 runtime required
   AddCase([TTestBundleSystem]);
 end;
+
+procedure TPWebTests.CapabilityPolicy;
+begin
+  // CAP-8A, headless on every target: the production capability engine
+  // (grammar A1-A6, sets/builder A7-A15, mapping A16-A22, context
+  // identity A23-A26, exception barrier A27, runtime grants A28-A30,
+  // advisory zero-cap A31-A32, deny envelope A33-A35) over the real
+  // scheduler with the counting dummy bridge - no window, no webview,
+  // no mORMot bridge required. Also emits the CAP-7F policy-decision
+  // corpus (build/cap7f/capability-policy.txt).
+  AddCase([TTestCapabilityPolicy]);
+end;
+
+{$ifdef PWEB_CAP8A_INTEGRATION}
+procedure TPWebTests.CapabilityPolicyIntegration;
+begin
+  // CAP-8A gates I1-I10: the reference configuration through the REAL
+  // pipeline (scheduler workers -> production policy ->
+  // TMormotInvocationBridge -> in-process Uri()) with counting spies on
+  // the SOA layer and every service - headless, no window
+  AddCase([TTestCapabilityPolicyIntegration]);
+end;
+{$endif PWEB_CAP8A_INTEGRATION}
 
 {$ifdef OSWINDOWS}
 procedure TPWebTests.WebView2Runtime;
@@ -181,5 +224,6 @@ begin
   TPWebTests.RunAsConsole('PWeb tests (CAP-1 raw binding + ' +
     'CAP-2 invocation pipeline + CAP-3 bridge + CAP-4 assets + ' +
     'CAP-6 bundle + CAP-6b0 WebView2 runtime detection + ' +
-    'CAP-6b1 WebView2 provisioning + CAP-6b3 fixed runtime)');
+    'CAP-6b1 WebView2 provisioning + CAP-6b3 fixed runtime + ' +
+    'CAP-8A capability policy)');
 end.

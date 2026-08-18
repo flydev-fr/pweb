@@ -47,6 +47,10 @@ suite_log='build/cap7l/pwebtests.log'
 # at the Linux artifact exactly as the Windows job points it at the DLL.
 export PWEB_WEBVIEW_DLL="${repo_root}/build/cap7l/webview-dist/libwebview.so.0.12"
 [ -f "${PWEB_WEBVIEW_DLL}" ] || die "staged library missing: ${PWEB_WEBVIEW_DLL}"
+# CAP-8A corpus freshness: the CAP-7F emitter hashes this file as THIS
+# run's policy-decision evidence, so a stale copy from an earlier run
+# must never survive into the suite that is supposed to write it
+rm -f -- "${repo_root}/build/cap7f/capability-policy.txt"
 set +e
 "${bin}/pwebtests" > "${suite_log}" 2>&1
 suite_code=$?
@@ -57,6 +61,16 @@ grep -q 'Total assertions failed for all test suits' "${suite_log}" ||
     die 'pwebtests produced no summary -- the suite did not actually run'
 grep -q 'Web kit gtk adapter' "${suite_log}" ||
     die 'the CAP-7L Linux adapter cases were not registered in the suite'
+# CAP-8A: the capability engine cases and the I1-I10 integration gates
+# must both be registered - an exit code alone cannot tell "all passed"
+# from "never ran" (see the /noenter note above). Both greps are ANCHORED
+# to the case-header colon so neither can be satisfied by the other's
+# line ('Capability policy: ' never matches 'Capability policy
+# integration: ' and vice versa).
+grep -q 'Capability policy: ' "${suite_log}" ||
+    die 'the CAP-8A capability policy cases were not registered in the suite'
+grep -q 'Capability policy integration: ' "${suite_log}" ||
+    die 'the CAP-8A capability integration gates were not registered in the suite'
 grep -qE 'Assertion(s)? failed' "${suite_log}" &&
     die 'pwebtests reported failed assertions'
 printf '[CAP-7L] suite summary: %s\n' \

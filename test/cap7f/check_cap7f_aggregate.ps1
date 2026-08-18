@@ -51,7 +51,8 @@ $required = @(
     'schema', 'target', 'os', 'arch', 'fpc', 'cc', 'webview_pin',
     'webview_surface', 'engine', 'exports', 'extra_exports_rtti', 'origin',
     'secure', 'bundle_protocol', 'rpc_add_20_22', 'runtime_provenance',
-    'host_args', 'release_layout', 'no_listener', 'app_pwb_react_sha256',
+    'host_args', 'capability_policy', 'capability_policy_digest',
+    'release_layout', 'no_listener', 'app_pwb_react_sha256',
     'logical_inventory_sha256_react', 'github_sha', 'github_run_id', 'waivers'
 )
 # absolute pins: equality across targets is not enough - four targets that
@@ -64,12 +65,14 @@ $absolutePins = @{
     rpc_add_20_22   = '42'
 }
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
-$mustPass = @('release_layout', 'no_listener', 'host_args')
+$mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy')
 # fields that must agree, value-for-value, across all four targets
+# (capability_policy_digest is the CAP-8A structured policy-decision
+# corpus: four targets, one byte-identical decision set, or red)
 $equalityFields = @(
     'fpc', 'webview_pin', 'webview_surface', 'origin', 'secure',
     'bundle_protocol', 'rpc_add_20_22', 'logical_inventory_sha256_react',
-    'github_sha'
+    'capability_policy_digest', 'github_sha'
 )
 # targets that additionally carry a pas2js logical inventory
 $pas2jsTargets = @('linux-x86_64', 'macos-x86_64', 'macos-arm64')
@@ -255,6 +258,7 @@ $matrix = [ordered]@{
         secure                         = $first.secure
         bundle_protocol                = $first.bundle_protocol
         rpc_add_20_22                  = $first.rpc_add_20_22
+        capability_policy_digest       = $first.capability_policy_digest
         logical_inventory_sha256_react = $first.logical_inventory_sha256_react
         logical_inventory_sha256_pas2js = $evidence['linux-x86_64'].logical_inventory_sha256_pas2js
     }
@@ -269,6 +273,7 @@ foreach ($t in $evidence.Keys) {
         cc                 = $e.cc
         extra_exports_rtti = $e.extra_exports_rtti
         host_args          = $e.host_args
+        capability_policy  = $e.capability_policy
         release_layout     = $e.release_layout
         no_listener        = $e.no_listener
         runtime_provenance = $e.runtime_provenance
@@ -284,14 +289,15 @@ $json = $matrix | ConvertTo-Json -Depth 5
 $summary = @()
 $summary += '### CAP-7F aggregate: PASS - four targets, field-by-field agreement'
 $summary += ''
-$summary += '| target | engine | host_args | layout | no_listener | rtti extras |'
-$summary += '|---|---|---|---|---|---|'
+$summary += '| target | engine | host_args | cap_policy | layout | no_listener | rtti extras |'
+$summary += '|---|---|---|---|---|---|---|'
 foreach ($t in $evidence.Keys) {
     $e = $evidence[$t]
-    $summary += "| $t | $($e.engine) | $($e.host_args) | $($e.release_layout) | $($e.no_listener) | $($e.extra_exports_rtti) |"
+    $summary += "| $t | $($e.engine) | $($e.host_args) | $($e.capability_policy) | $($e.release_layout) | $($e.no_listener) | $($e.extra_exports_rtti) |"
 }
 $summary += ''
 $summary += "- webview pin ``$($first.webview_pin)``, surface ``$($first.webview_surface)``, origin ``$($first.origin)`` (secure=$($first.secure)), RPC Add(20,22)=$($first.rpc_add_20_22)"
+$summary += "- CAP-8A capability_policy_digest ``$($first.capability_policy_digest)`` equal on all four targets"
 $summary += "- react logical_inventory_sha256 ``$($first.logical_inventory_sha256_react)`` equal on all four targets"
 $summary += "- pas2js logical_inventory_sha256 ``$($matrix.agreement.logical_inventory_sha256_pas2js)`` equal on linux/macos-x64/macos-arm64"
 $summaryText = $summary -join "`n"

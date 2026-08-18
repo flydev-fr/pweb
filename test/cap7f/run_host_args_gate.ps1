@@ -150,6 +150,13 @@ if (($r.Code -eq 0) -and ($r.Out -match [regex]::Escape($passLine))) {
     if ($r.Out -notmatch [regex]::Escape('pweb://app')) {
         throw 'PASS leg: the run never named the pweb://app origin'
     }
+    # CAP-8A runtime deny enforcement: the page probes an UNMAPPED method
+    # (Denied.Probe) and reports whether the production policy answered
+    # typed forbidden/403. An allow-all regression would let the probe
+    # reach the bridge and 404 ("denied":false) - and go red RIGHT HERE.
+    if ($r.Out -notmatch '"denied":true') {
+        throw 'PASS leg: the page never reported "denied":true -- the production policy did not forbid the unmapped probe'
+    }
     if ($elapsed -ge 45) {
         throw ("PASS leg: the run took ${elapsed}s -- the argv autoclose " +
             '(4000ms) did not win over PWEB_SMOKE_AUTOCLOSE_MS=55000')

@@ -308,7 +308,7 @@ jobs:
             # Mandatory WebView-free headless gate over the real Uri() path.
             fpc -MObjFPC -Sh -B -Xm -dPWEB_CALLMETHOD_UNWIND_PROBE `
               -FUbuild/cap3/test-fpc -FEbuild/cap3/bin `
-              -Fusrc/rpc -Fusrc/security -Futest/rpc `
+              -Fusrc/rpc -Fusrc/security -Futest/rpc -Futest/security `
               -Fideps/mormot2/src -Fudeps/mormot2/src/core `
               -Fudeps/mormot2/src/lib -Fudeps/mormot2/src/crypt `
               -Fudeps/mormot2/src/net -Fudeps/mormot2/src/db `
@@ -317,8 +317,16 @@ jobs:
               -Fldeps/mormot2/static/x86_64-win64 `
               test/rpc/cap3tests.pas
             if ($LASTEXITCODE -ne 0) { throw 'CAP-3 headless compile failed' }
-            & build/cap3/bin/cap3tests.exe /noenter
+            & build/cap3/bin/cap3tests.exe /noenter 2>&1 |
+              Tee-Object -FilePath build/cap3/bin/cap3tests.log
             if ($LASTEXITCODE -ne 0) { throw 'CAP-3 headless suite FAILED' }
+            # CAP-8A registration anchor: the I1-I10 gates run on Windows
+            # ONLY through this runner, so their absence must be a red
+            # step, never a silently smaller suite
+            $cap3Log = Get-Content build/cap3/bin/cap3tests.log -Raw
+            if ($cap3Log -notmatch 'Capability policy integration: ') {
+              throw 'the CAP-8A capability integration gates were not registered in cap3tests'
+            }
 
             # Compile the real JS -> scheduler -> mORMot runtime proof while
             # the same prepared trampoline is active. Its best-effort GUI run
@@ -479,6 +487,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'pweb.rpc.bridge.dummy.pas failed' }
           fpc -MObjFPC -Sh -FUbuild/fpc-rpc -Fusrc/rpc -Fusrc/security src/security/pweb.capabilities.pas
           if ($LASTEXITCODE -ne 0) { throw 'pweb.capabilities.pas failed' }
+          # CAP-8A: the production capability engine must stay RTL-only
+          # over the rpc contracts + neutral support alone - any mORMot,
+          # webview or platform dependency creeping in fails this gate
+          fpc -MObjFPC -Sh -B -FUbuild/fpc-rpc -Fusrc/rpc -Fusrc/security src/security/pweb.capabilities.policy.pas
+          if ($LASTEXITCODE -ne 0) { throw 'pweb.capabilities.policy.pas failed its RTL-only isolation compile' }
           # the binding may use pinned mORMot2 core units (project include
           # pattern); src/lib alone stays mORMot-free
           fpc -Sh -B -FUbuild/fpc-cap2 -Fusrc/lib -Fusrc/rpc -Fusrc/webview `
@@ -602,7 +615,7 @@ jobs:
         run: |
           fpc -Sh -FUbuild/fpc -Fusrc/lib -Fusrc/rpc -Fusrc/security `
             -Fusrc/webview -Fusrc/assets -Fusrc/platform/windows `
-            -Futest/core -Futest/rpc `
+            -Futest/core -Futest/rpc -Futest/security `
             -Futest/assets -Futest/platform -Fideps/mormot2/src `
             -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
             -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net `
@@ -610,8 +623,20 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'pwebtests compile failed' }
           Copy-Item build/webview-dist/webview.dll build/test/
           $env:PWEB_WEBVIEW_DLL = (Resolve-Path build/webview-dist/webview.dll).Path
-          & build/test/pwebtests.exe /noenter
+          # CAP-8A corpus freshness: the CAP-7F emitter later hashes this
+          # file as THIS run's policy-decision evidence - a stale copy must
+          # never survive into the suite that is supposed to write it
+          Remove-Item -Force -ErrorAction SilentlyContinue build/cap7f/capability-policy.txt
+          & build/test/pwebtests.exe /noenter 2>&1 |
+            Tee-Object -FilePath build/test/pwebtests.log
           if ($LASTEXITCODE -ne 0) { throw 'pwebtests suite FAILED' }
+          # CAP-8A registration anchor (the POSIX runners' rule applies on
+          # Windows too: an exit code alone cannot tell "all passed" from
+          # "never ran"); anchored to the case-header colon
+          $suiteLog = Get-Content build/test/pwebtests.log -Raw
+          if ($suiteLog -notmatch 'Capability policy: ') {
+            throw 'the CAP-8A capability policy cases were not registered in the suite'
+          }
 
       - name: Binding surface + freeze-isolation sweeps
         shell: pwsh

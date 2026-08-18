@@ -19,12 +19,14 @@ uses
   mormot.core.test,
   pweb.test.mormot.bridge,
   pweb.test.mormot.routing,
-  pweb.test.mormot.integration;
+  pweb.test.mormot.integration,
+  pweb.test.capabilities.integration;
 
 type
   TCap3Tests = class(TSynTests)
   published
     procedure MormotBridge;
+    procedure CapabilityPolicyIntegration;
   end;
 
 procedure TCap3Tests.MormotBridge;
@@ -33,6 +35,15 @@ begin
     TTestMormotIntegration]);
 end;
 
+procedure TCap3Tests.CapabilityPolicyIntegration;
 begin
-  TCap3Tests.RunAsConsole('PWeb CAP-3 real in-process mORMot bridge');
+  // CAP-8A gates I1-I10 on Windows: like every real-bridge case they
+  // run inside the prepared CAP-3U window this runner exists for; the
+  // POSIX targets run the same unit through pwebtests
+  AddCase([TTestCapabilityPolicyIntegration]);
+end;
+
+begin
+  TCap3Tests.RunAsConsole('PWeb CAP-3 real in-process mORMot bridge + ' +
+    'CAP-8A capability integration gates I1-I10');
 end.

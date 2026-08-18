@@ -9,14 +9,20 @@
 # sniffing (process.platform and friends). Profile conditionals
 # (PWEB_FIXED_RUNTIME) are deliberately NOT platform divergence.
 #
-# THE ALLOWLIST IS EXACT, per file, by directive COUNT:
+# THE ALLOWLIST IS EXACT, per file, by directive COUNT AND FINGERPRINT:
 #   - a platform conditional in any file NOT on the allowlist fails,
 #     naming file:line - this is what keeps the frozen zero-conditional
-#     core units (scheduler, rpc intf/mormot/support, capabilities,
-#     webview binding/intf, assets intf/support/zip, both SDKs) frozen;
+#     core units (scheduler, rpc intf/mormot/support, capabilities +
+#     capabilities.policy, webview binding/intf, assets
+#     intf/support/zip, both SDKs) frozen;
 #   - a count CHANGE in an allowlisted file fails too, in EITHER direction:
 #     growth is a new divergence, shrinkage means the ratified ground truth
-#     moved and the allowlist must be re-ratified in the same commit.
+#     moved and the allowlist must be re-ratified in the same commit;
+#   - the FINGERPRINT (CAP-8A, closing the CAP-7F ledger entry) is the
+#     sha256 of the ordered matched directive TEXTS joined by LF: it
+#     catches a SWAP that keeps the count ({$ifdef DARWIN} becoming
+#     {$ifdef ANDROID}), which a count alone waves through. Texts, not
+#     line numbers, so pure line drift stays quiet by design.
 #
 # src/platform/{windows,linux,macos}/ is platform-PRIVATE by layout: each
 # unit there is a single platform's body, so per-platform conditionals are
@@ -56,12 +62,29 @@ function Get-PlatformDirectiveMatches([string]$Line) {
 }
 
 # file (repo-relative, forward slashes) -> exact ratified directive count
+# plus the sha256 fingerprint of the ordered matched directive texts
+# (joined by LF, UTF-8) - both must hold, or the allowlist is re-ratified
+# in the same commit
 $allow = @{
-    'examples/08-release/releaseapp.pas' = 32   # the 13 platform regions
-    'src/lib/pweb.lib.webview.pas'       = 4    # LIB_WEBVIEW selection block
-    'src/assets/pweb.assets.folder.pas'  = 10   # Darwin F_GETPATH / Windows wide-API split
-    'src/assets/pweb.assets.bundle.pas'  = 6    # I/O mechanism only (ratified)
-    'tools/bundler/pwebbundle.pas'       = 6    # Windows wide-API walk (ledgered)
+    'examples/08-release/releaseapp.pas' = @{ directives = 32;  # the 13 platform regions
+        fingerprint = '2ec07fcdabab6f84a38392188a8f3e88c531792e85d938213cddd096a6a5d2f9' }
+    'src/lib/pweb.lib.webview.pas'       = @{ directives = 4;   # LIB_WEBVIEW selection block
+        fingerprint = 'cec476fd99b6cc8603a8fe330d52982a4c660ae3ffb0af4ec5658e356bce4496' }
+    'src/assets/pweb.assets.folder.pas'  = @{ directives = 10;  # Darwin F_GETPATH / Windows wide-API split
+        fingerprint = '145ed55144e2e7c509bfda6cc19fadc863a58f41f31747f8835c26ec2e5c48c9' }
+    'src/assets/pweb.assets.bundle.pas'  = @{ directives = 6;   # I/O mechanism only (ratified)
+        fingerprint = '7fc1e97c840d75a47f92771c8880861bc45a757806738932d4e80f39611a68b9' }
+    'tools/bundler/pwebbundle.pas'       = @{ directives = 6;   # Windows wide-API walk (ledgered)
+        fingerprint = '7e329077ac3048bfe7a25495f63fb060ebc782fce0115613120ca7ae51718842' }
+}
+
+function Get-DirectiveFingerprint([string[]]$Texts) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return -join ($sha.ComputeHash(
+            [System.Text.Encoding]::UTF8.GetBytes(($Texts -join "`n"))) |
+            ForEach-Object { $_.ToString('x2') })
+    } finally { $sha.Dispose() }
 }
 
 # the frozen zero-conditional core, named so a hit there says what it broke
@@ -69,6 +92,7 @@ $frozenCore = @(
     'src/rpc/pweb.rpc.scheduler.pas', 'src/rpc/pweb.rpc.intf.pas',
     'src/rpc/pweb.rpc.mormot.pas', 'src/rpc/pweb.rpc.support.pas',
     'src/security/pweb.capabilities.pas',
+    'src/security/pweb.capabilities.policy.pas',
     'src/webview/pweb.webview.binding.pas', 'src/webview/pweb.webview.intf.pas',
     'src/assets/pweb.assets.intf.pas', 'src/assets/pweb.assets.support.pas',
     'src/assets/pweb.assets.zip.pas'
@@ -89,14 +113,19 @@ $pascalFiles = foreach ($root in $pascalRoots) {
 }
 
 $found = @{}
+$foundTexts = @{}
 foreach ($file in $pascalFiles) {
     $rel = Get-RelPath $file.FullName
     $lineNo = 0
     foreach ($line in [System.IO.File]::ReadLines($file.FullName)) {
         $lineNo++
         foreach ($hit in (Get-PlatformDirectiveMatches $line)) {
-            if (-not $found.ContainsKey($rel)) { $found[$rel] = @() }
+            if (-not $found.ContainsKey($rel)) {
+                $found[$rel] = @()
+                $foundTexts[$rel] = @()
+            }
             $found[$rel] += "${rel}:${lineNo}: $hit"
+            $foundTexts[$rel] += $hit
         }
     }
 }
@@ -111,10 +140,21 @@ foreach ($rel in ($found.Keys | Sort-Object)) {
             $violations.Add("$tag : $h")
         }
     }
-    elseif ($hits.Count -ne $allow[$rel]) {
+    elseif ($hits.Count -ne $allow[$rel].directives) {
         $violations.Add(("ALLOWLIST COUNT CHANGED for ${rel}: found $($hits.Count), " +
-            "ratified $($allow[$rel]) -- re-ratify the allowlist in the same commit, lines:"))
+            "ratified $($allow[$rel].directives) -- re-ratify the allowlist in the same commit, lines:"))
         foreach ($h in $hits) { $violations.Add("  $h") }
+    }
+    else {
+        # count intact: a SWAP inside the file still changes the ordered
+        # directive texts, and therefore this fingerprint
+        $fp = Get-DirectiveFingerprint $foundTexts[$rel]
+        if ($fp -cne $allow[$rel].fingerprint) {
+            $violations.Add(("ALLOWLIST FINGERPRINT CHANGED for ${rel}: computed $fp, " +
+                "ratified $($allow[$rel].fingerprint) -- a directive was substituted or " +
+                'reordered; re-ratify the allowlist in the same commit, lines:'))
+            foreach ($h in $hits) { $violations.Add("  $h") }
+        }
     }
 }
 # an allowlisted file with ZERO findings is a count change too
@@ -123,7 +163,7 @@ foreach ($rel in ($allow.Keys | Sort-Object)) {
         $violations.Add("ALLOWLISTED FILE MISSING: $rel")
     }
     elseif (-not $found.ContainsKey($rel)) {
-        $violations.Add("ALLOWLIST COUNT CHANGED for ${rel}: found 0, ratified $($allow[$rel])")
+        $violations.Add("ALLOWLIST COUNT CHANGED for ${rel}: found 0, ratified $($allow[$rel].directives)")
     }
 }
 

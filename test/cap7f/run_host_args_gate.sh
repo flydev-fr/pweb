@@ -152,6 +152,11 @@ grep -Eq '"value":42([^0-9]|$)' "${work}/host-args-pass.log" ||
     die 'PASS leg: the page never reported the anchored "value":42'
 grep -Fq 'pweb://app' "${work}/host-args-pass.log" ||
     die 'PASS leg: the run never named the pweb://app origin'
+# CAP-8A runtime deny enforcement: the page probes an UNMAPPED method
+# (Denied.Probe) and reports whether the production policy answered typed
+# forbidden/403; an allow-all regression 404s instead ("denied":false)
+grep -q '"denied":true' "${work}/host-args-pass.log" ||
+    die 'PASS leg: the page never reported "denied":true -- the production policy did not forbid the unmapped probe'
 [ -f "${pass_verdict}" ] || die 'PASS leg: the run left no verdict file'
 verdict_content="$(cat "${pass_verdict}")"
 [ "${verdict_content}" = "${pass_line}" ] ||

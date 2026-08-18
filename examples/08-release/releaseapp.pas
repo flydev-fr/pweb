@@ -11,8 +11,9 @@ program releaseapp;
          exists - a refused bundle can never execute one byte of JS
       -> WebView2 WebResourceRequested handler (CAP-4W seam)
       -> TZipAssetStore over app.pwb, no extraction, no loose files
-      -> React -> TypeScript SDK -> scheduler -> allow-all policy
-      -> in-process mORMot -> 42
+      -> React -> TypeScript SDK -> scheduler -> CAP-8A contextual
+         capability policy (production builder config, per-invocation
+         effective snapshot) -> in-process mORMot -> 42
 
   The bundle is located beside the executable (never the CWD) and
   there is deliberately NO fallback of any kind here: no folder
@@ -106,7 +107,7 @@ uses
   pweb.rpc.support,
   pweb.rpc.scheduler,
   pweb.rpc.mormot,
-  pweb.capabilities,
+  pweb.capabilities.policy,
   pweb.webview.intf,
   pweb.webview.binding,
   pweb.assets.intf,
@@ -185,6 +186,28 @@ type
       const Token: ICancellationToken): TPWebInvocationResult;
   end;
 
+  { CAP-8A (ratified D9): host-private IWebViewInvocationHandler wrapper
+    that populates Context.Capabilities with the policy's PER-INVOCATION
+    effective snapshot (AppMaximum INTERSECT Principal INTERSECT Window
+    INTERSECT RuntimeGrants) before delegating to the standard envelope
+    handler. The snapshot is computed on the callback thread - cheap
+    lock + copy, within the ratified callback duties - so every enqueued
+    invocation captures the effective set that was true AT ENQUEUE and a
+    later native grant change never mutates an in-flight context. The
+    handshake then advertises this true effective set with zero bridge
+    changes. }
+  TPolicyContextHandler = class(TInterfacedObject, IWebViewInvocationHandler)
+  private
+    FInner: IWebViewInvocationHandler;
+    FPolicy: TPWebCapabilityPolicy;
+    FPolicyRef: ICapabilityPolicy; // keeps the policy object alive
+  public
+    constructor Create(const AInner: IWebViewInvocationHandler;
+      const APolicy: TPWebCapabilityPolicy);
+    procedure HandleInvocation(const Context: TInvocationContext;
+      const Request: TPWebJson; const Completion: IInvocationCompletion);
+  end;
+
 var
   AutoCloseHandle: Pointer;
   ReportState: LongInt;
@@ -201,6 +224,72 @@ constructor TReportingBridge.Create(const AInner: IInvocationBridge);
 begin
   inherited Create;
   FInner := AInner;
+end;
+
+constructor TPolicyContextHandler.Create(
+  const AInner: IWebViewInvocationHandler;
+  const APolicy: TPWebCapabilityPolicy);
+begin
+  inherited Create;
+  if (AInner = nil) or (APolicy = nil) then
+    raise Exception.Create('TPolicyContextHandler requires handler + policy');
+  FInner := AInner;
+  FPolicy := APolicy;
+  FPolicyRef := APolicy;
+end;
+
+procedure TPolicyContextHandler.HandleInvocation(
+  const Context: TInvocationContext; const Request: TPWebJson;
+  const Completion: IInvocationCompletion);
+var
+  ctx: TInvocationContext;
+begin
+  // the ONLY field this wrapper touches: the per-invocation effective
+  // snapshot. Everything else stays the binding-built native context -
+  // nothing here ever reads the JS payload.
+  ctx := Context;
+  ctx.Capabilities := FPolicy.SnapshotCapabilities(
+    ctx.PrincipalId, ctx.WindowId);
+  FInner.HandleInvocation(ctx, Request, Completion);
+end;
+
+{ CAP-8A: the production policy, built ONLY from native Pascal builder
+  code at the trust level of the executable - never from app.pwb, a
+  manifest, JS, the environment or any file. Any malformed row raises
+  EPWebCapabilityConfig and the host fails to start (fail-closed
+  construction, atomically). }
+function BuildReleasePolicy: TPWebCapabilityPolicy;
+var
+  b: TPWebCapabilityPolicyBuilder;
+begin
+  b := TPWebCapabilityPolicyBuilder.Create;
+  try
+    // the explicit mandatory ceiling of this application
+    b.SetAppMaximum(['calculator.add']);
+    // the single production window and its principal: the full ceiling
+    b.SetWindowCapabilities('main', ['calculator.add']);
+    b.SetPrincipalCapabilities('window:main', ['calculator.add']);
+    // the sole application service
+    b.MapMethod('CalculatorService.Add', ['calculator.add']);
+    // runtime-owned methods: explicitly capability-free (context is
+    // still validated; distinct from unmapped, which is denied)
+    b.RegisterZeroCapMethod(PWEB_METHOD_HANDSHAKE);
+    b.RegisterZeroCapMethod(PWEB_METHOD_ECHO);
+    // the page's machine-verdict channel, intercepted by
+    // TReportingBridge - policy runs BEFORE the bridge, so the report
+    // must be a registered method or no verdict could ever latch
+    b.RegisterZeroCapMethod('example.report');
+    // the SDK acceptance pages probe an UNREGISTERED method and require
+    // the bridge's typed method_not_found (errmap). Registering the
+    // probe zero-cap preserves that frozen contract through the
+    // production policy: allowed here, then the bridge catalog miss
+    // answers 404 - the ratified mapped-but-unregistered shape (I7).
+    // Every OTHER unknown method is now forbidden pre-bridge, by design.
+    b.RegisterZeroCapMethod('No.SuchMethod');
+    Result := b.Build;
+  finally
+    b.Free;
+  end;
 end;
 
 function TReportingBridge.Invoke(const Context: TInvocationContext;
@@ -565,6 +654,8 @@ var
   server: TRestServerFullMemory;
   factory: TServiceFactoryServerAbstract;
   realBridge, bridge: IInvocationBridge;
+  capPolicy: TPWebCapabilityPolicy;
+  capPolicyRef: ICapabilityPolicy;
   scheduler: TInvocationScheduler;
   schedulerRef: IInvocationScheduler;
   source: IInvocationSource;
@@ -603,8 +694,11 @@ begin
     realBridge := TMormotInvocationBridge.Create(server, True);
     server := nil;
     bridge := TReportingBridge.Create(realBridge);
-    scheduler := TInvocationScheduler.Create(
-      TAllowAllCapabilityPolicy.Create, bridge, 4);
+    // CAP-8A: the production contextual policy replaces the Phase-2
+    // allow-all at the SAME single call site - the plumbing is untouched
+    capPolicy := BuildReleasePolicy;
+    capPolicyRef := capPolicy;
+    scheduler := TInvocationScheduler.Create(capPolicyRef, bridge, 4);
     schedulerRef := scheduler;
     limits := Default(TPWebSourceLimits);
     limits.MaxConcurrent := 4;
@@ -651,6 +745,9 @@ begin
       CheckObservedFixedIdentity(w, FixedRuntime);
       {$endif PWEB_FIXED_RUNTIME}
       AutoCloseHandle := Pointer(w);
+      // the native context TEMPLATE deliberately carries NO capability
+      // list: the D9 wrapper below computes the per-invocation
+      // effective snapshot, so a template list could only ever go stale
       context := Default(TInvocationContext);
       context.WindowId := 'main';
       context.PrincipalId := 'window:main';
@@ -658,7 +755,8 @@ begin
       context.TrustedContent := True;
       opts := PWebDefaultBindingOptions(context);
       binding := TWebViewBinding.Create(w, source, opts);
-      binding.Bind('__pweb_invoke', TPWebEnvelopeHandler.Create(source));
+      binding.Bind('__pweb_invoke', TPolicyContextHandler.Create(
+        TPWebEnvelopeHandler.Create(source), capPolicy));
       WebViewCheck(webview_set_title(w, PAnsiChar(AnsiString(APP_TITLE))),
         'webview_set_title');
       WebViewCheck(webview_set_size(w, 900, 650, WEBVIEW_HINT_NONE),
@@ -793,6 +891,8 @@ begin
     source := nil;
     schedulerRef := nil;
     scheduler := nil;
+    capPolicyRef := nil; // policy object released through its refcount
+    capPolicy := nil;
     bridge := nil;
     realBridge := nil; // frees owned server after worker drain
     store := nil;

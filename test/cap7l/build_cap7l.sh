@@ -85,6 +85,10 @@ fpc -MObjFPC -Sh -B -FUbuild/cap7l/iso -Fusrc/rpc src/rpc/pweb.rpc.support.pas |
     die 'pweb.rpc.support.pas failed its RTL-only intf-only compile'
 fpc -MObjFPC -Sh -B -FUbuild/cap7l/iso -Fusrc/rpc src/rpc/pweb.rpc.scheduler.pas ||
     die 'pweb.rpc.scheduler.pas failed its webview-free RTL-only compile'
+# CAP-8A: the production capability engine stays RTL-only on Linux too
+fpc -MObjFPC -Sh -B -FUbuild/cap7l/iso -Fusrc/rpc -Fusrc/security \
+    src/security/pweb.capabilities.policy.pas ||
+    die 'pweb.capabilities.policy.pas failed its RTL-only isolation compile'
 fpc -MObjFPC -Sh -B -FUbuild/cap7l/iso src/rpc/pweb.rpc.intf.pas ||
     die 'pweb.rpc.intf.pas is not RTL-only'
 fpc -MObjFPC -Sh -B -FUbuild/cap7l/iso src/webview/pweb.webview.intf.pas ||
@@ -113,7 +117,8 @@ step 'PWeb test suite (adds the CAP-7L Linux adapter cases)'
 fpc -Sh -B -FUbuild/cap7l/units -FEbuild/cap7l/bin \
     -Fusrc/lib -Fusrc/rpc -Fusrc/security -Fusrc/webview -Fusrc/assets \
     -Fusrc/platform/linux \
-    -Futest/core -Futest/rpc -Futest/assets -Futest/platform \
+    -Futest/core -Futest/rpc -Futest/security -Futest/assets \
+    -Futest/platform \
     "${mormot_units[@]}" "${link_webview[@]}" test/core/pwebtests.pas ||
     die 'pwebtests failed to compile'
 

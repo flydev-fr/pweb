@@ -89,6 +89,7 @@ pweb_units=(
     -Fusrc/platform/macos
     -Futest/core
     -Futest/rpc
+    -Futest/security
     -Futest/assets
     -Futest/platform
 )
@@ -115,6 +116,10 @@ fpc -MObjFPC -Sh -B -FUbuild/cap7m/iso "${PWEB_MACOS_FPC_FLAGS[@]}" \
 fpc -MObjFPC -Sh -B -FUbuild/cap7m/iso -Fusrc/rpc "${PWEB_MACOS_FPC_FLAGS[@]}" \
     src/rpc/pweb.rpc.scheduler.pas ||
     die 'pweb.rpc.scheduler.pas failed its webview-free RTL-only compile'
+# CAP-8A: the production capability engine stays RTL-only on Darwin too
+fpc -MObjFPC -Sh -B -FUbuild/cap7m/iso -Fusrc/rpc -Fusrc/security \
+    "${PWEB_MACOS_FPC_FLAGS[@]}" src/security/pweb.capabilities.policy.pas ||
+    die 'pweb.capabilities.policy.pas failed its RTL-only isolation compile'
 # the stores stay webview-free on Darwin too
 for unit in support folder zip; do
     fpc -MObjFPC -Sh -B -FUbuild/cap7m/iso -Fusrc/assets "${mormot_core[@]}" \
