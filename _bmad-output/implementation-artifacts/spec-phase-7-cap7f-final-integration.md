@@ -2,7 +2,7 @@
 title: 'Phase 7 / CAP-7F — final cross-platform integration and CAP-7 closure'
 type: 'chore'
 created: '2026-08-18'
-status: 'in-progress'
+status: 'done'
 review_loop_iteration: 0
 context:
   - '_bmad-output/specs/spec-pweb/conventions.md'
@@ -81,7 +81,7 @@ baseline_commit: '8f0d05aa42045a292af182f8a3f9287c148ae4e6'
 - [x] `test/cap7f/check_cap7f_aggregate.ps1` -- NEW: consumes 4 downloaded evidence files (+ macOS manifest/inventory artifacts): presence, schema, export-set equality across all targets, pin/protocol/origin/secure/rpc-42 equality, react `logical_inventory_sha256` equality across windows/linux/macos-x64/macos-arm64 (+ pas2js where present: linux/macOS), layout + no-listener + host-args = PASS per target, waiver labels intact; writes `build/cap7f/platform-matrix.json` + step summary.
 - [x] `.github/workflows/ci.yml` -- add per-job thin steps: windows (args gate + emitter + upload `cap7f-evidence-windows`, `if-no-files-found: error`), linux (args gate + emitter + upload `cap7f-evidence-linux`), macos-x64/arm64 (emitter + upload `cap7f-evidence-macos-{x64,arm64}`); new final job `cap7-aggregate` on `ubuntu-24.04`, `needs: [windows, linux, macos-x64, macos-arm64, macos-release-inventory]`, checkout + pinned download-artifact + divergence sweep + aggregator; heavy builds not duplicated.
 - [x] `_bmad-output/implementation-artifacts/deferred-work.md` -- append: D1 CLOSED (args executed on Windows/Linux, run ID); record mirror-run unfetchability + superseding origin run `32013558592`; record cross-arch ABI-facts reconciliation remaining with CAP-11 where not covered here.
-- [ ] `_bmad-output/implementation-artifacts/spec-phase-7-cap7f-final-integration.md` -- after the aggregation job is green on hosted CI for the final shard commit: Design Notes gain the canonical matrices (platform closure, toolchain, ABI, origin, RPC, layout, no-network, waivers) + "**CAP-7 CLOSED**" paragraph with exact commits/run IDs; `status: done`. This artifact is the canonical CAP-7 closure record (repo keeps no separate status file).
+- [x] `_bmad-output/implementation-artifacts/spec-phase-7-cap7f-final-integration.md` -- after the aggregation job is green on hosted CI for the final shard commit: Design Notes gain the canonical matrices (platform closure, toolchain, ABI, origin, RPC, layout, no-network, waivers) + "**CAP-7 CLOSED**" paragraph with exact commits/run IDs; `status: done`. This artifact is the canonical CAP-7 closure record (repo keeps no separate status file).
 
 **Acceptance Criteria:**
 - Given the shard branch pushed, when hosted CI runs, then all five existing jobs stay green AND `cap7-aggregate` is green, with `platform-matrix.json` uploaded covering exactly windows-x86_64, linux-x86_64, macos-x86_64, macos-arm64.
@@ -138,7 +138,9 @@ baseline_commit: '8f0d05aa42045a292af182f8a3f9287c148ae4e6'
 - Linux runtime dependency on distro WebKitGTK/GTK packages (ratified; no Linux CAP-13).
 - CAP-7M1/M2 mirror-era run IDs unfetchable (mirror deleted); superseded by origin runs `32013558592` / `32129242424` (ledger).
 
-**Closure state:** every acceptance criterion of this shard is met on hosted CI for the final shard commit; the canonical matrices above are the CAP-7 closure record. The `status: done` / "CAP-7 CLOSED" flip is deliberately left to human review of this record — it is the one remaining act of this artifact.
+**Final re-validation:** the adversarial-review hardening commit `9d4b95a` (two-sided argv-wins bound, windows/linux manifest cross-checks, committed negative selftest run as a `cap7-aggregate` step, absolute pins protocol=1/origin=`pweb://app`/secure=true/rpc=42/exports=17, POSIX-safe divergence sweep with extended platform-define coverage, shipped-bytes equality checks, failure-diagnostics uploads, JSON escaping, bounded refusal legs, widened `.gitattributes` class pin) was covered by hosted run `32135179145` on flydev-fr/pweb — **all six jobs green**, including `cap7-aggregate` with the selftest's four negative legs refusing correctly before the real aggregation passed.
+
+**CAP-7 CLOSED (2026-08-18).** One application source (`examples/08-release/releaseapp.pas`) → one core contract → one RPC path → one asset/bundle contract → platform-private native adapters → windows-x86_64, linux-x86_64, macos-x86_64, macos-arm64, proven by the machine-verified platform matrix above. Closure commits: `5f74ec5` + `6b818de` + `a2c7dce` + `9d4b95a` on `phase/cap-7/f-final-integration`; final green hosted runs `32129242424` (feature, attempt 2 after the recorded CAP-6b3 flake) and `32135179145` (hardening, first-try green). All prior shard closures (CAP-13, CAP-7L, CAP-7M0/M1/M2) remain untouched; waivers remain labeled WAIVED. This artifact is the canonical CAP-7 closure record, matching how CAP-1..CAP-13 were closed.
 
 ## Verification
 
