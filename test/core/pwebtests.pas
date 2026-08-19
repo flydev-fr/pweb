@@ -34,7 +34,8 @@ uses
   pweb.test.lifecycle,
   pweb.test.assets,
   pweb.test.bundle,
-  pweb.test.capabilities
+  pweb.test.capabilities,
+  pweb.test.navigation
   {$ifdef PWEB_CAP8A_INTEGRATION}
   ,
   pweb.test.capabilities.integration
@@ -69,6 +70,7 @@ type
     procedure AssetSystem;
     procedure BundleSystem;
     procedure CapabilityPolicy;
+    procedure NavigationPolicy;
     {$ifdef PWEB_CAP8A_INTEGRATION}
     procedure CapabilityPolicyIntegration;
     {$endif PWEB_CAP8A_INTEGRATION}
@@ -108,6 +110,22 @@ begin
   // production app.pwb loader with typed refusals - no window, no
   // webview.dll and no WebView2 runtime required
   AddCase([TTestBundleSystem]);
+end;
+
+procedure TPWebTests.NavigationPolicy;
+begin
+  // CAP-8B, headless on every target: the shared privileged-navigation
+  // classifier - the B-matrix as decisions, the authority-confusion
+  // vectors, the external-open validator and the native CSP profile - over
+  // a pure function, so no window, no webview and no engine is required.
+  // Also emits the CAP-7F navigation-decision corpus
+  // (build/cap7f/navigation-policy.txt).
+  //
+  // ActivationIsNotAnInput is the load-bearing case: it replays the whole
+  // corpus with the user-activation flag inverted and requires identical
+  // decisions, because CAP-8B MEASURED that no engine reports activation
+  // honestly and the ratified model makes it diagnostic only.
+  AddCase([TTestNavigationPolicy]);
 end;
 
 procedure TPWebTests.CapabilityPolicy;
