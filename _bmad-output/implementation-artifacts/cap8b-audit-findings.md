@@ -43,6 +43,15 @@ Runtime `151.0.4129.86` (dev host, `webview.dll` from the CAP-4W-patched
 pinned upstream). Instrument `test/cap8b/cap8b_audit_win.cpp`, ten phases,
 three consecutive runs in agreement.
 
+**Reproduced on a clean hosted runner.** Run `32256330091` (all seven jobs
+green, `cap7-aggregate` included — the audit steps disturb no existing gate)
+carried the Windows probe on WebView2 **151.0.4129.72**, a different build
+from the dev host's **.86**. Every measurement below matched: identical native
+arrivals, identical activation table (`act-real-click` included — the
+synthesized gesture works headlessly on a hosted runner), and a byte-identical
+CSP row set. The findings are reproducible and not a property of one machine's
+runtime build.
+
 ### W1 — bridge exposure
 
 `window.__pweb_invoke` is `function` and `window.__webview__` is `object` in
@@ -389,6 +398,36 @@ same-origin `fetch`, and `examples/06-assets/frontend/dist/assets/app.js` and
 `test/cap7m/fixture/probe.js` both depend on it through the production
 handlers. `'self'` blocked every external connection and every `wss://` in the
 measurement. **[pending]** on the other three engines.
+
+## P6 — the system external opener
+
+Proposed private native APIs, one per platform, each taking the URI **as
+data** — no shell string, no `cmd.exe`, no `/bin/sh`, no `system()`, no
+subprocess interpolation anywhere:
+
+| target | API | notes |
+|---|---|---|
+| Windows | `ShellExecuteExW` with `lpVerb=L"open"`, `lpFile=<uri>`, `lpParameters=nil`, `SEE_MASK_NOASYNC or SEE_MASK_FLAG_NO_UI` | the URI is a single argument handed to the registered protocol handler; nothing is parsed by a shell |
+| Linux | `g_app_info_launch_default_for_uri(uri, nil, @err)` | public GIO; `libgio-2.0.so.0` is **already** a declared external of the production adapter (`pweb.platform.webkitgtk.pas:196`), so no new shipped library |
+| macOS | `-[NSWorkspace openURL:]` through the existing private Objective-C++ bridge | public AppKit; no second dylib, no public C ABI change |
+
+Guards, applied in the shared classifier **before** any platform code is
+reached: scheme allowlist (`https`, `mailto` only — decided by the classifier,
+never by the opener), bounded URI length, control-character rejection, and no
+logging of the full query string or mail body. The opener is reached only from
+`CancelAndOpenExternal`, never from a raw navigation event, and a failure
+returns a native diagnostic and leaves the trusted page exactly where it was —
+there is no internal-navigation fallback.
+
+Test seam: a private function-pointer indirection with a counting fake, so the
+"called exactly once / never called" assertions are deterministic in CI. It is
+**not** a public kernel interface and does not appear in any of the seven
+frozen contracts.
+
+Note this section is a *proposal*, not a measurement: none of the three APIs
+has been exercised yet, because the opener is production work that the intent
+gates behind Checkpoint 1. If P2 lands on option A there is no opener to build
+at all.
 
 ## P5 — bootstrap `about:blank`
 
