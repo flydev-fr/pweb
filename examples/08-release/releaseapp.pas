@@ -83,6 +83,26 @@ program releaseapp;
   Unknown arguments are still refused - there is no argument the release
   host silently ignores.
 
+  CAP-8B adds privileged-navigation enforcement, and adds it in exactly
+  two places, both platform-neutral:
+    - ONE navigation guard, selected by the same alias mechanism as the
+      asset handler, constructed between the handler and
+      webview_navigate so that no document can commit unclassified. The
+      guard adapts its engine's native events; the decision itself comes
+      from PWebClassifyNavigation in src/security - there is no policy
+      table in this file and no platform branch that decides anything;
+    - ONE host-owned runtime method, pweb.openExternal, mapped to the
+      capability 'external.open'. Every raw external navigation is
+      cancelled inside the privileged WebView (https: and mailto:
+      included) and NO navigation callback ever reaches an opener,
+      because CAP-8B MEASURED that no engine can distinguish a real
+      click from a navigation issued in the continuation of a binding
+      promise (WebView2 IsUserInitiated and WebKitGTK is_user_gesture
+      both report true for it; WKWebView exposes no public flag at all).
+      Handing a URI to the operating system is therefore an ordinary
+      authorized invocation, checked by the CAP-8A policy before the
+      bridge ever sees it.
+
     releaseapp [--pweb-verdict=<file>] [--pweb-autoclose-ms=<N>] }
 
 {$I mormot.defines.inc}
@@ -95,6 +115,7 @@ uses
   {$I mormot.uses.inc}
   sysutils,
   mormot.core.base,
+  mormot.core.json, // JsonDecode, for the pweb.openExternal argument
   mormot.core.os,
   mormot.core.interfaces,
   mormot.rest.memserver,
@@ -108,6 +129,7 @@ uses
   pweb.rpc.scheduler,
   pweb.rpc.mormot,
   pweb.capabilities.policy,
+  pweb.navigation.policy,
   pweb.webview.intf,
   pweb.webview.binding,
   pweb.assets.intf,
@@ -129,20 +151,40 @@ uses
   ;
 
 type
-  { The one platform-selected name in this file. The Windows and Linux
-    handlers expose the identical surface - Create(webview_t, IAssetStore),
-    Detach, Destroy - and the Cocoa one is the same surface split in two
-    (Create(IAssetStore) before webview_create, Attach(webview_t) after,
-    then the same Detach/Destroy), because upstream builds the WKWebView's
+  { The platform-selected NAMES in this file, and the only ones. The
+    Windows and Linux handlers expose the identical surface -
+    Create(webview_t, IAssetStore), Detach, Destroy - and the Cocoa one is
+    the same surface split in two (Create(IAssetStore) before
+    webview_create, Attach(webview_t) after, then the same
+    Detach/Destroy), because upstream builds the WKWebView's
     configuration inside webview_create and a post-create seam does not
-    exist there. Every other line below is shared source. }
+    exist there.
+
+    CAP-8B adds the navigation guard to the same block, deliberately: an
+    alias is how this host stays ONE program on four targets. The
+    Windows and Linux guards are Create(webview_t)/Detach/Destroy and the
+    Cocoa one is Create/Attach(webview_t)/Detach/Destroy, mirroring its
+    own asset handler - but unlike that handler BOTH halves belong at the
+    one construction site below, because a WKNavigationDelegate is
+    installed on a view that already exists. Upstream leaves the needed
+    hooks free on every engine: NavigationStarting,
+    FrameNavigationStarting, NewWindowRequested and DownloadStarting on
+    WebView2, decide-policy and create on WebKitGTK, and
+    navigationDelegate on WKWebView (upstream owns only setUIDelegate:).
+
+    What the guards do NOT expose is a decision: they translate their
+    native event into a TPWebNavRequest and hand it to the one shared
+    classifier. Every other line below is shared source. }
   {$ifdef DARWIN}
   TPWebAssetHandler = TCocoaAssetHandler;
+  TPWebNavigationGuard = TCocoaNavigationGuard;
   {$else}
   {$ifdef LINUX}
   TPWebAssetHandler = TWebKitGtkAssetHandler;
+  TPWebNavigationGuard = TWebKitGtkNavigationGuard;
   {$else}
   TPWebAssetHandler = TWebView2AssetHandler;
+  TPWebNavigationGuard = TWebView2NavigationGuard;
   {$endif LINUX}
   {$endif DARWIN}
 
@@ -162,6 +204,16 @@ const
   { CAP-7M2 optional arguments (all platforms; see the header comment) }
   ARG_VERDICT = '--pweb-verdict=';
   ARG_AUTOCLOSE = '--pweb-autoclose-ms=';
+  { CAP-8B: the canonical external-open method and the capability that
+    authorizes it, spelled ONCE each. The method lives in the reserved
+    pweb.* namespace because it is runtime-owned, not application
+    surface; the FROZEN bridge answers method_not_found for every pweb.*
+    method it does not implement, which is precisely why this host
+    implements it in its own IInvocationBridge decorator instead of
+    touching the bridge. }
+  METHOD_OPEN_EXTERNAL = 'pweb.openExternal';
+  CAP_EXTERNAL_OPEN = 'external.open';
+  CAP_CALCULATOR_ADD = 'calculator.add';
 
 type
   ICalculatorService = interface(IInvokable)
@@ -174,8 +226,13 @@ type
     function Add(a, b: Integer): Integer;
   end;
 
-  { Test-only decorator for the page's machine verdict. All application
-    and runtime methods still pass to the real bridge on workers. }
+  { Host-owned decorator over the FROZEN bridge, carrying the two
+    methods this host implements itself: example.report (the page's
+    machine verdict) and, since CAP-8B, pweb.openExternal - which the
+    bridge answers method_not_found for, by design, because pweb.* is
+    the runtime's namespace and the runtime is where it belongs. Every
+    application method still passes straight to the real bridge on
+    workers. }
   TReportingBridge = class(TInterfacedObject, IInvocationBridge)
   private
     FInner: IInvocationBridge;
@@ -265,12 +322,20 @@ begin
   b := TPWebCapabilityPolicyBuilder.Create;
   try
     // the explicit mandatory ceiling of this application
-    b.SetAppMaximum(['calculator.add']);
+    b.SetAppMaximum([CAP_CALCULATOR_ADD, CAP_EXTERNAL_OPEN]);
     // the single production window and its principal: the full ceiling
-    b.SetWindowCapabilities('main', ['calculator.add']);
-    b.SetPrincipalCapabilities('window:main', ['calculator.add']);
+    b.SetWindowCapabilities('main', [CAP_CALCULATOR_ADD, CAP_EXTERNAL_OPEN]);
+    b.SetPrincipalCapabilities('window:main',
+      [CAP_CALCULATOR_ADD, CAP_EXTERNAL_OPEN]);
     // the sole application service
-    b.MapMethod('CalculatorService.Add', ['calculator.add']);
+    b.MapMethod('CalculatorService.Add', [CAP_CALCULATOR_ADD]);
+    // CAP-8B: handing a URI to the operating system is an AUTHORIZATION
+    // decision, never an inference from a gesture flag - so the method is
+    // MAPPED, deliberately not zero-cap. The policy runs at the scheduler
+    // BEFORE the bridge, so a principal without 'external.open' is
+    // answered forbidden/403 with no opener activity of any kind, and the
+    // interception below is never even reached.
+    b.MapMethod(METHOD_OPEN_EXTERNAL, [CAP_EXTERNAL_OPEN]);
     // runtime-owned methods: explicitly capability-free (context is
     // still validated; distinct from unmapped, which is denied)
     b.RegisterZeroCapMethod(PWEB_METHOD_HANDSHAKE);
@@ -292,11 +357,106 @@ begin
   end;
 end;
 
+{ CAP-8B: the second and last platform-selected name in this file (the
+  guard alias above is the first). Each adapter hands the URI to its OS
+  as DATA through one public API - ShellExecuteExW on Windows,
+  g_app_info_launch_default_for_uri on Linux, -[NSWorkspace openURL:] on
+  macOS - with no shell string, no cmd.exe, no /bin/sh and no
+  subprocess interpolation anywhere. None of them decides anything: the
+  scheme allowlist, the length bound and the control-byte rejection all
+  live in PWebValidExternalUri, which has already run when this is
+  called.
+
+  Called on a scheduler WORKER thread, never the GUI thread - a bridge
+  is always invoked on a worker. Whatever thread affinity an OS opener
+  needs is therefore the adapter's to satisfy internally. }
+function OpenExternalUri(const AUri: RawUtf8): Boolean;
+begin
+  {$ifdef DARWIN}
+  Result := PWebCocoaOpenExternal(AUri);
+  {$else}
+  {$ifdef LINUX}
+  Result := PWebGtkOpenExternalUri(AUri);
+  {$else}
+  Result := PWebWv2OpenExternal(AUri);
+  {$endif LINUX}
+  {$endif DARWIN}
+end;
+
+{ CAP-8B ratification R-A: the ONE place in the product where a URI is
+  handed to the operating system, and it is an ordinary invocation - not
+  a navigation.
+
+  WHY HERE. The bridge answers method_not_found for every pweb.* method
+  it does not implement and is FROZEN, so a host-owned runtime method is
+  intercepted in this decorator, exactly as example.report already is.
+  No second RPC path, no eighth interface, no new export.
+
+  WHY NOT FROM A NAVIGATION HOOK. MEASURED on all four targets: WebView2
+  reports IsUserInitiated TRUE for a navigation issued in the
+  continuation of a webview_bind promise, WebKitGTK's is_user_gesture
+  behaves identically, and WKWebView publishes no gesture flag at all -
+  so "the user clicked" is not a decidable question and cannot be an
+  authorization input. Every raw external navigation is cancelled inside
+  the privileged WebView instead, and opening becomes a capability.
+
+  WHY NO CAPABILITY CHECK BELOW. The CAP-8A policy already ran at the
+  scheduler, before the bridge: an unauthorized caller was answered
+  forbidden/403 and never got here. A second copy of an authorization
+  rule is a second answer to one question.
+
+  REDACTION. The URI is never written to the log - not the query string,
+  not a mailto body, not even the host. Only its byte length and the
+  outcome category. }
+function OpenExternalResult(const Args: TPWebJson): TPWebInvocationResult;
+var
+  payload, uri: RawUtf8;
+  opened: Boolean;
+begin
+  // JsonDecode unescapes IN PLACE, so it must never walk the caller's
+  // buffer: Args belongs to the invocation, not to this function
+  payload := Args;
+  UniqueRawUtf8(payload);
+  uri := JsonDecode(payload, 'url');
+  // the shared classifier owns the whole allowlist - parsed scheme
+  // (https/mailto only), bounded length, no control bytes, authority or
+  // recipient present. Anything it refuses is invalid_request and never
+  // reaches an opener; a missing, non-string or malformed argument
+  // collapses to the empty string here and is refused by the same test.
+  if not PWebValidExternalUri(uri) then
+  begin
+    WriteLn(LOG_PREFIX, ': openExternal REFUSED (uri bytes=',
+      Length(uri), ')');
+    exit(PWebDefaultErrorResult(pecInvalidRequest));
+  end;
+  opened := False;
+  try
+    opened := OpenExternalUri(uri);
+  except
+    // an opener that raised is a FAILURE, never a success - and the
+    // exception dies here rather than travelling out of a bridge call
+    opened := False;
+  end;
+  if not opened then
+  begin
+    // the existing safe/redacted contract: a category, never a native
+    // detail. The trusted page is exactly where it was - there is no
+    // internal-navigation fallback anywhere on this path.
+    WriteLn(StdErr, LOG_PREFIX, ': openExternal FAILED (uri bytes=',
+      Length(uri), ')');
+    exit(PWebDefaultErrorResult(pecInternalError));
+  end;
+  WriteLn(LOG_PREFIX, ': openExternal OK (uri bytes=', Length(uri), ')');
+  Result := PWebSuccessResult(PWEB_JSON_NULL);
+end;
+
 function TReportingBridge.Invoke(const Context: TInvocationContext;
   const Method: Utf8String; const Args: TPWebJson;
   const Token: ICancellationToken): TPWebInvocationResult;
 begin
-  if Method = 'example.report' then
+  if Method = METHOD_OPEN_EXTERNAL then
+    Result := OpenExternalResult(Args)
+  else if Method = 'example.report' then
   begin
     WriteLn(LOG_PREFIX, ' report: ', Args); // raw page verdict for the log
     // the page reports handshake/secure/rendered/rpc through the SDK;
@@ -308,6 +468,15 @@ begin
        (Pos('"rendered":true', Args) > 0) and
        (Pos('"rpc":true', Args) > 0) and
        (Pos('"errmap":true', Args) > 0) and
+       // CAP-8B: the navigation-security block is REQUIRED here, not
+       // merely reported. The page's own `ok` deliberately excludes it -
+       // the same corpus runs under the allow-all example hosts, which
+       // install no guard - so the release runtime is where a regression
+       // has to turn red, on all four targets, in the smoke itself.
+       (Pos('"navExternalBlocked":true', Args) > 0) and
+       (Pos('"navAuthorityBlocked":true', Args) > 0) and
+       (Pos('"navCspBlocked":true', Args) > 0) and
+       (Pos('"navOpenExternal":true', Args) > 0) and
        ((Pos('"value":42}', Args) > 0) or (Pos('"value":42,', Args) > 0)) and
        (InterlockedCompareExchange(ServiceThreadId, 0, 0) <> 0) and
        (InterlockedCompareExchange(ServiceThreadId, 0, 0) <>
@@ -651,6 +820,7 @@ var
   w: webview_t;
   store: IAssetStore;
   assetHandler: TPWebAssetHandler;
+  navGuard: TPWebNavigationGuard;
   server: TRestServerFullMemory;
   factory: TServiceFactoryServerAbstract;
   realBridge, bridge: IInvocationBridge;
@@ -672,6 +842,7 @@ begin
   server := nil;
   scheduler := nil;
   assetHandler := nil;
+  navGuard := nil;
   closerStarted := False;
   safeToDestroy := True;
   schedulerDrained := False;
@@ -776,6 +947,30 @@ begin
       assetHandler := TWebView2AssetHandler.Create(w, store);
       {$endif LINUX}
       {$endif DARWIN}
+      // CAP-8B: the privileged-navigation guard, installed HERE - after
+      // the handler that can serve trusted content, before the first
+      // navigation that could load any - so no document, trusted or not,
+      // ever commits unclassified. MEASURED on all four targets: no
+      // engine raises a navigation event for its own initial
+      // about:blank (Windows reports it only as a source, Linux and
+      // macOS report none), so there is deliberately no bootstrap
+      // exception and no armed state to get wrong.
+      //
+      // What arrives at the guard is a native event; what leaves it is
+      // TPWebNavRequest, and PWebClassifyNavigation - the ONE classifier
+      // in src/security, shared byte-for-byte by every target - answers.
+      // This file therefore carries no navigation policy at all.
+      {$ifdef DARWIN}
+      // Cocoa's guard is two-phase like its handler, but BOTH halves
+      // belong here: a WKNavigationDelegate goes on a view that already
+      // exists, and Attach raises unless the view reports OUR delegate
+      // afterwards - "installed" is a property of the view, never the
+      // absence of an exception.
+      navGuard := TPWebNavigationGuard.Create;
+      navGuard.Attach(w);
+      {$else}
+      navGuard := TPWebNavigationGuard.Create(w);
+      {$endif DARWIN}
       WebViewCheck(webview_navigate(w, 'pweb://app/'), 'webview_navigate');
 
       // CAP-7M2: the argument WINS over the environment - LaunchServices
@@ -831,6 +1026,23 @@ begin
             ExitCode := 1;
           end;
         end;
+      // CAP-8B ordering: teardown is the exact reverse of construction,
+      // so the guard stops deciding before the handler stops serving and
+      // both are disowned before webview_destroy. Detach is what makes a
+      // late engine callback unable to reach a freed object - the same
+      // disown/generation discipline the asset handler already uses -
+      // and a Detach that raises must not skip the ones after it.
+      if navGuard <> nil then
+        try
+          navGuard.Detach;
+        except
+          on E: Exception do
+          begin
+            WriteLn(StdErr, 'FAIL: navigation guard Detach: ', E.Message);
+            ExitCode := 1;
+          end;
+        end;
+      FreeAndNil(navGuard);
       // CAP-4W ordering: unregister the resource handler and release
       // its owned COM references before the webview is destroyed
       if assetHandler <> nil then

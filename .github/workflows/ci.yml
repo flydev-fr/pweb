@@ -520,8 +520,10 @@ jobs:
             -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
             src/assets/pweb.assets.zip.pas
           if ($LASTEXITCODE -ne 0) { throw 'pweb.assets.zip.pas failed its isolation compile' }
+          # -Fusrc/security is the CAP-8B navigation classifier only: the
+          # handler still pulls no rpc scheduler and no CAP-2 binding
           fpc -MObjFPC -Sh -FUbuild/fpc-assets -Fusrc/assets -Fusrc/lib `
-            -Fusrc/platform/windows `
+            -Fusrc/security -Fusrc/platform/windows `
             -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
             src/platform/windows/pweb.platform.webview2.pas
           if ($LASTEXITCODE -ne 0) { throw 'pweb.platform.webview2.pas failed its isolation compile' }

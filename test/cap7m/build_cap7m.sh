@@ -126,12 +126,20 @@ for unit in support folder zip; do
         "${PWEB_MACOS_FPC_FLAGS[@]}" "src/assets/pweb.assets.${unit}.pas" ||
         die "pweb.assets.${unit}.pas failed its isolation compile"
 done
-# CAP-7M1: the production adapter sees the binding, the asset contracts and
-# the shared URI routine - and NOTHING of the scheduler, the bridge or the
-# wire. A dependency creeping the wrong way fails right here.
+# CAP-7M1: the production adapter sees the binding, the asset contracts, the
+# shared URI routine and - since CAP-8B - the shared navigation classifier, and
+# NOTHING of the scheduler, the bridge or the wire. A dependency creeping the
+# wrong way fails right here.
+#
+# -Fusrc/security is the CAP-8B addition and it buys exactly one unit:
+# pweb.navigation.policy, which is RTL + mormot.core.base + pweb.assets.support
+# and carries no webview, no engine type and no platform conditional. The
+# adapter must reach it, because the alternative is a second copy of the
+# classification table and of PWEB_NATIVE_CSP living in each engine.
 step 'isolation compile: the production macOS adapter'
 fpc -MObjFPC -Sh -B -FUbuild/cap7m/iso \
-    -Fusrc/lib -Fusrc/assets -Fusrc/platform/macos "${mormot_core[@]}" \
+    -Fusrc/lib -Fusrc/assets -Fusrc/security -Fusrc/platform/macos \
+    "${mormot_core[@]}" \
     "${PWEB_MACOS_FPC_FLAGS[@]}" src/platform/macos/pweb.platform.cocoa.pas ||
     die 'pweb.platform.cocoa.pas failed its isolation compile'
 

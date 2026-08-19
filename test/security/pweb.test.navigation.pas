@@ -419,6 +419,23 @@ begin
   Check(not PWebValidExternalUri('mailto:'), 'mailto empty');
   Check(not PWebValidExternalUri('mailto:nobody'), 'mailto no host');
   Check(not PWebValidExternalUri('mailto:@example.invalid'), 'mailto no user');
+  // A mailto QUERY is refused outright. The substring search this replaced
+  // accepted a URI with no recipient at all as long as some parameter value
+  // contained an '@', and a mail client honouring `attach=` would then compose
+  // a message with a local file the PAGE chose.
+  Check(not PWebValidExternalUri(
+    'mailto:?attach=/home/me/.ssh/id_rsa&to=attacker@evil.invalid'),
+    'mailto attach parameter');
+  Check(not PWebValidExternalUri('mailto:x?a=@b'), 'mailto query with @');
+  Check(not PWebValidExternalUri('mailto:?body=secret@x'), 'mailto body only');
+  Check(not PWebValidExternalUri('mailto:a@b?subject=x'), 'mailto any query');
+  Check(not PWebValidExternalUri('mailto:a@b#frag'), 'mailto fragment');
+  Check(not PWebValidExternalUri('mailto:a@b@c'), 'mailto two recipients');
+  // a raw backslash belongs to neither scheme and is a normalisation trap
+  Check(not PWebValidExternalUri('https://example.invalid/a\b'),
+    'https backslash');
+  Check(not PWebValidExternalUri('https://example.invalid\@evil.invalid/'),
+    'https backslash authority confusion');
   // control bytes can never reach a launcher, whatever the scheme
   Check(not PWebValidExternalUri('https://example.invalid/'#13#10'x'), 'crlf');
   Check(not PWebValidExternalUri('https://example.invalid/'#0), 'nul');
@@ -451,14 +468,14 @@ begin
   Check(Pos('connect-src ''self''', PWEB_NATIVE_CSP) > 0, 'connect-src self');
   Check(Pos('connect-src ''none''', PWEB_NATIVE_CSP) = 0, 'not connect none');
 
-  html := PWebNativeSecurityHeaders(True);
-  other := PWebNativeSecurityHeaders(False);
-  Check(Pos('Content-Security-Policy: ', html) > 0, 'html carries the CSP');
-  Check(Pos('Content-Security-Policy', other) = 0, 'non-html carries none');
-  Check(Pos('X-Content-Type-Options: nosniff', html) > 0, 'nosniff html');
-  Check(Pos('X-Content-Type-Options: nosniff', other) > 0, 'nosniff other');
-  Check(Pos('Referrer-Policy: no-referrer', html) > 0, 'referrer html');
-  Check(Pos('Referrer-Policy: no-referrer', other) > 0, 'referrer other');
+  // EVERY response carries the CSP, not just text/html. An earlier revision
+  // gated it on the media type, which left pweb://app/logo.svg - a scriptable
+  // top-level document in the trusted origin - with no policy at all.
+  html := PWebNativeSecurityHeaders;
+  other := html;
+  Check(Pos('Content-Security-Policy: ', html) > 0, 'the CSP is unconditional');
+  Check(Pos('X-Content-Type-Options: nosniff', html) > 0, 'nosniff');
+  Check(Pos('Referrer-Policy: no-referrer', other) > 0, 'referrer');
 end;
 
 procedure TTestNavigationPolicy.DecisionDigest;

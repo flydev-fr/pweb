@@ -99,10 +99,14 @@ for unit in support folder zip; do
         "src/assets/pweb.assets.${unit}.pas" ||
         die "pweb.assets.${unit}.pas failed its isolation compile"
 done
-# the Linux handler adds only src/lib on top of the stores: it must never
-# pull the rpc scheduler or the CAP-2 binding into the resource path
+# the Linux handler adds only src/lib and, since CAP-8B, the shared
+# navigation classifier in src/security on top of the stores: it must
+# never pull the rpc scheduler or the CAP-2 binding into the resource
+# path. pweb.navigation.policy is itself RTL + mormot.core.base +
+# pweb.assets.support, so this stays an isolation compile rather than
+# becoming a whole-product one.
 fpc -MObjFPC -Sh -B -FUbuild/cap7l/iso -Fusrc/assets -Fusrc/lib \
-    -Fusrc/platform/linux "${mormot_core[@]}" \
+    -Fusrc/security -Fusrc/platform/linux "${mormot_core[@]}" \
     src/platform/linux/pweb.platform.webkitgtk.pas ||
     die 'pweb.platform.webkitgtk.pas failed its isolation compile'
 

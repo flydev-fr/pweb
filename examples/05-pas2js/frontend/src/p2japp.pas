@@ -9,6 +9,15 @@
 
   The logical call is IDENTICAL to the React example's: same method
   spelling, same named argument keys and values, same 42.
+
+  CAP-8B adds the navigation-security block, and it too is identical to
+  the React page's: the same five probe targets, in the same order,
+  reported under the same member names. Every fact in it is OBSERVED by
+  this page; none of it is inferred from "the page still works". The
+  release host REQUIRES the block before it latches PASS, while this
+  page's own `ok` deliberately excludes it - the same bundle also runs
+  under the allow-all example hosts, which install no navigation guard,
+  exactly as `denied` already works.
 }
 program p2japp;
 
@@ -17,8 +26,31 @@ program p2japp;
 uses
   SysUtils, JS, Web, pweb.native;
 
+const
+  { CAP-8B probe targets. `.invalid` is reserved by RFC 6761 and can
+    never resolve, so a regression that let one of these through would
+    still reach nothing - the failure is recorded, never acted on. }
+  CSP_SCRIPT_PROBE = 'https://blocked.invalid/pweb-csp-probe.js';
+  WRONG_AUTHORITY_PROBE = 'pweb://evil/index.html';
+  SAME_ORIGIN_CONTROL = '/index.html';
+  EXTERNAL_NAV_PROBE = 'https://blocked.invalid/pweb-nav-probe';
+  { http: is NOT in the ratified external allowlist (https and mailto
+    only), so this is a URI the native validator must refuse. }
+  REFUSED_SCHEME_PROBE = 'http://blocked.invalid/pweb-open-probe';
+  EXTERNAL_OPEN_CAPABILITY = 'external.open';
+  METHOD_OPEN_EXTERNAL = 'pweb.openExternal';
+  METHOD_ECHO = 'pweb.echo';
+  CSP_SCRIPT_DIRECTIVE = 'script-src';
+
 var
   Display: TJSElement;
+  { CAP-8B: the trusted document's own address, captured BEFORE anything
+    can navigate away from it - "the page is still on pweb://app" is only
+    a fact if the address it is compared against was recorded first. }
+  StartHref: String;
+  { Set by the policy-violation listener below, armed before anything can
+    violate the policy and read once at the end. }
+  CspBlocked: Boolean;
 
 procedure SetDisplay(const AText: String);
 begin
@@ -32,16 +64,62 @@ begin
   Result := TJSObject(window)['isSecureContext'] = True;
 end;
 
+{ CAP-8B: a blocked external script is NOT provable from an error event -
+  a script from an unresolvable host errors either way - so the only
+  honest evidence is the policy-violation report itself. }
+function OnCspViolation(Event: TEventListenerEvent): Boolean;
+var
+  directive: JSValue;
+begin
+  Result := True;
+  directive := TJSObject(Event)['violatedDirective'];
+  // Chromium names the effective directive (script-src-elem), WebKit
+  // names script-src; both were MEASURED naming one of them, so match
+  // the family rather than a single spelling.
+  if isString(directive) and
+     (Copy(String(directive), 1, Length(CSP_SCRIPT_DIRECTIVE)) =
+      CSP_SCRIPT_DIRECTIVE) then
+    CspBlocked := True;
+end;
+
+procedure ArmCspProbe;
+var
+  probe: TJSElement;
+begin
+  CspBlocked := False;
+  document.addEventListener('securitypolicyviolation', @OnCspViolation);
+  probe := document.createElement('script');
+  TJSObject(probe)['src'] := CSP_SCRIPT_PROBE;
+  document.head.appendChild(probe);
+end;
+
+function HasExternalOpen(AInfo: JSValue): Boolean;
+var
+  caps: JSValue;
+begin
+  // capabilities is ADVISORY metadata, and it is used here as exactly
+  // that: not as an authorization, but as the page's only way to tell
+  // that it is running under the release host - the one host that
+  // installs a navigation guard - before attempting a navigation that
+  // would otherwise destroy its own report channel.
+  caps := TJSObject(AInfo)['capabilities'];
+  Result := isArray(caps) and
+    (TJSArray(caps).indexOf(EXTERNAL_OPEN_CAPABILITY) >= 0);
+end;
+
 procedure Run; async;
 var
-  verdict: TJSObject;
+  verdict, fetchInit: TJSObject;
   info, v: JSValue;
-  ok: Boolean;
+  res: TJSResponse;
+  ok, sameOriginServed, wrongAuthorityRefused: Boolean;
 begin
   // rendered proves this pas2js-compiled code found and can drive the DOM
   verdict := New(['ok', False, 'handshake', False, 'secure', IsSecure,
     'rendered', Display <> nil, 'rpc', False, 'errmap', False,
-    'denied', False]);
+    'denied', False, 'navExternalBlocked', False,
+    'navAuthorityBlocked', False, 'navCspBlocked', False,
+    'navOpenExternal', False]);
   try
     info := await(JSValue, PWebHandshake);
     verdict['handshake'] := (TPWebRuntimeInfo(info).Protocol = 1) and
@@ -74,6 +152,83 @@ begin
         verdict['denied'] := (E2.Code = 'forbidden') and
           (E2.Status = 403) and (E2.Data = JS.Null);
     end;
+    // CAP-8B wrong-authority SUBRESOURCE probe. The control comes first
+    // and is load-bearing: `connect-src 'self'` was ratified over
+    // `'none'` precisely because same-origin fetch has to keep working,
+    // so a refusal only means something once the same request shape is
+    // shown to succeed on the trusted authority.
+    fetchInit := New(['cache', 'no-store']);
+    sameOriginServed := False;
+    try
+      res := TJSResponse(await(JSValue,
+        window.fetch(SAME_ORIGIN_CONTROL, fetchInit)));
+      sameOriginServed := res.ok;
+    except
+      sameOriginServed := False;
+    end;
+    wrongAuthorityRefused := False;
+    try
+      // refused either by CSP (pweb://evil is a different origin) or by
+      // the asset handler's constant refusal - both are "no bytes were
+      // served", which is the property being asserted
+      res := TJSResponse(await(JSValue,
+        window.fetch(WRONG_AUTHORITY_PROBE, fetchInit)));
+      wrongAuthorityRefused := not res.ok;
+    except
+      wrongAuthorityRefused := True;
+    end;
+    verdict['navAuthorityBlocked'] :=
+      sameOriginServed and wrongAuthorityRefused;
+    // CAP-8B external-open probe: pweb.openExternal is reachable and
+    // capability-checked. invalid_request/400 is the ONLY answer that
+    // proves both halves at once - the CAP-8A policy allowed the call
+    // (an absent external.open would have been forbidden/403 before the
+    // host ever saw it) and the native validator then refused a
+    // non-allowlisted scheme. No browser is ever launched here: a
+    // successful open is a side effect on the machine running the
+    // smoke, and a gate must not need one.
+    try
+      await(JSValue, PWebInvoke(METHOD_OPEN_EXTERNAL,
+        New(['url', REFUSED_SCHEME_PROBE])));
+    except
+      on E2: EPWebError do
+        verdict['navOpenExternal'] := (E2.Code = 'invalid_request') and
+          (E2.Status = 400) and (E2.Data = JS.Null);
+    end;
+    // CAP-8B external-NAVIGATION probe, attempted only where the runtime
+    // advertises external.open - which is exactly the release host, the
+    // only host that installs a navigation guard. Under the allow-all
+    // example hosts the same attempt would succeed, replace this
+    // document and destroy the report channel, so the probe is gated on
+    // the advertised capability rather than on a build flag the page
+    // cannot have.
+    if HasExternalOpen(info) then
+    begin
+      try
+        // new window first: on Linux and macOS an opened window was
+        // MEASURED to inherit the whole native transport, so this path
+        // has to be exercised, not just the top-level one
+        window.open(EXTERNAL_NAV_PROBE, '_blank');
+      except
+        // a refusal that throws is still a refusal
+      end;
+      try
+        window.location.href := EXTERNAL_NAV_PROBE;
+      except
+        // idem
+      end;
+      // a navigation assignment is asynchronous, so the page has to
+      // yield before its own address means anything; a real native
+      // round trip is a yield the page can actually prove happened
+      try
+        await(JSValue, PWebInvoke(METHOD_ECHO, New(['navprobe', 1])));
+      except
+        // the yield failing is reported by the flag staying False
+      end;
+      verdict['navExternalBlocked'] :=
+        (window.location.href = StartHref) and
+        (window.location.protocol = 'pweb:');
+    end;
     ok := (verdict['handshake'] = True) and (verdict['secure'] = True) and
       (verdict['rendered'] = True) and (verdict['rpc'] = True) and
       (verdict['errmap'] = True);
@@ -95,6 +250,11 @@ begin
       SetDisplay('FAILED: ' + E.Message);
     end;
   end;
+  // read as late as possible, and outside the try: the violation report
+  // is queued by the engine, and every await above has since let the
+  // task queue drain
+  verdict['navCspBlocked'] := CspBlocked;
+  document.removeEventListener('securitypolicyviolation', @OnCspViolation);
   try
     await(JSValue, PWebInvoke('example.report', verdict));
   except
@@ -104,5 +264,9 @@ end;
 
 begin
   Display := document.getElementById('result');
+  // CAP-8B: the address is captured and the policy-violation listener is
+  // armed BEFORE any probe can move the page or violate the policy.
+  StartHref := window.location.href;
+  ArmCspProbe;
   Run;
 end.

@@ -35,6 +35,7 @@
 
 #include <glib.h>
 #include <gio/gio.h>
+#include <libsoup/soup.h>
 #include <webkit2/webkit2.h>
 
 /* Compile-level signature checks: re-declaring an already declared function
@@ -71,17 +72,104 @@ GQuark g_quark_from_static_string(const gchar *string);
 GError *g_error_new_literal(GQuark domain, gint code, const gchar *message);
 void g_error_free(GError *error);
 
+/* CAP-8B adds three surfaces to the same private declaration block, and every
+ * one of them is re-declared here for the same reason as the rest: a drift
+ * from the installed headers must stop THIS compile rather than surface as a
+ * clobbered register inside a WebKit callback.
+ *
+ *   - the response API, because webkit_uri_scheme_request_finish carries no
+ *     headers and therefore cannot carry the native CSP at all;
+ *   - the decide-policy/create navigation surface;
+ *   - g_app_info_launch_default_for_uri, the private external opener.
+ *
+ * webkit_uri_scheme_request_finish is deliberately NOT re-declared: the
+ * platform unit no longer declares it either.
+ */
+WebKitURISchemeResponse *webkit_uri_scheme_response_new(GInputStream *stream,
+                                                        gint64 stream_length);
+void webkit_uri_scheme_response_set_content_type(
+    WebKitURISchemeResponse *response, const gchar *content_type);
+void webkit_uri_scheme_response_set_status(WebKitURISchemeResponse *response,
+                                           guint status_code,
+                                           const gchar *reason_phrase);
+void webkit_uri_scheme_response_set_http_headers(
+    WebKitURISchemeResponse *response, SoupMessageHeaders *headers);
+void webkit_uri_scheme_request_finish_with_response(
+    WebKitURISchemeRequest *request, WebKitURISchemeResponse *response);
+void webkit_policy_decision_use(WebKitPolicyDecision *decision);
+void webkit_policy_decision_ignore(WebKitPolicyDecision *decision);
+WebKitNavigationAction *webkit_navigation_policy_decision_get_navigation_action(
+    WebKitNavigationPolicyDecision *decision);
+WebKitURIRequest *webkit_navigation_action_get_request(
+    WebKitNavigationAction *navigation);
+gboolean webkit_navigation_action_is_user_gesture(
+    WebKitNavigationAction *navigation);
+WebKitNavigationType webkit_navigation_action_get_navigation_type(
+    WebKitNavigationAction *navigation);
+const gchar *webkit_uri_request_get_uri(WebKitURIRequest *request);
+WebKitURIRequest *webkit_response_policy_decision_get_request(
+    WebKitResponsePolicyDecision *decision);
+gboolean webkit_response_policy_decision_is_mime_type_supported(
+    WebKitResponsePolicyDecision *decision);
+gulong g_signal_connect_data(gpointer instance, const gchar *detailed_signal,
+                             GCallback c_handler, gpointer data,
+                             GClosureNotify destroy_data,
+                             GConnectFlags connect_flags);
+SoupMessageHeaders *soup_message_headers_new(SoupMessageHeadersType type);
+void soup_message_headers_append(SoupMessageHeaders *hdrs, const char *name,
+                                 const char *value);
+gboolean g_app_info_launch_default_for_uri(const char *uri,
+                                           GAppLaunchContext *context,
+                                           GError **error);
+
 /* The callback typedefs the unit declares, checked for assignability against
- * the real ones: a convention or parameter-list drift stops compilation. */
+ * the real ones: a convention or parameter-list drift stops compilation.
+ *
+ * The two signal handlers have no library typedef to be checked against -
+ * that is precisely the hazard g_signal_connect_data's GCallback erasure
+ * creates, in C and in Pascal alike - so what is measured for them is the
+ * pointer width, and what is CHECKED is that a function of the exact
+ * documented shape assigns to the typedef the unit declares. */
 typedef void (*probe_destroy_notify)(gpointer data);
+typedef void (*probe_closure_notify)(gpointer data, GClosure *closure);
+typedef void (*probe_callback)(void);
 typedef void (*probe_uri_scheme_cb)(WebKitURISchemeRequest *request,
                                     gpointer user_data);
+typedef gboolean (*probe_decide_policy_cb)(WebKitWebView *web_view,
+                                           WebKitPolicyDecision *decision,
+                                           WebKitPolicyDecisionType type,
+                                           gpointer user_data);
+typedef GtkWidget *(*probe_create_cb)(WebKitWebView *web_view,
+                                      WebKitNavigationAction *navigation_action,
+                                      gpointer user_data);
 
 static void probe_destroy_impl(gpointer data) { (void)data; }
+static void probe_closure_impl(gpointer data, GClosure *closure) {
+  (void)data;
+  (void)closure;
+}
 static void probe_scheme_impl(WebKitURISchemeRequest *request,
                               gpointer user_data) {
   (void)request;
   (void)user_data;
+}
+static gboolean probe_decide_policy_impl(WebKitWebView *web_view,
+                                         WebKitPolicyDecision *decision,
+                                         WebKitPolicyDecisionType type,
+                                         gpointer user_data) {
+  (void)web_view;
+  (void)decision;
+  (void)type;
+  (void)user_data;
+  return FALSE;
+}
+static GtkWidget *probe_create_impl(
+    WebKitWebView *web_view, WebKitNavigationAction *navigation_action,
+    gpointer user_data) {
+  (void)web_view;
+  (void)navigation_action;
+  (void)user_data;
+  return NULL;
 }
 
 #define P_SIZE(name, type) printf("sizeof." name "=%u\n", (unsigned)sizeof(type))
@@ -92,11 +180,21 @@ int main(void) {
   /* assignability of our typedefs to the library's own - a hard error if the
      shapes differ, and it keeps the impls referenced under -Wall -Werror */
   GDestroyNotify real_destroy = (GDestroyNotify)probe_destroy_impl;
+  GClosureNotify real_closure = (GClosureNotify)probe_closure_impl;
+  GCallback real_callback = G_CALLBACK(probe_decide_policy_impl);
   WebKitURISchemeRequestCallback real_scheme =
       (WebKitURISchemeRequestCallback)probe_scheme_impl;
   probe_destroy_notify ours_destroy = real_destroy;
+  probe_closure_notify ours_closure = real_closure;
+  probe_callback ours_callback = real_callback;
   probe_uri_scheme_cb ours_scheme = real_scheme;
-  if ((ours_destroy == NULL) || (ours_scheme == NULL)) {
+  /* no library typedef exists for the two signal handlers - see above - so
+     the shape itself is what is checked */
+  probe_decide_policy_cb ours_decide = probe_decide_policy_impl;
+  probe_create_cb ours_create = probe_create_impl;
+  if ((ours_destroy == NULL) || (ours_closure == NULL) ||
+      (ours_callback == NULL) || (ours_scheme == NULL) ||
+      (ours_decide == NULL) || (ours_create == NULL)) {
     return 100;
   }
 
@@ -111,6 +209,27 @@ int main(void) {
   P_SIGNED("gssize", gssize);
   P_SIZE("GQuark", GQuark);
   P_SIGNED("GQuark", GQuark);
+  P_SIZE("gboolean", gboolean);
+  P_SIGNED("gboolean", gboolean);
+  P_SIZE("guint", guint);
+  P_SIGNED("guint", guint);
+  P_SIZE("gulong", gulong);
+  P_SIGNED("gulong", gulong);
+
+  /* the C enums the CAP-8B signatures carry. Signedness is MEASURED rather
+     than assumed: gcc types an enum with no negative enumerator as unsigned
+     int, which is the same rule that produces the two documented deltas on
+     the core probe - and the Pascal side declares LongWord on the strength
+     of it, so if a future header adds a negative enumerator this pair says
+     so instead of silently passing a signed value. */
+  P_SIZE("GConnectFlags", GConnectFlags);
+  P_SIGNED("GConnectFlags", GConnectFlags);
+  P_SIZE("WebKitPolicyDecisionType", WebKitPolicyDecisionType);
+  P_SIGNED("WebKitPolicyDecisionType", WebKitPolicyDecisionType);
+  P_SIZE("WebKitNavigationType", WebKitNavigationType);
+  P_SIGNED("WebKitNavigationType", WebKitNavigationType);
+  P_SIZE("SoupMessageHeadersType", SoupMessageHeadersType);
+  P_SIGNED("SoupMessageHeadersType", SoupMessageHeadersType);
 
   /* opaque handles and string elements */
   P_SIZE("gpointer", gpointer);
@@ -119,7 +238,11 @@ int main(void) {
   /* callback function pointers (width; convention is checked at compile
      level by the assignments above) */
   P_SIZE("fnptr.GDestroyNotify", probe_destroy_notify);
+  P_SIZE("fnptr.GClosureNotify", probe_closure_notify);
+  P_SIZE("fnptr.GCallback", probe_callback);
   P_SIZE("fnptr.WebKitURISchemeRequestCallback", probe_uri_scheme_cb);
+  P_SIZE("fnptr.WebKitDecidePolicyCallback", probe_decide_policy_cb);
+  P_SIZE("fnptr.WebKitCreateCallback", probe_create_cb);
 
   return 0;
 }

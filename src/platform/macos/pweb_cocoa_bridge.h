@@ -44,6 +44,24 @@
  *      resource perfectly while fetch() reports status 0 and ok === false,
  *      because NSURLResponse carries no status code.
  *
+ *   4. THE NAVIGATION DELEGATE (CAP-8B). WKNavigationDelegate is an
+ *      Objective-C protocol whose decisions are delivered through BLOCKS, and
+ *      Pascal has neither. CAP-8B MEASURED (M2) that this engine, unlike
+ *      WebKitGTK, tells a new window from a subframe from a main frame at
+ *      decision time - targetFrame == nil means a new window, otherwise
+ *      targetFrame.isMainFrame - so the subframe and new-window rules are
+ *      enforceable STRUCTURALLY here and not only through the CSP. Upstream
+ *      owns the WKUIDelegate for its open panel (cocoa_webkit.hh:490-494) and
+ *      leaves the navigation delegate unset, so this is an unoccupied seam and
+ *      nothing of upstream's is displaced.
+ *
+ *   5. THE SYSTEM OPENER. -[NSWorkspace openURL:] takes an NSURL and needs an
+ *      Objective-C frame. It is reachable ONLY from an explicit,
+ *      capability-authorized runtime invocation (CAP-8B ratification R-A.2 and
+ *      R-A.8): no navigation callback in this file may ever call it, because
+ *      the four-target activation matrix measured that no engine can tell a
+ *      genuine gesture from a script navigation issued after an RPC.
+ *
  * ============================ OWNERSHIP MODEL =============================
  *
  * THE BRIDGE NEVER HOLDS A RAW PASCAL OBJECT POINTER. Ownership crosses as a
@@ -80,6 +98,15 @@ extern "C" {
    "text/javascript; charset=utf-8" (30 bytes). */
 #define PWEB_COCOA_CONTENT_TYPE_MAX 256
 
+/* Longest native security-header block the seam will carry, INCLUDING the NUL.
+   A fixed buffer for exactly the reasons the Content-Type one is: no second
+   cross-boundary allocation, no second ownership rule, and a block that does
+   not fit is a Pascal-side REFUSAL rather than a truncated policy - and a
+   truncated Content-Security-Policy is a DIFFERENT policy, silently weaker
+   than the one that was ratified. The current block (nosniff, Referrer-Policy
+   and the CSP) is about 400 bytes. */
+#define PWEB_COCOA_SECURITY_HEADERS_MAX 1024
+
 /* One resolved asset, handed from Pascal to the bridge.
 
    bytes  : a pweb_cocoa_alloc() block the BRIDGE owns once resolve returns
@@ -87,11 +114,24 @@ extern "C" {
             a real allocation, so "empty" and "failed" can never be confused.
    length : exact body length; 0 is a legitimate asset, not a miss.
    content_type: NUL-terminated, never empty (an empty Content-Type would let
-            the engine sniff). */
+            the engine sniff).
+   security_headers: the CAP-8B native policy, CRLF-separated `Name: Value`
+            lines, NUL-terminated and NEVER empty on a serve.
+
+            IT IS CARRIED ACROSS THE SEAM RATHER THAN SPELLED HERE, and that
+            is the whole point: PWEB_NATIVE_CSP lives in exactly one file,
+            src/security/pweb.navigation.policy.pas, shared byte-for-byte with
+            Windows and Linux. A second copy of the policy string in
+            Objective-C would be a second answer to the only question the
+            response headers ask, and it would drift the first time one of the
+            three was edited. MEASURED (M3): the header fields of this
+            NSHTTPURLResponse ARE enforced on pweb://app, and a weaker bundle
+            <meta> policy cannot relax a single row of them. */
 typedef struct pweb_cocoa_asset {
   void *bytes;
   int64_t length;
   char content_type[PWEB_COCOA_CONTENT_TYPE_MAX];
+  char security_headers[PWEB_COCOA_SECURITY_HEADERS_MAX];
 } pweb_cocoa_asset_t;
 
 /* Counters the Pascal gates assert on. Every field is monotonic within a
@@ -112,6 +152,11 @@ typedef struct pweb_cocoa_stats {
   uint64_t suppressed_terminals; /* terminal deliveries the claim gate refused */
   uint64_t caught_exceptions;    /* NSExceptions caught at a seam entry */
   uint64_t unresolved_handles;   /* callbacks whose handle did not resolve */
+  uint64_t policy_headers_missing; /* serves refused because Pascal attached no
+                                    native security-header block: a privileged
+                                    asset without the CSP is exactly what
+                                    CAP-8B exists to prevent, so the bridge
+                                    refuses it rather than serving it bare */
   uint64_t live_tasks;           /* currently tracked, i.e. not yet settled */
 } pweb_cocoa_stats_t;
 
@@ -241,14 +286,156 @@ void pweb_cocoa_get_stats(pweb_cocoa_stats_t *out);
    Linux/WebKitGTK; the remedy there is x86-only, which is why it did not
    transfer.
 
-   PER THREAD, which is why the adapter calls it twice: once at unit
+   PER THREAD, which is why the adapter calls it more than once: at unit
    initialization (the main thread, before any worker exists, so workers
-   inherit the masked state) and again in TCocoaAssetHandler.Create, which
-   runs on the thread that will actually host WebKit and is not guaranteed by
-   contract to be the same one. */
+   inherit the masked state) and again in TCocoaAssetHandler.Create and
+   TCocoaNavigationGuard.Create, both of which run on the thread that will
+   actually host WebKit and neither of which is guaranteed by contract to be
+   the same one. Idempotent, so calling it again costs nothing. */
 int pweb_cocoa_mask_fpu_traps(void);
 
 uint64_t pweb_cocoa_rss_kb(void);
+
+/* ======================================================================== *
+ *  CAP-8B: THE PRIVILEGED-NAVIGATION SEAM                                  *
+ *                                                                          *
+ *  THE INVARIANT: a WebView owning the privileged PWeb bridge may execute   *
+ *  only trusted pweb://app content.                                        *
+ *                                                                          *
+ *  Nothing below DECIDES anything. Every hook translates a WKNavigation*    *
+ *  object into the three scalars the shared classifier takes, calls out     *
+ *  once, and translates the answer back into a WebKit policy constant. The  *
+ *  classifier is src/security/pweb.navigation.policy.pas and it is the same *
+ *  one Windows and Linux call; no WKWebView type appears in it and no       *
+ *  policy table appears here.                                               *
+ *                                                                          *
+ *  NO CALLBACK BELOW MAY EVER REACH pweb_cocoa_open_external. That is       *
+ *  ratification R-A.2, and it is not a style rule: the four-target matrix   *
+ *  MEASURED that user activation cannot be told from a script navigation    *
+ *  issued in the continuation of an RPC on two of four engines, and that    *
+ *  this engine has no public gesture signal at all (M4 -                    *
+ *  -[WKNavigationAction _isUserInitiated] is private SPI and is forbidden   *
+ *  here). External opening is a capability-authorized invocation, never an  *
+ *  inference from a flag.                                                   *
+ * ======================================================================== */
+
+/* TPWebNavKind, ordinal for ordinal. The adapter maps WebKit's frame facts
+   onto these and nothing else; an integer outside this set is a Pascal-side
+   DENIAL, never a guess. */
+#define PWEB_COCOA_NAV_KIND_DOCUMENT 0
+#define PWEB_COCOA_NAV_KIND_SUBFRAME 1
+#define PWEB_COCOA_NAV_KIND_NEWWINDOW 2
+#define PWEB_COCOA_NAV_KIND_DOWNLOAD 3
+
+/* What the classifier answered. -1 exists for the same reason it does on the
+   resolve callback: a released or never-claimed handle must be countable
+   separately, and must then behave exactly like a refusal so nothing on the
+   page can tell the two apart. */
+#define PWEB_COCOA_NAV_ALLOW 1
+#define PWEB_COCOA_NAV_CANCEL 0
+#define PWEB_COCOA_NAV_UNRESOLVED (-1)
+
+/* The ONE callback out of the navigation seam.
+
+   handle        : the generation-checked Pascal handle, or 0 when disowned.
+   absolute_url  : the WHOLE absolute URL of the request, never a path
+                   accessor and never a rebuilt string - a path-only view of
+                   pweb://evil/x reads as /x.
+   kind          : one of PWEB_COCOA_NAV_KIND_*.
+   user_activated: DIAGNOSTIC ONLY, and on this engine it is a derivation
+                   rather than a measurement: WKNavigationType LinkActivated,
+                   which MEASURED (M4) accepts a script-driven element.click().
+                   The classifier is required not to read it, and the headless
+                   corpus proves that by running every row twice with the flag
+                   inverted.
+
+   Returns PWEB_COCOA_NAV_ALLOW / _CANCEL / _UNRESOLVED. MUST NOT raise and
+   MUST NOT block. */
+typedef int (*pweb_cocoa_nav_fn)(uint64_t handle, const char *absolute_url,
+                                 int kind, int user_activated);
+
+/* Counters the CAP-8B gates assert on. All monotonic within a process.
+
+   handlers_completed IS THE EXACTLY-ONCE WITNESS: WebKit hangs on a decision
+   handler that is never called and raises on one called twice, so a gate
+   asserts handlers_completed == action_decisions + response_decisions rather
+   than trusting a code reading. allowed + cancelled equals the same sum.
+
+   download_events is deliberately OUTSIDE both identities: a download is
+   refused where it becomes one, and that hook has no decision handler to
+   complete and no allow/cancel answer to give. */
+typedef struct pweb_cocoa_nav_stats {
+  uint64_t action_decisions;    /* decidePolicyForNavigationAction arrivals */
+  uint64_t response_decisions;  /* decidePolicyForNavigationResponse arrivals */
+  uint64_t download_events;     /* didBecomeDownload: arrivals, both hooks */
+  uint64_t allowed;             /* decisions answered Allow */
+  uint64_t cancelled;           /* decisions answered Cancel */
+  uint64_t handlers_completed;  /* decision handlers actually invoked */
+  uint64_t unresolved_handles;  /* callbacks whose handle did not resolve */
+  uint64_t caught_exceptions;   /* exceptions caught at a navigation entry */
+} pweb_cocoa_nav_stats_t;
+
+/* Record the decision function and create the singleton delegate. Idempotent;
+   like pweb_cocoa_install, a second, DIFFERENT function is refused rather than
+   silently rebinding every future decision. Returns 1 on success. */
+int pweb_cocoa_nav_install(pweb_cocoa_nav_fn decide);
+
+/* Arm the navigation seam for one handler handle, exactly as pweb_cocoa_arm
+   does for the scheme handler and for the same reason: the delegate is a
+   process-wide singleton and a single callback can only consult one policy, so
+   a second, different handle is refused rather than resolved in someone's
+   favour. Returns 1 on success. */
+int pweb_cocoa_nav_arm(uint64_t handle);
+
+/* Disown: the delegate stops calling out. After this returns, no decision
+   callback can be made for `handle` - and because the delegate then has no
+   policy to consult, every hook FAILS CLOSED and cancels. Idempotent and safe
+   from any thread (one atomic store). */
+void pweb_cocoa_nav_disown(uint64_t handle);
+
+/* Install the delegate on THIS WKWebView. `view` is the BROWSER_CONTROLLER
+   native handle, which on Cocoa is the WKWebView itself.
+
+   Returns 1 only if the read-back afterwards says OURS, so "attached" is a
+   measured property of the view rather than the absence of an exception.
+   Returns 0 - installing NOTHING - if a foreign delegate already owns this
+   view: upstream leaves the navigation delegate unset, so anything there is
+   somebody else's and displacing it would break them silently.
+
+   Call it after webview_create and BEFORE webview_navigate. MEASURED (M5):
+   this engine performs no initial about:blank at all, so there is no document
+   to lose and no bootstrap exception to write. */
+int pweb_cocoa_nav_attach(void *view);
+
+/* Is OUR delegate the navigation delegate of THIS view? Same three values, and
+   the same reading, as pweb_cocoa_handler_installed_on:
+   PWEB_COCOA_READBACK_OURS / _ABSENT / _FOREIGN. Read-only, public API
+   (-[WKWebView navigationDelegate]). */
+int pweb_cocoa_nav_installed_on(void *view);
+
+/* Remove the delegate from `view`, but ONLY if it is ours. Called AFTER
+   pweb_cocoa_nav_disown and BEFORE the handle is released, so that a callback
+   arriving in between finds a disowned seam and cancels rather than reaching a
+   released Pascal object. */
+void pweb_cocoa_nav_detach(void *view);
+
+/* Snapshot of every navigation counter. `out` must not be NULL. */
+void pweb_cocoa_nav_get_stats(pweb_cocoa_nav_stats_t *out);
+
+/* Hand ONE URI to the operating system's default handler, as DATA.
+
+   -[NSWorkspace openURL:] with an NSURL built from this exact string: no shell
+   string, no /bin/sh, no system(), no subprocess and no interpolation
+   anywhere. Returns 1 if the workspace accepted the URI, 0 otherwise - and 0
+   is not an error path with a fallback, it is the end of the attempt: a
+   refusal never turns into an internal navigation.
+
+   THE SCHEME ALLOWLIST IS NOT HERE. Validation is PWebValidExternalUri in the
+   shared classifier (https: and mailto: only, on parsed components, bounded
+   length, no control bytes), so the rule has one home and this entry point has
+   no policy of its own. Reachable ONLY from the capability-authorized runtime
+   invocation; see the R-A.2 note at the top of this section. */
+int pweb_cocoa_open_external(const char *uri);
 
 /* ======================================================================== *
  *  DETERMINISTIC PROOF SURFACE                                             *

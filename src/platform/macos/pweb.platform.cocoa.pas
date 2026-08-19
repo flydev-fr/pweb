@@ -84,6 +84,49 @@
   exception ever crosses back: the bridge's @try/@catch is an Objective-C
   frame, which Pascal cannot express, and that is most of why the bridge
   exists at all.
+
+  ---------------------------------------------------------------------------
+  CAP-8B: WHAT MAY EXECUTE IN THE PRIVILEGED WEBVIEW
+  ---------------------------------------------------------------------------
+
+  THE INVARIANT: a WebView owning the privileged PWeb bridge may execute only
+  trusted pweb://app content. This adapter enforces it twice over, and neither
+  half decides anything of its own:
+
+    1. NATIVE SECURITY HEADERS on every served asset. The block comes from
+       PWebNativeSecurityHeaders in pweb.navigation.policy - the one home of
+       PWEB_NATIVE_CSP, shared byte-for-byte with Windows and Linux - and is
+       carried across the seam as data. MEASURED (M3): those header fields are
+       enforced on pweb://app through the scheme handler's NSHTTPURLResponse,
+       and a deliberately weaker bundle <meta> policy could not relax one row.
+       An asset for which the policy layer produced nothing is REFUSED, in the
+       bridge, rather than served bare.
+
+    2. A WKNavigationDelegate (TCocoaNavigationGuard) on the WKWebView reached
+       through webview_get_native_handle. Upstream owns the WKUIDelegate for
+       its open panel and leaves this seam unset, so nothing of upstream's is
+       displaced. Every decision goes to PWebClassifyNavigation; this unit
+       maps WebKit's frame facts onto TPWebNavKind and maps the answer back,
+       and contains no URI comparison, no scheme test and no policy table.
+
+  MEASURED (M2): unlike WebKitGTK, this engine tells a new window
+  (targetFrame = nil) from a subframe (not isMainFrame) from a document at
+  decision time, so the subframe and new-window rules are structural here.
+  MEASURED (M5): it performs no initial about:blank at all, so there is no
+  bootstrap exception and no Armed state machine - an exception nothing needs
+  is an exception nothing tests.
+
+  EXTERNAL OPENING IS NOT A NAVIGATION OUTCOME. Ratification R-A: every raw
+  external navigation is cancelled inside the privileged WebView, https: and
+  mailto: included, and no navigation callback may ever reach the operating
+  system opener - because the four-target matrix measured that user activation
+  cannot be told apart from a script navigation issued after an RPC on two of
+  four engines, and that this one publishes no gesture signal at all (M4).
+  PWebCocoaOpenExternal exists for the capability-authorized runtime
+  invocation and for nothing else; it validates through PWebValidExternalUri
+  and reaches -[NSWorkspace openURL:] through a replaceable function pointer so
+  a counting fake makes "called exactly once" and "never called" deterministic
+  in CI.
 }
 unit pweb.platform.cocoa;
 
@@ -103,13 +146,28 @@ uses
   pweb.lib.webview,
   pweb.lib.webview.types,
   pweb.assets.intf,
-  pweb.assets.support;
+  pweb.assets.support,
+  // CAP-8B: the ONE navigation classifier and the ONE native security policy.
+  // This adapter renders no verdict of its own; it translates events into
+  // TPWebNavRequest and translates the answer back, exactly as its Windows and
+  // Linux siblings do.
+  pweb.navigation.policy;
 
 const
   /// longest Content-Type the private seam carries, INCLUDING the NUL
   // - must equal PWEB_COCOA_CONTENT_TYPE_MAX in pweb_cocoa_bridge.h; a type
   // that does not fit is a REFUSAL here, never a truncation on the wire
   PWEB_COCOA_CONTENT_TYPE_MAX = 256;
+
+  /// longest native security-header block the seam carries, INCLUDING the NUL
+  // - must equal PWEB_COCOA_SECURITY_HEADERS_MAX in pweb_cocoa_bridge.h
+  // - a block that does not fit is a REFUSAL here, never a truncation: a
+  // truncated Content-Security-Policy is a DIFFERENT policy, silently weaker
+  // than the one that was ratified
+  PWEB_COCOA_SECURITY_HEADERS_MAX = 1024;
+
+  /// entries in the diagnostic navigation-decision ring
+  PWEB_COCOA_NAV_OBSERVED_RING = 256;
 
   /// distinct live pweb://app handlers this process can register
   // - one is the realistic case (the seam is process-wide); the ceiling only
@@ -159,6 +217,11 @@ type
     Bytes: Pointer;  // a pweb_cocoa_alloc block the BRIDGE owns on success
     Length: Int64;   // 0 is a legitimate asset, never a miss
     ContentType: array[0 .. PWEB_COCOA_CONTENT_TYPE_MAX - 1] of AnsiChar;
+    // CAP-8B: the native policy, CRLF-separated 'Name: Value' lines, NEVER
+    // empty on a serve. Transported rather than spelled in Objective-C so
+    // PWEB_NATIVE_CSP keeps exactly one home; the bridge refuses to serve an
+    // asset whose block is empty.
+    SecurityHeaders: array[0 .. PWEB_COCOA_SECURITY_HEADERS_MAX - 1] of AnsiChar;
   end;
 
   /// pweb_cocoa_stats_t
@@ -177,7 +240,53 @@ type
     SuppressedTerminals: QWord;
     CaughtExceptions: QWord;
     UnresolvedHandles: QWord;
+    /// serves the bridge refused because no native security-header block was
+    /// attached - a privileged asset without the CSP is what CAP-8B exists to
+    /// make unreachable, so it is refused rather than served bare
+    PolicyHeadersMissing: QWord;
     LiveTasks: QWord;
+  end;
+
+  /// pweb_cocoa_nav_stats_t - the CAP-8B navigation counters
+  // - HandlersCompleted is the exactly-once witness: WebKit hangs on a
+  // decision handler that is never called and raises on one called twice, so
+  // a gate asserts HandlersCompleted = ActionDecisions + ResponseDecisions
+  // (and Allowed + Cancelled = the same sum) rather than reading the code
+  // - DownloadEvents is deliberately outside those identities: a download is
+  // refused where it becomes one, without a decision handler to complete
+  PPWebCocoaNavStats = ^TPWebCocoaNavStats;
+  TPWebCocoaNavStats = record
+    ActionDecisions: QWord;
+    ResponseDecisions: QWord;
+    DownloadEvents: QWord;
+    Allowed: QWord;
+    Cancelled: QWord;
+    HandlersCompleted: QWord;
+    UnresolvedHandles: QWord;
+    CaughtExceptions: QWord;
+  end;
+
+  /// what one navigation decision did, from this unit's side of the seam
+  TPWebCocoaNavOutcome = (
+    /// the classifier answered pnaAllowTrusted
+    ncoAllow,
+    /// the classifier answered pnaCancel
+    ncoCancel,
+    /// the bridge reported an event kind this unit does not recognise: DENIED
+    // without consulting the classifier, because pnkDocument is the only kind
+    // that can ever be allowed and mapping an unknown onto it would widen
+    ncoUnknownKind,
+    /// the callback itself failed - fail closed, and count it
+    ncoFault
+  );
+
+  /// per-guard decision counters
+  TPWebCocoaNavCounters = record
+    Decisions: QWord;      // every callback that reached a verdict
+    Allowed: QWord;
+    Cancelled: QWord;
+    UnknownKind: QWord;
+    Faults: QWord;
   end;
 
   /// pweb_cocoa_stub_outcome_t - the deterministic proof surface
@@ -197,7 +306,22 @@ type
   TPWebCocoaResolveFn = function(AHandle: TPWebCocoaHandle;
     AUrl: PAnsiChar; AAsset: PPWebCocoaAsset): LongInt; cdecl;
 
+  /// pweb_cocoa_nav_fn
+  // - 1 allow, 0 cancel, -1 the handle did not resolve
+  // - AUserActivated is DIAGNOSTIC ONLY and the classifier must not read it
+  TPWebCocoaNavDecideFn = function(AHandle: TPWebCocoaHandle;
+    AUrl: PAnsiChar; AKind: LongInt; AUserActivated: LongInt): LongInt; cdecl;
+
+  /// pweb_cocoa_open_external - the private, replaceable opener seam
+  // - production is the bridge's -[NSWorkspace openURL:]; a test substitutes a
+  // counting fake so "called exactly once" and "never called" are deterministic
+  // in CI, on a runner with no session to open anything in
+  // - it is NOT a public interface, appears in none of the frozen contracts,
+  // and is never reached from a navigation callback (ratification R-A.2)
+  TPWebCocoaOpenExternalFn = function(AUri: PAnsiChar): LongInt; cdecl;
+
   EPWebCocoaAssetHandler = class(Exception);
+  EPWebCocoaNavigationGuard = class(Exception);
 
   { Serves IAssetStore content on pweb://app/* for one webview.
 
@@ -230,6 +354,48 @@ type
     property Readback: TPWebCocoaReadback read fReadback;
   end;
 
+  { CAP-8B: the privileged-navigation guard for one WebView.
+
+    Installs a WKNavigationDelegate on the WKWebView reached through
+    webview_get_native_handle(BROWSER_CONTROLLER) - a seam upstream leaves
+    unset, so its own WKUIDelegate (the open panel) is never displaced.
+
+    Create on the GUI thread, Attach AFTER webview_create and BEFORE
+    webview_navigate: MEASURED (M5) that this engine performs no initial
+    about:blank, so attaching there means no document has ever committed and
+    none can commit unclassified. Detach before webview_destroy (Destroy calls
+    Detach as a guard).
+
+    It decides NOTHING. Every event becomes a TPWebNavRequest for
+    PWebClassifyNavigation, and the answer becomes a WebKit policy constant.
+    It never opens anything: ratification R-A.2 forbids a navigation callback
+    from reaching the operating-system opener on any target. }
+  TCocoaNavigationGuard = class
+  private
+    fHandle: TPWebCocoaHandle;
+    fWebView: webview_t;   // borrowed - never destroyed here
+    fController: Pointer;  // borrowed WKWebView - message sends only
+    fThreadId: TThreadID;  // GUI thread that created us
+    fAttached: Boolean;
+    fFinal: TPWebCocoaNavCounters; // snapshot taken at Detach
+    function GetCounters: TPWebCocoaNavCounters;
+  public
+    constructor Create;
+    destructor Destroy; override;
+    /// install the delegate on this WebView, or raise
+    // - raises when the view already has a FOREIGN navigation delegate, and
+    // when the read-back afterwards does not report ours: "attached" must be a
+    // property of the view, never the absence of an exception
+    procedure Attach(AWebView: webview_t);
+    /// idempotent: disown, remove the delegate if it is ours, then make the
+    // handle unresolvable - in that order
+    procedure Detach;
+    property Attached: Boolean read fAttached;
+    property Handle: TPWebCocoaHandle read fHandle;
+    /// what this guard decided; survives Detach as the snapshot taken there
+    property Counters: TPWebCocoaNavCounters read GetCounters;
+  end;
+
 /// the adapter's ENTIRE request decision, in one place.
 // The bridge's resolve callback calls exactly this, and so do the gates - so
 // "the macOS adapter reaches the same verdict as Windows and Linux through
@@ -244,6 +410,21 @@ function PWebCocoaResolveAssetUri(const AUri: RawUtf8;
 // - the store's deterministic type, with a fallback that can never be the
 // empty string (an empty Content-Type would let the engine sniff)
 function PWebCocoaContentType(const Asset: TAssetResponse): RawUtf8;
+
+/// is this Content-Type an HTML document type?
+// - decides which of PWebNativeSecurityHeaders' two blocks an asset carries:
+// nosniff and Referrer-Policy ride every asset, the CSP rides HTML, where it
+// is the DOCUMENT policy that matters
+// - matches 'text/html' exactly or followed by a parameter, never
+// 'text/htmlish'; a media type is not a URI, so a leading comparison here is
+// the whole comparison rather than a prefix test standing in for one
+function PWebCocoaIsHtmlType(const AMime: RawUtf8): Boolean;
+
+/// the native security-header block this adapter attaches to a served asset
+// - PWebNativeSecurityHeaders and nothing else: the policy has ONE home,
+// src/security/pweb.navigation.policy.pas, shared byte-for-byte with the
+// Windows and Linux adapters
+function PWebCocoaSecurityHeaders(const AMime: RawUtf8): RawUtf8;
 
 /// copy an asset body into a block the BRIDGE owns, exactly the way the
 /// resolve callback does
@@ -311,6 +492,71 @@ function PWebCocoaHandleResolves(AHandle: TPWebCocoaHandle): Boolean;
 
 /// live entries in the handler registry
 function PWebCocoaRegistryCount: Integer;
+
+{ ---- CAP-8B: the navigation seam ---- }
+
+/// snapshot of every bridge navigation counter
+function PWebCocoaNavStats: TPWebCocoaNavStats;
+
+/// does THIS WebView route its navigation decisions to OUR delegate?
+// - AView is the BROWSER_CONTROLLER native handle (on Cocoa, the WKWebView)
+// - pcrForeign is the only value Attach refuses on for the same reason the
+// asset handler does: upstream leaves this seam unset, so a delegate that is
+// not ours belongs to someone else and displacing it would break them
+function PWebCocoaNavInstalledOn(AView: Pointer): TPWebCocoaReadback;
+
+/// does this navigation handle still resolve to a live guard?
+function PWebCocoaNavHandleResolves(AHandle: TPWebCocoaHandle): Boolean;
+
+/// live entries in the navigation-guard registry
+function PWebCocoaNavRegistryCount: Integer;
+
+{ ---- diagnostic navigation ring: OFF by default, zero cost when off ----
+
+  The same bargain the URI ring makes, for the other seam: a production guard
+  must not print anything, so it can be asked to remember, into a bounded ring,
+  which URI it was handed and what it answered. The real-window matrix needs
+  per-URI evidence that an untrusted document, subframe or new window was
+  refused, and a counter alone cannot supply it.
+
+  It is DISABLED unless a caller enables it, it never affects a verdict, and
+  nothing the page can do reaches it. It is diagnostics, not security. }
+
+procedure PWebCocoaObserveNavigation(AEnabled: Boolean);
+procedure PWebCocoaResetNavObserved;
+function PWebCocoaNavObservedCount: Integer;
+/// observations the ring OVERWROTE because it was full
+// - a ring that silently drops is a gate that silently stops checking
+function PWebCocoaNavObservedDropped: QWord;
+/// the AIndex-th observed navigation URI, oldest first
+function PWebCocoaNavObservedUri(AIndex: Integer): RawUtf8;
+/// 'allow' | 'cancel' for the AIndex-th observation
+function PWebCocoaNavObservedVerdict(AIndex: Integer): RawUtf8;
+
+{ ---- CAP-8B: the capability-authorized external opener ----
+
+  NOT A NAVIGATION OUTCOME. Ratification R-A: a native navigation callback
+  never invokes this, on any target, because the four-target matrix measured
+  that a gesture is not a security boundary. This is reached only from an
+  explicit runtime invocation the CAP-8A policy has already authorized. }
+
+/// hand ONE https: or mailto: URI to the operating system's default handler
+// - PWebValidExternalUri decides: parsed scheme allowlist, bounded length, no
+// control bytes. Everything else is refused, and a refusal is the end of the
+// attempt - there is no internal-navigation fallback anywhere
+// - returns True only when the opener accepted the URI; never raises
+function PWebCocoaOpenExternal(const AUri: RawUtf8): Boolean;
+
+/// replace the opener with a test double; nil restores the production one
+// - the whole reason the seam exists: a hosted runner has no session to open
+// anything in, so "called exactly once" and "never called" can only be
+// deterministic through a counting fake
+procedure PWebCocoaSetExternalOpener(AFn: TPWebCocoaOpenExternalFn);
+
+/// URIs that passed validation and reached the opener
+function PWebCocoaExternalOpenCalls: QWord;
+/// URIs PWebValidExternalUri refused, which never reached the opener at all
+function PWebCocoaExternalOpenRefused: QWord;
 
 { ---- diagnostic URI ring: OFF by default, zero cost when off ----
 
@@ -395,6 +641,23 @@ function pweb_cocoa_rss_kb: QWord; cdecl;
 function pweb_cocoa_mask_fpu_traps: LongInt; cdecl;
   external name 'pweb_cocoa_mask_fpu_traps';
 
+function pweb_cocoa_nav_install(decide: TPWebCocoaNavDecideFn): LongInt; cdecl;
+  external name 'pweb_cocoa_nav_install';
+function pweb_cocoa_nav_arm(handle: QWord): LongInt; cdecl;
+  external name 'pweb_cocoa_nav_arm';
+procedure pweb_cocoa_nav_disown(handle: QWord); cdecl;
+  external name 'pweb_cocoa_nav_disown';
+function pweb_cocoa_nav_attach(view: Pointer): LongInt; cdecl;
+  external name 'pweb_cocoa_nav_attach';
+function pweb_cocoa_nav_installed_on(view: Pointer): LongInt; cdecl;
+  external name 'pweb_cocoa_nav_installed_on';
+procedure pweb_cocoa_nav_detach(view: Pointer); cdecl;
+  external name 'pweb_cocoa_nav_detach';
+procedure pweb_cocoa_nav_get_stats(out stats: TPWebCocoaNavStats); cdecl;
+  external name 'pweb_cocoa_nav_get_stats';
+function pweb_cocoa_open_external(uri: PAnsiChar): LongInt; cdecl;
+  external name 'pweb_cocoa_open_external';
+
 function pweb_cocoa_stub_task_create(url: PAnsiChar): QWord; cdecl;
   external name 'pweb_cocoa_stub_task_create';
 procedure pweb_cocoa_stub_task_release(task: QWord); cdecl;
@@ -421,11 +684,35 @@ const
   PWEB_COCOA_SLOT_BITS = 8;
   PWEB_COCOA_SLOT_MASK = (QWord(1) shl PWEB_COCOA_SLOT_BITS) - 1;
 
+  /// pweb_cocoa_nav_fn verdicts, mirroring PWEB_COCOA_NAV_* in the bridge
+  PWEB_COCOA_NAV_ALLOW = 1;
+  PWEB_COCOA_NAV_CANCEL = 0;
+  PWEB_COCOA_NAV_UNRESOLVED = -1;
+
 type
   TPWebCocoaSlot = record
     Handler: TCocoaAssetHandler; // nil when free
     Store: IAssetStore;          // held so the callback never touches Handler
     Generation: QWord;           // bumped on BOTH claim and release
+  end;
+
+  { The navigation half of the same registry idea, and deliberately a SEPARATE
+    table rather than a second field on the asset slot: the two seams are armed
+    and disowned independently, and a guard that outlived its asset handler (or
+    the reverse) must not keep the other's handle resolvable.
+
+    The generation counter is SHARED with the asset registry, which is what
+    makes the two handle spaces disjoint: generations are minted from one
+    monotonic source, so a navigation handle can never resolve in the asset
+    table even when the slot indices coincide.
+
+    The callback never touches Guard - it needs nothing but the URI and the
+    kind - so a released guard cannot be reached through it. Guard is here only
+    so a slot can be seen to be occupied. }
+  TPWebCocoaNavSlot = record
+    Guard: TCocoaNavigationGuard; // nil when free
+    Counters: TPWebCocoaNavCounters;
+    Generation: QWord;            // bumped on BOTH claim and release
   end;
 
   TPWebCocoaObservation = record
@@ -455,6 +742,23 @@ var
   PWebCocoaObservedFilled: Integer;
   PWebCocoaObservedDrops: QWord;   // overwritten because the ring was full
   PWebCocoaObservedBadUri: QWord;  // nil / empty / over-long URL
+
+  { CAP-8B state. Static storage for the same reason the asset registry is:
+    a WebKit callback can in principle still arrive while the process tears
+    down, after FPC has finalised its units. }
+  PWebCocoaNavRegistry: array[0 .. PWEB_COCOA_MAX_HANDLERS - 1] of TPWebCocoaNavSlot;
+
+  PWebCocoaNavObserving: Boolean;
+  PWebCocoaNavObserved: array[0 .. PWEB_COCOA_NAV_OBSERVED_RING - 1] of TPWebCocoaObservation;
+  PWebCocoaNavObservedHead: Integer;
+  PWebCocoaNavObservedFilled: Integer;
+  PWebCocoaNavObservedDrops: QWord;
+
+  /// the opener actually called by PWebCocoaOpenExternal
+  // - the bridge's NSWorkspace entry point unless a test replaced it
+  PWebCocoaOpener: TPWebCocoaOpenExternalFn;
+  PWebCocoaOpenerCalls: QWord;
+  PWebCocoaOpenerRefused: QWord;
 
 { ---- the shared request decision (see the interface comments) ---- }
 
@@ -494,6 +798,40 @@ begin
   Result := Asset.ContentType;
   if Result = '' then
     Result := PWEB_ASSET_FALLBACK_MIME; // never an empty Content-Type
+end;
+
+function PWebCocoaIsHtmlType(const AMime: RawUtf8): Boolean;
+const
+  HTML: RawUtf8 = 'text/html';
+var
+  i, n: PtrInt;
+  c: AnsiChar;
+begin
+  Result := False;
+  n := Length(HTML);
+  if Length(AMime) < n then
+    exit;
+  for i := 1 to n do
+  begin
+    c := AMime[i];
+    if (c >= 'A') and
+       (c <= 'Z') then
+      c := AnsiChar(Ord(c) + 32); // media types are case-insensitive (RFC 9110)
+    if c <> HTML[i] then
+      exit;
+  end;
+  // exactly the type, or the type followed by a parameter - never a longer
+  // token that merely starts the same way
+  Result := (Length(AMime) = n) or
+            (AMime[n + 1] in [';', ' ']);
+end;
+
+function PWebCocoaSecurityHeaders(const AMime: RawUtf8): RawUtf8;
+begin
+  // The whole policy decision, delegated in one line. Nothing in this unit
+  // spells a directive, a header name or a header value: PWEB_NATIVE_CSP has
+  // exactly one home and three adapters transport it.
+  Result := PWebNativeSecurityHeaders;
 end;
 
 function PWebCocoaCopyBody(const AContent: RawByteString;
@@ -623,6 +961,144 @@ begin
     for i := 0 to High(PWebCocoaRegistry) do
       if PWebCocoaRegistry[i].Handler <> nil then
         Inc(Result);
+  finally
+    LeaveCriticalSection(PWebCocoaLock);
+  end;
+end;
+
+{ ---- the navigation-guard registry (same handle model, second table) ---- }
+
+function PWebCocoaNavClaimSlot(AGuard: TCocoaNavigationGuard): TPWebCocoaHandle;
+var
+  i: PtrInt;
+begin
+  Result := 0;
+  EnterCriticalSection(PWebCocoaLock);
+  try
+    for i := 0 to High(PWebCocoaNavRegistry) do
+      if PWebCocoaNavRegistry[i].Guard = nil then
+      begin
+        // ONE generation source for both tables: bumped on claim as well as
+        // on release, so a handle minted for a previous occupant - of either
+        // registry - can never resolve here
+        Inc(PWebCocoaNextGeneration);
+        PWebCocoaNavRegistry[i].Generation := PWebCocoaNextGeneration;
+        PWebCocoaNavRegistry[i].Guard := AGuard;
+        FillChar(PWebCocoaNavRegistry[i].Counters, SizeOf(TPWebCocoaNavCounters), 0);
+        Result := (PWebCocoaNextGeneration shl PWEB_COCOA_SLOT_BITS) or
+                  QWord(i + 1);
+        exit;
+      end;
+  finally
+    LeaveCriticalSection(PWebCocoaLock);
+  end;
+end;
+
+// resolves a navigation handle to its slot index, or -1. Caller holds the lock.
+function PWebCocoaNavSlotOfLocked(AHandle: TPWebCocoaHandle): PtrInt;
+var
+  slot: PtrInt;
+begin
+  Result := -1;
+  slot := PtrInt(AHandle and PWEB_COCOA_SLOT_MASK) - 1;
+  if (slot < 0) or
+     (slot > High(PWebCocoaNavRegistry)) then
+    exit;
+  if PWebCocoaNavRegistry[slot].Guard = nil then
+    exit;
+  if PWebCocoaNavRegistry[slot].Generation <>
+     (AHandle shr PWEB_COCOA_SLOT_BITS) then
+    exit; // a stale handle is UNRESOLVABLE, never merely stale
+  Result := slot;
+end;
+
+procedure PWebCocoaNavReleaseSlot(AHandle: TPWebCocoaHandle);
+var
+  slot: PtrInt;
+begin
+  EnterCriticalSection(PWebCocoaLock);
+  try
+    slot := PWebCocoaNavSlotOfLocked(AHandle);
+    if slot < 0 then
+      exit;
+    Inc(PWebCocoaNextGeneration);
+    PWebCocoaNavRegistry[slot].Generation := PWebCocoaNextGeneration;
+    PWebCocoaNavRegistry[slot].Guard := nil;
+  finally
+    LeaveCriticalSection(PWebCocoaLock);
+  end;
+end;
+
+function PWebCocoaNavHandleResolves(AHandle: TPWebCocoaHandle): Boolean;
+begin
+  EnterCriticalSection(PWebCocoaLock);
+  try
+    Result := PWebCocoaNavSlotOfLocked(AHandle) >= 0;
+  finally
+    LeaveCriticalSection(PWebCocoaLock);
+  end;
+end;
+
+function PWebCocoaNavRegistryCount: Integer;
+var
+  i: PtrInt;
+begin
+  Result := 0;
+  EnterCriticalSection(PWebCocoaLock);
+  try
+    for i := 0 to High(PWebCocoaNavRegistry) do
+      if PWebCocoaNavRegistry[i].Guard <> nil then
+        Inc(Result);
+  finally
+    LeaveCriticalSection(PWebCocoaLock);
+  end;
+end;
+
+// counts one decision against a handle. Allocates nothing, so it cannot fail
+// on the path a fail-closed callback most needs it to work.
+procedure PWebCocoaNavCount(AHandle: TPWebCocoaHandle;
+  AOutcome: TPWebCocoaNavOutcome);
+var
+  slot: PtrInt;
+begin
+  EnterCriticalSection(PWebCocoaLock);
+  try
+    slot := PWebCocoaNavSlotOfLocked(AHandle);
+    if slot < 0 then
+      exit;
+    with PWebCocoaNavRegistry[slot].Counters do
+    begin
+      Inc(Decisions);
+      case AOutcome of
+        ncoAllow: Inc(Allowed);
+        ncoCancel: Inc(Cancelled);
+        ncoUnknownKind:
+          begin
+            Inc(UnknownKind);
+            Inc(Cancelled); // an unknown kind is DENIED, and counts as one
+          end;
+        ncoFault:
+          begin
+            Inc(Faults);
+            Inc(Cancelled);
+          end;
+      end;
+    end;
+  finally
+    LeaveCriticalSection(PWebCocoaLock);
+  end;
+end;
+
+function PWebCocoaNavCountersOf(AHandle: TPWebCocoaHandle): TPWebCocoaNavCounters;
+var
+  slot: PtrInt;
+begin
+  FillChar(Result, SizeOf(Result), 0);
+  EnterCriticalSection(PWebCocoaLock);
+  try
+    slot := PWebCocoaNavSlotOfLocked(AHandle);
+    if slot >= 0 then
+      Result := PWebCocoaNavRegistry[slot].Counters;
   finally
     LeaveCriticalSection(PWebCocoaLock);
   end;
@@ -768,6 +1244,121 @@ begin
   end;
 end;
 
+{ ---- the diagnostic navigation ring ---- }
+
+procedure PWebCocoaObserveNavigation(AEnabled: Boolean);
+begin
+  EnterCriticalSection(PWebCocoaLock);
+  try
+    PWebCocoaNavObserving := AEnabled;
+  finally
+    LeaveCriticalSection(PWebCocoaLock);
+  end;
+end;
+
+procedure PWebCocoaResetNavObserved;
+var
+  i: PtrInt;
+begin
+  EnterCriticalSection(PWebCocoaLock);
+  try
+    for i := 0 to High(PWebCocoaNavObserved) do
+    begin
+      PWebCocoaNavObserved[i].Uri := '';
+      PWebCocoaNavObserved[i].Verdict := '';
+    end;
+    PWebCocoaNavObservedHead := 0;
+    PWebCocoaNavObservedFilled := 0;
+    PWebCocoaNavObservedDrops := 0;
+  finally
+    LeaveCriticalSection(PWebCocoaLock);
+  end;
+end;
+
+// NEVER RAISES, and that is the point of it being separate from the counter:
+// it assigns two RawUtf8 values, which is the only thing in the decision path
+// that can allocate, and a diagnostic must not be able to turn a decision into
+// a fault.
+procedure PWebCocoaRecordNavigation(const AUri, AVerdict: RawUtf8);
+begin
+  if not PWebCocoaNavObserving then
+    exit; // advisory read before the lock: zero cost when observation is off
+  try
+    EnterCriticalSection(PWebCocoaLock);
+    try
+      if not PWebCocoaNavObserving then
+        exit;
+      if PWebCocoaNavObservedFilled >= PWEB_COCOA_NAV_OBSERVED_RING then
+        Inc(PWebCocoaNavObservedDrops);
+      PWebCocoaNavObserved[PWebCocoaNavObservedHead].Uri := AUri;
+      PWebCocoaNavObserved[PWebCocoaNavObservedHead].Verdict := AVerdict;
+      PWebCocoaNavObservedHead :=
+        (PWebCocoaNavObservedHead + 1) mod PWEB_COCOA_NAV_OBSERVED_RING;
+      if PWebCocoaNavObservedFilled < PWEB_COCOA_NAV_OBSERVED_RING then
+        Inc(PWebCocoaNavObservedFilled);
+    finally
+      LeaveCriticalSection(PWebCocoaLock);
+    end;
+  except
+    // diagnostics never change a verdict, and never fail one either
+  end;
+end;
+
+function PWebCocoaNavObservedCount: Integer;
+begin
+  EnterCriticalSection(PWebCocoaLock);
+  try
+    Result := PWebCocoaNavObservedFilled;
+  finally
+    LeaveCriticalSection(PWebCocoaLock);
+  end;
+end;
+
+function PWebCocoaNavObservedDropped: QWord;
+begin
+  EnterCriticalSection(PWebCocoaLock);
+  try
+    Result := PWebCocoaNavObservedDrops;
+  finally
+    LeaveCriticalSection(PWebCocoaLock);
+  end;
+end;
+
+// oldest first, so a caller walking 0..Count-1 sees arrival order
+function PWebCocoaNavObservedIndex(AIndex: Integer): Integer;
+begin
+  if PWebCocoaNavObservedFilled < PWEB_COCOA_NAV_OBSERVED_RING then
+    Result := AIndex
+  else
+    Result := (PWebCocoaNavObservedHead + AIndex) mod PWEB_COCOA_NAV_OBSERVED_RING;
+end;
+
+function PWebCocoaNavObservedUri(AIndex: Integer): RawUtf8;
+begin
+  Result := '';
+  EnterCriticalSection(PWebCocoaLock);
+  try
+    if (AIndex >= 0) and
+       (AIndex < PWebCocoaNavObservedFilled) then
+      Result := PWebCocoaNavObserved[PWebCocoaNavObservedIndex(AIndex)].Uri;
+  finally
+    LeaveCriticalSection(PWebCocoaLock);
+  end;
+end;
+
+function PWebCocoaNavObservedVerdict(AIndex: Integer): RawUtf8;
+begin
+  Result := '';
+  EnterCriticalSection(PWebCocoaLock);
+  try
+    if (AIndex >= 0) and
+       (AIndex < PWebCocoaNavObservedFilled) then
+      Result := PWebCocoaNavObserved[PWebCocoaNavObservedIndex(AIndex)].Verdict;
+  finally
+    LeaveCriticalSection(PWebCocoaLock);
+  end;
+end;
+
 { ---- the resolve callback (no Pascal exception may leave it) ---- }
 
 // bounded scan of an attacker-influenced C string: never an unbounded StrLen
@@ -788,7 +1379,7 @@ function PWebCocoaResolveCallback(AHandle: TPWebCocoaHandle;
   AUrl: PAnsiChar; AAsset: PPWebCocoaAsset): LongInt; cdecl;
 var
   store: IAssetStore;
-  uri, mime: RawUtf8;
+  uri, mime, headers: RawUtf8;
   asset: TAssetResponse;
   body: Pointer;
   size, len: PtrInt;
@@ -801,6 +1392,7 @@ begin
     AAsset^.Bytes := nil;
     AAsset^.Length := 0;
     AAsset^.ContentType[0] := #0;
+    AAsset^.SecurityHeaders[0] := #0;
     // THE URL IS READ FIRST, before the handle is resolved, so that every
     // task the bridge started produces exactly one accounting row: an
     // observation, or a nonconforming tick. The runtime gate asserts
@@ -840,6 +1432,18 @@ begin
       PWebCocoaRecordObservation(uri, 'refuse');
       exit;
     end;
+    // CAP-8B: the native policy, computed BEFORE anything is handed over, so
+    // a policy that cannot be carried is a refusal rather than a serve with a
+    // missing or truncated CSP. Same rule as the Content-Type above, for the
+    // same reason - a truncated policy is a DIFFERENT policy, and this one
+    // would be silently weaker than the ratified string.
+    headers := PWebCocoaSecurityHeaders(mime);
+    if (headers = '') or
+       (Length(headers) >= PWEB_COCOA_SECURITY_HEADERS_MAX) then
+    begin
+      PWebCocoaRecordObservation(uri, 'refuse');
+      exit;
+    end;
     // RECORDED BEFORE THE HAND-OVER, deliberately. Recording afterwards put
     // two RawUtf8 assignments and a critical section between "the bridge owns
     // this block" and "we returned 1", and an exception in that window
@@ -854,6 +1458,8 @@ begin
     if Length(mime) > 0 then
       Move(pointer(mime)^, AAsset^.ContentType[0], Length(mime));
     AAsset^.ContentType[Length(mime)] := #0;
+    Move(pointer(headers)^, AAsset^.SecurityHeaders[0], Length(headers));
+    AAsset^.SecurityHeaders[Length(headers)] := #0;
     body := nil;             // handed over: no longer ours to release
     Result := PWEB_COCOA_VERDICT_SERVE;
   except
@@ -872,8 +1478,163 @@ begin
       AAsset^.Bytes := nil;
       AAsset^.Length := 0;
       AAsset^.ContentType[0] := #0;
+      AAsset^.SecurityHeaders[0] := #0;
     end;
     Result := PWEB_COCOA_VERDICT_REFUSE;
+  end;
+end;
+
+{ ---- the navigation callback (no Pascal exception may leave it) ---- }
+
+// THE ADAPTER'S ENTIRE NAVIGATION DECISION, in one place, and it decides
+// nothing: it turns the bridge's three scalars into a TPWebNavRequest, asks
+// PWebClassifyNavigation, and turns the answer back into a seam verdict. There
+// is no URI comparison, no scheme test and no allowlist below - those live in
+// the one classifier, which Windows and Linux call with the same shape.
+//
+// FAIL CLOSED ON EVERY PATH: an unresolvable handle, an unreadable URI, an
+// event kind this unit does not recognise and an exception all deny, and the
+// bridge turns a denial into WKNavigationActionPolicyCancel without ever
+// falling back to an internal navigation.
+function PWebCocoaNavDecideCallback(AHandle: TPWebCocoaHandle;
+  AUrl: PAnsiChar; AKind: LongInt; AUserActivated: LongInt): LongInt; cdecl;
+var
+  request: TPWebNavRequest;
+  len: PtrInt;
+begin
+  Result := PWEB_COCOA_NAV_CANCEL; // the answer every failure below keeps
+  try
+    if not PWebCocoaNavHandleResolves(AHandle) then
+    begin
+      // a released or never-claimed guard: no classifier runs, and none can.
+      // The bridge counts this separately and then cancels exactly as for a
+      // refusal, so nothing on the page can tell the two apart.
+      Result := PWEB_COCOA_NAV_UNRESOLVED;
+      exit;
+    end;
+    // the URL is read with the same bounded scan the asset seam uses: never an
+    // unbounded StrLen over a pointer this unit did not allocate
+    len := PWebCocoaBoundedLen(AUrl);
+    if len <= 0 then
+    begin
+      PWebCocoaNavCount(AHandle, ncoCancel);
+      PWebCocoaRecordNavigation('', 'cancel');
+      exit;
+    end;
+    FastSetString(request.Uri, AUrl, len);
+    if (AKind < Ord(Low(TPWebNavKind))) or
+       (AKind > Ord(High(TPWebNavKind))) then
+    begin
+      // AN UNKNOWN EVENT KIND IS DENIED, never mapped onto the nearest one.
+      // pnkDocument is the only kind the classifier can ever allow, so
+      // "map it to the strictest available" would in fact widen.
+      PWebCocoaNavCount(AHandle, ncoUnknownKind);
+      PWebCocoaRecordNavigation(request.Uri, 'cancel');
+      exit;
+    end;
+    request.Kind := TPWebNavKind(AKind);
+    // DIAGNOSTIC ONLY. MEASURED (M4): this engine publishes no gesture flag
+    // and the derivation the bridge sends accepts a script-driven
+    // element.click(); the classifier is required not to read it, and the
+    // headless corpus proves that by inverting it over every row.
+    request.UserActivated := AUserActivated <> 0;
+    if PWebClassifyNavigation(request) = pnaAllowTrusted then
+    begin
+      PWebCocoaNavCount(AHandle, ncoAllow);
+      PWebCocoaRecordNavigation(request.Uri, 'allow');
+      Result := PWEB_COCOA_NAV_ALLOW;
+    end
+    else
+    begin
+      PWebCocoaNavCount(AHandle, ncoCancel);
+      PWebCocoaRecordNavigation(request.Uri, 'cancel');
+    end;
+  except
+    // A classifier that raised is a classifier that did not answer, and an
+    // exception must not cross the C frame either way. The counter allocates
+    // nothing, so it is safe on precisely this path.
+    Result := PWEB_COCOA_NAV_CANCEL;
+    try
+      PWebCocoaNavCount(AHandle, ncoFault);
+    except
+    end;
+  end;
+end;
+
+{ ---- the capability-authorized external opener ---- }
+
+function PWebCocoaOpenExternal(const AUri: RawUtf8): Boolean;
+var
+  opener: TPWebCocoaOpenExternalFn;
+begin
+  Result := False;
+  opener := nil;
+  try
+    // THE ONE GATE, and it is the shared one: parsed scheme allowlist
+    // (https and mailto), bounded length, no control bytes. Refused URIs never
+    // reach the opener at all, which is what makes "never called" assertable
+    // rather than merely likely.
+    if not PWebValidExternalUri(AUri) then
+    begin
+      EnterCriticalSection(PWebCocoaLock);
+      try
+        Inc(PWebCocoaOpenerRefused);
+      finally
+        LeaveCriticalSection(PWebCocoaLock);
+      end;
+      exit;
+    end;
+    EnterCriticalSection(PWebCocoaLock);
+    try
+      opener := PWebCocoaOpener;
+      if opener <> nil then
+        Inc(PWebCocoaOpenerCalls);
+    finally
+      LeaveCriticalSection(PWebCocoaLock);
+    end;
+    if opener = nil then
+      exit;
+    // PASSED AS DATA. PWebValidExternalUri has already rejected every control
+    // byte, so the RawUtf8's NUL terminator is the only NUL in it and the C
+    // string the opener receives is the whole URI.
+    Result := opener(PAnsiChar(AUri)) <> 0;
+  except
+    // An opener failure leaves the trusted page exactly where it was; there is
+    // no internal-navigation fallback here or anywhere else.
+    Result := False;
+  end;
+end;
+
+procedure PWebCocoaSetExternalOpener(AFn: TPWebCocoaOpenExternalFn);
+begin
+  EnterCriticalSection(PWebCocoaLock);
+  try
+    if AFn = nil then
+      PWebCocoaOpener := @pweb_cocoa_open_external
+    else
+      PWebCocoaOpener := AFn;
+  finally
+    LeaveCriticalSection(PWebCocoaLock);
+  end;
+end;
+
+function PWebCocoaExternalOpenCalls: QWord;
+begin
+  EnterCriticalSection(PWebCocoaLock);
+  try
+    Result := PWebCocoaOpenerCalls;
+  finally
+    LeaveCriticalSection(PWebCocoaLock);
+  end;
+end;
+
+function PWebCocoaExternalOpenRefused: QWord;
+begin
+  EnterCriticalSection(PWebCocoaLock);
+  try
+    Result := PWebCocoaOpenerRefused;
+  finally
+    LeaveCriticalSection(PWebCocoaLock);
   end;
 end;
 
@@ -915,6 +1676,24 @@ end;
 function PWebCocoaSeamIsConfined: Boolean;
 begin
   Result := pweb_cocoa_seam_is_confined <> 0;
+end;
+
+function PWebCocoaNavStats: TPWebCocoaNavStats;
+begin
+  pweb_cocoa_nav_get_stats(Result);
+end;
+
+function PWebCocoaNavInstalledOn(AView: Pointer): TPWebCocoaReadback;
+var
+  raw: LongInt;
+begin
+  raw := pweb_cocoa_nav_installed_on(AView);
+  if raw > 0 then
+    Result := pcrOurs
+  else if raw < 0 then
+    Result := pcrForeign
+  else
+    Result := pcrAbsent;
 end;
 
 function PWebCocoaFpuTrapsMasked: Boolean;
@@ -1115,6 +1894,133 @@ begin
   fStore := nil;
 end;
 
+{ ---- TCocoaNavigationGuard ---- }
+
+constructor TCocoaNavigationGuard.Create;
+begin
+  inherited Create;
+  // WKNavigationDelegate callbacks are delivered on the main thread and Detach
+  // messages the view, so the same GUI affinity the asset handler insists on
+  // applies here and is refused rather than trusted.
+  fThreadId := GetCurrentThreadId;
+  FillChar(fFinal, SizeOf(fFinal), 0);
+  // Same reason as TCocoaAssetHandler.Create, and idempotent: FPU control is
+  // PER THREAD, and a WebKit computation on a NaN kills an FPC-hosted process
+  // whose traps are still live. See the initialization section.
+  if pweb_cocoa_mask_fpu_traps <> 0 then
+    raise EPWebCocoaNavigationGuard.Create(
+      'could not put the FPU in its non-trapping default state - WebKit ' +
+      'would kill this process on its first NaN');
+  // The delegate is a process-wide singleton recorded once; a second, DIFFERENT
+  // decision function would silently rebind every future navigation, so the
+  // bridge refuses it and so do we.
+  if pweb_cocoa_nav_install(@PWebCocoaNavDecideCallback) = 0 then
+    raise EPWebCocoaNavigationGuard.Create(
+      'the CAP-8B navigation delegate could not be installed');
+  fHandle := PWebCocoaNavClaimSlot(Self);
+  if fHandle = 0 then
+    raise EPWebCocoaNavigationGuard.CreateFmt(
+      'more than %d live navigation guards in one process',
+      [PWEB_COCOA_MAX_HANDLERS]);
+  if pweb_cocoa_nav_arm(fHandle) = 0 then
+  begin
+    PWebCocoaNavReleaseSlot(fHandle);
+    fHandle := 0;
+    raise EPWebCocoaNavigationGuard.Create(
+      'a navigation guard is already armed in this process');
+  end;
+end;
+
+destructor TCocoaNavigationGuard.Destroy;
+begin
+  Detach;
+  inherited Destroy;
+end;
+
+function TCocoaNavigationGuard.GetCounters: TPWebCocoaNavCounters;
+begin
+  if fHandle <> 0 then
+    Result := PWebCocoaNavCountersOf(fHandle)
+  else
+    // after Detach the slot is gone, so the snapshot taken there is the
+    // answer: a gate that reads the counters after teardown must not read
+    // zeroes and conclude nothing was ever decided
+    Result := fFinal;
+end;
+
+procedure TCocoaNavigationGuard.Attach(AWebView: webview_t);
+var
+  controller: Pointer;
+begin
+  if AWebView = nil then
+    raise EPWebCocoaNavigationGuard.Create('webview handle is nil');
+  if GetCurrentThreadId <> fThreadId then
+    raise EPWebCocoaNavigationGuard.Create(
+      'Attach must run on the thread that created the guard (Cocoa and ' +
+      'WKWebView are GUI-affine)');
+  if fHandle = 0 then
+    raise EPWebCocoaNavigationGuard.Create(
+      'this navigation guard has already been detached');
+  if fAttached then
+    raise EPWebCocoaNavigationGuard.Create(
+      'this navigation guard is already attached');
+  controller := webview_get_native_handle(AWebView,
+    WEBVIEW_NATIVE_HANDLE_KIND_BROWSER_CONTROLLER);
+  if controller = nil then
+    raise EPWebCocoaNavigationGuard.Create(
+      'borrowed browser controller is unavailable');
+  // Upstream installs its own WKUIDelegate for the open panel and leaves the
+  // NAVIGATION delegate unset (cocoa_webkit.hh:490-494), so anything already
+  // here belongs to someone else. Displacing it would break them silently, and
+  // running without our own hook would leave the invariant unenforced - so
+  // this is a refusal in both directions rather than a preference.
+  if PWebCocoaNavInstalledOn(controller) = pcrForeign then
+    raise EPWebCocoaNavigationGuard.Create(
+      'another navigation delegate is installed on THIS WebView - something ' +
+      'else owns its navigation decisions');
+  // The bridge installs and then READS BACK: "attached" has to be a property
+  // of the view, exactly as it is for the asset handler, never the absence of
+  // an exception.
+  if pweb_cocoa_nav_attach(controller) = 0 then
+    raise EPWebCocoaNavigationGuard.Create(
+      'the CAP-8B navigation delegate did not read back on THIS WebView, so ' +
+      'nothing would classify what it loads');
+  fController := controller; // borrowed - message sends only
+  fWebView := AWebView;      // borrowed - never destroyed here
+  fAttached := True;
+end;
+
+procedure TCocoaNavigationGuard.Detach;
+begin
+  if (fHandle <> 0) and
+     (GetCurrentThreadId <> fThreadId) then
+    raise EPWebCocoaNavigationGuard.Create(
+      'Detach must run on the thread that created the guard (it messages the ' +
+      'WKWebView, which is GUI-affine)');
+  if fHandle <> 0 then
+  begin
+    // ORDER IS THE WHOLE POINT, and it is the asset handler's order for the
+    // same reason.
+    //   1. disown: no decision callback can be made any more - and a hook
+    //      that still fires finds no policy and CANCELS, which is the safe
+    //      direction for this to fail in;
+    //   2. remove the delegate, but only if it is still ours;
+    //   3. snapshot the counters, then release the slot, which makes the
+    //      handle UNRESOLVABLE - a callback that somehow still arrives finds
+    //      nothing rather than finding a freed object.
+    // Only after all three may webview_destroy run.
+    pweb_cocoa_nav_disown(fHandle);
+    if fController <> nil then
+      pweb_cocoa_nav_detach(fController);
+    fFinal := PWebCocoaNavCountersOf(fHandle);
+    PWebCocoaNavReleaseSlot(fHandle);
+    fHandle := 0;
+  end;
+  fAttached := False;
+  fWebView := nil;    // borrowed
+  fController := nil; // borrowed
+end;
+
 initialization
   { MEASURED, run 31951505821, and not optional: without this EVERY cycle of
     the production runtime harness died with 'EInvalidOp: Invalid floating
@@ -1158,5 +2064,10 @@ initialization
   // few microseconds of process lifetime. The registry is static storage for
   // the same reason.
   InitCriticalSection(PWebCocoaLock);
+  // The production opener, in place before anything can ask for one. A test
+  // replaces it through PWebCocoaSetExternalOpener and restores it with nil;
+  // nothing else may reach -[NSWorkspace openURL:], and no navigation callback
+  // may reach either (ratification R-A.2).
+  PWebCocoaOpener := @pweb_cocoa_open_external;
 
 end.

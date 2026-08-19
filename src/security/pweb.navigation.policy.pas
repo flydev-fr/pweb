@@ -166,10 +166,19 @@ function PWebClassifyNavigation(const Request: TPWebNavRequest): TPWebNavAction;
 // - fail-closed: anything unrecognised is refused rather than passed through
 function PWebValidExternalUri(const Uri: RawUtf8): Boolean;
 
-/// the response headers a trusted HTML asset carries, CRLF separated
+/// the response headers EVERY served asset carries, CRLF separated
 // - the bundle cannot remove or weaken these: they are attached natively, and
 // multiple CSP policies combine restrictively (MEASURED on all four targets)
-function PWebNativeSecurityHeaders(const AIsHtml: Boolean): RawUtf8;
+// - THE CSP RIDES EVERY RESPONSE, not just text/html, and that is a
+// correction from a real defect: an earlier revision attached it only to
+// text/html, which left pweb://app/logo.svg - a SCRIPTABLE top-level document
+// in Chromium and WebKit alike - carrying no script-src, no connect-src and
+// no frame-src, in the one origin whose messages reach the native bridge.
+// nosniff does not help there, because image/svg+xml is the DECLARED type.
+// Deciding "which media types are documents" is an allowlist that fails the
+// first time a format grows scripting, so this function stopped asking.
+// A CSP on a script or stylesheet response is inert, never harmful.
+function PWebNativeSecurityHeaders: RawUtf8;
 
 implementation
 
@@ -276,6 +285,11 @@ begin
     exit;
   if HasControlBytes(Uri) then
     exit; // NUL, CR, LF and every other control byte, always
+  if Pos('\', Uri) > 0 then
+    // no legitimate https or mailto URI carries a raw backslash, and a
+    // launcher that normalises one into a separator is a class of confusion
+    // this layer simply refuses to be part of
+    exit;
   scheme := SchemeOf(Uri);
   rest := Copy(Uri, Length(scheme) + 2, MaxInt); // past 'scheme:'
   if scheme = 'https' then
@@ -290,11 +304,27 @@ begin
   end
   else if scheme = 'mailto' then
   begin
-    // a recipient is mandatory, and it must look like one; the query part
-    // (subject/body) is deliberately not inspected and never logged
+    // A QUERY IS REFUSED OUTRIGHT, and that is a security decision rather
+    // than a simplification. An earlier revision searched the whole remainder
+    // for '@', so a URI with NO recipient at all still passed as long as some
+    // parameter value contained one - and mail clients that honour the
+    // `attach=` parameter would then compose a message with a local file
+    // attached, chosen by the page:
+    //     mailto:?attach=<a local path>&to=<an address the page picked>
+    // The recipient is therefore parsed as a COMPONENT (everything before a
+    // '?', which must be the whole thing), and anything carrying parameters
+    // is refused rather than forwarded. A subject/body feature, if it is ever
+    // wanted, needs an explicit parameter allowlist - never a pass-through.
+    if Pos('?', rest) > 0 then
+      exit;
+    if Pos('#', rest) > 0 then
+      exit;
     at := Pos('@', rest);
     if (at <= 1) or
        (at >= Length(rest)) then
+      exit;
+    // exactly one '@': 'a@b@c' is not an address this layer will hand on
+    if Pos('@', Copy(rest, at + 1, MaxInt)) > 0 then
       exit;
     Result := True;
   end;
@@ -302,14 +332,13 @@ begin
   // wss and anything unrecognised, is refused by falling through
 end;
 
-function PWebNativeSecurityHeaders(const AIsHtml: Boolean): RawUtf8;
+function PWebNativeSecurityHeaders: RawUtf8;
 begin
-  // nosniff and no-referrer ride EVERY asset; the CSP rides HTML, where it is
-  // the document policy that matters. Attaching it to a script response would
-  // be inert, not harmful - it is omitted so the served bytes stay minimal.
-  Result := PWEB_HEADER_NOSNIFF + #13#10 + PWEB_HEADER_REFERRER;
-  if AIsHtml then
-    Result := Result + #13#10 + 'Content-Security-Policy: ' + PWEB_NATIVE_CSP;
+  // Unconditional, by construction. See the interface comment: an SVG served
+  // from pweb://app is a scriptable document in the trusted origin, and any
+  // "is this a document type" test is an allowlist waiting to be wrong.
+  Result := PWEB_HEADER_NOSNIFF + #13#10 + PWEB_HEADER_REFERRER + #13#10 +
+    'Content-Security-Policy: ' + PWEB_NATIVE_CSP;
 end;
 
 end.

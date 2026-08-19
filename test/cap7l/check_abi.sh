@@ -21,8 +21,10 @@
 #      blocks.
 #
 #   2. The GTK/GLib paired probe (test/cap7l/abi_probe_gtk.c / .pas) over
-#      the hand-declared WebKitGTK/GLib externals. NO delta is permitted
-#      there: those declarations are ours, not an upstream's.
+#      the hand-declared WebKitGTK/GLib/libsoup externals - the CAP-7L
+#      resource surface and the CAP-8B navigation, response-header and
+#      external-opener surfaces alike. NO delta is permitted there: those
+#      declarations are ours, not an upstream's.
 #
 #   3. The presence gate: every symbol the Linux platform unit declares
 #      must be exported by the exact distro .so it is declared against,
@@ -121,19 +123,31 @@ printf '[CAP-7L] core ABI: %s facts, 2 documented deltas, 0 blocking\n' "${c_fac
 
 # --- 2. WebKitGTK/GLib paired probe ------------------------------------------
 
+# libsoup-3.0 is not a new engine and not a new shipped library: WebKitGTK
+# API 4.1 IS the libsoup3 flavour of the API, and SoupMessageHeaders is the
+# only type webkit_uri_scheme_response_set_http_headers accepts - which is
+# the only way a response header (and therefore the CAP-8B native CSP)
+# exists at all on this engine. Required, not optional: if it is missing
+# the platform unit cannot be trusted, so say so instead of measuring less.
+pkg-config --exists libsoup-3.0 ||
+    die 'libsoup-3.0 not found -- install libsoup-3.0-dev (a libwebkit2gtk-4.1-dev dependency)'
+
 # -Wno-type-limits for the same reason as the core probe above: the
-# "always false" comparison on gsize/GQuark IS the unsignedness being
-# measured.
+# "always false" comparison on gsize/GQuark/the enums IS the unsignedness
+# being measured.
 # shellcheck disable=SC2046
-cc -O1 -Wall -Wextra -Werror -Wno-type-limits $(pkg-config --cflags webkit2gtk-4.1) \
+cc -O1 -Wall -Wextra -Werror -Wno-type-limits \
+    $(pkg-config --cflags webkit2gtk-4.1 libsoup-3.0) \
     "${repo_root}/test/cap7l/abi_probe_gtk.c" \
-    -o "${work}/bin/abi_probe_gtk_c" $(pkg-config --libs webkit2gtk-4.1) ||
+    -o "${work}/bin/abi_probe_gtk_c" \
+    $(pkg-config --libs webkit2gtk-4.1 libsoup-3.0) ||
     die 'GTK C ABI probe failed to compile'
 "${work}/bin/abi_probe_gtk_c" > "${work}/gtk_c.txt" ||
     die 'GTK C ABI probe exited nonzero'
 
 fpc -MObjFPC -Sh -B -FU"${work}/units" -FE"${work}/bin" \
     -Fu"${repo_root}/src/lib" -Fu"${repo_root}/src/assets" \
+    -Fu"${repo_root}/src/security" \
     -Fu"${repo_root}/src/platform/linux" \
     -Fi"${repo_root}/deps/mormot2/src" \
     -Fu"${repo_root}/deps/mormot2/src/core" \
@@ -144,9 +158,13 @@ fpc -MObjFPC -Sh -B -FU"${work}/units" -FE"${work}/bin" \
 "${work}/bin/abi_probe_gtk" > "${work}/gtk_pas.txt" ||
     die 'GTK Pascal ABI probe exited nonzero'
 
+# the floor moved with CAP-8B: seven more scalars (gboolean, guint, gulong
+# and the four C enums the navigation/header signatures carry) and four
+# more function-pointer widths. A probe that silently stops measuring is
+# the failure this floor exists to catch.
 gtk_facts="$(grep -c . "${work}/gtk_c.txt" || true)"
-[ "${gtk_facts}" -ge 12 ] ||
-    die "GTK C probe emitted only ${gtk_facts} facts -- expected >= 12"
+[ "${gtk_facts}" -ge 30 ] ||
+    die "GTK C probe emitted only ${gtk_facts} facts -- expected >= 30"
 if ! diff -u "${work}/gtk_c.txt" "${work}/gtk_pas.txt" > "${work}/gtk.diff"; then
     cat "${work}/gtk.diff" >&2
     die 'GTK/GLib ABI probe mismatch -- no delta is permitted on this pair'

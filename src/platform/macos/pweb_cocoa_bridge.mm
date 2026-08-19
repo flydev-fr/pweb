@@ -3,11 +3,13 @@
  * pweb://app adapter. See pweb_cocoa_bridge.h for what this is, what it is
  * deliberately not, and the ownership model.
  *
- * THE WHOLE FILE IS THE THREE THINGS PASCAL CANNOT EXPRESS: an override of
+ * THE WHOLE FILE IS THE THINGS PASCAL CANNOT EXPRESS: an override of
  * +[WKWebViewConfiguration new] on that class's own metaclass, an
- * @try/@catch barrier at every seam entry, and an NSHTTPURLResponse.
- * Everything else - the URI verdict, the store, the MIME table, the refusal
- * policy - stays in shared Pascal, unchanged and unduplicated.
+ * @try/@catch barrier at every seam entry, an NSHTTPURLResponse, a
+ * WKNavigationDelegate whose answers are delivered through blocks, and
+ * -[NSWorkspace openURL:]. Everything else - the URI verdict, the store, the
+ * MIME table, the refusal policy, the navigation classification and the CSP
+ * string - stays in shared Pascal, unchanged and unduplicated.
  *
  * Compiled WITHOUT ARC on purpose: the ownership of the +new return value, of
  * the tracked tasks and of the response buffers is explicit here exactly as
@@ -26,6 +28,7 @@
  * bottom of the header exists.
  */
 
+#import <AppKit/AppKit.h>
 #import <Foundation/Foundation.h>
 #import <WebKit/WebKit.h>
 
@@ -52,6 +55,18 @@ static uint64_t g_stops_ignored = 0;
 static uint64_t g_suppressed_terminals = 0;
 static uint64_t g_caught_exceptions = 0;
 static uint64_t g_unresolved_handles = 0;
+static uint64_t g_policy_headers_missing = 0;
+
+/* CAP-8B navigation counters. Separate from the asset ones on purpose: a gate
+   reading "cancelled" must never be reading a refused asset request. */
+static uint64_t g_nav_action_decisions = 0;
+static uint64_t g_nav_response_decisions = 0;
+static uint64_t g_nav_download_events = 0;
+static uint64_t g_nav_allowed = 0;
+static uint64_t g_nav_cancelled = 0;
+static uint64_t g_nav_handlers_completed = 0;
+static uint64_t g_nav_unresolved_handles = 0;
+static uint64_t g_nav_caught_exceptions = 0;
 
 static inline void pweb_bump(uint64_t *counter) {
   __atomic_fetch_add(counter, 1u, __ATOMIC_SEQ_CST);
@@ -97,6 +112,45 @@ typedef enum {
   PWEB_TASK_CANCELLED = 3,
   PWEB_TASK_UNTRACKED = -1
 } pweb_task_state_t;
+
+/* Split the Pascal security-header block into `headers`.
+ *
+ * The block is CRLF-separated `Name: Value` lines, produced by
+ * PWebNativeSecurityHeaders. Splitting is ALL that happens here: no line is
+ * synthesised, none is rewritten, and none is added when the block is empty -
+ * because the policy has exactly one home and a bridge that could invent a
+ * header would be a second one.
+ *
+ * A malformed line is SKIPPED rather than repaired: a header this file had to
+ * guess at is not the header that was ratified. The caller refuses the whole
+ * response when the block is empty (see handleTask:), so "skipped everything"
+ * can never reach a page as "served without a policy".
+ */
+static void pweb_apply_security_headers(NSMutableDictionary *headers,
+                                        const char *block) {
+  if ((headers == nil) || (block == NULL) || (block[0] == '\0')) {
+    return;
+  }
+  NSString *all = [NSString stringWithUTF8String:block];
+  if (all == nil) {
+    return;
+  }
+  NSArray *lines = [all componentsSeparatedByString:@"\r\n"];
+  for (NSString *line in lines) {
+    const NSRange colon = [line rangeOfString:@":"];
+    if ((colon.location == NSNotFound) || (colon.location == 0)) {
+      continue; /* not a header line, and not something to repair */
+    }
+    NSString *name = [line substringToIndex:colon.location];
+    NSString *value = [[line substringFromIndex:(colon.location + 1)]
+        stringByTrimmingCharactersInSet:
+            [NSCharacterSet whitespaceCharacterSet]];
+    if (([name length] == 0) || ([value length] == 0)) {
+      continue;
+    }
+    [headers setObject:value forKey:name];
+  }
+}
 
 @interface PWebCocoaSchemeHandler : NSObject <WKURLSchemeHandler>
 /* Shared entry point: the WKURLSchemeHandler protocol method and the
@@ -271,11 +325,20 @@ static PWebCocoaSchemeHandler *g_handler = nil;
   if (mime == nil) {
     mime = @"application/octet-stream";
   }
-  NSDictionary *headers = [NSDictionary
-      dictionaryWithObjectsAndKeys:mime, @"Content-Type",
-                                   [NSString stringWithFormat:@"%lld",
-                                                              (long long)[data length]],
-                                   @"Content-Length", nil];
+  NSMutableDictionary *headers = [NSMutableDictionary dictionaryWithCapacity:8];
+  /* THE CAP-8B NATIVE POLICY, FIRST. MEASURED (M3): these header fields are
+     enforced on pweb://app and a weaker bundle <meta> policy cannot relax a
+     single row of them - which is what makes the CSP a property of the ENGINE
+     rather than of the bundle a tamperer can edit. The rows are decided in
+     src/security/pweb.navigation.policy.pas and merely transported here. */
+  pweb_apply_security_headers(headers, asset->security_headers);
+  /* ...AND THE TWO FACTS ABOUT THE BODY LAST, so they win. The policy block is
+     a Pascal-side constant today, but a header line that could displace
+     Content-Type would be a sniffing hole reachable by editing one string, and
+     an ordering that makes that impossible costs nothing. */
+  [headers setObject:mime forKey:@"Content-Type"];
+  [headers setObject:[NSString stringWithFormat:@"%lld", (long long)[data length]]
+              forKey:@"Content-Length"];
   NSHTTPURLResponse *response =
       [[[NSHTTPURLResponse alloc] initWithURL:[[task request] URL]
                                    statusCode:200
@@ -350,6 +413,19 @@ static PWebCocoaSchemeHandler *g_handler = nil;
         return;
       }
       if (verdict == 0) {
+        [self refuseTask:task];
+        return;
+      }
+      /* CAP-8B, and it FAILS CLOSED rather than serving bare. Pascal attaches
+         nosniff and Referrer-Policy to every asset and the CSP to every HTML
+         one; an empty block means the policy layer did not run, and a
+         privileged document served without it is precisely the state this
+         shard exists to make unreachable. Refusing costs one asset; serving
+         would cost the invariant. */
+      if (asset.security_headers[0] == '\0') {
+        pweb_bump(&g_policy_headers_missing);
+        pweb_cocoa_free(asset.bytes);
+        asset.bytes = NULL;
         [self refuseTask:task];
         return;
       }
@@ -595,6 +671,7 @@ void pweb_cocoa_get_stats(pweb_cocoa_stats_t *out) {
   out->suppressed_terminals = pweb_read(&g_suppressed_terminals);
   out->caught_exceptions = pweb_read(&g_caught_exceptions);
   out->unresolved_handles = pweb_read(&g_unresolved_handles);
+  out->policy_headers_missing = pweb_read(&g_policy_headers_missing);
   @autoreleasepool {
     @try {
       out->live_tasks = (g_handler != nil) ? [g_handler liveTaskCount] : 0;
@@ -743,6 +820,438 @@ uint64_t pweb_cocoa_rss_kb(void) {
     return 0;
   }
   return (uint64_t)(info.resident_size / 1024u);
+}
+
+/* ===================== CAP-8B: THE NAVIGATION SEAM ======================= *
+ *
+ * See the header for the invariant and for why no callback here may ever
+ * reach pweb_cocoa_open_external. Three things are true of every hook below
+ * and are the whole reason they are written this way:
+ *
+ *   THE ANSWER IS DECIDED BEFORE THE BARRIER. `policy` is initialised to
+ *   Cancel and is only ever widened by a classifier that said Allow, so an
+ *   exception, a nil object, a disowned seam and an unresolvable handle all
+ *   land on the same refusal without anyone having to remember to write one.
+ *
+ *   THE DECISION HANDLER IS INVOKED EXACTLY ONCE ON EVERY PATH. WebKit hangs
+ *   on a decision handler that is never called and raises on one called
+ *   twice, so the call sits OUTSIDE the barrier, after it, unconditionally -
+ *   and g_nav_handlers_completed lets a gate assert the property instead of a
+ *   reader asserting it.
+ *
+ *   NOTHING HERE CLASSIFIES. The hooks translate WebKit's frame facts into
+ *   the classifier's TPWebNavKind and translate its answer back. There is no
+ *   URI comparison, no scheme test and no allowlist in this file.
+ */
+
+/* The handle the delegate answers AS. 0 means disowned: no decision callback
+   can be made, and with no policy to consult every hook cancels. */
+static uint64_t g_nav_armed_handle = 0;
+static pweb_cocoa_nav_fn g_nav_decide = NULL;
+static int g_nav_installed = 0;
+
+@interface PWebCocoaNavigationDelegate : NSObject <WKNavigationDelegate>
+/* the ONE call out, and the only place a WebKit object becomes scalars */
+- (BOOL)allowUrl:(NSURL *)url kind:(int)kind activated:(BOOL)activated;
+- (void)refuseDownload:(WKDownload *)download;
+@end
+
+/* Referenced by -[WKWebView setNavigationDelegate:], which holds it WEAKLY;
+   this global is what keeps it alive, exactly as g_handler is for the scheme
+   handler. Created once and never released. */
+static PWebCocoaNavigationDelegate *g_nav_delegate = nil;
+
+@implementation PWebCocoaNavigationDelegate
+
+- (BOOL)allowUrl:(NSURL *)url kind:(int)kind activated:(BOOL)activated {
+  const uint64_t handle = __atomic_load_n(&g_nav_armed_handle, __ATOMIC_SEQ_CST);
+  pweb_cocoa_nav_fn decide = g_nav_decide;
+  if ((handle == 0) || (decide == NULL)) {
+    /* disowned, or never armed: refuse, and NEVER call out. This is the state
+       teardown leaves behind, and it must not be a state in which untrusted
+       content can commit. */
+    return NO;
+  }
+  /* THE URI IS THE WHOLE URI, for the same reason the asset seam insists on
+     it: a path-only view of pweb://evil/x reads as /x, and the authority is
+     the entire question. */
+  NSString *absolute = (url != nil) ? [url absoluteString] : nil;
+  const char *absolute_c = (absolute != nil) ? [absolute UTF8String] : NULL;
+  if (absolute_c == NULL) {
+    return NO; /* a URI this frame cannot even read is not a trusted one */
+  }
+  const int verdict = decide(handle, absolute_c, kind, activated ? 1 : 0);
+  if (verdict == PWEB_COCOA_NAV_UNRESOLVED) {
+    /* a released or never-claimed handler: counted separately, then refused
+       exactly as for a Cancel, because a page must not tell the two apart */
+    pweb_bump(&g_nav_unresolved_handles);
+    return NO;
+  }
+  return (verdict == PWEB_COCOA_NAV_ALLOW) ? YES : NO;
+}
+
+- (void)webView:(WKWebView *)webView
+    decidePolicyForNavigationAction:(WKNavigationAction *)action
+                    decisionHandler:
+                        (void (^)(WKNavigationActionPolicy))decisionHandler {
+  (void)webView;
+  WKNavigationActionPolicy policy = WKNavigationActionPolicyCancel;
+  pweb_bump(&g_nav_action_decisions);
+  @try {
+    /* MEASURED (M2), and it is what lets this engine enforce the frame rules
+       STRUCTURALLY where WebKitGTK cannot (L2 - frame discrimination MEASURED
+       ABSENT there, so Linux leans on frame-src 'none'):
+         targetFrame == nil  -> the action would open a NEW WINDOW. This is
+           this backend's NewWindowRequested and the only place a target=_blank
+           or window.open is refusable BEFORE upstream's WKUIDelegate - which
+           owns the open panel and is deliberately not displaced - is consulted
+           at all.
+         otherwise isMainFrame separates a subframe from the document. */
+    WKFrameInfo *target = [action targetFrame];
+    int kind;
+    if (target == nil) {
+      kind = PWEB_COCOA_NAV_KIND_NEWWINDOW;
+    } else if ([target isMainFrame] == NO) {
+      kind = PWEB_COCOA_NAV_KIND_SUBFRAME;
+    } else {
+      kind = PWEB_COCOA_NAV_KIND_DOCUMENT;
+    }
+    /* -[WKNavigationAction shouldPerformDownload] is deliberately NOT folded
+       into `kind`: the ratified mapping is frame-structural, and a download is
+       refused where it becomes one, in didBecomeDownload: below. Two places
+       deciding the same thing is how the two stop agreeing. */
+
+    /* DIAGNOSTIC ONLY, and on this engine it is a DERIVATION rather than a
+       measurement. MEASURED (M4): WKWebView publishes no gesture flag at all -
+       -[WKNavigationAction _isUserInitiated] is private SPI and is forbidden
+       here - and navigationType alone accepts a script-driven element.click().
+       The classifier is required not to read this, the headless corpus proves
+       it by running every row twice with the flag inverted, and it is carried
+       only so the evidence record can compare targets. */
+    const BOOL activated =
+        ([action navigationType] == WKNavigationTypeLinkActivated);
+
+    if ([self allowUrl:[[action request] URL] kind:kind activated:activated]) {
+      policy = WKNavigationActionPolicyAllow;
+    }
+    /* NEVER WKNavigationActionPolicyDownload: this WebView writes nothing. */
+  } @catch (NSException *ex) {
+    (void)ex;
+    pweb_bump(&g_nav_caught_exceptions);
+    policy = WKNavigationActionPolicyCancel;
+  } @catch (...) {
+    pweb_bump(&g_nav_caught_exceptions);
+    policy = WKNavigationActionPolicyCancel;
+  }
+  if (policy == WKNavigationActionPolicyAllow) {
+    pweb_bump(&g_nav_allowed);
+  } else {
+    pweb_bump(&g_nav_cancelled);
+  }
+  @try {
+    if (decisionHandler != nil) {
+      decisionHandler(policy);
+      pweb_bump(&g_nav_handlers_completed);
+    }
+  } @catch (NSException *ex) {
+    (void)ex;
+    pweb_bump(&g_nav_caught_exceptions);
+  } @catch (...) {
+    pweb_bump(&g_nav_caught_exceptions);
+  }
+}
+
+/* The second gate, on the RESPONSE rather than the request. It is not
+   redundant: the action hook judged the URI the frame asked for, and this one
+   judges the URI a response actually arrived for, which is the only hook that
+   sees a server-side redirect's destination. Same classifier, same two
+   answers, and never WKNavigationResponsePolicyDownload - converting a
+   response WebKit cannot display into a download is exactly what a privileged
+   WebView must not do. */
+- (void)webView:(WKWebView *)webView
+    decidePolicyForNavigationResponse:(WKNavigationResponse *)navigationResponse
+                      decisionHandler:
+                          (void (^)(WKNavigationResponsePolicy))decisionHandler {
+  (void)webView;
+  WKNavigationResponsePolicy policy = WKNavigationResponsePolicyCancel;
+  pweb_bump(&g_nav_response_decisions);
+  @try {
+    const int kind = ([navigationResponse isForMainFrame] != NO)
+                         ? PWEB_COCOA_NAV_KIND_DOCUMENT
+                         : PWEB_COCOA_NAV_KIND_SUBFRAME;
+    /* no WKNavigationAction here, so there is no navigationType to derive
+       from; the flag is diagnostic anyway and is reported as absent rather
+       than invented */
+    if ([self allowUrl:[[navigationResponse response] URL]
+                  kind:kind
+             activated:NO]) {
+      policy = WKNavigationResponsePolicyAllow;
+    }
+  } @catch (NSException *ex) {
+    (void)ex;
+    pweb_bump(&g_nav_caught_exceptions);
+    policy = WKNavigationResponsePolicyCancel;
+  } @catch (...) {
+    pweb_bump(&g_nav_caught_exceptions);
+    policy = WKNavigationResponsePolicyCancel;
+  }
+  if (policy == WKNavigationResponsePolicyAllow) {
+    pweb_bump(&g_nav_allowed);
+  } else {
+    pweb_bump(&g_nav_cancelled);
+  }
+  @try {
+    if (decisionHandler != nil) {
+      decisionHandler(policy);
+      pweb_bump(&g_nav_handlers_completed);
+    }
+  } @catch (NSException *ex) {
+    (void)ex;
+    pweb_bump(&g_nav_caught_exceptions);
+  } @catch (...) {
+    pweb_bump(&g_nav_caught_exceptions);
+  }
+}
+
+/* A privileged WebView never writes a download. The classifier's pnkDownload
+   row is a constant refusal, so there is no question to ask here and this hook
+   does not pretend to ask one - asking would only create a branch on which an
+   answer could be honoured.
+ *
+ * NO WKDownloadDelegate IS SET, deliberately, and that is a second refusal
+ * rather than an omission: without a delegate no destination is ever decided,
+ * so nothing reaches the disk even if the cancel were to fail. Both hooks are
+ * macOS 11.3, below the pinned 12.0 deployment target, so neither needs an
+ * @available guard. */
+- (void)refuseDownload:(WKDownload *)download {
+  pweb_bump(&g_nav_download_events);
+  @try {
+    if (download != nil) {
+      [download cancel:nil];
+    }
+  } @catch (NSException *ex) {
+    (void)ex;
+    pweb_bump(&g_nav_caught_exceptions);
+  } @catch (...) {
+    pweb_bump(&g_nav_caught_exceptions);
+  }
+}
+
+- (void)webView:(WKWebView *)webView
+     navigationAction:(WKNavigationAction *)navigationAction
+    didBecomeDownload:(WKDownload *)download {
+  (void)webView;
+  (void)navigationAction;
+  [self refuseDownload:download];
+}
+
+- (void)webView:(WKWebView *)webView
+    navigationResponse:(WKNavigationResponse *)navigationResponse
+     didBecomeDownload:(WKDownload *)download {
+  (void)webView;
+  (void)navigationResponse;
+  [self refuseDownload:download];
+}
+
+@end
+
+int pweb_cocoa_nav_install(pweb_cocoa_nav_fn decide) {
+  int ok = 0;
+  if (decide == NULL) {
+    return 0;
+  }
+  @autoreleasepool {
+    @try {
+      if (g_nav_installed) {
+        /* Idempotent, but the decision function is process-wide state: a
+           second, DIFFERENT one would silently rebind every future
+           navigation. */
+        return (g_nav_decide == decide) ? 1 : 0;
+      }
+      if (g_nav_delegate == nil) {
+        g_nav_delegate = [[PWebCocoaNavigationDelegate alloc] init];
+      }
+      if (g_nav_delegate == nil) {
+        return 0;
+      }
+      g_nav_decide = decide;
+      g_nav_installed = 1;
+      ok = 1;
+    } @catch (NSException *ex) {
+      (void)ex;
+      pweb_bump(&g_nav_caught_exceptions);
+      ok = 0;
+    } @catch (...) {
+      pweb_bump(&g_nav_caught_exceptions);
+      ok = 0;
+    }
+  }
+  return ok;
+}
+
+int pweb_cocoa_nav_arm(uint64_t handle) {
+  uint64_t expected = 0;
+  if ((handle == 0) || !g_nav_installed) {
+    return 0;
+  }
+  /* One delegate, one policy: two live guards would both be served by a single
+     callback that can only consult one, so a second arm is refused rather than
+     silently resolved in someone's favour. */
+  if (!__atomic_compare_exchange_n(&g_nav_armed_handle, &expected, handle,
+                                   false, __ATOMIC_SEQ_CST,
+                                   __ATOMIC_SEQ_CST)) {
+    return (expected == handle) ? 1 : 0;
+  }
+  return 1;
+}
+
+void pweb_cocoa_nav_disown(uint64_t handle) {
+  uint64_t expected = handle;
+  if (handle == 0) {
+    return;
+  }
+  (void)__atomic_compare_exchange_n(&g_nav_armed_handle, &expected, (uint64_t)0,
+                                    false, __ATOMIC_SEQ_CST,
+                                    __ATOMIC_SEQ_CST);
+}
+
+int pweb_cocoa_nav_installed_on(void *view) {
+  int verdict = PWEB_COCOA_READBACK_ABSENT;
+  if ((view == NULL) || (g_nav_delegate == nil)) {
+    return PWEB_COCOA_READBACK_ABSENT;
+  }
+  @autoreleasepool {
+    @try {
+      WKWebView *wv = (WKWebView *)view;
+      id current = [wv navigationDelegate];
+      if (current == (id)g_nav_delegate) {
+        verdict = PWEB_COCOA_READBACK_OURS;
+      } else if (current == nil) {
+        verdict = PWEB_COCOA_READBACK_ABSENT;
+      } else {
+        verdict = PWEB_COCOA_READBACK_FOREIGN;
+      }
+    } @catch (NSException *ex) {
+      (void)ex;
+      pweb_bump(&g_nav_caught_exceptions);
+      verdict = PWEB_COCOA_READBACK_ABSENT;
+    } @catch (...) {
+      pweb_bump(&g_nav_caught_exceptions);
+      verdict = PWEB_COCOA_READBACK_ABSENT;
+    }
+  }
+  return verdict;
+}
+
+int pweb_cocoa_nav_attach(void *view) {
+  int ok = 0;
+  if ((view == NULL) || !g_nav_installed || (g_nav_delegate == nil)) {
+    return 0;
+  }
+  /* Attaching an UNARMED delegate would install a hook that cancels every
+     navigation including the trusted one, which looks exactly like a broken
+     engine. Refuse instead. */
+  if (__atomic_load_n(&g_nav_armed_handle, __ATOMIC_SEQ_CST) == 0) {
+    return 0;
+  }
+  @autoreleasepool {
+    @try {
+      WKWebView *wv = (WKWebView *)view;
+      id current = [wv navigationDelegate];
+      if ((current != nil) && (current != (id)g_nav_delegate)) {
+        /* Upstream leaves this seam unset (cocoa_webkit.hh:490-494 installs
+           only its WKUIDelegate), so anything here belongs to someone else and
+           displacing it would break them silently. Install NOTHING. */
+        return 0;
+      }
+      [wv setNavigationDelegate:g_nav_delegate];
+      /* READ BACK, so "attached" is a property of the view rather than the
+         absence of an exception - the same reason Attach re-reads the scheme
+         handler instead of trusting the seam counter. */
+      ok = (pweb_cocoa_nav_installed_on(view) == PWEB_COCOA_READBACK_OURS) ? 1
+                                                                          : 0;
+    } @catch (NSException *ex) {
+      (void)ex;
+      pweb_bump(&g_nav_caught_exceptions);
+      ok = 0;
+    } @catch (...) {
+      pweb_bump(&g_nav_caught_exceptions);
+      ok = 0;
+    }
+  }
+  return ok;
+}
+
+void pweb_cocoa_nav_detach(void *view) {
+  if ((view == NULL) || (g_nav_delegate == nil)) {
+    return;
+  }
+  @autoreleasepool {
+    @try {
+      WKWebView *wv = (WKWebView *)view;
+      /* ONLY if it is ours: clearing a delegate we never installed would be
+         the same silent breakage attach refuses to cause. */
+      if ([wv navigationDelegate] == (id)g_nav_delegate) {
+        [wv setNavigationDelegate:nil];
+      }
+    } @catch (NSException *ex) {
+      (void)ex;
+      pweb_bump(&g_nav_caught_exceptions);
+    } @catch (...) {
+      pweb_bump(&g_nav_caught_exceptions);
+    }
+  }
+}
+
+void pweb_cocoa_nav_get_stats(pweb_cocoa_nav_stats_t *out) {
+  if (out == NULL) {
+    return;
+  }
+  memset(out, 0, sizeof(*out));
+  out->action_decisions = pweb_read(&g_nav_action_decisions);
+  out->response_decisions = pweb_read(&g_nav_response_decisions);
+  out->download_events = pweb_read(&g_nav_download_events);
+  out->allowed = pweb_read(&g_nav_allowed);
+  out->cancelled = pweb_read(&g_nav_cancelled);
+  out->handlers_completed = pweb_read(&g_nav_handlers_completed);
+  out->unresolved_handles = pweb_read(&g_nav_unresolved_handles);
+  out->caught_exceptions = pweb_read(&g_nav_caught_exceptions);
+}
+
+/* ------------------------- the system opener ----------------------------- */
+
+int pweb_cocoa_open_external(const char *uri) {
+  int ok = 0;
+  if ((uri == NULL) || (uri[0] == '\0')) {
+    return 0;
+  }
+  @autoreleasepool {
+    @try {
+      /* AS DATA, start to finish: one NSString, one NSURL, one message. There
+         is no shell here, no argument vector to quote and nothing to
+         interpolate - which is why the ratification names this API rather than
+         any launcher that takes a command line (R-A.8). The scheme allowlist
+         is PWebValidExternalUri's, upstream of this call, so this function has
+         no policy of its own to disagree with. */
+      NSString *text = [NSString stringWithUTF8String:uri];
+      if (text == nil) {
+        return 0;
+      }
+      NSURL *url = [NSURL URLWithString:text];
+      if (url == nil) {
+        return 0; /* a URI Foundation will not parse is not one we hand on */
+      }
+      ok = ([[NSWorkspace sharedWorkspace] openURL:url] != NO) ? 1 : 0;
+    } @catch (NSException *ex) {
+      (void)ex;
+      pweb_bump(&g_caught_exceptions);
+      ok = 0;
+    } @catch (...) {
+      pweb_bump(&g_caught_exceptions);
+      ok = 0;
+    }
+  }
+  return ok;
 }
 
 /* ===================== DETERMINISTIC PROOF SURFACE ======================= *
