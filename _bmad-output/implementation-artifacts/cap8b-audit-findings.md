@@ -319,6 +319,35 @@ decision *is* observed and refusable, which is what the policy needs.
 
 ---
 
+## X1 — `frame-src 'none'` does NOT block an `about:blank` iframe (both engines)
+
+Found by auditing the audit: question 3 never probed the *local-scheme*
+frames, and CSP treats `about:blank` and `data:` specially. Added and
+measured on both engines I can run:
+
+| probe | Windows/WebView2 | Linux/WebKitGTK |
+|---|---|---|
+| external `https:` iframe | blocked | blocked |
+| trusted `pweb://app` iframe | blocked | blocked |
+| **`about:blank` iframe** | **loaded — same-origin child reachable** | **loaded — same-origin child reachable** |
+| `data:` iframe | not observed as a violation | blocked |
+
+**What this does and does not mean.** It is *not* a way in for hostile
+content: an `about:blank` child has no content of its own, and only the
+already-privileged parent can script it, so nothing crosses a trust boundary.
+What it does mean is that **"no subframes in the privileged WebView" is not
+literally achievable** — a trusted page can always create a same-origin empty
+frame, and on Linux that frame can reach the native binding through the raw
+transport (L1).
+
+Consequence for the plan: the acceptance criterion must be worded as *"no
+untrusted content executes in any frame"* rather than *"no frame exists"*, and
+the bridge-isolation proof must not assert an absence of subframes it cannot
+deliver. A test written to the stronger wording would fail on both engines for
+a reason that is not a defect.
+
+---
+
 # Decisions proposed for Checkpoint-1 ratification
 
 Drafted from the Windows measurements. Anything marked **[pending]** cannot be

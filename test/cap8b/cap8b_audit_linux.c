@@ -729,6 +729,18 @@ static const char kCspJs[] =
     "  var f2 = document.createElement('iframe');\n"
     "  f2.src = 'pweb://app/child.html?ctx=csp-frame';\n"
     "  document.body.appendChild(f2);\n"
+    /* THE LOCAL-SCHEME FRAMES, which frame-src may not govern at all. CSP
+       treats about:blank and data: as local schemes, and an about:blank child
+       INHERITS the parent's origin - so if frame-src does not stop them, a
+       frame CSP was assumed to have removed still exists. On THIS engine the
+       raw transport reaches native from every frame (finding L1), so that is
+       not an academic distinction. */
+    "  var fb = document.createElement('iframe');\n"
+    "  fb.src = 'about:blank';\n"
+    "  document.body.appendChild(fb);\n"
+    "  var fd = document.createElement('iframe');\n"
+    "  fd.src = 'data:text/html,cap8b-csp-data-frame';\n"
+    "  document.body.appendChild(fd);\n"
     "  var o = document.createElement('object');\n"
     "  o.data = 'https://example.invalid/o.swf';\n"
     "  document.body.appendChild(o);\n"
@@ -769,6 +781,16 @@ static const char kCspJs[] =
     "  out.rows['trusted-frame'] = sawDirective('frame-src')\n"
     "    ? 'blocked' : 'unknown';\n"
     "  out.rows['object'] = sawDirective('object-src') ? 'blocked' : 'unknown';\n"
+    /* For the local-scheme frames the violation report is not the whole
+       answer: reachability of the child document is. An about:blank child
+       that survives is same-origin with this page. */
+    "  try {\n"
+    "    out.rows['frame-about-blank'] =\n"
+    "      (fb.contentDocument !== null && fb.contentDocument !== undefined)\n"
+    "        ? 'loaded(same-origin child reachable)' : 'blocked';\n"
+    "  } catch (e) { out.rows['frame-about-blank'] = 'blocked(threw)'; }\n"
+    "  out.rows['frame-data'] = out.violations.some(function (v) {\n"
+    "    return v.blocked.indexOf('data') === 0; }) ? 'blocked' : 'unknown';\n"
     "  /* a constructor that does not throw is NOT evidence of permission:\n"
     "     both of these are enforced asynchronously, so the verdict comes\n"
     "     from the violation report and never from the constructor */\n"
