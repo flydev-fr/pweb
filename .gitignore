@@ -91,6 +91,11 @@ _FOSSIL_
 # test/cap7m/run_cap7m_probes.sh dies with "vector list missing" on the
 # first macOS run - after the runner has already been paid for.
 !test/cap7m/uri_vectors.txt
+# CAP-8B: the audit probe's build file, same case as test/cap4w's above.
+# TEMPORARY - this line goes when test/cap8b/ is removed at Checkpoint 1
+# ratification. Without it the Windows audit harness cannot configure and
+# the measurement is lost after the runner has already been paid for.
+!test/cap8b/CMakeLists.txt
 
 backup/
 .idea/
