@@ -232,6 +232,13 @@ dev host's WSL Ubuntu-24.04 — byte-identical stack versions to the hosted
 `ubuntu-24.04` runner (hosted run 32256330091 reported the same three
 versions before it stopped at a compile error). Ten phases, all ran.
 
+**Reproduced on a clean hosted runner.** Hosted run `32257803956` produced a
+Linux artifact matching the local one exactly: the same eleven native-arrival
+entries (all five raw-transport breaches included), the same activation table,
+the same `MEASURED ABSENT` frame-discrimination verdict and the same `<null>`
+initial source. L1 below is the shard's most serious claim, and it does not
+rest on one machine.
+
 ### L1 — bridge exposure: THE BRIDGE IS NOT ISOLATED AT ALL HERE
 
 | context | shim visible | raw transport | origin | **native call arrived** |
@@ -313,9 +320,83 @@ on its own — an undisplayable response arrives at `decide-policy`, and only
 `webkit_policy_decision_download()` turns it into a download. The response
 decision *is* observed and refusable, which is what the policy needs.
 
-## macOS x86_64 / WKWebView — PENDING (hosted run 32256330091)
+## macOS x86_64 and arm64 / WKWebView — MEASURED
 
-## macOS arm64 / WKWebView — PENDING (hosted run 32256330091)
+WebKit 20621.3.11.11.3, macOS 15.7.7 (24G720), hosted run `32257803956`, both
+architectures. **The two architectures produced identical results in every
+table below**, so they are reported once.
+
+### M1 — bridge exposure: identical to Linux, i.e. none
+
+Native arrivals, the only authority, were the same eleven entries Linux
+produced: `raw.iframe-same-origin`, `raw.iframe-wrong-authority`,
+`raw.iframe-data`, `raw.iframe-about-blank`, `raw.window-open`,
+`raw.top-trusted`, plus `shim.top-trusted` and `shim.window-open`.
+
+**Finding M1.** The shim is correctly top-frame-only, and the raw
+`webkit.messageHandlers.__webview__` transport reaches the native binding from
+**every** context — a wrong-authority document, an opaque `data:` document, an
+`about:blank` frame, and an opened window that inherits the shim as well.
+
+**Three of the four targets therefore have no bridge isolation whatsoever.**
+Only Windows is isolated, and only because upstream never subscribed to the
+frame-level message event. This is the single most important result of the
+audit and it is what CAP-8B has to fix.
+
+### M2 — frame discrimination: PRESENT (unlike Linux)
+
+Every navigation event carries `main_frame` and `target_frame`:
+`target_frame=main`, `target_frame=sub` (with `main_frame=false`) and
+`target_frame=none-new-window` for a `target=_blank`. So a structural
+"deny every subframe" rule IS enforceable here, exactly as on Windows through
+its separate hook — and only Linux must fall back to CSP.
+
+### M3 — native CSP: enforced, bundle cannot weaken it
+
+Row for row identical to Windows and Linux, delivered through the scheme
+handler's `NSHTTPURLResponse` header fields: same-origin script `ran`,
+same-origin fetch `loaded`, and inline script, external script, external
+fetch, `wss://`, external frame, trusted frame, `<object>`, `eval`, `base-uri`
+and worker all blocked. The weaker bundle `<meta>` run is identical.
+
+### M4 — user activation: no public flag, and the one public signal is spoofable
+
+`user_initiated` is **null on every row** — this engine exposes no public
+gesture flag (`_isUserInitiated` is SPI and forbidden here), so the probe
+refuses to invent one. `nav_type` carries the real observation.
+
+### M5 — bootstrap
+
+`initial_source_before_navigate` is `<nil>`: no initial `about:blank`. With
+Windows raising no event for its own and Linux reporting `<null>`, **the
+bootstrap exception should not be written on any target.** D8 settled.
+
+---
+
+## The definitive user-activation matrix (all four targets)
+
+The question the intent asked — can every platform reliably distinguish a
+user-initiated external link from a script-initiated one — now has a complete
+answer, and it is **no**, for a *different* reason on each engine:
+
+| case | Win `IsUserInitiated` | Linux `is_user_gesture` | Linux `nav_type` | Linux conjunction | macOS `nav_type` (its only signal) |
+|---|---|---|---|---|---|
+| plain script `location` | false ✓ | false ✓ | OTHER | false ✓ | Other ✓ |
+| **after a binding promise** | **true ✗** | **true ✗** | OTHER | false ✓ | Other ✓ |
+| **after host-injected eval** | **true ✗** | **true ✗** | OTHER | false ✓ | Other ✓ |
+| **script `a.click()`** | false ✓ | false ✓ | LINK_CLICKED | false ✓ | **LinkActivated ✗** |
+| real input gesture | true ✓ | true ✓ | LINK_CLICKED | true ✓ | LinkActivated ✓ |
+
+- **Linux can be made correct**: the conjunction `is_user_gesture AND
+  navigation_type == LINK_CLICKED` classifies all five cases correctly.
+- **Windows cannot**: it exposes no navigation type on
+  `NavigationStartingEventArgs`, only the flag — which cannot tell a real
+  click from a navigation issued right after any RPC.
+- **macOS cannot**: it exposes no gesture flag at all, and its navigation type
+  alone accepts a script-driven `element.click()`.
+
+So a single shared rule is wrong on two engines, and no per-engine rule is
+correct on Windows or macOS. This is the evidence for the P2 options.
 
 ---
 
