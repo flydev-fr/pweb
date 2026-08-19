@@ -216,7 +216,93 @@ should not be written unless another engine demands it.
 
 ---
 
-## Linux x64 / WebKitGTK 4.1 — PENDING (hosted run 32256330091)
+## Linux x64 / WebKitGTK 4.1 — MEASURED
+
+WebKitGTK 4.1 **2.52.3** + GTK 3.24.41 + libsoup 3.4.4, under Xvfb on the
+dev host's WSL Ubuntu-24.04 — byte-identical stack versions to the hosted
+`ubuntu-24.04` runner (hosted run 32256330091 reported the same three
+versions before it stopped at a compile error). Ten phases, all ran.
+
+### L1 — bridge exposure: THE BRIDGE IS NOT ISOLATED AT ALL HERE
+
+| context | shim visible | raw transport | origin | **native call arrived** |
+|---|---|---|---|---|
+| trusted `pweb://app` top document | `function` | yes | `pweb://app` | **YES** (shim + raw) |
+| same-origin `pweb://app` iframe | `undefined` | yes | `pweb://app` | **YES (raw)** |
+| wrong-authority `pweb://evil` iframe | `undefined` | yes | `pweb://evil` | **YES (raw)** |
+| `data:` iframe | `undefined` | yes | `null` (opaque) | **YES (raw)** |
+| `about:blank` iframe | `undefined` | yes | `null` | **YES (raw)** |
+| `window.open('pweb://app/…')` popup | `function` | yes | `pweb://app` | **YES (shim + raw)** |
+
+**Finding L1 — this is the shard's most serious measurement.** On Windows the
+shim is visible everywhere but no subframe message reaches native. On Linux it
+is the exact inverse and far worse: the shim is correctly top-frame-only, and
+**the raw transport reaches the native binding from every single context** —
+including a wrong-authority document, an opaque `data:` document and an
+`about:blank` frame. Upstream registers the `__webview__` script message
+handler on the user-content manager, and WebKitGTK exposes it in every frame
+of the view.
+
+So on Linux today, any subframe that loads is a full holder of the privileged
+bridge, and an opened window inherits it whole. Windows' isolation is
+incidental; Linux has none. This is precisely why the intent forbade proving
+isolation by checking the public SDK symbol — doing so would have reported
+this engine as safe.
+
+### L2 — frame discrimination: MEASURED ABSENT
+
+Resolved by `dlsym` against the installed library rather than assumed:
+`webkit_response_policy_decision_is_main_frame_document` **does not resolve**,
+and no candidate accessor identifies the frame *being navigated* in a
+`NAVIGATION_ACTION` decision. `WebKitNavigationAction` exposes navigation
+type, user gesture, redirect, and a target frame *name* for new-window actions
+only — none of which says which frame is navigating. `WebKitFrame` lives in
+the web-process extension API, not the UI process.
+
+**Finding L2.** A navigation-time subframe rule on this engine can only be
+URI-based, so **CSP `frame-src 'none'` is the primary subframe defence on
+Linux** — and, given L1, it is load-bearing rather than defence in depth.
+This settles D6.
+
+### L3 — user activation: identical to Windows, including the false positives
+
+| control | `webkit_navigation_action_is_user_gesture` |
+|---|---|
+| plain script `location.href` from a timer | `false` ✅ |
+| script navigation after a binding promise | **`true`** ❌ |
+| script navigation from host-injected eval | **`true`** ❌ |
+| real XTEST pointer click (2.2, delivered) | `true` ✅ |
+
+**Finding L3.** Two independent engines over-report identically, which makes
+the defect a property of *how the runtime resolves binding promises* rather
+than of one vendor's flag. It also means no amount of per-platform tuning
+recovers the distinction.
+
+### L4 — native CSP: enforced, and the bundle cannot weaken it
+
+Delivered through `webkit_uri_scheme_response_set_http_headers` (libsoup 3
+`SoupMessageHeaders`) — the only public way, since
+`webkit_uri_scheme_request_finish` carries no headers at all. Every row
+matches Windows exactly: same-origin script `ran`, same-origin fetch `loaded`,
+and inline script, external script, external fetch, `wss://`, external frame,
+**trusted frame**, `<object>`, `eval`, `base-uri` and worker all blocked, with
+nine violation reports naming the directives. The weaker bundle `<meta>` run
+is **identical row for row**.
+
+This settles D4 (the Linux header mechanism works) and corroborates D5
+(`connect-src 'self'` keeps same-origin fetch usable on both engines).
+
+### L5 — bootstrap and downloads
+
+`initial_source_before_navigate` is `<null>` — this engine performs no initial
+`about:blank` at all, corroborating W6 that the bootstrap exception should not
+be written.
+
+`download_hook_available` is **false**, and the probe says why rather than
+implying the engine is blind: on WebKitGTK a page cannot reach a download hook
+on its own — an undisplayable response arrives at `decide-policy`, and only
+`webkit_policy_decision_download()` turns it into a download. The response
+decision *is* observed and refusable, which is what the policy needs.
 
 ## macOS x86_64 / WKWebView — PENDING (hosted run 32256330091)
 
