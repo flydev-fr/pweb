@@ -46,7 +46,8 @@
  * deliberately cruder than the product's. It serves its corpus from memory and
  * never touches disk.
  *
- * DELIBERATELY HOSTILE FIXTURE. This probe serves pweb://evil/* content on
+ * DELIBERATELY HOSTILE FIXTURE. This probe serves content under the
+ * pweb://evil authority on
  * purpose - that is the untrusted document whose reach is being measured.
  *
  * ZERO NETWORK, and on this engine with a floor the Windows probe does not

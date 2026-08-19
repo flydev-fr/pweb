@@ -79,6 +79,18 @@ command -v pwsh >/dev/null 2>&1 || die 'required tool not found: pwsh'
 [ -x "${builder}" ] || die "audit builder missing or not executable: ${builder}"
 [ -f "${summarizer}" ] || die "audit summarizer missing: ${summarizer}"
 
+# EVERYTHING FROM HERE IS TEE'D INTO THE LOG, INCLUDING THE BUILD.
+# MEASURED the hard way on hosted run 32256330091: the macOS probe failed
+# to COMPILE, so its runner never reached the point where it started
+# writing a log, the upload therefore had nothing to collect, and the step
+# - which is deliberately continue-on-error - reported success with no
+# artifact at all. A build failure has to be as recoverable as a
+# measurement failure, or diagnosing it costs another hosted run.
+mkdir -p -- build/cap8b
+exec > >(tee -a -- "${log}") 2>&1
+printf '[CAP-8B] log opened before the build: %s
+' "${log}"
+
 step 'build the Linux audit probe'
 "${builder}" || die 'build_cap8b_linux.sh failed'
 [ -x "${probe}" ] ||

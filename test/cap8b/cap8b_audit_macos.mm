@@ -47,7 +47,8 @@
  * exactly what the PRODUCTION classifier is forbidden to be, since the
  * product's verdict comes from PWebParseAppUri over parsed components.
  *
- * DELIBERATELY HOSTILE FIXTURE. This probe serves pweb://evil/* content on
+ * DELIBERATELY HOSTILE FIXTURE. This probe serves content under the
+ * pweb://evil authority on
  * purpose - that is the untrusted document whose reach is being measured.
  *
  * ZERO NETWORK. Every "external" URI targets the reserved TLD
@@ -2479,7 +2480,7 @@ void SignalPhaseDone() {
    barrier the delegate methods do, and each answers webview_return EXACTLY
    ONCE, on every path, from OUTSIDE it - the same structural rule the
    decisionHandlers follow. */
-void BindInvoke(const char *id, const char *req, void * /*arg*/) {
+void BindInvoke(const char *requestId, const char *req, void * /*arg*/) {
   try {
     @try {
       const std::string label = FirstJsonString(req == nullptr ? "" : req);
@@ -2497,7 +2498,7 @@ void BindInvoke(const char *id, const char *req, void * /*arg*/) {
     NoteCaught("BindInvoke", "unknown C++ exception");
   }
   @try {
-    webview_return(g_webview, id, 0, "null");
+    webview_return(g_webview, requestId, 0, "null");
   } @catch (id e) {
     (void)e;
     NoteCaught("BindInvoke.return", "exception");
@@ -2507,7 +2508,7 @@ void BindInvoke(const char *id, const char *req, void * /*arg*/) {
 /* The activation control's round trip: it does nothing but resolve, so that
    the navigation performed in its continuation is measured against a binding
    promise and against nothing else. */
-void BindPing(const char *id, const char *req, void * /*arg*/) {
+void BindPing(const char *requestId, const char *req, void * /*arg*/) {
   try {
     @try {
       const std::string label = FirstJsonString(req == nullptr ? "" : req);
@@ -2523,14 +2524,14 @@ void BindPing(const char *id, const char *req, void * /*arg*/) {
     NoteCaught("BindPing", "unknown C++ exception");
   }
   @try {
-    webview_return(g_webview, id, 0, "null");
+    webview_return(g_webview, requestId, 0, "null");
   } @catch (id e) {
     (void)e;
     NoteCaught("BindPing.return", "exception");
   }
 }
 
-void BindReport(const char *id, const char *req, void * /*arg*/) {
+void BindReport(const char *requestId, const char *req, void * /*arg*/) {
   try {
     @try {
       /* unwrapped here, once: the artifact carries the page's own JSON, not a
@@ -2553,7 +2554,7 @@ void BindReport(const char *id, const char *req, void * /*arg*/) {
      be stored: a phase whose page reported and whose barrier then fired must
      still end, or it hangs until its watchdog. */
   @try {
-    webview_return(g_webview, id, 0, "null");
+    webview_return(g_webview, requestId, 0, "null");
   } @catch (id e) {
     (void)e;
     NoteCaught("BindReport.return", "exception");

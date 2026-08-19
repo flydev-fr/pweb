@@ -216,8 +216,97 @@ should not be written unless another engine demands it.
 
 ---
 
-## Linux x64 / WebKitGTK 4.1 — PENDING (hosted)
+## Linux x64 / WebKitGTK 4.1 — PENDING (hosted run 32256330091)
 
-## macOS x86_64 / WKWebView — PENDING (hosted)
+## macOS x86_64 / WKWebView — PENDING (hosted run 32256330091)
 
-## macOS arm64 / WKWebView — PENDING (hosted)
+## macOS arm64 / WKWebView — PENDING (hosted run 32256330091)
+
+---
+
+# Decisions proposed for Checkpoint-1 ratification
+
+Drafted from the Windows measurements. Anything marked **[pending]** cannot be
+settled until the other three targets report.
+
+## P1 — the classification table, as measured
+
+The recommended v1 table survives, with three amendments the measurements
+force. The classifier's job is unchanged; what changes is the claim about
+*which mechanism* enforces each row.
+
+| URI / situation | action | enforced by |
+|---|---|---|
+| `pweb://app/<canonical>`, `pweb://app/`, fragment, reload, history within it | AllowTrusted | classifier |
+| `https:` / `mailto:` | Cancel (+ external open only if P2 says so) | classifier |
+| `http: ws: wss: ftp: blob:` + unknown schemes | Cancel | classifier |
+| `pweb://` with any authority but `app` | Cancel | classifier |
+| any subframe document | Cancel | classifier **and** `frame-src 'none'` |
+| any new window | Cancel | classifier |
+| download | Cancel | classifier |
+| late `about:blank` | Cancel | classifier |
+| **`file:`** | Cancel | **engine refuses it; no hook fires** |
+| **top-level `data:`** | Cancel | **engine refuses it; no hook fires** |
+| **`javascript:`** | Cancel | **CSP only — no hook fires and it EXECUTES without one** |
+
+The last three rows still belong in the classifier as defence in depth — a
+different engine may well hand them over — but the plan must not claim the
+classifier is what stops them on Windows. For `javascript:` in particular, the
+only thing standing between a tampered bundle and execution is
+`script-src 'self'` without `'unsafe-inline'`.
+
+## P2 — user activation: reliable parity is NOT achievable **[pending Linux/macOS]**
+
+The intent anticipated this: *"If reliable parity cannot be achieved, present
+options for human ratification."* On the evidence so far it cannot. Windows'
+flag is true for a real click **and** for any navigation in the continuation of
+a native binding call — the ordinary shape of a PWeb page. macOS exposes no
+public gesture signal at all. Options, to be presented with the full data:
+
+- **A — no external opener in CAP-8B.** Every external navigation is cancelled
+  and nothing is ever handed to the OS. Strictly fail-closed and trivially
+  provable, but it drops the `https:`/`mailto:` behaviour `security-model.md`
+  ratified, so it is a scope reduction the human must accept explicitly.
+- **B — accept the engine flag as measured.** Preserves the ratified
+  behaviour, and accepts that a tampered bundle can open the system browser at
+  an arbitrary URL immediately after any RPC. No code executes in the
+  privileged origin, but it is a real exfiltration/phishing channel.
+- **C — make the external open a capability, not a guess.** Cancel all raw
+  external navigation, and let the app request an external open through the
+  existing invocation path, authorized by the CAP-8A policy like any other
+  method. "Who may open a browser" becomes an authorization decision instead
+  of an inference from a flag that two of four engines cannot report honestly.
+  It needs no kernel change and no second RPC path — but it adds product
+  surface beyond navigation, so it is the human's call whether it belongs in
+  CAP-8B or is deferred with the rule set to A in the meantime.
+
+Recommendation, subject to the pending data: **A now, C recorded as the
+successor** — because B is the only option that makes a security claim the
+measurements do not support.
+
+## P3 — trusted-origin comparison
+
+Keep ONE truth: the canonical `PWebParseAppUri`, authority compared
+case-insensitively per RFC 3986. The engine lower-cases the authority before
+any hook sees it (W5a), so a case-sensitive rule could never fire, and
+`pweb://APP` and `pweb://app` are the same origin. The intent's "reject
+`pweb://APP/`" is therefore declined **with evidence**, and the classifier
+still rejects userinfo, port, suffix and empty authorities on parsed
+components — never on a prefix test.
+
+## P4 — the CSP string
+
+The candidate profile is enforced in full on Windows and a weaker bundle
+`<meta>` cannot touch it. One deviation from the intent's draft, with
+evidence: **`connect-src 'self'`, not `'none'`** — `'none'` also blocks
+same-origin `fetch`, and `examples/06-assets/frontend/dist/assets/app.js` and
+`test/cap7m/fixture/probe.js` both depend on it through the production
+handlers. `'self'` blocked every external connection and every `wss://` in the
+measurement. **[pending]** on the other three engines.
+
+## P5 — bootstrap `about:blank`
+
+Do not write the exception unless another engine demands it. Windows reports
+`about:blank` as its initial source but raises no navigation event for it, and
+a later `about:blank` is cancellable. **[pending]** — if Linux and macOS agree,
+the Bootstrapping/Armed state machine should not be built at all.
