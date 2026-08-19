@@ -429,6 +429,60 @@ a reason that is not a defect.
 
 ---
 
+# RATIFIED AT CHECKPOINT 1 (2026-08-19)
+
+Human ratification of the measurements below. These decisions are binding on
+Phase B.
+
+## R-A — external opening is a capability, never a gesture (option C)
+
+1. Every raw external navigation is ALWAYS cancelled inside the privileged
+   WebView, `https:` and `mailto:` included.
+2. Native navigation callbacks NEVER invoke the OS external opener directly.
+3. User-activation metadata is DIAGNOSTIC ONLY. It is not an authorization
+   input, because cross-engine parity is measurably impossible (see the
+   four-target matrix above).
+4. External opening is available only through an explicit runtime invocation
+   over the EXISTING RPC path, in the reserved `pweb.*` namespace —
+   canonically `pweb.openExternal`, mapped to capability `external.open`.
+5. The method accepts `https:` and `mailto:` only; everything else is
+   rejected.
+6. URL validation is native and fail-closed: parse components (never
+   prefix-match), bounded UTF-8 length, reject controls/NUL, reject malformed
+   URIs, no shell interpretation, no internal-navigation fallback.
+7. The capability policy is authoritative: mapped and allowed → call the
+   private platform opener; capability absent → `forbidden`/403 BEFORE any
+   opener activity; unmapped method → fail closed; invalid URI or scheme →
+   `invalid_request`; OS opener failure → the existing safe/redacted error
+   contract.
+8. Platform openers stay private: `ShellExecuteExW`,
+   `g_app_info_launch_default_for_uri`, `-[NSWorkspace openURL:]`.
+9. NO automatic global DOM click interceptor. Application code requests an
+   external open explicitly, through the runtime method or an additive SDK
+   helper backed by that exact method.
+10. Raw anchors, `window.location`, `window.open`, form submissions and
+    redirects targeting external content are all cancelled without launching
+    anything.
+11. `security-model.md` wording becomes: *a privileged WebView never navigates
+    to external content; approved external `https`/`mailto` URIs may be handed
+    to the operating system only through an explicit capability-authorized
+    runtime invocation.*
+
+This preserves the original external-browser intent while removing gesture
+heuristics as a security boundary.
+
+## R-B — three measurement-backed ratifications
+
+- **`connect-src 'self'`**, not `'none'`.
+- **Authority comparison stays case-insensitive** (`PWebParseAppUri` remains
+  the one truth); the "reject `pweb://APP/`" instruction is withdrawn, because
+  the engine lower-cases the authority before any hook sees it and it is the
+  same origin.
+- **No bootstrap `about:blank` exception** is written on any target: no engine
+  raises a navigation event for an initial `about:blank`.
+
+---
+
 # Decisions proposed for Checkpoint-1 ratification
 
 Drafted from the Windows measurements. Anything marked **[pending]** cannot be
