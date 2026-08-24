@@ -63,3 +63,15 @@ frozen public ABI on all four targets.
   destroy crash are recorded measured limitations (deferred-work), not
   problems CAP-8C works around with platform conditionals — the shared
   lifecycle model above simply never performs either operation.
+
+## Ratification — Checkpoint 1 (2026-08-24)
+
+Human ratification, binding on Phase B:
+
+- **R-C1 RATIFIED** — simultaneous two-window topology on all four targets.
+- **R-C2 RATIFIED** — source-level close/reopen window lifecycle on
+  long-lived WebView instances; `webview_destroy` post-loop only, reverse
+  creation order; `webview_terminate` owner-only, shutdown-only.
+- **R-C3 RATIFIED** — the Windows thread-global-terminate nondeterminism and
+  the macOS mid-loop `destroy(second)` process crash are recorded measured
+  limitations in deferred-work; no platform-conditional workaround is built.
