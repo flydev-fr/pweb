@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>PWeb CAP-8C — main page</title>
+</head>
+<body>
+  <h1>PWeb CAP-8C multi-principal — main page bytes</h1>
+  <p id="status">running...</p>
+  <!-- This is the MAIN page's bytes. In the content-swap it is served into
+       the LOGIN window's native context, where the Add must still be
+       forbidden - proving the page bytes have zero authorization effect. The
+       driver derives its page identity from the path (the CAP-8B CSP is
+       script-src 'self', so no inline claim script is possible). -->
+  <script src="/assets/driver.js"></script>
+</body>
+</html>
