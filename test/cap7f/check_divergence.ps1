@@ -66,8 +66,8 @@ function Get-PlatformDirectiveMatches([string]$Line) {
 # (joined by LF, UTF-8) - both must hold, or the allowlist is re-ratified
 # in the same commit
 $allow = @{
-    'examples/08-release/releaseapp.pas' = @{ directives = 32;  # the 13 platform regions
-        fingerprint = '2ec07fcdabab6f84a38392188a8f3e88c531792e85d938213cddd096a6a5d2f9' }
+    'examples/08-release/releaseapp.pas' = @{ directives = 38;  # +6: the CAP-8B guard construction/teardown platform regions
+        fingerprint = '8ee3c9085f4af8c3129fd822915f1b6578da94f6d96f6a2f3e9ea5d37fdd572a' }
     'src/lib/pweb.lib.webview.pas'       = @{ directives = 4;   # LIB_WEBVIEW selection block
         fingerprint = 'cec476fd99b6cc8603a8fe330d52982a4c660ae3ffb0af4ec5658e356bce4496' }
     'src/assets/pweb.assets.folder.pas'  = @{ directives = 10;  # Darwin F_GETPATH / Windows wide-API split

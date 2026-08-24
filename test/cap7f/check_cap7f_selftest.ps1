@@ -123,6 +123,34 @@ $e.capability_policy_digest = '0' * 64
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap-digest-divergence'
 
+# --- (c4) CAP-8B: navigation_security rewritten to SKIP ----------------------
+# the CAP-8B mustPass field gets its own refusal proof: a real-window matrix
+# verdict downgraded to SKIP must never aggregate as if the enforcement were
+# proven.
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['navigation_security']) {
+    throw 'selftest nav-security-skip: the evidence carries no navigation_security field - the emitters did not record it'
+}
+$e.navigation_security = 'SKIP'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'nav-security-skip'
+
+# --- (c5) CAP-8B: navigation_policy_digest diverging on ONE target -----------
+# cross-target digest EQUALITY of the CAP-8B decision corpus gets its own
+# refusal proof (a divergence means the four targets did not compute the same
+# navigation decisions - exactly what the aggregate exists to refuse).
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['navigation_policy_digest']) {
+    throw 'selftest nav-digest-divergence: the evidence carries no navigation_policy_digest field - the emitters did not record it'
+}
+$e.navigation_policy_digest = '0' * 64
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'nav-digest-divergence'
+
 # --- (d) divergence sweep must refuse an off-allowlist conditional -----------
 $fixturePas = 'src/zz_cap7f_selftest_fixture.pas'
 Remove-Item -Force -ErrorAction SilentlyContinue $fixturePas
@@ -178,4 +206,4 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Remove-Item -Force -ErrorAction SilentlyContinue $matrix
-Write-Host '[CAP-7F] selftest PASS - 5 aggregator refusals + 2 divergence refusals, all on copies or byte-restored'
+Write-Host '[CAP-7F] selftest PASS - 7 aggregator refusals + 2 divergence refusals, all on copies or byte-restored'

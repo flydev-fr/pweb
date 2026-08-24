@@ -121,10 +121,11 @@ suite_log="${gates}/pwebtests.log"
 PWEB_WEBVIEW_DLL="${repo_root}/${bin}/${PWEB_MACOS_DYLIB_VERSIONED}"
 export PWEB_WEBVIEW_DLL
 [ -f "${PWEB_WEBVIEW_DLL}" ] || die "staged library missing: ${PWEB_WEBVIEW_DLL}"
-# CAP-8A corpus freshness: the CAP-7F emitter hashes this file as THIS
-# run's policy-decision evidence, so a stale copy must never survive
-# into the suite that is supposed to write it
-rm -f -- "${repo_root}/build/cap7f/capability-policy.txt"
+# CAP-8A/CAP-8B corpus freshness: the CAP-7F emitter hashes these files as
+# THIS run's policy- and navigation-decision evidence, so a stale copy must
+# never survive into the suite that is supposed to write them
+rm -f -- "${repo_root}/build/cap7f/capability-policy.txt" \
+    "${repo_root}/build/cap7f/navigation-policy.txt"
 
 set +e
 "${bin}/pwebtests" > "${suite_log}" 2>&1
@@ -149,6 +150,9 @@ grep -q 'Capability policy: ' "${suite_log}" ||
     die 'the CAP-8A capability policy cases were not registered in the suite'
 grep -q 'Capability policy integration: ' "${suite_log}" ||
     die 'the CAP-8A capability integration gates were not registered in the suite'
+# CAP-8B: the shared navigation classifier cases must be registered too
+grep -q 'Navigation policy: ' "${suite_log}" ||
+    die 'the CAP-8B navigation policy cases were not registered in the suite'
 if grep -qE 'Assertion(s)? failed' "${suite_log}"; then
     die 'pwebtests reported failed assertions'
 fi

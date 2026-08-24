@@ -382,6 +382,36 @@ capability_policy='PASS'
 capability_policy_digest="$(file_sha "${cap_policy_file}")"
 printf '[CAP-7F] capability_policy_digest: %s\n' "${capability_policy_digest}"
 
+# --- CAP-8B navigation-security verdict + navigation-decision digest ---------
+# navigation-policy.txt is written by the pwebtests CAP-8B suite that ran
+# earlier in this job (run_cap7l_gates.sh / run_cap7m_gates.sh). Its sha256 is
+# the cross-target navigation-decision digest the aggregator requires
+# identical on all four targets; the file's own verdict line is required too.
+nav_policy_file="${work}/navigation-policy.txt"
+[ -f "${nav_policy_file}" ] ||
+    die 'navigation-policy.txt missing -- the CAP-8B pwebtests suite has not run in this workspace'
+head -n 1 "${nav_policy_file}" | grep -qx 'schema=1' ||
+    die 'navigation-policy.txt carries no schema=1 header'
+tail -n 1 "${nav_policy_file}" | grep -qx 'verdict=PASS' ||
+    die 'navigation-policy.txt does not end in verdict=PASS'
+navigation_policy_digest="$(file_sha "${nav_policy_file}")"
+printf '[CAP-7F] navigation_policy_digest: %s\n' "${navigation_policy_digest}"
+
+# navigation_security: the real-window matrix verdict, from the record
+# test/cap8b/run_nav_matrix.sh wrote earlier in this job. On POSIX there is no
+# SKIP - the display is real - so anything but PASS is a failure by then.
+# The gate writes into ITS workspace (build/cap8b), not this emitter's.
+nav_matrix_file="${repo_root}/build/cap8b/nav-matrix.json"
+[ -f "${nav_matrix_file}" ] ||
+    die 'nav-matrix.json missing -- the CAP-8B nav-matrix gate has not run in this workspace'
+navigation_security="$(sed -n 's/.*"overall"[[:space:]]*:[[:space:]]*"\([A-Z]*\)".*/\1/p' \
+    "${nav_matrix_file}" | head -n 1)"
+case "${navigation_security}" in
+    PASS | FAIL | SKIP) ;;
+    *) die "nav-matrix.json carries an unexpected verdict: ${navigation_security}" ;;
+esac
+printf '[CAP-7F] navigation_security: %s\n' "${navigation_security}"
+
 # ---------------------------- write the evidence -----------------------------
 # every interpolated free-text value goes through json_escape: the toolchain
 # banner lines especially are nobody's to promise quote-free
@@ -413,6 +443,8 @@ cat > "${work}/evidence.json" <<EOF
   "host_args": "${host_args}",
   "capability_policy": "${capability_policy}",
   "capability_policy_digest": "${capability_policy_digest}",
+  "navigation_security": "${navigation_security}",
+  "navigation_policy_digest": "${navigation_policy_digest}",
   "release_layout": "${release_layout}",
   "no_listener": "${no_listener}",
   "no_listener_provenance": "${no_listener_prov}",

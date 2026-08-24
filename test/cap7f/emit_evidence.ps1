@@ -265,6 +265,47 @@ $capabilityPolicy = 'PASS'
 $capabilityPolicyDigest = (Get-FileHash $capPolicyFile -Algorithm SHA256).Hash.ToLowerInvariant()
 Write-Host "[CAP-7F] capability_policy_digest: $capabilityPolicyDigest"
 
+# --- CAP-8B navigation-security verdict + navigation-decision digest ---------
+# navigation-policy.txt is written by the pwebtests CAP-8B suite that ran
+# EARLIER IN THIS JOB (a stale copy is removed before that suite, and CI
+# checks out fresh); its sha256 is the cross-target navigation-decision digest
+# the aggregator requires to be identical on all four targets, because every
+# line is a pure decision of a pure function. The file's own trailing verdict
+# line is required too - honesty, not step order alone.
+$navPolicyFile = Join-Path $work 'navigation-policy.txt'
+if (-not (Test-Path $navPolicyFile)) {
+    throw '[CAP-7F] navigation-policy.txt missing -- the CAP-8B pwebtests suite has not run in this workspace'
+}
+$navLines = @(Get-Content $navPolicyFile)
+if ($navLines.Count -lt 2) {
+    throw "[CAP-7F] navigation-policy.txt is empty or truncated ($($navLines.Count) line(s)) -- the CAP-8B suite did not write a full corpus"
+}
+if ($navLines[0] -cne 'schema=1') {
+    throw '[CAP-7F] navigation-policy.txt carries no schema=1 header'
+}
+if ($navLines[-1] -cne 'verdict=PASS') {
+    throw '[CAP-7F] navigation-policy.txt does not end in verdict=PASS'
+}
+$navigationPolicyDigest = (Get-FileHash $navPolicyFile -Algorithm SHA256).Hash.ToLowerInvariant()
+Write-Host "[CAP-7F] navigation_policy_digest: $navigationPolicyDigest"
+
+# navigation_security: the real-window matrix verdict, read from the record
+# test/cap8b/run_nav_matrix.ps1 wrote earlier in this job. PASS gates; an
+# honest SKIP (no WebView2/desktop session) is recorded as SKIP and the
+# aggregator REFUSES it, exactly as it does host_args.
+# the gate writes into ITS workspace (build/cap8b), not this emitter's
+$navMatrixFile = Join-Path $repoRoot 'build/cap8b/nav-matrix.json'
+if (-not (Test-Path $navMatrixFile)) {
+    throw '[CAP-7F] nav-matrix.json missing -- the CAP-8B nav-matrix gate has not run in this workspace'
+}
+$navMatrix = Get-Content $navMatrixFile -Raw | ConvertFrom-Json
+if ($navMatrix.schema -ne 1) { throw '[CAP-7F] nav-matrix.json schema mismatch' }
+$navigationSecurity = "$($navMatrix.overall)"
+if ($navigationSecurity -notin @('PASS', 'FAIL', 'SKIP')) {
+    throw "[CAP-7F] nav-matrix.json carries an unexpected verdict: $navigationSecurity"
+}
+Write-Host "[CAP-7F] navigation_security: $navigationSecurity"
+
 # --- run identity -----------------------------------------------------------
 $sha = $env:GITHUB_SHA
 if (-not $sha) { $sha = (& git rev-parse HEAD).Trim() }
@@ -291,6 +332,8 @@ $evidence = [ordered]@{
     host_args                       = $hostArgsVerdict
     capability_policy               = $capabilityPolicy
     capability_policy_digest        = $capabilityPolicyDigest
+    navigation_security             = $navigationSecurity
+    navigation_policy_digest        = $navigationPolicyDigest
     release_layout                  = $releaseLayout
     no_listener                     = $noListener
     no_listener_provenance          = 'source-sweep re-executed (check_cap6_nonetwork.ps1); CAP-5/CAP-6 job gates precede this emitter'

@@ -25,13 +25,21 @@ program navmatrix;
   zeroes nobody cross-checks.
 
   THE DRIVER is test/cap8b/fixture/assets/driver.js: the trusted page
-  performs the whole B-matrix in a real window (external location /
-  window.open / anchor / form / meta-refresh / javascript: navigations,
-  trusted and untrusted iframes, the download attempt, the CSP subresource
-  probes, the raw-transport control, the capability-authorized external
-  opens and the RPC/navigation race) and reports observed facts through
-  matrix.report. The host then joins the page's rows with the native ledger,
-  the guard counters and the opener spy, writes
+  performs the B-matrix in a real window and reports observed facts through
+  matrix.report. What it actually does, row for row: the raw-transport
+  positive control, an ordinary RPC (matrix.add = 42), the same-origin
+  fetch that must SEE the native CSP header on a non-HTML asset, the CSP
+  subresource probes (external script, external / trusted / data: iframes),
+  the capability-authorized external opens (https + mailto accepted, http
+  refused as invalid_request), the RPC/navigation race, and the cancelled
+  navigation attempts: window.open (its return required null), an anchor
+  click, a form submit, a download-attributed anchor, a top-level
+  meta refresh, a javascript: URI (its side-effect flag required unset -
+  a CSP fact, not a classifier fact) and a plain location assignment.
+  Server-style redirects cannot arise on this scheme (MEASURED, W2b: a
+  resource-handler 302 is not followed), so the redirect row's runtime
+  shape IS the meta refresh. The host then joins the page's rows with the
+  native ledger, the guard counters and the opener spy, writes
   build/cap8b/nav-matrix.json and prints exactly one canonical marker:
 
       navmatrix: NAV MATRIX PASS
@@ -149,6 +157,9 @@ var
   ReportLatch: LongInt;
   ReportJson: RawUtf8;
   AutoCloseHandle: Pointer;
+  // the watchdog's interruptible wait: set the moment webview_run returns,
+  // so a fast PASS never idles out the full timeout on a CI leg
+  WatchdogEvent: PRTLEvent;
 
 { ---- the counting opener spy, injected through each adapter's seam ------- }
 
@@ -439,8 +450,11 @@ end;
 function WatchdogThread(Param: Pointer): PtrInt;
 begin
   Result := 0;
-  Sleep(PtrInt(Param));
-  RequestTerminate;
+  // an INTERRUPTIBLE wait: the main thread sets the event the moment
+  // webview_run returns, so this wakes immediately on a normal exit and
+  // only ever runs the full bound when the window is genuinely wedged
+  RTLEventWaitFor(WatchdogEvent, PtrInt(Param));
+  RequestTerminate; // no-op when the handle was already cleared
 end;
 
 function RepoRootFromExecutable: TFileName;
@@ -517,9 +531,11 @@ var
   timeoutMs: Integer;
   closerId, closerHandle: system.TThreadID;
   closerStarted, safeToDestroy, schedulerDrained: Boolean;
-  guardAllowed, guardCancelled: Int64;
+  guardAllowed, guardCancelled, guardApplyFailures: Int64;
   {$ifdef DARWIN}
   cocoaCounters: TPWebCocoaNavCounters;
+  bridgeStats: TPWebCocoaNavStats;
+  obsIdx: Integer;
   {$endif DARWIN}
   failReasons: RawUtf8;
   pageReport, json: RawUtf8;
@@ -549,6 +565,7 @@ begin
   schedulerDrained := False;
   guardAllowed := 0;
   guardCancelled := 0;
+  guardApplyFailures := 0;
   failReasons := '';
   try
     try
@@ -602,7 +619,14 @@ begin
       {$endif LINUX}
       {$endif DARWIN}
 
-      w := WebViewCheckCreated(webview_create(0, nil));
+      // PWEB_NAVMATRIX_DEBUG=1 turns on the engine's own developer console
+      // mirroring (console-to-stdout on WebKitGTK, DevTools elsewhere): the
+      // one observability a page that never reaches the bridge still has.
+      // A diagnostics knob on a test harness, never a production surface.
+      if GetEnvironmentVariable('PWEB_NAVMATRIX_DEBUG') = '1' then
+        w := WebViewCheckCreated(webview_create(1, nil))
+      else
+        w := WebViewCheckCreated(webview_create(0, nil));
       try
         {$ifdef DARWIN}
         assetHandler.Attach(w);
@@ -633,11 +657,17 @@ begin
         {$ifdef DARWIN}
         navGuard := TPWebNavigationGuard.Create;
         navGuard.Attach(w);
+        // the diagnostic navigation ring, armed for the whole matrix run:
+        // it never affects a verdict, and on FAIL its per-URI observations
+        // are dumped so a red row names the navigation that caused it
+        PWebCocoaResetNavObserved;
+        PWebCocoaObserveNavigation(True);
         {$else}
         navGuard := TPWebNavigationGuard.Create(w);
         {$endif DARWIN}
         WebViewCheck(webview_navigate(w, 'pweb://app/'), 'webview_navigate');
 
+        WatchdogEvent := RTLEventCreate;
         closerHandle := BeginThread(@WatchdogThread,
           Pointer(PtrInt(timeoutMs)), closerId);
         closerStarted := closerHandle <> system.TThreadID(0);
@@ -647,18 +677,27 @@ begin
       finally
         if closerStarted then
         begin
-          // the watchdog holds no lock and terminates through dispatch, so
-          // after webview_run returns it either already fired or will wake
-          // and find the handle gone
+          // wake the watchdog NOW: clear the handle first so its
+          // RequestTerminate is a no-op, then set the event - the join
+          // below is bounded by a margin, never the full watchdog timeout
           InterlockedExchange(AutoCloseHandle, nil);
+          RTLEventSetEvent(WatchdogEvent);
           if WaitForThreadTerminate(closerHandle,
-               timeoutMs + CLOSER_WAIT_MARGIN_MS) <> 0 then
+               CLOSER_WAIT_MARGIN_MS) <> 0 then
           begin
             WriteLn(StdErr, LOG_PREFIX, ': FAIL watchdog did not terminate');
             safeToDestroy := False;
             ExitCode := 1;
           end;
           CloseThread(closerHandle);
+        end;
+        if WatchdogEvent <> nil then
+        begin
+          // destroyed only after the join above: a wedged watchdog keeps
+          // its event (a deliberate leak on an already-failing path)
+          if safeToDestroy then
+            RTLEventDestroy(WatchdogEvent);
+          WatchdogEvent := nil;
         end;
         InterlockedExchange(AutoCloseHandle, nil);
         if binding <> nil then
@@ -701,6 +740,7 @@ begin
             {$else}
             guardAllowed := navGuard.AllowedTrusted;
             guardCancelled := navGuard.Cancelled;
+            guardApplyFailures := navGuard.DenyApplyFailures;
             {$endif LINUX}
             {$endif DARWIN}
             navGuard.Detach;
@@ -711,7 +751,18 @@ begin
               ExitCode := 1;
             end;
           end;
-          FreeAndNil(navGuard);
+          // guarded separately, exactly as the release host: Destroy calls
+          // Detach again, and an escape here would skip the handler Detach
+          // and webview_destroy below
+          try
+            FreeAndNil(navGuard);
+          except
+            on E: Exception do
+            begin
+              WriteLn(StdErr, LOG_PREFIX, ': FAIL guard Free: ', E.Message);
+              ExitCode := 1;
+            end;
+          end;
         end;
         if assetHandler <> nil then
         begin
@@ -759,13 +810,73 @@ begin
       RequireCount('opener_calls', OpenerCalls, 2);
       RequireCount('opener_unexpected_uri', OpenerUnexpectedUri, 0);
       RequireCount('unexpected_methods', CountUnexpected, 0);
+      // the whole ledger is asserted, not merely recorded: the driver's one
+      // echo yield, and NO handshake at all (the driver never performs one,
+      // so an arrival here would be an unexplained caller)
+      RequireCount('echo', CountEcho, 1);
+      RequireCount('handshake', CountHandshake, 0);
+      // the unconditional-CSP rule at the engine boundary: the page fetched
+      // a NON-HTML same-origin asset and must have SEEN the CSP header on
+      // it. Gated HOST-side so that a measured per-engine limitation, if
+      // one ever appears, becomes a recorded ifdef here - never a quiet
+      // fake in the page's own verdict.
+      if Pos('"cspHeaderVisible":true', pageReport) = 0 then
+        Fail('the native CSP header was not visible on a non-HTML ' +
+          'same-origin fetch (see cspHeaderNote in the page report)');
       if guardAllowed < 1 then
         Fail('the guard allowed no trusted navigation at all');
       if guardCancelled < 1 then
         Fail('the guard cancelled nothing - the hostile corpus never ' +
           'reached it');
+      {$ifndef DARWIN}
+      {$ifndef LINUX}
+      // Windows only: a deny whose put_Cancel/put_Handled came back failing
+      // is a refusal the engine may not have applied - the guard counts
+      // those, and the matrix requires the count to be zero
+      RequireCount('guard_apply_failures',
+        LongInt(guardApplyFailures), 0);
+      {$endif LINUX}
+      {$endif DARWIN}
+      {$ifdef DARWIN}
+      // the bridge's exactly-once identities, promised by its header and
+      // asserted here: every decision handler completed exactly once
+      // (WebKit hangs on a missing completion and raises on a double one),
+      // every completion was an allow or a cancel, and no exception was
+      // swallowed anywhere in the navigation path
+      bridgeStats := PWebCocoaNavStats;
+      if bridgeStats.HandlersCompleted <>
+         bridgeStats.ActionDecisions + bridgeStats.ResponseDecisions then
+        Fail('cocoa handlers_completed <> action+response decisions (' +
+          RawUtf8(IntToStr(Int64(bridgeStats.HandlersCompleted))) + ' vs ' +
+          RawUtf8(IntToStr(Int64(bridgeStats.ActionDecisions +
+            bridgeStats.ResponseDecisions))) + ')');
+      if bridgeStats.Allowed + bridgeStats.Cancelled <>
+         bridgeStats.HandlersCompleted then
+        Fail('cocoa allowed+cancelled <> handlers_completed');
+      if bridgeStats.CaughtExceptions <> 0 then
+        Fail('cocoa bridge caught ' +
+          RawUtf8(IntToStr(Int64(bridgeStats.CaughtExceptions))) +
+          ' exception(s) in the navigation path');
+      {$endif DARWIN}
       if ExitCode <> 0 then
         Fail('a teardown step failed (see stderr)');
+
+      {$ifdef DARWIN}
+      // on FAIL the ring is the diagnosis: which URIs the guard was handed
+      // and what it answered, oldest first. Never printed on PASS - a
+      // passing run's URIs are nobody's log line.
+      if failReasons <> '' then
+      begin
+        WriteLn(StdErr, LOG_PREFIX, ': cocoa nav ring (',
+          PWebCocoaNavObservedCount, ' observed, ',
+          PWebCocoaNavObservedDropped, ' overwritten):');
+        for obsIdx := 0 to PWebCocoaNavObservedCount - 1 do
+          WriteLn(StdErr, LOG_PREFIX, ':   ',
+            PWebCocoaNavObservedVerdict(obsIdx), ' ',
+            PWebCocoaNavObservedUri(obsIdx));
+      end;
+      PWebCocoaObserveNavigation(False);
+      {$endif DARWIN}
 
       if pageReport = '' then
         pageReport := 'null';
@@ -797,7 +908,22 @@ begin
         '    "handshake": ' + RawUtf8(IntToStr(CountHandshake)) + ',' + #10 +
         '    "unexpected_methods": ' + RawUtf8(IntToStr(CountUnexpected)) + ',' + #10 +
         '    "guard_allowed": ' + RawUtf8(IntToStr(guardAllowed)) + ',' + #10 +
-        '    "guard_cancelled": ' + RawUtf8(IntToStr(guardCancelled)) + #10 +
+        '    "guard_cancelled": ' + RawUtf8(IntToStr(guardCancelled)) + ',' + #10 +
+        '    "guard_apply_failures": ' + RawUtf8(IntToStr(guardApplyFailures)) +
+        {$ifdef DARWIN}
+        ',' + #10 +
+        '    "cocoa_action_decisions": ' +
+          RawUtf8(IntToStr(Int64(bridgeStats.ActionDecisions))) + ',' + #10 +
+        '    "cocoa_response_decisions": ' +
+          RawUtf8(IntToStr(Int64(bridgeStats.ResponseDecisions))) + ',' + #10 +
+        '    "cocoa_download_events": ' +
+          RawUtf8(IntToStr(Int64(bridgeStats.DownloadEvents))) + ',' + #10 +
+        '    "cocoa_handlers_completed": ' +
+          RawUtf8(IntToStr(Int64(bridgeStats.HandlersCompleted))) + ',' + #10 +
+        '    "cocoa_caught_exceptions": ' +
+          RawUtf8(IntToStr(Int64(bridgeStats.CaughtExceptions))) +
+        {$endif DARWIN}
+        #10 +
         '  },' + #10 +
         '  "page": ' + pageReport + #10 +
         '}' + #10;

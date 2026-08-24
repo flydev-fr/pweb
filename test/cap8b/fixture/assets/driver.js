@@ -55,14 +55,21 @@
   }
 
   function rawInvoke(method, args) {
-    // the ENGINE channel, one level below the bound global: __webview__.post
-    // hands the message straight to chrome.webview / webkit.messageHandlers
+    // the ENGINE channel, one level below the bound global: __webview__.call
+    // builds the {id, method, params} message and posts it straight into
+    // chrome.webview / webkit.messageHandlers via __webview__.post
     if (!window.__webview__ || typeof window.__webview__.call !== "function") {
       return Promise.reject(new Error("no __webview__ raw channel"));
     }
     return Promise.resolve(
       window.__webview__.call("__pweb_invoke", method, args == null ? null : args)
     );
+  }
+
+  function delay(ms) {
+    return new Promise(function (resolve) {
+      window.setTimeout(resolve, ms);
+    });
   }
 
   function setStatus(text) {
@@ -112,8 +119,17 @@
     // side effect; if any were honoured the document would be replaced and
     // matrix.report would never arrive - which the host reads as failure
     try {
-      window.open(EXTERNAL_NAV, "_blank");
-    } catch (e) { /* a refusal that throws is still a refusal */ }
+      // the return value is evidence: a denied window.open comes back null
+      // on every engine here (Handled=TRUE with no NewWindow on WebView2,
+      // the create signal answered null on WebKitGTK, no
+      // createWebViewWithConfiguration: on WKWebView). A non-null return
+      // is a real window proxy the deny failed to prevent.
+      var opened = window.open(EXTERNAL_NAV, "_blank");
+      report.windowOpenNull = (opened === null || opened === undefined);
+    } catch (e) {
+      // a refusal that throws is still a refusal, and still no window
+      report.windowOpenNull = true;
+    }
     try {
       var a = document.createElement("a");
       a.href = EXTERNAL_NAV;
@@ -153,6 +169,11 @@
     addOk: false,
     cspScriptBlocked: false,
     cspFrameBlocked: false,
+    cspHeaderVisible: false,
+    cspHeaderNote: "",
+    windowOpenNull: false,
+    jsUriBlocked: false,
+    metaRefreshHeld: false,
     openHttpsOk: false,
     openMailtoOk: false,
     openHttpRefused: false,
@@ -179,6 +200,32 @@
       })
       .then(function (sum) {
         report.addOk = sum === 42;
+        // 2b) the unconditional-CSP rule, pinned at the ENGINE boundary: a
+        // same-origin fetch of a NON-HTML asset must come back carrying the
+        // native Content-Security-Policy header. This is the exact
+        // regression a media-type-gated header path would reintroduce, and
+        // a same-origin response exposes every header to fetch(), so an
+        // absence here is an absence on the wire, not a CORS filter.
+        return fetch("/assets/child.js", { cache: "no-store" }).then(
+          function (res) {
+            var v = null;
+            try {
+              v = res.headers.get("content-security-policy");
+            } catch (e) {
+              v = null;
+            }
+            report.cspHeaderVisible = !!(res.ok && v && v.length > 0);
+            report.cspHeaderNote = report.cspHeaderVisible
+              ? "present"
+              : "absent-or-hidden (status " + res.status + ")";
+          },
+          function () {
+            report.cspHeaderVisible = false;
+            report.cspHeaderNote = "same-origin fetch failed";
+          }
+        );
+      })
+      .then(function () {
         // 3) capability-authorized external opens: https and mailto succeed
         // (the CAP-8A policy allows external.open, then the native validator
         // accepts the allowlisted scheme and the spy counts the call)
@@ -212,6 +259,29 @@
         });
       })
       .then(function () {
+        // 5b) a top-level meta refresh out of pweb:// - MEASURED observable
+        // and cancellable where the engine schedules it at all. An honoured
+        // refresh replaces this document and matrix.report never arrives.
+        try {
+          var meta = document.createElement("meta");
+          meta.httpEquiv = "refresh";
+          meta.content = "0;url=" + EXTERNAL_NAV;
+          document.head.appendChild(meta);
+        } catch (e) { /* a refusal that throws is still a refusal */ }
+        // 5c) a javascript: URI with a side-effect flag. MEASURED (W2a): no
+        // navigation event fires for it - the native CSP (script-src 'self',
+        // no 'unsafe-inline') is what stops the execution, so the flag
+        // staying unset is a CSP fact, not a classifier fact.
+        try {
+          window.location.href = "javascript:window.__cap8b_js=1";
+        } catch (e) { /* idem */ }
+        // long enough for a zero-delay refresh timer and the js: URI to
+        // have fired if either was going to
+        return delay(700);
+      })
+      .then(function () {
+        report.jsUriBlocked = window.__cap8b_js === undefined;
+        report.metaRefreshHeld = stillTrusted();
         // 6) a real native round-trip is a yield the page can PROVE
         // happened, so a still-pending async navigation has had its chance
         return invoke("pweb.echo", { navprobe: 1 });
@@ -227,6 +297,9 @@
           report.addOk &&
           report.cspScriptBlocked &&
           report.cspFrameBlocked &&
+          report.windowOpenNull &&
+          report.jsUriBlocked &&
+          report.metaRefreshHeld &&
           report.openHttpsOk &&
           report.openMailtoOk &&
           report.openHttpRefused &&
