@@ -242,3 +242,41 @@ Decisions D1–D8 are PROPOSED here and ratified (or replaced) at Checkpoint 1 a
 
 - The human ratification record R-A/R-B the change log cites
   [`cap8b-audit-findings.md:437`](cap8b-audit-findings.md#L437)
+
+## Closure Record — CAP-8B CLOSED
+
+**Hosted green run:** 32742436382 (2026-08-24, `c342fe0`) — all six jobs green:
+windows, linux-x64, macos-x64, macos-arm64, macos release inventory, and
+`cap7 aggregate`, whose log records `navigation_security: PASS` on every
+target, one `navigation_policy_digest`
+`360d69f282e9d8b053d1ef8a5052f76860875c723b9e6512b0d38685f0c7212e` equal on
+all four targets, the 7-refusal + 2-divergence negative self-test (including
+the two CAP-8B legs: SKIP promotion and digest divergence), and
+`aggregate PASS - platform-matrix.json written`.
+
+**Closure commits** (on `phase/cap-8/b-privileged-navigation`, after the
+Checkpoint-1 ratification `cf28291`): `e22851a` classifier + headless suite;
+`744fa8d` platform guards, unconditional CSP, `pweb.openExternal`;
+`3993835` adversarial-review hardening (17 patches; two production bugs found
+by first real execution: the emitter's nav-matrix path and the Linux
+`Content-Type`+`nosniff` refusal); `79b14ed` real-window matrix + evidence
+gates; `8343f24` ratification supersessions + residuals; `ddde9e1`
+block-helper-free macOS opener marshal; `7020472` pinned CAP-5 navsec
+carve-out; `c342fe0` macOS runner fpc-level init. Hosted runs 32739228213 and
+32740388070 are the recorded red→green trail (seam gate, CAP-5 sweep, unbound
+buildenv variable).
+
+**Freeze check:** `git diff` clean over `src/rpc/`, `src/webview/`,
+`pweb.capabilities.pas`, `pweb.capabilities.policy.pas`,
+`pweb.assets.support.pas`, `deps/webview`; divergence sweep PASS (64
+conditionals, ratified allowlist); CAP-8A corpus digest unchanged
+(`23b87da5…`); no new webview export; no eighth interface; protocol v1 and
+the nine-code taxonomy untouched.
+
+**Residuals:** the five shard entries plus three review-defer entries in
+`deferred-work.md` (release-host `pweb.openExternal` success path — retired
+by CAP-8C's Real-MainWindow gate; `RepoRootFromExecutable` triplication;
+real-window download-event depth). `security-model.md` rewording per R-A
+remains a doc-only follow-up for the spec owner.
+
+CAP-8B PASS — PRIVILEGED NAVIGATION AND BRIDGE ISOLATION FROZEN
