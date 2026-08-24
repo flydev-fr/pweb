@@ -2,7 +2,7 @@
 title: 'CAP-8B — privileged navigation and native-bridge isolation'
 type: 'feature'
 created: '2026-08-19'
-status: 'in-progress'
+status: 'done'
 review_loop_iteration: 0
 baseline_commit: '2a8a4a20f0cb50d0dd0b4d4fbee723eb0aa27cba'
 context: []
@@ -95,15 +95,15 @@ context: []
 - [x] **Checkpoint 1** — present BRIDGE EXPOSURE / NAVIGATION EVENT COVERAGE / NAVIGATION CLASSIFICATION TABLE / USER-ACTIVATION RULE / FRAME & NEW-WINDOW RULE / INITIAL ABOUT:BLANK / NATIVE SECURITY HEADERS / SYSTEM OPENER / FILES & CODE MAP, with decisions D1–D8 (below), and `CAP-8B PLAN READY` or `CAP-8B PLAN BLOCKED`. HALT for human ratification. STOP if any target cannot cancel untrusted main-frame or subframe content before execution, or if the header mechanism must diverge.
 
 **Execution — Phase B (production; only after ratification):**
-- [ ] `src/security/pweb.navigation.policy.pas` — NEW: `TPWebNavKind`/`TPWebNavAction`/`TPWebNavBootstrap`/`TPWebNavRequest`; pure `PWebClassifyNavigation`; stateful per-WebView `TPWebNavigationPolicy` (Decide + permanent Armed transition + decision counters); the native `PWEB_NATIVE_CSP` / `PWEB_NATIVE_SECURITY_HEADERS` constants; the `TPWebExternalOpener` seam type. Zero platform conditionals, zero engine types, `PWebParseAppUri` for every trusted-origin verdict.
-- [ ] `test/security/pweb.test.navigation.pas` — NEW headless suite: the full classification matrix (every B1–B23 row as a classifier decision), prefix/authority-confusion vectors, bootstrap single-use, exception fail-closed, opener-seam call counting; and `NavigationDigest`, writing `build/cap7f/navigation-policy.txt` (`schema=1`, one line per `uri|kind|frame|newwindow|useractivation|bootstrap → action`, `verdict=PASS`, LF only). Register in `pwebtests`.
-- [ ] `src/platform/windows/pweb.platform.webview2.pas` — native security headers on asset responses; `TWebView2NavigationGuard` over `NavigationStarting` / `FrameNavigationStarting` / `NewWindowRequested` / `DownloadStarting`, cancelling before commit, exception-barriered, CAP-4W teardown order, borrowed controller untouched, no new export, CAP-13 selection untouched.
-- [ ] `src/platform/linux/pweb.platform.webkitgtk.pas` — native security headers through the response API ratified at Checkpoint 1; `TWebKitGtkNavigationGuard` over `decide-policy` (navigation-action, new-window-action, response) with an EXPLICIT use/ignore for every decision (never the default handler) and the `create` signal denied; extend `test/cap7l/abi_probe_gtk.*` and `check_abi.sh` for every new symbol/callback.
-- [ ] `src/platform/macos/pweb_cocoa_bridge.{h,mm}` + `src/platform/macos/pweb.platform.cocoa.pas` — native security headers in `serveTask:`; a public-API `WKNavigationDelegate` installed early enough that no untrusted document commits, every decision handler called exactly once; `NSWorkspace` opener; deterministic stub surface for the decision state machine. No private SPI, no second dylib, no public C ABI change.
-- [ ] `examples/08-release/releaseapp.pas` + `examples/0{4,5}` frontends — install the guard in the shared host with a platform-neutral alias and the shared classifier (no platform policy table); move the pas2js inline bootstrap into `/assets/boot.js`; both pages add the navsec verdict block (external blocked, wrong authority blocked, frame blocked, CSP enforced, trusted page retained) beside the existing `secure`/`handshake`/`42`/`denied` facts.
-- [ ] `test/cap8b/run_nav_matrix.{ps1,sh}` + the malicious fixture corpus — the real-window B1–B33 matrix on each target, including the bridge-isolation proof at the LOWEST transport found in Phase A, injected-opener determinism, and the RPC/navigation race.
-- [ ] `.github/workflows/ci.yml`, `test/cap7f/emit_evidence.{ps1,sh}`, `check_cap7f_aggregate.ps1`, `check_cap7f_selftest.ps1`, `check_divergence.ps1` — replace the temporary audit steps with the production gates on all four targets; add `navigation_security` (must-PASS) and `navigation_policy_digest` (equality across four targets); re-ratify the `releaseapp.pas` divergence count+fingerprint; one negative self-test leg.
-- [ ] `_bmad-output/implementation-artifacts/deferred-work.md` — append the shard's residuals (measured limitations, any waived row, ci.yml size).
+- [x] `src/security/pweb.navigation.policy.pas` — NEW: `TPWebNavKind`/`TPWebNavAction`/`TPWebNavBootstrap`/`TPWebNavRequest`; pure `PWebClassifyNavigation`; stateful per-WebView `TPWebNavigationPolicy` (Decide + permanent Armed transition + decision counters); the native `PWEB_NATIVE_CSP` / `PWEB_NATIVE_SECURITY_HEADERS` constants; the `TPWebExternalOpener` seam type. Zero platform conditionals, zero engine types, `PWebParseAppUri` for every trusted-origin verdict. *(ratified: no `TPWebNavBootstrap` and no stateful `TPWebNavigationPolicy`/Armed machine exist — R-B measured that no engine raises an event for its initial `about:blank`, so the classifier stays a pure function and the counters live in the per-platform guards; `PWEB_NATIVE_SECURITY_HEADERS` is the function `PWebNativeSecurityHeaders` — unconditional on every response, not just HTML; the opener seam is per-adapter — `TPWebWv2ExternalOpener`/`TPWebGtkExternalOpener`/`TPWebCocoaOpenExternalFn` — because R-A moved opening off the navigation path entirely, and `PWebValidExternalUri` is the one shared gate.)*
+- [x] `test/security/pweb.test.navigation.pas` — NEW headless suite: the full classification matrix (every B1–B23 row as a classifier decision), prefix/authority-confusion vectors, bootstrap single-use, exception fail-closed, opener-seam call counting; and `NavigationDigest`, writing `build/cap7f/navigation-policy.txt` (`schema=1`, one line per `uri|kind|frame|newwindow|useractivation|bootstrap → action`, `verdict=PASS`, LF only). Register in `pwebtests`. *(ratified: there is no bootstrap-single-use case because there is no bootstrap exception (R-B) — `about:blank` is denied in every kind with no state, and `AboutBlankHasNoException` pins exactly that; exception-fail-closed lives where exceptions can actually occur — the per-platform callback barriers (Windows handlers' verdict-starts-at-cancel + finally-applied deny, the Linux callbacks' except blocks over a GLib cell, the Cocoa bridge @catch barriers gated by the stub surface and the nav-stats identities) — since the classifier itself is a pure total function; opener-seam call counting is the navmatrix spy, gated in a real window on all four targets (`opener_calls`/`opener_unexpected_uri`); the digest line format is `decision uri=… kind=… activated=both action=…` — activation is emitted as `both` because R-A made it structurally inert and the corpus proves it by running every row both ways.)*
+- [x] `src/platform/windows/pweb.platform.webview2.pas` — native security headers on asset responses; `TWebView2NavigationGuard` over `NavigationStarting` / `FrameNavigationStarting` / `NewWindowRequested` / `DownloadStarting`, cancelling before commit, exception-barriered, CAP-4W teardown order, borrowed controller untouched, no new export, CAP-13 selection untouched.
+- [x] `src/platform/linux/pweb.platform.webkitgtk.pas` — native security headers through the response API ratified at Checkpoint 1; `TWebKitGtkNavigationGuard` over `decide-policy` (navigation-action, new-window-action, response) with an EXPLICIT use/ignore for every decision (never the default handler) and the `create` signal denied; extend `test/cap7l/abi_probe_gtk.*` and `check_abi.sh` for every new symbol/callback.
+- [x] `src/platform/macos/pweb_cocoa_bridge.{h,mm}` + `src/platform/macos/pweb.platform.cocoa.pas` — native security headers in `serveTask:`; a public-API `WKNavigationDelegate` installed early enough that no untrusted document commits, every decision handler called exactly once; `NSWorkspace` opener; deterministic stub surface for the decision state machine. No private SPI, no second dylib, no public C ABI change.
+- [x] `examples/08-release/releaseapp.pas` + `examples/0{4,5}` frontends — install the guard in the shared host with a platform-neutral alias and the shared classifier (no platform policy table); move the pas2js inline bootstrap into `/assets/boot.js`; both pages add the navsec verdict block (external blocked, wrong authority blocked, frame blocked, CSP enforced, trusted page retained) beside the existing `secure`/`handshake`/`42`/`denied` facts.
+- [x] `test/cap8b/run_nav_matrix.{ps1,sh}` + the malicious fixture corpus — the real-window B1–B33 matrix on each target, including the bridge-isolation proof at the LOWEST transport found in Phase A, injected-opener determinism, and the RPC/navigation race.
+- [x] `.github/workflows/ci.yml`, `test/cap7f/emit_evidence.{ps1,sh}`, `check_cap7f_aggregate.ps1`, `check_cap7f_selftest.ps1`, `check_divergence.ps1` — replace the temporary audit steps with the production gates on all four targets; add `navigation_security` (must-PASS) and `navigation_policy_digest` (equality across four targets); re-ratify the `releaseapp.pas` divergence count+fingerprint; one negative self-test leg.
+- [x] `_bmad-output/implementation-artifacts/deferred-work.md` — append the shard's residuals (measured limitations, any waived row, ci.yml size).
 
 **Acceptance Criteria:**
 - Given each of the four targets, when the audit probes run, then bridge exposure, navigation coverage and CSP enforcement are recorded as MEASURED values and Checkpoint 1 halts on them.
@@ -135,3 +135,110 @@ Decisions D1–D8 are PROPOSED here and ratified (or replaced) at Checkpoint 1 a
 - `git diff --exit-code src/rpc/ src/webview/ src/security/pweb.capabilities.pas src/security/pweb.capabilities.policy.pas src/assets/pweb.assets.support.pas deps/webview` — expected: clean.
 - Per-target runtime matrices (`test/cap8b/run_nav_matrix.*`) and the release smokes — expected: all rows PASS, native/SOA counters 0 for untrusted contexts.
 - Push the branch → hosted CI: six jobs green including `cap7-aggregate`, with `navigation_security = PASS` and one shared `navigation_policy_digest` on all four targets.
+
+## Spec Change Log
+
+- **2026-08-19 — Checkpoint-1 ratifications R-A/R-B supersede three
+  frozen-block statements.** The `<frozen-after-approval>` text above is
+  intentionally left byte-untouched (it is the human-owned intent of record);
+  the measured record and the binding decisions live in
+  `cap8b-audit-findings.md` ("RATIFIED AT CHECKPOINT 1"). What changed:
+  1. The I/O row "User external → Cancel internally + OS opener called
+     exactly once" is superseded by **R-A**: no navigation event ever reaches
+     an opener, because user activation is not honestly reportable on any
+     engine (WebView2/WebKitGTK report a gesture for any navigation in a
+     binding-promise continuation; WKWebView exposes no public flag).
+     External opening is a capability-authorized runtime invocation —
+     `pweb.openExternal`, mapped to `external.open`, checked by the CAP-8A
+     policy — and `https:`/`mailto:` navigations are cancelled like every
+     other external navigation.
+  2. The bootstrap `about:blank` single-use/Armed rows are superseded by
+     **R-B**: no engine raises a navigation event for its own initial
+     `about:blank`, so no bootstrap exception and no Armed state machine
+     exist anywhere; a later `about:blank` is denied unconditionally.
+  3. The acceptance criterion "given a user-activated https/mailto link,
+     when clicked, the injected opener is called exactly once" is met in its
+     ratified form: the *capability invocation* calls the injected opener
+     exactly once per authorized request (navmatrix: `opener_calls` equals
+     the authorized invocations, and script navigations never move it).
+  Also per R-B: the authority comparison stays case-insensitive
+  (`pweb://APP` IS the trusted origin — the "reject pweb://APP/" intent
+  line is declined with measurement W5a), and `connect-src` is `'self'`,
+  not `'none'`.
+
+## Suggested Review Order
+
+**The shared classifier — one decision truth, zero platform types**
+
+- Entry point: the pure classifier every engine event feeds; the whole corpus is a function of these inputs
+  [`pweb.navigation.policy.pas:159`](../../src/security/pweb.navigation.policy.pas#L159)
+
+- Hardened external-URI validator: component-parsed authority, forbidden-byte policy, percent-encoding as the accepted spelling
+  [`pweb.navigation.policy.pas:295`](../../src/security/pweb.navigation.policy.pas#L295)
+
+- The unconditional native CSP/header block (the SVG rationale lives here)
+  [`pweb.navigation.policy.pas:362`](../../src/security/pweb.navigation.policy.pas#L362)
+
+**Real-window proof harness**
+
+- Per-method counting-bridge ledger: bridge isolation as an equality, not two unread zeroes
+  [`navmatrix.pas:551`](../../test/cap8b/navmatrix.pas#L551)
+
+- The required ledger rows, tripwire child count 0 and deny-apply-failures 0
+  [`navmatrix.pas:802`](../../test/cap8b/navmatrix.pas#L802)
+
+- Hostile driver corpus: raw-channel positive control, window.open null, meta-refresh, javascript:, CSP header visibility
+  [`driver.js:26`](../../test/cap8b/fixture/assets/driver.js#L26)
+
+**Three engine guards, one decision**
+
+- Windows guard over the four WebView2 events, with applied-deny failure counters
+  [`pweb.platform.webview2.pas:131`](../../src/platform/windows/pweb.platform.webview2.pas#L131)
+
+- Windows opener: COM-initialized ShellExecuteExW, data-only URI
+  [`pweb.platform.webview2.pas:614`](../../src/platform/windows/pweb.platform.webview2.pas#L614)
+
+- Linux guard + the finish_with_response conversion that carries native headers (and the Content-Type/nosniff fix)
+  [`pweb.platform.webkitgtk.pas:284`](../../src/platform/linux/pweb.platform.webkitgtk.pas#L284)
+
+- macOS delegate install (generation-checked handles, exactly-once stats witness)
+  [`pweb_cocoa_bridge.mm:1082`](../../src/platform/macos/pweb_cocoa_bridge.mm#L1082)
+
+- macOS opener: main-queue marshal for NSWorkspace
+  [`pweb_cocoa_bridge.mm:1247`](../../src/platform/macos/pweb_cocoa_bridge.mm#L1247)
+
+**Release host authorization (ratification R-A)**
+
+- pweb.openExternal mapped to external.open BEFORE the bridge — opening is an authorization decision
+  [`releaseapp.pas:338`](../../examples/08-release/releaseapp.pas#L338)
+
+- The one production place a URI reaches the OS
+  [`releaseapp.pas:416`](../../examples/08-release/releaseapp.pas#L416)
+
+- Guard installed in the shared host between asset handler and first navigate
+  [`releaseapp.pas:974`](../../examples/08-release/releaseapp.pas#L974)
+
+**Evidence & CI gates**
+
+- Emitter reads the nav gate's own record and hashes the decision corpus
+  [`emit_evidence.ps1:297`](../../test/cap7f/emit_evidence.ps1#L297)
+
+- Aggregator: navigation_security must-PASS, navigation_policy_digest four-way equality
+  [`check_cap7f_aggregate.ps1:55`](../../test/cap7f/check_cap7f_aggregate.ps1#L55)
+
+- The two new negative self-test legs (SKIP promotion, digest divergence)
+  [`check_cap7f_selftest.ps1:134`](../../test/cap7f/check_cap7f_selftest.ps1#L134)
+
+- One nav-matrix gate per platform job, replacing the Checkpoint-1 audit steps
+  [`ci.yml:1500`](../../.github/workflows/ci.yml#L1500)
+
+**Peripherals**
+
+- Headless suite: activation-is-not-an-input replay and the pinned header profile
+  [`pweb.test.navigation.pas:58`](../../test/security/pweb.test.navigation.pas#L58)
+
+- React navsec verdict block (window.open observed, yield-honest flags)
+  [`App.tsx:162`](../../examples/04-react/frontend/src/App.tsx#L162)
+
+- The human ratification record R-A/R-B the change log cites
+  [`cap8b-audit-findings.md:437`](cap8b-audit-findings.md#L437)

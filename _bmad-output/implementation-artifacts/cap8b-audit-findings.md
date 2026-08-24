@@ -219,7 +219,7 @@ a more permissive value.
 phase is our own `pweb://app` navigation. A *later* `about:blank` navigation
 does raise an event and was cancelled successfully.
 
-**Finding W5.** The single-use bootstrap exception appears to be **unnecessary
+**Finding W6.** The single-use bootstrap exception appears to be **unnecessary
 on Windows**. An exception nothing needs is an exception nothing tests; it
 should not be written unless another engine demands it.
 
@@ -563,6 +563,13 @@ same-origin `fetch`, and `examples/06-assets/frontend/dist/assets/app.js` and
 handlers. `'self'` blocked every external connection and every `wss://` in the
 measurement. **[pending]** on the other three engines.
 
+## P5 — bootstrap `about:blank`
+
+Do not write the exception unless another engine demands it. Windows reports
+`about:blank` as its initial source but raises no navigation event for it, and
+a later `about:blank` is cancellable. **[pending]** — if Linux and macOS agree,
+the Bootstrapping/Armed state machine should not be built at all.
+
 ## P6 — the system external opener
 
 Proposed private native APIs, one per platform, each taking the URI **as
@@ -592,10 +599,3 @@ Note this section is a *proposal*, not a measurement: none of the three APIs
 has been exercised yet, because the opener is production work that the intent
 gates behind Checkpoint 1. If P2 lands on option A there is no opener to build
 at all.
-
-## P5 — bootstrap `about:blank`
-
-Do not write the exception unless another engine demands it. Windows reports
-`about:blank` as its initial source but raises no navigation event for it, and
-a later `about:blank` is cancellable. **[pending]** — if Linux and macOS agree,
-the Bootstrapping/Armed state machine should not be built at all.
