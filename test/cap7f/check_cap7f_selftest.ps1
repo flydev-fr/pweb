@@ -10,6 +10,12 @@
 #   (c) a PASS field rewritten to SKIP     -> aggregator exits nonzero, no matrix
 #   (c2) capability_policy (CAP-8A) rewritten to SKIP -> same refusal
 #   (c3) capability_policy_digest diverging on one target -> same refusal
+#   (c6) security_corpus (CAP-8C) rewritten to SKIP -> same refusal
+#   (c7) security_corpus_digest diverging on one target -> same refusal
+#   (c8) cap8c_denied_soa=1 with a PASS corpus -> defense-in-depth refusal
+#   (c9) cap8c_opener_nonmain=1 with a PASS corpus -> defense-in-depth refusal
+#   (c10) cap8c_secure_origin=false with a PASS corpus -> same refusal
+#   (c8-c10 additionally assert the refusal came through the EXPECTED branch)
 #   (e) a count-preserving directive swap in an allowlisted file
 #                                          -> divergence sweep refuses via the
 #                                             FINGERPRINT branch, restore -> green
@@ -58,7 +64,7 @@ function Reset-Fixture {
     Copy-Item $invSrc (Join-Path $fx 'inv') -Recurse
 }
 
-function Invoke-AggExpectFail([string]$Label) {
+function Invoke-AggExpectFail([string]$Label, [string]$ExpectPattern = '') {
     Remove-Item -Force -ErrorAction SilentlyContinue $matrix
     & pwsh -NoProfile -File $agg -EvidenceRoot (Join-Path $fx 'ev') `
         -MacosInventoryRoot (Join-Path $fx 'inv') *> (Join-Path $fx "$Label.log")
@@ -68,6 +74,16 @@ function Invoke-AggExpectFail([string]$Label) {
     }
     if (Test-Path $matrix) {
         throw "selftest ${Label}: a FAILING aggregation wrote a matrix"
+    }
+    # when the leg targets ONE specific refusal branch, require the refusal
+    # to have come through THAT branch - a leg that passes on an unrelated
+    # refusal (a typo'd mutation, a stale fixture) proves nothing
+    if ($ExpectPattern -ne '') {
+        if (-not (Select-String -Path (Join-Path $fx "$Label.log") `
+                -Pattern $ExpectPattern -Quiet)) {
+            Get-Content (Join-Path $fx "$Label.log") | Write-Host
+            throw "selftest ${Label}: the aggregator refused, but not through the expected '$ExpectPattern' branch"
+        }
     }
     Write-Host "[CAP-7F] selftest ${Label}: aggregator refused as required (nonzero exit, no matrix)"
 }
@@ -151,6 +167,72 @@ $e.navigation_policy_digest = '0' * 64
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'nav-digest-divergence'
 
+# --- (c6) CAP-8C: security_corpus rewritten to SKIP --------------------------
+# the CAP-8C mustPass field gets its own refusal proof: a harness verdict
+# downgraded to SKIP must never aggregate as if the multi-principal
+# enforcement were proven.
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['security_corpus']) {
+    throw 'selftest sec-corpus-skip: the evidence carries no security_corpus field - the emitters did not record it'
+}
+$e.security_corpus = 'SKIP'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'sec-corpus-skip'
+
+# --- (c7) CAP-8C: security_corpus_digest diverging on ONE target -------------
+# cross-target digest EQUALITY of the CAP-8C decision corpus gets its own
+# refusal proof (a divergence means the four targets did not compute the same
+# multi-principal decisions - exactly what the aggregate exists to refuse).
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['security_corpus_digest']) {
+    throw 'selftest sec-digest-divergence: the evidence carries no security_corpus_digest field - the emitters did not record it'
+}
+$e.security_corpus_digest = '0' * 64
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'sec-digest-divergence'
+
+# --- (c8) CAP-8C: a denied principal that reached the SOA bridge -------------
+# denied-SOA>0 is the shape of a policy that ran AFTER the bridge instead of
+# before it; with the corpus still marked PASS the aggregator must refuse it
+# through the defense-in-depth branch, not accept a green corpus over a hole.
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['cap8c_denied_soa']) {
+    throw 'selftest cap8c-denied-soa: the evidence carries no cap8c_denied_soa field - the emitters did not record it'
+}
+$e.cap8c_denied_soa = 1
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap8c-denied-soa' 'DENIED-SOA'
+
+# --- (c9) CAP-8C: a non-Main principal that reached the opener ---------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['cap8c_opener_nonmain']) {
+    throw 'selftest cap8c-opener-nonmain: the evidence carries no cap8c_opener_nonmain field - the emitters did not record it'
+}
+$e.cap8c_opener_nonmain = 1
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap8c-opener-nonmain' 'NON-MAIN OPENER'
+
+# --- (c10) CAP-8C: secure_origin false with a PASS corpus --------------------
+# a privileged document outside the pweb:// origin with the corpus still
+# marked PASS must be refused through the dedicated SECURE ORIGIN branch
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['cap8c_secure_origin']) {
+    throw 'selftest cap8c-secure-origin: the evidence carries no cap8c_secure_origin field - the emitters did not record it'
+}
+$e.cap8c_secure_origin = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap8c-secure-origin' 'SECURE ORIGIN'
+
 # --- (d) divergence sweep must refuse an off-allowlist conditional -----------
 $fixturePas = 'src/zz_cap7f_selftest_fixture.pas'
 Remove-Item -Force -ErrorAction SilentlyContinue $fixturePas
@@ -206,4 +288,4 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Remove-Item -Force -ErrorAction SilentlyContinue $matrix
-Write-Host '[CAP-7F] selftest PASS - 7 aggregator refusals + 2 divergence refusals, all on copies or byte-restored'
+Write-Host '[CAP-7F] selftest PASS - 12 aggregator refusals + 2 divergence refusals, all on copies or byte-restored'

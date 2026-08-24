@@ -306,6 +306,83 @@ if ($navigationSecurity -notin @('PASS', 'FAIL', 'SKIP')) {
 }
 Write-Host "[CAP-7F] navigation_security: $navigationSecurity"
 
+# --- CAP-8C multi-principal security corpus + one canonical digest ----------
+# The harness record is read FIRST and its overall verdict recorded VERBATIM
+# (PASS|FAIL|SKIP) - exactly the navigation_security shape: an honest FAIL or
+# SKIP goes into the evidence and the AGGREGATOR refuses it; the emitter never
+# throws a FAIL into oblivion where no evidence would name it.
+$mpFile = Join-Path $repoRoot 'build/cap8c/multiprincipal-windows-x86_64.json'
+if (-not (Test-Path $mpFile)) {
+    throw '[CAP-7F] multiprincipal-windows-x86_64.json missing -- the CAP-8C gate has not run in this workspace'
+}
+$mp = Get-Content $mpFile -Raw | ConvertFrom-Json
+if ($mp.schema -ne 1) { throw '[CAP-7F] multiprincipal json schema mismatch' }
+$securityCorpus = "$($mp.overall)"
+if ($securityCorpus -notin @('PASS', 'FAIL', 'SKIP')) {
+    throw "[CAP-7F] multiprincipal json carries an unexpected verdict: $securityCorpus"
+}
+
+# the defense-in-depth counters are REQUIRED whenever the harness actually
+# ran (PASS or FAIL): an absent property must THROW, never coerce to a silent
+# 0 - a renamed harness field would otherwise turn these into constant zeroes
+# (fail-open). Only the runner-synthesized SKIP record may omit them.
+function Read-MpCounter([object]$Record, [string]$Name) {
+    $p = $Record.PSObject.Properties[$Name]
+    if ($null -eq $p -or $null -eq $p.Value -or "$($p.Value)" -eq '') {
+        throw "[CAP-7F] multiprincipal record carries no '$Name' counter -- refusing to default it to 0"
+    }
+    return [int]$p.Value
+}
+if ($securityCorpus -ne 'SKIP') {
+    $cap8cDeniedSoa = (Read-MpCounter $mp 'denied_bridge_login_add') +
+        (Read-MpCounter $mp 'denied_bridge_plugin_add')
+    $cap8cOpenerNonMain = (Read-MpCounter $mp 'opener_login') +
+        (Read-MpCounter $mp 'opener_plugin') +
+        (Read-MpCounter $mp 'opener_unexpected')
+    $so = $mp.PSObject.Properties['secure_origin']
+    if ($null -eq $so) {
+        throw "[CAP-7F] multiprincipal record carries no 'secure_origin' field -- refusing to default it"
+    }
+    if ($so.Value) { $cap8cSecureOrigin = 'true' } else { $cap8cSecureOrigin = 'false' }
+} else {
+    # honest SKIP shape (no WebView2/desktop session): the aggregator's
+    # mustPass refusal of the SKIP verdict is the one signal; these values
+    # are recorded but never consulted for a non-PASS corpus
+    $cap8cDeniedSoa = 0
+    $cap8cOpenerNonMain = 0
+    $cap8cSecureOrigin = 'false'
+}
+
+# security-corpus.txt is the CANONICAL decision/counter corpus (headless
+# native leg + measured GUI facts): identical bytes on all four targets by
+# construction, so its sha256 is the cross-target digest. Its verdict=PASS
+# trailer is required ONLY when overall=PASS - an honest FAIL/SKIP corpus
+# carries its own verdict line and is refused by the aggregator through the
+# verdict field, never silently normalized here.
+$corpusFile = Join-Path $repoRoot 'build/cap8c/security-corpus.txt'
+if ($securityCorpus -ceq 'PASS') {
+    if (-not (Test-Path $corpusFile)) {
+        throw '[CAP-7F] security-corpus.txt missing while the harness records PASS'
+    }
+    $corpusRows = @(Get-Content $corpusFile)
+    if ($corpusRows.Count -lt 2) {
+        throw "[CAP-7F] security-corpus.txt is empty or truncated ($($corpusRows.Count) line(s))"
+    }
+    if ($corpusRows[0] -cne 'schema=1') {
+        throw '[CAP-7F] security-corpus.txt carries no schema=1 header'
+    }
+    if ($corpusRows[-1] -cne 'verdict=PASS') {
+        throw '[CAP-7F] security-corpus.txt does not end in verdict=PASS while the harness records PASS'
+    }
+    $securityCorpusDigest = (Get-FileHash $corpusFile -Algorithm SHA256).Hash.ToLowerInvariant()
+} elseif (Test-Path $corpusFile) {
+    $securityCorpusDigest = (Get-FileHash $corpusFile -Algorithm SHA256).Hash.ToLowerInvariant()
+} else {
+    $securityCorpusDigest = 'ABSENT'
+}
+Write-Host "[CAP-7F] security_corpus_digest: $securityCorpusDigest"
+Write-Host "[CAP-7F] security_corpus: $securityCorpus (denied_soa=$cap8cDeniedSoa opener_nonmain=$cap8cOpenerNonMain secure=$cap8cSecureOrigin)"
+
 # --- run identity -----------------------------------------------------------
 $sha = $env:GITHUB_SHA
 if (-not $sha) { $sha = (& git rev-parse HEAD).Trim() }
@@ -334,6 +411,11 @@ $evidence = [ordered]@{
     capability_policy_digest        = $capabilityPolicyDigest
     navigation_security             = $navigationSecurity
     navigation_policy_digest        = $navigationPolicyDigest
+    security_corpus                 = $securityCorpus
+    security_corpus_digest          = $securityCorpusDigest
+    cap8c_denied_soa                = $cap8cDeniedSoa
+    cap8c_opener_nonmain            = $cap8cOpenerNonMain
+    cap8c_secure_origin             = $cap8cSecureOrigin
     release_layout                  = $releaseLayout
     no_listener                     = $noListener
     no_listener_provenance          = 'source-sweep re-executed (check_cap6_nonetwork.ps1); CAP-5/CAP-6 job gates precede this emitter'

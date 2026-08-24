@@ -1515,45 +1515,39 @@ jobs:
             build/cap8b/nav-matrix.json
             build/cap8b/nav-matrix-win.log
 
-      # ---------- CAP-8C topology probe: TEMPORARY, MEASUREMENT ONLY ----------
-      # THIS BLOCK IS DELETED AT CAP-8C CHECKPOINT 1 RATIFICATION, when the
-      # production multi-principal gate replaces it. It measures the one fact
-      # the CAP-8C plan is not allowed to assume: whether THIS engine can hold
-      # two simultaneously live WebViews in one process through the frozen
-      # 17-export public ABI - who owns webview_run, whether terminating or
-      # destroying one view stops the loop, whether binding userdata and
-      # handler delivery stay per-instance, and whether invocations can be
-      # outstanding on both views at once. It gates NOTHING and no verdict it
-      # prints is policy.
-      #
-      # continue-on-error, deliberately: a hosted runner that cannot open a
-      # WebView2 must not turn this shard red before Checkpoint 1, and a
-      # measurement that says "not supported" is a RESULT. It sits BEFORE the
-      # CAP-7F emitter so a failing probe can never mask a CAP-7F regression.
-      - name: CAP-8C topology probe (MEASUREMENT ONLY - removed at Checkpoint 1 ratification)
+      # ---------- CAP-8C: the multi-principal integration harness ----------
+      # The production gate that replaced the Checkpoint-1 topology probe. It
+      # drives the UNCHANGED runtime with three real principals under ONE
+      # shared policy: a headless NATIVE leg over three registered sources
+      # (main, login, plugin) writes the canonical build/cap8c/
+      # security-corpus.txt (the cross-target digest source), then a GUI leg
+      # of two simultaneously live real WebView2 windows proves the same
+      # policy differentiates two real privileged principals under the full
+      # CAP-8B guard, with the content-swap and the injected-opener evidence.
+      # It writes multiprincipal-windows-x86_64.json, which the CAP-7F emitter
+      # reads into security_corpus (must-PASS, the aggregator refuses a SKIP).
+      # It runs BEFORE the emitter so its verdict is this job's, and mirrors
+      # the nav-matrix's conditional-SKIP policy: only an absent WebView2/
+      # desktop session records SKIP (the native leg still runs).
+      - name: CAP-8C multi-principal integration harness (WebView2)
         shell: pwsh
-        timeout-minutes: 15
-        continue-on-error: true
+        timeout-minutes: 20
         run: |
-          pwsh -NoProfile -File test/cap8c/run_topology.ps1 2>&1 |
-            Tee-Object -FilePath build/cap8c-topology.log
-          if ($LASTEXITCODE -ne 0) { throw 'CAP-8C topology probe FAILED (measurement only)' }
+          pwsh -NoProfile -File test/cap8c/run_multiprincipal.ps1 2>&1 |
+            Tee-Object -FilePath build/cap8c-multiprincipal.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-8C multiprincipal gate FAILED' }
 
-      # if-no-files-found: WARN, not error. Every sibling upload in this job
-      # uses error because its artifact is a required input to the CAP-7F
-      # aggregate; this one feeds no aggregate yet, and a target that could
-      # not measure is itself part of the Checkpoint 1 record.
-      - name: CAP-8C upload the Windows topology measurement (MEASUREMENT ONLY)
-        continue-on-error: true
+      - name: CAP-8C upload the Windows multiprincipal record
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: cap8c-topology-windows-x86_64
+          name: cap8c-multiprincipal-windows
           if-no-files-found: warn
           retention-days: 30
           path: |
-            build/cap8c/topology-windows-x86_64.json
-            build/cap8c/topology-win.log
-            build/cap8c-topology.log
+            build/cap8c/multiprincipal-windows-x86_64.json
+            build/cap8c/security-corpus.txt
+            build/cap8c/multiprincipal-win.log
+            build/cap8c-multiprincipal.log
 
       - name: CAP-7F emit the Windows evidence artifact
         shell: pwsh
@@ -1915,35 +1909,32 @@ jobs:
             build/cap8b/nav-matrix.json
             build/cap8b/nav-matrix-posix.log
 
-      # ---------- CAP-8C topology probe: TEMPORARY, MEASUREMENT ONLY ----------
-      # THIS BLOCK IS DELETED AT CAP-8C CHECKPOINT 1 RATIFICATION. The same
-      # questions the Windows job measures, on the WebKitGTK engine, and the
-      # reason they must be asked per engine: upstream's run loop is a
-      # per-instance flag over the GLOBAL GLib main context, its terminate is
-      # a dispatched write to that per-instance flag, and its window refcount
-      # is process-global - which of those facts dominates two-window
-      # behavior is exactly what cannot be assumed. Runs under the same
-      # virtual display as every other Linux GUI gate.
-      #
-      # continue-on-error, deliberately: this measures, it does not gate, and
-      # it sits BEFORE the CAP-7F emitter so a failing probe can never mask a
-      # CAP-7F regression.
-      - name: CAP-8C topology probe (MEASUREMENT ONLY - removed at Checkpoint 1 ratification)
+      # ---------- CAP-8C: the multi-principal integration harness ----------
+      # The production gate that replaced the Checkpoint-1 topology probe, on
+      # the WebKitGTK engine, under a real virtual display. The headless
+      # NATIVE leg writes the canonical security-corpus.txt (the cross-target
+      # digest source) and the GUI leg of two simultaneously live WebKitGTK
+      # windows proves the shared policy differentiates two real principals
+      # with the content-swap + injected-opener evidence. No conditional SKIP
+      # - the display is real, every failure gates, same policy as the
+      # nav-matrix. It runs BEFORE the CAP-7F emitter (which reads its
+      # verdict into security_corpus and hashes the corpus into
+      # security_corpus_digest).
+      - name: CAP-8C multi-principal integration harness (WebKitGTK) under Xvfb
         shell: bash
-        timeout-minutes: 15
-        continue-on-error: true
-        run: xvfb-run -a test/cap8c/run_topology.sh
+        timeout-minutes: 20
+        run: xvfb-run -a test/cap8c/run_multiprincipal.sh
 
-      - name: CAP-8C upload the Linux topology measurement (MEASUREMENT ONLY)
-        continue-on-error: true
+      - name: CAP-8C upload the Linux multiprincipal record
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: cap8c-topology-linux-x86_64
+          name: cap8c-multiprincipal-linux
           if-no-files-found: warn
           retention-days: 30
           path: |
-            build/cap8c/topology-linux-x86_64.json
-            build/cap8c/topology-posix.log
+            build/cap8c/multiprincipal-linux-x86_64.json
+            build/cap8c/security-corpus.txt
+            build/cap8c/multiprincipal-posix.log
 
       - name: CAP-7F emit the Linux evidence artifact
         shell: bash
@@ -2348,35 +2339,31 @@ jobs:
             build/cap8b/nav-matrix.json
             build/cap8b/nav-matrix-posix.log
 
-      # ---------- CAP-8C topology probe: TEMPORARY, MEASUREMENT ONLY ----------
-      # THIS BLOCK IS DELETED AT CAP-8C CHECKPOINT 1 RATIFICATION. The same
-      # questions, on WKWebView, and PER ARCHITECTURE for the reason CAP-7M
-      # states: "the engine behaves like this" is a claim about x86_64-darwin
-      # and aarch64-darwin separately. Cocoa is where the suspicion is
-      # strongest - one global NSApp run loop, and each instance installs
-      # ITSELF as the application delegate, so what a second pre-run create
-      # does to the first window's deferred initialization is precisely the
-      # unknown under measurement.
-      #
-      # continue-on-error, deliberately: this measures, it does not gate, and
-      # it sits BEFORE the CAP-7F emitter so a failing probe can never mask a
-      # CAP-7F regression.
-      - name: CAP-8C topology probe (MEASUREMENT ONLY - removed at Checkpoint 1 ratification)
+      # ---------- CAP-8C: the multi-principal integration harness ----------
+      # The production gate that replaced the Checkpoint-1 topology probe, on
+      # WKWebView, natively on THIS architecture (a result measured on one
+      # arch is not evidence about the other). The headless NATIVE leg writes
+      # the canonical security-corpus.txt; the GUI leg of two simultaneously
+      # live WKWebView windows proves the shared policy differentiates two
+      # real principals with the content-swap + injected-opener evidence,
+      # under the R-C2/R-C3 lifecycle (no mid-loop destroy; terminate only the
+      # run-owner at shutdown). A real Aqua session is always present, so
+      # every failure gates - no SKIP. Runs BEFORE the CAP-7F emitter.
+      - name: CAP-8C multi-principal integration harness (WKWebView)
         shell: bash
-        timeout-minutes: 15
-        continue-on-error: true
-        run: test/cap8c/run_topology.sh
+        timeout-minutes: 20
+        run: test/cap8c/run_multiprincipal.sh
 
-      - name: CAP-8C upload the macOS x64 topology measurement (MEASUREMENT ONLY)
-        continue-on-error: true
+      - name: CAP-8C upload the macOS x64 multiprincipal record
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: cap8c-topology-macos-x86_64
+          name: cap8c-multiprincipal-macos-x64
           if-no-files-found: warn
           retention-days: 30
           path: |
-            build/cap8c/topology-macos-x86_64.json
-            build/cap8c/topology-posix.log
+            build/cap8c/multiprincipal-macos-x86_64.json
+            build/cap8c/security-corpus.txt
+            build/cap8c/multiprincipal-posix.log
 
       # CAP-7F: additive, after every gate it summarizes. macOS runs no new
       # gate - the CAP-7M2 release suite above already executed the host
@@ -2729,33 +2716,28 @@ jobs:
             build/cap8b/nav-matrix.json
             build/cap8b/nav-matrix-posix.log
 
-      # ---------- CAP-8C topology probe: TEMPORARY, MEASUREMENT ONLY ----------
-      # THIS BLOCK IS DELETED AT CAP-8C CHECKPOINT 1 RATIFICATION. See the
-      # x64 sibling: same probe, same questions, run natively on this
-      # architecture because a WKWebView answer measured on one arch is not
-      # evidence about the other. The probe names its document from its own
-      # compile-time target id, so this leg's result can never be filed as
-      # the x64 leg's.
-      #
-      # continue-on-error, deliberately: this measures, it does not gate, and
-      # it sits BEFORE the CAP-7F emitter so a failing probe can never mask a
-      # CAP-7F regression.
-      - name: CAP-8C topology probe (MEASUREMENT ONLY - removed at Checkpoint 1 ratification)
+      # ---------- CAP-8C: the multi-principal integration harness ----------
+      # The production gate that replaced the Checkpoint-1 topology probe, on
+      # WKWebView, natively on this architecture - the harness names its
+      # record from its own compile-time target id, so this leg's result can
+      # never be filed as the x64 leg's. Same two legs (native decision
+      # corpus + two real principals under the shared policy), every failure
+      # gates. Runs BEFORE the CAP-7F emitter.
+      - name: CAP-8C multi-principal integration harness (WKWebView)
         shell: bash
-        timeout-minutes: 15
-        continue-on-error: true
-        run: test/cap8c/run_topology.sh
+        timeout-minutes: 20
+        run: test/cap8c/run_multiprincipal.sh
 
-      - name: CAP-8C upload the macOS arm64 topology measurement (MEASUREMENT ONLY)
-        continue-on-error: true
+      - name: CAP-8C upload the macOS arm64 multiprincipal record
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: cap8c-topology-macos-arm64
+          name: cap8c-multiprincipal-macos-arm64
           if-no-files-found: warn
           retention-days: 30
           path: |
-            build/cap8c/topology-macos-arm64.json
-            build/cap8c/topology-posix.log
+            build/cap8c/multiprincipal-macos-arm64.json
+            build/cap8c/security-corpus.txt
+            build/cap8c/multiprincipal-posix.log
 
       # CAP-7F: see the x64 sibling - the emitter summarizes gates that
       # already ran above in this job and re-enumerates the export trie.
@@ -2981,94 +2963,3 @@ jobs:
           retention-days: 7
           path: |
             build/cap7f/
-
-  # ------ CAP-8C topology summary: TEMPORARY, MEASUREMENT ONLY ------
-  # THIS WHOLE JOB IS DELETED AT CAP-8C CHECKPOINT 1 RATIFICATION, together
-  # with the four per-target topology blocks it collects.
-  #
-  # It exists because each platform job measures only its OWN engine, and the
-  # FIELD-BY-FIELD comparison across the four engines - who owns webview_run,
-  # whether closing one view stops the loop, whether two views can be live at
-  # once - is the entire Checkpoint 1 input. Without this job that comparison
-  # exists only when a human downloads four artifacts by hand.
-  #
-  # It gates NOTHING and no rendering it prints is policy: continue-on-error
-  # at the job level, nothing needs it, and a divergence between engines - the
-  # KIND OF ANSWER this probe exists to obtain - can never turn it red.
-  #
-  # if: always(), deliberately, for the same reason the per-target uploads use
-  # if-no-files-found: warn - a target that could not measure is itself part
-  # of the Checkpoint 1 record, and one red platform job must not hide the
-  # other three's measurements.
-  cap8c-topology-summary:
-    name: cap8c topology summary (MEASUREMENT ONLY - removed at Checkpoint 1)
-    needs: [windows, linux, macos-x64, macos-arm64]
-    if: always()
-    continue-on-error: true
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      # continue-on-error on EVERY download: the producing step is itself
-      # continue-on-error with if-no-files-found: warn, so a runner that
-      # could not measure legitimately uploads nothing. A hard failure would
-      # abort this job before the render and turn three present measurements
-      # into none - and the summarizer already prints MISSING for an absent
-      # target, which is the honest rendering of that outcome.
-      - name: Download the Windows topology measurement (MEASUREMENT ONLY)
-        continue-on-error: true
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
-        with:
-          name: cap8c-topology-windows-x86_64
-          path: ev/windows-x86_64
-
-      - name: Download the Linux topology measurement (MEASUREMENT ONLY)
-        continue-on-error: true
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
-        with:
-          name: cap8c-topology-linux-x86_64
-          path: ev/linux-x86_64
-
-      - name: Download the macOS x64 topology measurement (MEASUREMENT ONLY)
-        continue-on-error: true
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
-        with:
-          name: cap8c-topology-macos-x86_64
-          path: ev/macos-x86_64
-
-      - name: Download the macOS arm64 topology measurement (MEASUREMENT ONLY)
-        continue-on-error: true
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
-        with:
-          name: cap8c-topology-macos-arm64
-          path: ev/macos-arm64
-
-      # -Path is searched RECURSIVELY, so the single root covers all four
-      # download directories at once, and each document is attributed by the
-      # target it DECLARES rather than by the directory it was found in - a
-      # leg filed under the wrong name is refused, not silently
-      # re-attributed. An empty root fails only because it means this job
-      # was wired to the wrong place, never because a target diverged.
-      - name: CAP-8C render the four-target topology comparison (MEASUREMENT ONLY)
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force build/cap8c | Out-Null
-          pwsh -NoProfile -File test/cap8c/summarize_topology.ps1 -Path ev 2>&1 |
-            Tee-Object -FilePath build/cap8c/cross-target-topology.txt
-
-      # always(), so a render that died halfway still ships whatever
-      # transcript it managed to write; warn, not error, because this job
-      # gates nothing and an absent transcript is itself part of the
-      # Checkpoint 1 record.
-      - name: CAP-8C upload the four-target topology comparison (MEASUREMENT ONLY)
-        if: always()
-        continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: cap8c-topology-cross-target
-          if-no-files-found: warn
-          retention-days: 30
-          path: |
-            build/cap8c/cross-target-topology.txt

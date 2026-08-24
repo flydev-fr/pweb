@@ -53,6 +53,8 @@ $required = @(
     'secure', 'bundle_protocol', 'rpc_add_20_22', 'runtime_provenance',
     'host_args', 'capability_policy', 'capability_policy_digest',
     'navigation_security', 'navigation_policy_digest',
+    'security_corpus', 'security_corpus_digest',
+    'cap8c_denied_soa', 'cap8c_opener_nonmain', 'cap8c_secure_origin',
     'release_layout', 'no_listener', 'app_pwb_react_sha256',
     'logical_inventory_sha256_react', 'github_sha', 'github_run_id', 'waivers'
 )
@@ -67,7 +69,7 @@ $absolutePins = @{
 }
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
 $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
-    'navigation_security')
+    'navigation_security', 'security_corpus')
 # fields that must agree, value-for-value, across all four targets
 # (capability_policy_digest is the CAP-8A structured policy-decision corpus and
 # navigation_policy_digest the CAP-8B one: four targets, one byte-identical
@@ -75,7 +77,8 @@ $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
 $equalityFields = @(
     'fpc', 'webview_pin', 'webview_surface', 'origin', 'secure',
     'bundle_protocol', 'rpc_add_20_22', 'logical_inventory_sha256_react',
-    'capability_policy_digest', 'navigation_policy_digest', 'github_sha'
+    'capability_policy_digest', 'navigation_policy_digest',
+    'security_corpus_digest', 'github_sha'
 )
 # targets that additionally carry a pas2js logical inventory
 $pas2jsTargets = @('linux-x86_64', 'macos-x86_64', 'macos-arm64')
@@ -140,6 +143,29 @@ foreach ($t in $evidence.Keys) {
     foreach ($name in $ex) {
         if ($name -cnotmatch '^webview_[a-z_]+$') {
             $failures.Add("EXPORT NAME SHAPE: target=$t exports '$name'")
+        }
+    }
+    # CAP-8C defense in depth, only meaningful where the corpus is PASS (a
+    # SKIP/FAIL already failed mustPass above): a denied principal must never
+    # have reached the SOA bridge, only the Main principal may reach the
+    # opener, and every privileged document must run in the secure origin.
+    # The numeric casts are GUARDED: a non-numeric value becomes a named
+    # failure entry, never a mid-validation crash that hides the other rows.
+    if ("$($e.security_corpus)" -ceq 'PASS') {
+        $soaVal = 0
+        if (-not [int]::TryParse("$($e.cap8c_denied_soa)", [ref]$soaVal)) {
+            $failures.Add("CAP-8C NON-NUMERIC: target=$t cap8c_denied_soa='$($e.cap8c_denied_soa)'")
+        } elseif ($soaVal -ne 0) {
+            $failures.Add("CAP-8C DENIED-SOA>0: target=$t cap8c_denied_soa=$soaVal -- a forbidden principal reached the bridge")
+        }
+        $openerVal = 0
+        if (-not [int]::TryParse("$($e.cap8c_opener_nonmain)", [ref]$openerVal)) {
+            $failures.Add("CAP-8C NON-NUMERIC: target=$t cap8c_opener_nonmain='$($e.cap8c_opener_nonmain)'")
+        } elseif ($openerVal -ne 0) {
+            $failures.Add("CAP-8C NON-MAIN OPENER: target=$t cap8c_opener_nonmain=$openerVal -- a non-Main principal (or an unexpected URI) reached the opener")
+        }
+        if ("$($e.cap8c_secure_origin)" -cne 'true') {
+            $failures.Add("CAP-8C SECURE ORIGIN false: target=$t cap8c_secure_origin='$($e.cap8c_secure_origin)'")
         }
     }
 }
@@ -263,6 +289,7 @@ $matrix = [ordered]@{
         rpc_add_20_22                  = $first.rpc_add_20_22
         capability_policy_digest       = $first.capability_policy_digest
         navigation_policy_digest       = $first.navigation_policy_digest
+        security_corpus_digest         = $first.security_corpus_digest
         logical_inventory_sha256_react = $first.logical_inventory_sha256_react
         logical_inventory_sha256_pas2js = $evidence['linux-x86_64'].logical_inventory_sha256_pas2js
     }
@@ -279,6 +306,7 @@ foreach ($t in $evidence.Keys) {
         host_args          = $e.host_args
         capability_policy  = $e.capability_policy
         navigation_security = $e.navigation_security
+        security_corpus    = $e.security_corpus
         release_layout     = $e.release_layout
         no_listener        = $e.no_listener
         runtime_provenance = $e.runtime_provenance
@@ -294,16 +322,17 @@ $json = $matrix | ConvertTo-Json -Depth 5
 $summary = @()
 $summary += '### CAP-7F aggregate: PASS - four targets, field-by-field agreement'
 $summary += ''
-$summary += '| target | engine | host_args | cap_policy | nav_security | layout | no_listener | rtti extras |'
-$summary += '|---|---|---|---|---|---|---|---|'
+$summary += '| target | engine | host_args | cap_policy | nav_security | sec_corpus | layout | no_listener | rtti extras |'
+$summary += '|---|---|---|---|---|---|---|---|---|'
 foreach ($t in $evidence.Keys) {
     $e = $evidence[$t]
-    $summary += "| $t | $($e.engine) | $($e.host_args) | $($e.capability_policy) | $($e.navigation_security) | $($e.release_layout) | $($e.no_listener) | $($e.extra_exports_rtti) |"
+    $summary += "| $t | $($e.engine) | $($e.host_args) | $($e.capability_policy) | $($e.navigation_security) | $($e.security_corpus) | $($e.release_layout) | $($e.no_listener) | $($e.extra_exports_rtti) |"
 }
 $summary += ''
 $summary += "- webview pin ``$($first.webview_pin)``, surface ``$($first.webview_surface)``, origin ``$($first.origin)`` (secure=$($first.secure)), RPC Add(20,22)=$($first.rpc_add_20_22)"
 $summary += "- CAP-8A capability_policy_digest ``$($first.capability_policy_digest)`` equal on all four targets"
 $summary += "- CAP-8B navigation_policy_digest ``$($first.navigation_policy_digest)`` equal on all four targets"
+$summary += "- CAP-8C security_corpus_digest ``$($first.security_corpus_digest)`` equal on all four targets"
 $summary += "- react logical_inventory_sha256 ``$($first.logical_inventory_sha256_react)`` equal on all four targets"
 $summary += "- pas2js logical_inventory_sha256 ``$($matrix.agreement.logical_inventory_sha256_pas2js)`` equal on linux/macos-x64/macos-arm64"
 $summaryText = $summary -join "`n"

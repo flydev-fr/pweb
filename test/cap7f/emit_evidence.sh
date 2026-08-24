@@ -412,6 +412,70 @@ case "${navigation_security}" in
 esac
 printf '[CAP-7F] navigation_security: %s\n' "${navigation_security}"
 
+# --- CAP-8C multi-principal security corpus + one canonical digest ----------
+# The harness record is read FIRST and its overall verdict recorded VERBATIM
+# (PASS|FAIL|SKIP) - the navigation_security shape: an honest FAIL goes into
+# the evidence and the AGGREGATOR refuses it. On POSIX there is no SKIP (the
+# display is real), but the emitter stays honest independent of step order.
+mp_file="${repo_root}/build/cap8c/multiprincipal-${target}.json"
+[ -f "${mp_file}" ] ||
+    die "multiprincipal-${target}.json missing -- the CAP-8C gate has not run in this workspace"
+security_corpus="$(sed -n 's/.*"overall"[[:space:]]*:[[:space:]]*"\([A-Z]*\)".*/\1/p' \
+    "${mp_file}" | head -n 1)"
+case "${security_corpus}" in
+    PASS | FAIL | SKIP) ;;
+    *) die "multiprincipal-${target}.json carries an unexpected verdict: ${security_corpus}" ;;
+esac
+
+# the defense-in-depth counters are REQUIRED whenever the harness actually
+# ran (PASS or FAIL): a missing key must DIE, never default to a silent 0 -
+# a renamed harness field would otherwise turn these into constant zeroes
+# (fail-open). Only a runner-synthesized SKIP record may omit them.
+mp_num() {
+    local v
+    v="$(sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p" \
+        "${mp_file}" | head -n 1)"
+    [ -n "${v}" ] ||
+        die "multiprincipal record carries no '$1' counter -- refusing to default it to 0"
+    printf '%s' "${v}"
+}
+if [ "${security_corpus}" != 'SKIP' ]; then
+    cap8c_denied_soa=$(( $(mp_num denied_bridge_login_add) + $(mp_num denied_bridge_plugin_add) ))
+    cap8c_opener_nonmain=$(( $(mp_num opener_login) + $(mp_num opener_plugin) + $(mp_num opener_unexpected) ))
+    if grep -q '"secure_origin"[[:space:]]*:[[:space:]]*true' "${mp_file}"; then
+        cap8c_secure_origin='true'
+    elif grep -q '"secure_origin"[[:space:]]*:[[:space:]]*false' "${mp_file}"; then
+        cap8c_secure_origin='false'
+    else
+        die "multiprincipal record carries no 'secure_origin' field -- refusing to default it"
+    fi
+else
+    cap8c_denied_soa=0
+    cap8c_opener_nonmain=0
+    cap8c_secure_origin='false'
+fi
+
+# the canonical decision/counter corpus: its verdict=PASS trailer is required
+# ONLY when the harness records PASS - an honest FAIL corpus carries its own
+# verdict line and the aggregator refuses through the verdict field
+corpus_file="${repo_root}/build/cap8c/security-corpus.txt"
+if [ "${security_corpus}" = 'PASS' ]; then
+    [ -f "${corpus_file}" ] ||
+        die 'security-corpus.txt missing while the harness records PASS'
+    head -n 1 "${corpus_file}" | grep -qx 'schema=1' ||
+        die 'security-corpus.txt carries no schema=1 header'
+    tail -n 1 "${corpus_file}" | grep -qx 'verdict=PASS' ||
+        die 'security-corpus.txt does not end in verdict=PASS while the harness records PASS'
+    security_corpus_digest="$(file_sha "${corpus_file}")"
+elif [ -f "${corpus_file}" ]; then
+    security_corpus_digest="$(file_sha "${corpus_file}")"
+else
+    security_corpus_digest='ABSENT'
+fi
+printf '[CAP-7F] security_corpus_digest: %s\n' "${security_corpus_digest}"
+printf '[CAP-7F] security_corpus: %s (denied_soa=%s opener_nonmain=%s secure=%s)\n' \
+    "${security_corpus}" "${cap8c_denied_soa}" "${cap8c_opener_nonmain}" "${cap8c_secure_origin}"
+
 # ---------------------------- write the evidence -----------------------------
 # every interpolated free-text value goes through json_escape: the toolchain
 # banner lines especially are nobody's to promise quote-free
@@ -445,6 +509,11 @@ cat > "${work}/evidence.json" <<EOF
   "capability_policy_digest": "${capability_policy_digest}",
   "navigation_security": "${navigation_security}",
   "navigation_policy_digest": "${navigation_policy_digest}",
+  "security_corpus": "${security_corpus}",
+  "security_corpus_digest": "${security_corpus_digest}",
+  "cap8c_denied_soa": ${cap8c_denied_soa},
+  "cap8c_opener_nonmain": ${cap8c_opener_nonmain},
+  "cap8c_secure_origin": "${cap8c_secure_origin}",
   "release_layout": "${release_layout}",
   "no_listener": "${no_listener}",
   "no_listener_provenance": "${no_listener_prov}",
