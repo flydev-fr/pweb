@@ -2,7 +2,7 @@
 title: 'CAP-8C — multi-principal integration and CAP-8 closure'
 type: 'feature'
 created: '2026-08-24'
-status: 'in-progress'
+status: 'done'
 review_loop_iteration: 0
 baseline_commit: '949a1fc41c7b9822576869680ee0ef7c9f59c2ec'
 context: []
@@ -69,16 +69,16 @@ context: []
 ## Tasks & Acceptance
 
 **Execution — Phase A (topology measurement; ends at Checkpoint 1, HALT):**
-- [ ] `test/cap8c/topology.pas` + `run_topology.{ps1,sh}` — a probe host over the frozen public ABI measuring per target: two WebViews created before the loop?, both live concurrently?, which owns `webview_run`?, does closing one stop the loop?, independent binding userdata?, does each handler receive only its own context?, concurrent outstanding invocations?, close-one-keep-one functional? Emits `build/cap8c/topology-<target>.json`.
-- [ ] `.github/workflows/ci.yml` — temporary Phase-A topology steps on all four targets + a `cap8c-topology-summary` job; run hosted, collect the four artifacts.
-- [ ] **Checkpoint 1** — present MULTI-WEBVIEW RESULT / PRINCIPAL TOPOLOGY / CAPABILITY FACTORS / METHOD MATRIX / FRONTEND FIXTURE / PLUGIN SOURCE / LIFECYCLE / FILES-CODE MAP and the verdict `CAP-8C PLAN READY` or `CAP-8C PLAN BLOCKED`. HALT for human ratification; STOP (no upstream patch, no 18th export) if simultaneous windows need an ABI change.
+- [x] `test/cap8c/topology.pas` + `run_topology.{ps1,sh}` — a probe host over the frozen public ABI measuring per target: two WebViews created before the loop?, both live concurrently?, which owns `webview_run`?, does closing one stop the loop?, independent binding userdata?, does each handler receive only its own context?, concurrent outstanding invocations?, close-one-keep-one functional? Emits `build/cap8c/topology-<target>.json`.
+- [x] `.github/workflows/ci.yml` — temporary Phase-A topology steps on all four targets + a `cap8c-topology-summary` job; run hosted, collect the four artifacts.
+- [x] **Checkpoint 1** — present MULTI-WEBVIEW RESULT / PRINCIPAL TOPOLOGY / CAPABILITY FACTORS / METHOD MATRIX / FRONTEND FIXTURE / PLUGIN SOURCE / LIFECYCLE / FILES-CODE MAP and the verdict `CAP-8C PLAN READY` or `CAP-8C PLAN BLOCKED`. HALT for human ratification; STOP (no upstream patch, no 18th export) if simultaneous windows need an ABI change.
 
 **Execution — Phase B (production; only after ratification):**
-- [ ] `test/cap8c/multiprincipal.pas` — the integration harness: two real WebView sources with native contexts (`window:main`/`main`; `window:login`/`login`; both pkWindow, TrustedContent=True), one native plugin source (`plugin:reporting`, PluginId='reporting', WindowId='', pkPlugin) registered via `RegisterSource` and enqueued with `TryEnqueue`; one shared `BuildCap8cPolicy` (AppMaximum = calculator.add, external.open, settings.read, parking.read, window.control; Main = all five; Login = settings.read, window.control; Plugin = parking.read; mappings and zero-cap rows exactly as the release host, `No.SuchMethod` behavior preserved); counting bridge + production decorators + injected opener; CAP-8B guard on BOTH views.
-- [ ] `test/cap8c/fixture/` — one shared trusted corpus for both windows, per-window verdict reporting, forged-Args vectors, content-swap proof (login page in Main context ⇒ Add still 42; main page in Login context ⇒ Add still 403).
-- [ ] `test/cap8c/multiprincipal.pas` (same host) — context-isolation C1–C7 with barriers/counters; runtime-grant revoke → in-flight snapshot → restore; TrustedContent=false pkWindow gate; per-principal method/error precedence; the external-open principal matrix; multi-window lifecycle incl. reverse close order, Login reopen with a fresh source (stale context cannot complete into it), scheduler shutdown order (drain → shutdown → release services last).
-- [ ] `test/cap7f/emit_evidence.{ps1,sh}` + `check_cap7f_aggregate.ps1` + `check_cap7f_selftest.ps1` + `.github/workflows/ci.yml` — replace topology steps with the production cap8c gate per target; emit the structured security corpus (main_add_result, login/plugin codes, service/opener/bridge counters, untrusted_window_code, grant results, forgery, secure_origin, lifecycle_result…) + one canonical digest; aggregator requires all four targets, refuses missing/SKIP-promotion/denied-SOA>0/non-Main opener/secure=false/digest divergence; add negative self-test legs.
-- [ ] `_bmad-output/implementation-artifacts/deferred-work.md` — append residuals (incl. the dedicated-external-view architectural extension point, explicitly NOT built here).
+- [x] `test/cap8c/multiprincipal.pas` — the integration harness: two real WebView sources with native contexts (`window:main`/`main`; `window:login`/`login`; both pkWindow, TrustedContent=True), one native plugin source (`plugin:reporting`, PluginId='reporting', WindowId='', pkPlugin) registered via `RegisterSource` and enqueued with `TryEnqueue`; one shared `BuildCap8cPolicy` (AppMaximum = calculator.add, external.open, settings.read, parking.read, window.control; Main = all five; Login = settings.read, window.control; Plugin = parking.read; mappings and zero-cap rows exactly as the release host, `No.SuchMethod` behavior preserved); counting bridge + production decorators + injected opener; CAP-8B guard on BOTH views.
+- [x] `test/cap8c/fixture/` — one shared trusted corpus for both windows, per-window verdict reporting, forged-Args vectors, content-swap proof (login page in Main context ⇒ Add still 42; main page in Login context ⇒ Add still 403).
+- [x] `test/cap8c/multiprincipal.pas` (same host) — context-isolation C1–C7 with barriers/counters; runtime-grant revoke → in-flight snapshot → restore; TrustedContent=false pkWindow gate; per-principal method/error precedence; the external-open principal matrix; multi-window lifecycle incl. reverse close order, Login reopen with a fresh source (stale context cannot complete into it), scheduler shutdown order (drain → shutdown → release services last).
+- [x] `test/cap7f/emit_evidence.{ps1,sh}` + `check_cap7f_aggregate.ps1` + `check_cap7f_selftest.ps1` + `.github/workflows/ci.yml` — replace topology steps with the production cap8c gate per target; emit the structured security corpus (main_add_result, login/plugin codes, service/opener/bridge counters, untrusted_window_code, grant results, forgery, secure_origin, lifecycle_result…) + one canonical digest; aggregator requires all four targets, refuses missing/SKIP-promotion/denied-SOA>0/non-Main opener/secure=false/digest divergence; add negative self-test legs.
+- [x] `_bmad-output/implementation-artifacts/deferred-work.md` — append residuals (incl. the dedicated-external-view architectural extension point, explicitly NOT built here).
 - [ ] CAP-8 final artifact + canonical status update — ONLY after hosted aggregation is green: concise record referencing CAP-8A/CAP-8B closures, the three principal contexts, grant behavior, precedence, platform/lifecycle matrices, CI runs, freeze result, waivers.
 
 **Acceptance Criteria:**
@@ -101,3 +101,54 @@ context: []
 - `build/test/pwebtests.exe /noenter` — expected: exit 0, CAP-8A + CAP-8B cases still registered and green.
 - `pwsh test/cap7f/check_divergence.ps1` and `git diff --exit-code` over every frozen surface — expected: PASS / clean.
 - Push → hosted CI: six jobs green including `cap7-aggregate` with the cap8c corpus digest equal on all four targets; only then record CAP-8 closure.
+
+## Suggested Review Order
+
+**The shared policy and the three principals**
+
+- Entry point: one immutable policy — AppMaximum, three factor sets, the release-host mapping shape
+  [`multiprincipal.pas:624`](../../test/cap8c/multiprincipal.pas#L624)
+
+- Three sources through the frozen scheduler: two windows + the source-generic plugin path
+  [`multiprincipal.pas:1410`](../../test/cap8c/multiprincipal.pas#L1410)
+
+- Per-method counting bridge: every denial is an equality over an attributed ledger
+  [`multiprincipal.pas:203`](../../test/cap8c/multiprincipal.pas#L203)
+
+**Isolation, grants, lifecycle**
+
+- C1–C3 pairwise concurrency with barriers and exact per-principal deltas
+  [`multiprincipal.pas:1072`](../../test/cap8c/multiprincipal.pas#L1072)
+
+- R-C2 lifecycle: stale hold cancelled exactly once, fresh-source reopen, reverse close order
+  [`multiprincipal.pas:1289`](../../test/cap8c/multiprincipal.pas#L1289)
+
+**The real two-window leg (R-C1)**
+
+- Content-swap baked in: Main serves the login page and still computes 42 through real SOA
+  [`multiprincipal.pas:1473`](../../test/cap8c/multiprincipal.pas#L1473)
+
+- One shared driver: forged fields, openExternal matrix, raw-nav attempts, per-window reports
+  [`driver.js:1`](../../test/cap8c/fixture/assets/driver.js#L1)
+
+**Evidence & CI gates**
+
+- Fail-closed counter extraction + verbatim overall recording in the Windows emitter
+  [`emit_evidence.ps1:384`](../../test/cap7f/emit_evidence.ps1#L384)
+
+- Aggregator: corpus must-PASS, digest equality, denied-SOA/non-Main-opener/secure-origin refusals
+  [`check_cap7f_aggregate.ps1:57`](../../test/cap7f/check_cap7f_aggregate.ps1#L57)
+
+- The four new branch-asserted negative legs (c8–c10 + digest divergence)
+  [`check_cap7f_selftest.ps1:223`](../../test/cap7f/check_cap7f_selftest.ps1#L223)
+
+- One gating harness step per platform job, replacing the Checkpoint-1 topology probe
+  [`ci.yml:1532`](../../.github/workflows/ci.yml#L1532)
+
+**Peripherals**
+
+- The measured topology findings and the R-C1/R-C2/R-C3 ratification the design obeys
+  [`cap8c-topology-findings.md:1`](cap8c-topology-findings.md#L1)
+
+- Shard residuals in the ledger (R-C3 limitations, unmeasured post-loop destroy, extension point)
+  [`deferred-work.md:1`](deferred-work.md#L1)
