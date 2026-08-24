@@ -686,6 +686,12 @@ type
     holds one more and drops it in Detach. The cell is a GLib allocation
     for the reason PWebGtkRegistrationDestroyed documents: a closure can
     die from a libc atexit handler, long after the FPC heap is gone. }
+  {$if sizeof(PtrInt) <> 8}
+    {$error the nav-cell counters are PtrInt fields accessed through
+            InterLocked*64 over PInt64 casts - an 8-byte operation on a
+            4-byte field corrupts its neighbour. This adapter is ratified
+            for x86_64 only; a new width needs its own reviewed cell.}
+  {$endif}
   TPWebGtkNavCell = record
     // TWebKitGtkNavigationGuard while attached, 0 once detached. Written
     // with an interlocked store, exactly like the registration cell.
@@ -851,31 +857,6 @@ begin
         (S[last] in [' ', #9]) do
     Dec(last);
   Result := Copy(S, first, last - first + 1);
-end;
-
-{ is this response an HTML document, i.e. the one the CSP has to ride?
-
-  The store's type carries its parameters ('text/html; charset=utf-8'), so
-  the comparison is on the media type alone, case-insensitively per RFC
-  9110. Attaching the CSP to a script response would be inert rather than
-  harmful - pweb.navigation.policy says so - so this predicate decides how
-  many bytes are served, never whether anything is protected: nosniff and
-  no-referrer ride every asset either way. }
-function PWebGtkIsHtmlType(const AContentType: RawUtf8): Boolean;
-var
-  i: PtrInt;
-  base: RawUtf8;
-begin
-  i := Pos(';', AContentType);
-  if i > 0 then
-    base := Copy(AContentType, 1, i - 1) // drop '; charset=utf-8'
-  else
-    base := AContentType;
-  base := PWebGtkTrimAscii(base);
-  for i := 1 to Length(base) do
-    if base[i] in ['A' .. 'Z'] then
-      base[i] := AnsiChar(Ord(base[i]) + 32);
-  Result := base = 'text/html';
 end;
 
 { split the CRLF-separated header block from PWebNativeSecurityHeaders into
@@ -1086,6 +1067,18 @@ begin
       PWebGtkFinishRefused(request);
       exit;
     end;
+    // Content-Type must ride the HTTP HEADER SET too, not only the response
+    // object's content-type property: with X-Content-Type-Options: nosniff
+    // attached - and it is attached to EVERY response - WebKit validates a
+    // script's MIME type against the response HEADERS, and a header set
+    // without Content-Type reads as "no script MIME type" and refuses the
+    // bundle's own JS. MEASURED by the CAP-8B real-window matrix (the first
+    // executable of this path): "Refused to execute pweb://app/assets/
+    // driver.js as script ... its Content-Type is not a script MIME type".
+    // The other two adapters already carry the header (BuildHeaders on
+    // Windows, serveTask: on macOS); this is the Linux half of that parity.
+    soup_message_headers_append(soupHeaders, 'Content-Type',
+      PAnsiChar(mime));
     for i := 0 to headers.Count - 1 do
       soup_message_headers_append(soupHeaders,
         PAnsiChar(headers.Items[i].Name), PAnsiChar(headers.Items[i].Value));
@@ -1476,9 +1469,13 @@ begin
   // and drops this reference
   fCell := cell;
   InterLockedIncrement64(PInt64(@cell^.Refs)^); // the decide-policy closure
+  // connected THROUGH the typed constant, never the raw function: the
+  // constant's declaration is where a signature drift becomes a compile
+  // error, and connecting anything else would leave that guard checking a
+  // value nobody installs
   handlerId := g_signal_connect_data(controller,
-    PWEB_GTK_SIGNAL_DECIDE_POLICY, TGCallback(@PWebGtkDecidePolicy), cell,
-    @PWebGtkNavCellReleased, 0);
+    PWEB_GTK_SIGNAL_DECIDE_POLICY, TGCallback(PWEB_GTK_DECIDE_POLICY_CB),
+    cell, @PWebGtkNavCellReleased, 0);
   if handlerId = 0 then
   begin
     // g_signal_connect_data returns 0 only when the signal name does not
@@ -1490,7 +1487,7 @@ begin
   end;
   InterLockedIncrement64(PInt64(@cell^.Refs)^); // the create closure
   handlerId := g_signal_connect_data(controller, PWEB_GTK_SIGNAL_CREATE,
-    TGCallback(@PWebGtkCreate), cell, @PWebGtkNavCellReleased, 0);
+    TGCallback(PWEB_GTK_CREATE_CB), cell, @PWebGtkNavCellReleased, 0);
   if handlerId = 0 then
   begin
     PWebGtkNavCellUnref(cell);

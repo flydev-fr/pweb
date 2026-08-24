@@ -162,7 +162,9 @@ function PWebClassifyNavigation(const Request: TPWebNavRequest): TPWebNavAction;
 // - the gate for the capability-authorized external-open invocation, NOT for
 // navigation: no navigation path ever reaches an opener (ratification R-A.2)
 // - https: and mailto: only, compared on the parsed scheme; bounded length;
-// no control bytes; https must carry an authority and mailto a recipient
+// ASCII URI-safe bytes only (controls, DEL, space, '"<>' and every byte
+// >= $80 are refused - percent-encoding is the accepted spelling); https
+// must carry a NON-EMPTY authority component and mailto a recipient
 // - fail-closed: anything unrecognised is refused rather than passed through
 function PWebValidExternalUri(const Uri: RawUtf8): Boolean;
 
@@ -223,14 +225,30 @@ begin
   end;
 end;
 
-function HasControlBytes(const S: RawUtf8): Boolean;
+function HasForbiddenBytes(const S: RawUtf8): Boolean;
 var
   i: PtrInt;
+  c: AnsiChar;
 begin
+  // What may travel to an OS launcher is the URI-safe ASCII repertoire and
+  // nothing else. Percent-encoding is the accepted spelling for everything
+  // this refuses:
+  //   - every control byte (NUL, CR, LF, TAB, ...) and DEL;
+  //   - the SPACE, which no valid https/mailto URI carries raw and which is
+  //     exactly the byte an argument-splitting confusion needs;
+  //   - '"', '<' and '>', the RFC 3986 excluded delimiters a log line, a
+  //     shell trace or an HTML-rendering consumer would re-interpret;
+  //   - every byte >= $80: a raw UTF-8 (or worse, arbitrary-encoding) byte
+  //     handed to a launcher is a normalisation question this layer refuses
+  //     to have an opinion on.
   Result := True;
   for i := 1 to Length(S) do
-    if (S[i] < #$20) or (S[i] = #$7F) then
+  begin
+    c := S[i];
+    if (c <= #$20) or (c >= #$7F) or
+       (c in ['"', '<', '>']) then
       exit;
+  end;
   Result := False;
 end;
 
@@ -277,14 +295,14 @@ end;
 function PWebValidExternalUri(const Uri: RawUtf8): Boolean;
 var
   scheme, rest: RawUtf8;
-  at: PtrInt;
+  at, i: PtrInt;
 begin
   Result := False;
   if (Uri = '') or
      (Length(Uri) > PWEB_EXTERNAL_URI_MAX_BYTES) then
     exit;
-  if HasControlBytes(Uri) then
-    exit; // NUL, CR, LF and every other control byte, always
+  if HasForbiddenBytes(Uri) then
+    exit; // controls, DEL, space, '"<>', every byte >= $80 - always
   if Pos('\', Uri) > 0 then
     // no legitimate https or mailto URI carries a raw backslash, and a
     // launcher that normalises one into a separator is a class of confusion
@@ -298,8 +316,17 @@ begin
     // of anything and must never reach a shell-free launcher either
     if Copy(rest, 1, 2) <> '//' then
       exit;
-    if Length(rest) <= 2 then
-      exit; // 'https://' alone
+    // ... and it must be NON-EMPTY as a parsed COMPONENT: 'https:///x',
+    // 'https://?q' and 'https://#f' all carry an empty authority, and an
+    // empty authority is a launcher's invitation to invent one. The
+    // component ends at the first '/', '?' or '#' - exactly the RFC 3986
+    // grammar, never a substring guess.
+    i := 3;
+    while (i <= Length(rest)) and
+          not (rest[i] in ['/', '?', '#']) do
+      inc(i);
+    if i = 3 then
+      exit; // nothing between '//' and the path/query/fragment
     Result := True;
   end
   else if scheme = 'mailto' then

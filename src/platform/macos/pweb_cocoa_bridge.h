@@ -430,6 +430,11 @@ void pweb_cocoa_nav_get_stats(pweb_cocoa_nav_stats_t *out);
    is not an error path with a fallback, it is the end of the attempt: a
    refusal never turns into an internal navigation.
 
+   THREAD AFFINITY IS SATISFIED HERE, not assumed of the caller: NSWorkspace
+   is AppKit, the caller is a scheduler worker, and the openURL: message is
+   dispatch_sync'd onto the main queue (direct when already on the main
+   thread), so the result the caller sees is still the real one.
+
    THE SCHEME ALLOWLIST IS NOT HERE. Validation is PWebValidExternalUri in the
    shared classifier (https: and mailto: only, on parsed components, bounded
    length, no control bytes), so the rule has one home and this entry point has

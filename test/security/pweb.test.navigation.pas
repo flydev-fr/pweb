@@ -416,6 +416,14 @@ begin
   Check(not PWebValidExternalUri('https://'), 'https bare');
   Check(not PWebValidExternalUri('https:/example.invalid'), 'https one slash');
   Check(not PWebValidExternalUri('https:example.invalid'), 'https no slash');
+  // the authority must be non-empty AS A PARSED COMPONENT: each of these
+  // carries '//' followed immediately by path, query or fragment, and an
+  // empty authority is a launcher's invitation to invent one
+  Check(not PWebValidExternalUri('https:///x'), 'https empty authority path');
+  Check(not PWebValidExternalUri('https://?q=1'), 'https empty authority query');
+  Check(not PWebValidExternalUri('https://#frag'), 'https empty authority frag');
+  Check(not PWebValidExternalUri('https:////evil.invalid/'),
+    'https double-slash authority');
   Check(not PWebValidExternalUri('mailto:'), 'mailto empty');
   Check(not PWebValidExternalUri('mailto:nobody'), 'mailto no host');
   Check(not PWebValidExternalUri('mailto:@example.invalid'), 'mailto no user');
@@ -440,6 +448,18 @@ begin
   Check(not PWebValidExternalUri('https://example.invalid/'#13#10'x'), 'crlf');
   Check(not PWebValidExternalUri('https://example.invalid/'#0), 'nul');
   Check(not PWebValidExternalUri('https://example.invalid/'#9), 'tab');
+  // the URI-safe ASCII repertoire is the whole repertoire: a raw space,
+  // quote, angle bracket or any byte >= $80 is refused outright -
+  // percent-encoding is the accepted spelling for every one of them
+  Check(not PWebValidExternalUri('https://example.invalid/a b'), 'space');
+  Check(not PWebValidExternalUri('https://example.invalid/"x"'), 'quote');
+  Check(not PWebValidExternalUri('https://example.invalid/<s>'), 'angles');
+  Check(not PWebValidExternalUri('https://example.invalid/'#$7F), 'del');
+  Check(not PWebValidExternalUri('https://example.invalid/'#$C3#$A9), 'utf8');
+  Check(not PWebValidExternalUri('https://example.invalid/'#$FF), 'high byte');
+  Check(not PWebValidExternalUri('mailto:a b@example.invalid'), 'mailto space');
+  Check(PWebValidExternalUri('https://example.invalid/a%20b'),
+    'percent-encoded space is the accepted spelling');
   // bounded length
   long := 'https://example.invalid/';
   while Length(long) <= PWEB_EXTERNAL_URI_MAX_BYTES do
@@ -523,6 +543,15 @@ begin
   Emit('external mailto=' + YesNo(PWebValidExternalUri('mailto:nobody@example.invalid')));
   Emit('external http=' + YesNo(PWebValidExternalUri('http://example.invalid/')));
   Emit('external file=' + YesNo(PWebValidExternalUri('file:///etc/passwd')));
+  // the fail-closed component and repertoire rules, pinned cross-target:
+  // empty authorities and raw space/quote/high bytes must read false on
+  // every target or the digest disagrees
+  Emit('external emptyauth=' + YesNo(PWebValidExternalUri('https:///x')));
+  Emit('external emptyauthq=' + YesNo(PWebValidExternalUri('https://?q=1')));
+  Emit('external space=' + YesNo(PWebValidExternalUri('https://example.invalid/a b')));
+  Emit('external quote=' + YesNo(PWebValidExternalUri('https://example.invalid/"x"')));
+  Emit('external highbyte=' + YesNo(PWebValidExternalUri('https://example.invalid/' + #$C3#$A9)));
+  Emit('external pctspace=' + YesNo(PWebValidExternalUri('https://example.invalid/a%20b')));
   if allPass then
     Emit('verdict=PASS')
   else

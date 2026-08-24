@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>PWeb CAP-8B navigation matrix</title>
+</head>
+<body>
+  <h1>PWeb CAP-8B privileged-navigation matrix</h1>
+  <p id="status">running the B-matrix in a real window...</p>
+  <!-- the trusted document loads its driver from a bundled file over
+       pweb://app, so script-src 'self' needs no 'unsafe-inline'. Every
+       other script/frame/fetch the driver injects is a probe the native
+       CSP must refuse. -->
+  <script src="/assets/driver.js"></script>
+</body>
+</html>

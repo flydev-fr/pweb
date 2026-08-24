@@ -112,7 +112,9 @@ var
   verdict, fetchInit: TJSObject;
   info, v: JSValue;
   res: TJSResponse;
+  opened: JSValue;
   ok, sameOriginServed, wrongAuthorityRefused: Boolean;
+  openReturnedNull, yielded: Boolean;
 begin
   // rendered proves this pas2js-compiled code found and can drive the DOM
   verdict := New(['ok', False, 'handshake', False, 'secure', IsSecure,
@@ -204,13 +206,19 @@ begin
     // cannot have.
     if HasExternalOpen(info) then
     begin
+      // new window first: on Linux and macOS an opened window was
+      // MEASURED to inherit the whole native transport, so this path has
+      // to be exercised, not just the top-level one - and its RETURN
+      // VALUE is evidence: a denied window.open comes back null on every
+      // engine here, so a non-null return is a real window proxy the
+      // deny failed to prevent
+      openReturnedNull := False;
       try
-        // new window first: on Linux and macOS an opened window was
-        // MEASURED to inherit the whole native transport, so this path
-        // has to be exercised, not just the top-level one
-        window.open(EXTERNAL_NAV_PROBE, '_blank');
+        opened := window.open(EXTERNAL_NAV_PROBE, '_blank');
+        openReturnedNull := (opened = JS.Null) or isUndefined(opened);
       except
-        // a refusal that throws is still a refusal
+        // a refusal that throws is still a refusal, and no window
+        openReturnedNull := True;
       end;
       try
         window.location.href := EXTERNAL_NAV_PROBE;
@@ -220,12 +228,16 @@ begin
       // a navigation assignment is asynchronous, so the page has to
       // yield before its own address means anything; a real native
       // round trip is a yield the page can actually prove happened
+      yielded := False;
       try
         await(JSValue, PWebInvoke(METHOD_ECHO, New(['navprobe', 1])));
+        yielded := True;
       except
-        // the yield failing is reported by the flag staying False
+        // a failed yield keeps navExternalBlocked False: without a
+        // proven round-trip, "the address survived" would be a claim
+        // racing the very navigation it is supposed to disprove
       end;
-      verdict['navExternalBlocked'] :=
+      verdict['navExternalBlocked'] := yielded and openReturnedNull and
         (window.location.href = StartHref) and
         (window.location.protocol = 'pweb:');
     end;

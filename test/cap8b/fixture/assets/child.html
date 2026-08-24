@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>CAP-8B child (must never execute)</title>
+</head>
+<body>
+  <!-- A SERVABLE trusted-authority child. It is real pweb://app content, so
+       the ONLY thing that keeps it out of the privileged WebView is
+       frame-src 'none': the navigation classifier denies every subframe,
+       and where an engine cannot tell a subframe from a main frame the CSP
+       removes the frame. If this document ever executes, it calls
+       matrix.childExecuted over BOTH transports and the host's tripwire
+       (child_executed must stay 0) fires. -->
+  <script src="/assets/child.js"></script>
+</body>
+</html>

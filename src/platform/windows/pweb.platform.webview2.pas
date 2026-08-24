@@ -154,8 +154,10 @@ type
     fAllowedTrusted: Int64;
     fCancelled: Int64;
     fUserActivatedSeen: Int64;
+    fDenyApplyFailures: Int64;
     // called from the event handlers, always on the GUI thread
     procedure NoteDecision(AAction: TPWebNavAction; AUserActivated: Boolean);
+    procedure NoteApplyFailure;
   public
     constructor Create(AWebView: webview_t);
     destructor Destroy; override;
@@ -170,6 +172,11 @@ type
     /// events the engine reported as user-activated - DIAGNOSTIC ONLY,
     // never an authorization input (ratification R-A.3)
     property UserActivatedSeen: Int64 read fUserActivatedSeen;
+    /// denies whose put_Cancel/put_Handled came back failing - a refusal
+    // the engine may not have applied. MUST be 0: the runtime matrix
+    // requires it, because a lost deny is exactly the silent failure a
+    // counter of successful denies cannot see
+    property DenyApplyFailures: Int64 read fDenyApplyFailures;
   end;
 
   /// injectable stand-in for the operating-system opener
@@ -592,6 +599,14 @@ type
 function ShellExecuteExW(var lpExecInfo: TShellExecuteInfoW): Integer;
   stdcall; external 'shell32.dll' name 'ShellExecuteExW';
 
+const
+  COINIT_APARTMENTTHREADED = $2;
+  RPC_E_CHANGED_MODE = HRESULT($80010106);
+
+function CoInitializeEx(pvReserved: Pointer; dwCoInit: DWord): HRESULT;
+  stdcall; external 'ole32.dll' name 'CoInitializeEx';
+procedure CoUninitialize; stdcall; external 'ole32.dll' name 'CoUninitialize';
+
 var
   // nil means "the real shell"; a test substitutes a counting fake
   Wv2ExternalOpener: TPWebWv2ExternalOpener = nil;
@@ -600,23 +615,42 @@ function ShellOpenExternal(const AUri: RawUtf8): Boolean;
 var
   info: TShellExecuteInfoW;
   uriW: WideString;
+  hrInit: HRESULT;
 begin
   Result := False;
   uriW := WideString(Utf8ToSynUnicode(AUri));
   if uriW = '' then
     exit;
-  FillChar(info, SizeOf(info), 0);
-  info.cbSize := SizeOf(info);
-  info.fMask := SEE_MASK_NOASYNC or SEE_MASK_FLAG_NO_UI;
-  info.lpVerb := PWideChar(SHELL_VERB_OPEN);
-  // the URI is ONE argument handed to the registered protocol handler;
-  // lpParameters stays nil so nothing is appended and no interpreter
-  // ever sees a command line
-  info.lpFile := PWideChar(uriW);
-  info.lpParameters := nil;
-  info.lpDirectory := nil;
-  info.nShow := SW_SHOWNORMAL;
-  Result := ShellExecuteExW(info) <> 0;
+  // SEE_MASK_NOASYNC documents COM initialization on the calling thread as
+  // a precondition, and this runs on a scheduler WORKER that has none.
+  // STA, because ShellExecuteEx is a shell API and the shell is STA-bred.
+  // S_FALSE (already initialized) still needs the balancing
+  // CoUninitialize; RPC_E_CHANGED_MODE (the thread is MTA already) means
+  // COM IS initialized - proceed WITHOUT the balancing call. Any other
+  // failure refuses: launching with the documented precondition unmet is
+  // exactly the undefined behaviour this block exists to remove.
+  hrInit := CoInitializeEx(nil, COINIT_APARTMENTTHREADED);
+  if (hrInit <> S_OK) and
+     (hrInit <> S_FALSE) and
+     (hrInit <> RPC_E_CHANGED_MODE) then
+    exit;
+  try
+    FillChar(info, SizeOf(info), 0);
+    info.cbSize := SizeOf(info);
+    info.fMask := SEE_MASK_NOASYNC or SEE_MASK_FLAG_NO_UI;
+    info.lpVerb := PWideChar(SHELL_VERB_OPEN);
+    // the URI is ONE argument handed to the registered protocol handler;
+    // lpParameters stays nil so nothing is appended and no interpreter
+    // ever sees a command line
+    info.lpFile := PWideChar(uriW);
+    info.lpParameters := nil;
+    info.lpDirectory := nil;
+    info.nShow := SW_SHOWNORMAL;
+    Result := ShellExecuteExW(info) <> 0;
+  finally
+    if hrInit <> RPC_E_CHANGED_MODE then
+      CoUninitialize;
+  end;
 end;
 
 function PWebWv2OpenExternal(const AUri: RawUtf8): Boolean;
@@ -711,37 +745,6 @@ begin
     // which no version comparison can ever accept
     Result := '<observation failed>';
   end;
-end;
-
-{ is this response an HTML document, so that the CSP row applies?
-
-  Decided on the PARSED media type: everything before the first ';' is
-  taken, ASCII space and tab are trimmed from both ends, the result is
-  ASCII-lower-cased and compared for EQUALITY with 'text/html'. Not a
-  prefix test - 'text/html-ish' and 'text/htmlx' are not HTML, and
-  PWebAssetMimeType's 'text/html; charset=utf-8' is. }
-function IsHtmlMediaType(const AContentType: RawUtf8): Boolean;
-var
-  media: RawUtf8;
-  i, first, last: PtrInt;
-begin
-  media := AContentType;
-  i := Pos(';', media);
-  if i > 0 then
-    SetLength(media, i - 1);
-  first := 1;
-  last := Length(media);
-  while (first <= last) and
-        (media[first] in [' ', #9]) do
-    inc(first);
-  while (last >= first) and
-        (media[last] in [' ', #9]) do
-    dec(last);
-  media := Copy(media, first, last - first + 1);
-  for i := 1 to Length(media) do
-    if media[i] in ['A'..'Z'] then
-      media[i] := AnsiChar(Ord(media[i]) + 32);
-  Result := media = 'text/html';
 end;
 
 function BuildHeaders(const AContentType: RawUtf8): WideString;
@@ -1008,9 +1011,11 @@ var
   action: TPWebNavAction;
   uriW: PWideChar;
   activated: Integer;
+  applyFailed: Boolean;
 begin
   Result := S_OK;
   action := pnaCancel; // fail closed before a single byte is read
+  applyFailed := False;
   req.Uri := '';
   req.Kind := fKind;
   req.UserActivated := False;
@@ -1033,14 +1038,22 @@ begin
       action := PWebClassifyNavigation(req);
     finally
       // MEASURED: put_Cancel(TRUE) here refuses the navigation before
-      // it executes, on every case the coverage table lists
+      // it executes, on every case the coverage table lists. A failing
+      // put_Cancel is a refusal the engine may not have applied - it is
+      // COUNTED, and the runtime matrix requires that count to be 0,
+      // because losing a deny silently is the one failure a counter of
+      // successful denies cannot see
       if (args <> nil) and
          (action = pnaCancel) then
-        args.put_Cancel(COREWEBVIEW2_TRUE);
+        applyFailed := args.put_Cancel(COREWEBVIEW2_TRUE) <> S_OK;
       // a disowned handler (post-Detach) has already denied above and
       // simply has nowhere to count it
       if fOwner <> nil then
+      begin
         fOwner.NoteDecision(action, req.UserActivated);
+        if applyFailed then
+          fOwner.NoteApplyFailure;
+      end;
     end;
   except
     // the barrier: an exception anywhere above already left action at
@@ -1062,9 +1075,11 @@ var
   action: TPWebNavAction;
   uriW: PWideChar;
   activated: Integer;
+  applyFailed: Boolean;
 begin
   Result := S_OK;
   action := pnaCancel;
+  applyFailed := False;
   req.Uri := '';
   req.Kind := pnkNewWindow;
   req.UserActivated := False;
@@ -1089,12 +1104,17 @@ begin
       // Handled=TRUE with NO NewWindow supplied - MEASURED to prevent
       // the child window entirely. This args interface has no
       // put_Cancel, and handing the engine a window to populate would
-      // be the opposite of refusing one
+      // be the opposite of refusing one. put_Handled IS the deny here,
+      // so its failure is counted like a lost put_Cancel
       if (args <> nil) and
          (action = pnaCancel) then
-        args.put_Handled(COREWEBVIEW2_TRUE);
+        applyFailed := args.put_Handled(COREWEBVIEW2_TRUE) <> S_OK;
       if fOwner <> nil then
+      begin
         fOwner.NoteDecision(action, req.UserActivated);
+        if applyFailed then
+          fOwner.NoteApplyFailure;
+      end;
     end;
   except
   end;
@@ -1114,9 +1134,11 @@ var
   action: TPWebNavAction;
   op: ICoreWebView2DownloadOperation;
   uriW: PWideChar;
+  applyFailed: Boolean;
 begin
   Result := S_OK;
   action := pnaCancel;
+  applyFailed := False;
   req.Uri := '';
   req.Kind := pnkDownload;
   // this args interface exposes NO activation flag at all. False here
@@ -1143,15 +1165,23 @@ begin
     finally
       // Cancel refuses the transfer; Handled additionally suppresses the
       // engine's own download UI, so the refusal is silent as well as
-      // effective (both were exercised by the audit probe)
+      // effective (both were exercised by the audit probe). Either call
+      // failing is counted: a lost Cancel is a lost deny outright, and a
+      // lost Handled leaves engine UI a refusal promised to suppress
       if (args <> nil) and
          (action = pnaCancel) then
       begin
-        args.put_Cancel(COREWEBVIEW2_TRUE);
-        args.put_Handled(COREWEBVIEW2_TRUE);
+        if args.put_Cancel(COREWEBVIEW2_TRUE) <> S_OK then
+          applyFailed := True;
+        if args.put_Handled(COREWEBVIEW2_TRUE) <> S_OK then
+          applyFailed := True;
       end;
       if fOwner <> nil then
+      begin
         fOwner.NoteDecision(action, req.UserActivated);
+        if applyFailed then
+          fOwner.NoteApplyFailure;
+      end;
     end;
   except
   end;
@@ -1256,9 +1286,16 @@ begin
     inc(fUserActivatedSeen);
 end;
 
+procedure TWebView2NavigationGuard.NoteApplyFailure;
+begin
+  // same GUI-thread affinity as NoteDecision; a plain increment suffices
+  inc(fDenyApplyFailures);
+end;
+
 procedure TWebView2NavigationGuard.Detach;
 var
   core: ICoreWebView2;
+  onThread: Boolean;
 begin
   // teardown order mirrors TWebView2AssetHandler and the audit probe:
   // remove every registration first, in reverse of the order it was
@@ -1267,8 +1304,9 @@ begin
   // apartment-affine, so a Detach off the creating GUI thread skips the
   // native teardown: leaking a registration is fail-safe, while a
   // cross-apartment call into a live browser object is undefined
+  onThread := GetCurrentThreadId = fThreadId;
   if (fCore <> nil) and
-     (GetCurrentThreadId = fThreadId) then
+     onThread then
   begin
     core := ICoreWebView2(fCore);
     if fDownloadOn and
@@ -1297,7 +1335,17 @@ begin
   // disown BEFORE releasing: WebView2 holds its own reference to each
   // handler, so an object may outlive this guard. A disowned handler
   // still denies (its verdict starts at pnaCancel) and simply has no
-  // owner to count into - it can never reach a freed guard
+  // owner to count into - it can never reach a freed guard.
+  //
+  // KNOWN RESIDUAL for the off-thread MISUSE path only: the disown is one
+  // atomic pointer store, but an event handler mid-Invoke on the GUI
+  // thread may already have read fOwner; if the misusing thread then also
+  // FREES this guard inside that window, NoteDecision touches freed
+  // memory. Closing that would need a rendezvous with the GUI thread,
+  // which a leak-don't-crash fallback cannot perform. The supported
+  // contract stands: Detach runs on the GUI thread before
+  // webview_destroy, where events and Detach are serialized by the one
+  // thread and the race cannot exist - both hosts obey it.
   if fDocHandlerObj <> nil then
     TWv2NavigationStartingHandler(fDocHandlerObj).fOwner := nil;
   if fFrameHandlerObj <> nil then
@@ -1307,16 +1355,37 @@ begin
   if fDownloadHandlerObj <> nil then
     TWv2DownloadStartingHandler(fDownloadHandlerObj).fOwner := nil;
   fDocHandlerObj := nil;
-  fDocHandler := nil; // releases our reference to the handler object
   fFrameHandlerObj := nil;
-  fFrameHandler := nil;
   fNewWindowHandlerObj := nil;
-  fNewWindowHandler := nil;
   fDownloadHandlerObj := nil;
-  fDownloadHandler := nil;
-
-  fCore4 := nil;
-  fCore := nil;
+  if onThread then
+  begin
+    // on the creating thread the ordinary releases are correct: the
+    // registrations are gone, so WebView2 drops its handler references
+    // and ours may be the last
+    fDocHandler := nil;
+    fFrameHandler := nil;
+    fNewWindowHandler := nil;
+    fDownloadHandler := nil;
+    fCore4 := nil;
+    fCore := nil;
+  end
+  else
+  begin
+    // OFF the creating thread every Release is as forbidden as the
+    // remove_* calls above: fCore/fCore4 are apartment-affine browser
+    // objects, and the handlers are still registered (nothing removed
+    // them), so even our own objects must not be dropped to a refcount
+    // the engine no longer backs. Leak the lot - pointer-nil with no
+    // Release - which is the same fail-safe the skipped native teardown
+    // already chose
+    Pointer(fDocHandler) := nil;
+    Pointer(fFrameHandler) := nil;
+    Pointer(fNewWindowHandler) := nil;
+    Pointer(fDownloadHandler) := nil;
+    Pointer(fCore4) := nil;
+    Pointer(fCore) := nil;
+  end;
   fController := nil;
 end;
 

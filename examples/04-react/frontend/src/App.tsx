@@ -176,13 +176,19 @@ export function App(): JSX.Element {
         // on a build flag the page cannot have.
         const caps = info.capabilities ?? [];
         if (caps.indexOf(EXTERNAL_OPEN_CAPABILITY) >= 0) {
+          // new window first: on Linux and macOS an opened window was
+          // MEASURED to inherit the whole native transport, so this
+          // path has to be exercised, not just the top-level one - and
+          // its RETURN VALUE is evidence: a denied window.open comes
+          // back null on every engine here, so a non-null return is a
+          // real window proxy the deny failed to prevent
+          let openReturnedNull = false;
           try {
-            // new window first: on Linux and macOS an opened window was
-            // MEASURED to inherit the whole native transport, so this
-            // path has to be exercised, not just the top-level one
-            window.open(EXTERNAL_NAV_PROBE, "_blank");
+            const opened = window.open(EXTERNAL_NAV_PROBE, "_blank");
+            openReturnedNull = opened === null || opened === undefined;
           } catch {
-            // a refusal that throws is still a refusal
+            // a refusal that throws is still a refusal, and no window
+            openReturnedNull = true;
           }
           try {
             window.location.href = EXTERNAL_NAV_PROBE;
@@ -192,12 +198,18 @@ export function App(): JSX.Element {
           // a navigation assignment is asynchronous, so the page has to
           // yield before its own address means anything; a real native
           // round trip is a yield the page can actually prove happened
+          let yielded = false;
           try {
             await invoke("pweb.echo", { navprobe: 1 });
+            yielded = true;
           } catch {
-            // the yield failing is reported by the flag staying false
+            // a failed yield keeps navExternalBlocked false: without a
+            // proven round-trip, "the address survived" would be a claim
+            // racing the very navigation it is supposed to disprove
           }
           verdict.navExternalBlocked =
+            yielded &&
+            openReturnedNull &&
             window.location.href === startHref &&
             window.location.protocol === "pweb:";
         }

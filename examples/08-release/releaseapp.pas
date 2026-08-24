@@ -368,8 +368,13 @@ end;
   called.
 
   Called on a scheduler WORKER thread, never the GUI thread - a bridge
-  is always invoked on a worker. Whatever thread affinity an OS opener
-  needs is therefore the adapter's to satisfy internally. }
+  is always invoked on a worker. Each adapter satisfies its own OS
+  affinity requirements: Windows initializes COM (STA) around
+  ShellExecuteExW because SEE_MASK_NOASYNC documents it as a
+  precondition; macOS dispatch_sync's the AppKit -[NSWorkspace openURL:]
+  message onto the main queue; Linux calls
+  g_app_info_launch_default_for_uri, which GIO documents as
+  thread-safe, directly on the worker. }
 function OpenExternalUri(const AUri: RawUtf8): Boolean;
 begin
   {$ifdef DARWIN}
@@ -1042,7 +1047,19 @@ begin
             ExitCode := 1;
           end;
         end;
-      FreeAndNil(navGuard);
+      // guarded separately: Destroy calls Detach again as a safety net, and
+      // an exception escaping here would abort THIS finally block - skipping
+      // the asset handler Detach and webview_destroy below, which must run
+      // no matter what state the guard died in
+      try
+        FreeAndNil(navGuard);
+      except
+        on E: Exception do
+        begin
+          WriteLn(StdErr, 'FAIL: navigation guard Free: ', E.Message);
+          ExitCode := 1;
+        end;
+      end;
       // CAP-4W ordering: unregister the resource handler and release
       // its owned COM references before the webview is destroyed
       if assetHandler <> nil then

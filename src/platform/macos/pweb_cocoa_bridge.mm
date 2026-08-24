@@ -122,18 +122,22 @@ typedef enum {
  * header would be a second one.
  *
  * A malformed line is SKIPPED rather than repaired: a header this file had to
- * guess at is not the header that was ratified. The caller refuses the whole
- * response when the block is empty (see handleTask:), so "skipped everything"
- * can never reach a page as "served without a policy".
+ * guess at is not the header that was ratified. What the caller needs to know
+ * is HOW MANY lines actually applied - the Pascal side refuses an empty block
+ * before handing over, and serveTask: refuses the response when a NON-empty
+ * block applied nothing, so "skipped everything" can never reach a page as
+ * "served without a policy". Returning the count is what makes that second
+ * refusal possible.
  */
-static void pweb_apply_security_headers(NSMutableDictionary *headers,
-                                        const char *block) {
+static unsigned long pweb_apply_security_headers(NSMutableDictionary *headers,
+                                                 const char *block) {
+  unsigned long applied = 0;
   if ((headers == nil) || (block == NULL) || (block[0] == '\0')) {
-    return;
+    return 0;
   }
   NSString *all = [NSString stringWithUTF8String:block];
   if (all == nil) {
-    return;
+    return 0;
   }
   NSArray *lines = [all componentsSeparatedByString:@"\r\n"];
   for (NSString *line in lines) {
@@ -149,7 +153,9 @@ static void pweb_apply_security_headers(NSMutableDictionary *headers,
       continue;
     }
     [headers setObject:value forKey:name];
+    applied += 1;
   }
+  return applied;
 }
 
 @interface PWebCocoaSchemeHandler : NSObject <WKURLSchemeHandler>
@@ -331,7 +337,25 @@ static PWebCocoaSchemeHandler *g_handler = nil;
      single row of them - which is what makes the CSP a property of the ENGINE
      rather than of the bundle a tamperer can edit. The rows are decided in
      src/security/pweb.navigation.policy.pas and merely transported here. */
-  pweb_apply_security_headers(headers, asset->security_headers);
+  const unsigned long headers_applied =
+      pweb_apply_security_headers(headers, asset->security_headers);
+  if ((asset->security_headers[0] != '\0') && (headers_applied == 0)) {
+    /* A NON-empty policy block out of which not one header line parsed is a
+       policy that would be silently dropped on the way to the engine. Refuse
+       the response instead of serving it naked - the same fail-closed answer
+       the Pascal side already gives an empty or oversized block. The body
+       NSData above owns asset->bytes and the autorelease pool frees it. */
+    @try {
+      NSError *error = [NSError errorWithDomain:@"pweb" code:1 userInfo:nil];
+      [task didFailWithError:error];
+      pweb_bump(&g_tasks_refused);
+    } @catch (NSException *e) {
+      (void)e;
+      pweb_bump(&g_caught_exceptions);
+    }
+    [self settleTask:task];
+    return;
+  }
   /* ...AND THE TWO FACTS ABOUT THE BODY LAST, so they win. The policy block is
      a Pascal-side constant today, but a header line that could displace
      Content-Type would be a sniffing hole reachable by editing one string, and
@@ -1221,7 +1245,7 @@ void pweb_cocoa_nav_get_stats(pweb_cocoa_nav_stats_t *out) {
 /* ------------------------- the system opener ----------------------------- */
 
 int pweb_cocoa_open_external(const char *uri) {
-  int ok = 0;
+  __block int ok = 0;
   if ((uri == NULL) || (uri[0] == '\0')) {
     return 0;
   }
@@ -1241,7 +1265,22 @@ int pweb_cocoa_open_external(const char *uri) {
       if (url == nil) {
         return 0; /* a URI Foundation will not parse is not one we hand on */
       }
-      ok = ([[NSWorkspace sharedWorkspace] openURL:url] != NO) ? 1 : 0;
+      /* ON THE MAIN THREAD, by marshalling rather than by assumption:
+         NSWorkspace is an AppKit object and this function is reached from a
+         scheduler WORKER (a bridge invocation never runs on the GUI thread).
+         dispatch_sync onto the main queue keeps the call synchronous - the
+         caller still learns the real outcome - and the is-main-thread check
+         keeps a future main-thread caller from deadlocking on itself. The
+         block only assigns a BOOL; the @catch barriers below still own every
+         exception, because dispatch_sync re-raises in the submitting thread's
+         frame for a synchronous block. */
+      if ([NSThread isMainThread]) {
+        ok = ([[NSWorkspace sharedWorkspace] openURL:url] != NO) ? 1 : 0;
+      } else {
+        dispatch_sync(dispatch_get_main_queue(), ^{
+          ok = ([[NSWorkspace sharedWorkspace] openURL:url] != NO) ? 1 : 0;
+        });
+      }
     } @catch (NSException *ex) {
       (void)ex;
       pweb_bump(&g_caught_exceptions);

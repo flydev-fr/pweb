@@ -411,20 +411,15 @@ function PWebCocoaResolveAssetUri(const AUri: RawUtf8;
 // empty string (an empty Content-Type would let the engine sniff)
 function PWebCocoaContentType(const Asset: TAssetResponse): RawUtf8;
 
-/// is this Content-Type an HTML document type?
-// - decides which of PWebNativeSecurityHeaders' two blocks an asset carries:
-// nosniff and Referrer-Policy ride every asset, the CSP rides HTML, where it
-// is the DOCUMENT policy that matters
-// - matches 'text/html' exactly or followed by a parameter, never
-// 'text/htmlish'; a media type is not a URI, so a leading comparison here is
-// the whole comparison rather than a prefix test standing in for one
-function PWebCocoaIsHtmlType(const AMime: RawUtf8): Boolean;
-
-/// the native security-header block this adapter attaches to a served asset
+/// the native security-header block this adapter attaches to EVERY served
+/// asset, unconditionally
 // - PWebNativeSecurityHeaders and nothing else: the policy has ONE home,
 // src/security/pweb.navigation.policy.pas, shared byte-for-byte with the
-// Windows and Linux adapters
-function PWebCocoaSecurityHeaders(const AMime: RawUtf8): RawUtf8;
+// Windows and Linux adapters. The CSP rides every response, never just
+// text/html - an SVG served from pweb://app is a scriptable top-level
+// document in the trusted origin, and a media-type gate here would be an
+// allowlist waiting to be wrong (see the shared unit's interface comment)
+function PWebCocoaSecurityHeaders: RawUtf8;
 
 /// copy an asset body into a block the BRIDGE owns, exactly the way the
 /// resolve callback does
@@ -800,33 +795,7 @@ begin
     Result := PWEB_ASSET_FALLBACK_MIME; // never an empty Content-Type
 end;
 
-function PWebCocoaIsHtmlType(const AMime: RawUtf8): Boolean;
-const
-  HTML: RawUtf8 = 'text/html';
-var
-  i, n: PtrInt;
-  c: AnsiChar;
-begin
-  Result := False;
-  n := Length(HTML);
-  if Length(AMime) < n then
-    exit;
-  for i := 1 to n do
-  begin
-    c := AMime[i];
-    if (c >= 'A') and
-       (c <= 'Z') then
-      c := AnsiChar(Ord(c) + 32); // media types are case-insensitive (RFC 9110)
-    if c <> HTML[i] then
-      exit;
-  end;
-  // exactly the type, or the type followed by a parameter - never a longer
-  // token that merely starts the same way
-  Result := (Length(AMime) = n) or
-            (AMime[n + 1] in [';', ' ']);
-end;
-
-function PWebCocoaSecurityHeaders(const AMime: RawUtf8): RawUtf8;
+function PWebCocoaSecurityHeaders: RawUtf8;
 begin
   // The whole policy decision, delegated in one line. Nothing in this unit
   // spells a directive, a header name or a header value: PWEB_NATIVE_CSP has
@@ -1437,7 +1406,7 @@ begin
     // missing or truncated CSP. Same rule as the Content-Type above, for the
     // same reason - a truncated policy is a DIFFERENT policy, and this one
     // would be silently weaker than the ratified string.
-    headers := PWebCocoaSecurityHeaders(mime);
+    headers := PWebCocoaSecurityHeaders;
     if (headers = '') or
        (Length(headers) >= PWEB_COCOA_SECURITY_HEADERS_MAX) then
     begin
@@ -1992,11 +1961,6 @@ end;
 
 procedure TCocoaNavigationGuard.Detach;
 begin
-  if (fHandle <> 0) and
-     (GetCurrentThreadId <> fThreadId) then
-    raise EPWebCocoaNavigationGuard.Create(
-      'Detach must run on the thread that created the guard (it messages the ' +
-      'WKWebView, which is GUI-affine)');
   if fHandle <> 0 then
   begin
     // ORDER IS THE WHOLE POINT, and it is the asset handler's order for the
@@ -2009,8 +1973,19 @@ begin
     //      handle UNRESOLVABLE - a callback that somehow still arrives finds
     //      nothing rather than finding a freed object.
     // Only after all three may webview_destroy run.
+    //
+    // OFF the creating thread only step 2 is forbidden - it messages the
+    // WKWebView, which is GUI-affine - and only step 2 is skipped: the
+    // disown (an atomic CAS in the bridge), the counter snapshot and the
+    // slot release (lock-guarded registry ops) are thread-safe by
+    // construction. The delegate installation is then LEAKED rather than
+    // removed, and every event it still delivers finds an unresolvable
+    // handle and CANCELS - the same leak-don't-crash discipline the
+    // Windows guard applies to its off-thread Detach, and the reason a
+    // misuse-path destructor never aborts the teardown that follows it.
     pweb_cocoa_nav_disown(fHandle);
-    if fController <> nil then
+    if (fController <> nil) and
+       (GetCurrentThreadId = fThreadId) then
       pweb_cocoa_nav_detach(fController);
     fFinal := PWebCocoaNavCountersOf(fHandle);
     PWebCocoaNavReleaseSlot(fHandle);
