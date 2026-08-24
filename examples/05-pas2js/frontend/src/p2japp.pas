@@ -30,13 +30,13 @@ const
   { CAP-8B probe targets. `.invalid` is reserved by RFC 6761 and can
     never resolve, so a regression that let one of these through would
     still reach nothing - the failure is recorded, never acted on. }
-  CSP_SCRIPT_PROBE = 'https://blocked.invalid/pweb-csp-probe.js';
+  CSP_SCRIPT_PROBE = 'https://blocked.invalid/pweb-csp-probe.js'; // cap8b-navsec-probe
   WRONG_AUTHORITY_PROBE = 'pweb://evil/index.html';
   SAME_ORIGIN_CONTROL = '/index.html';
-  EXTERNAL_NAV_PROBE = 'https://blocked.invalid/pweb-nav-probe';
+  EXTERNAL_NAV_PROBE = 'https://blocked.invalid/pweb-nav-probe'; // cap8b-navsec-probe
   { http: is NOT in the ratified external allowlist (https and mailto
     only), so this is a URI the native validator must refuse. }
-  REFUSED_SCHEME_PROBE = 'http://blocked.invalid/pweb-open-probe';
+  REFUSED_SCHEME_PROBE = 'http://blocked.invalid/pweb-open-probe'; // cap8b-navsec-probe
   EXTERNAL_OPEN_CAPABILITY = 'external.open';
   METHOD_OPEN_EXTERNAL = 'pweb.openExternal';
   METHOD_ECHO = 'pweb.echo';
@@ -163,7 +163,7 @@ begin
     sameOriginServed := False;
     try
       res := TJSResponse(await(JSValue,
-        window.fetch(SAME_ORIGIN_CONTROL, fetchInit)));
+        window.fetch(SAME_ORIGIN_CONTROL, fetchInit))); // cap8b-navsec-probe
       sameOriginServed := res.ok;
     except
       sameOriginServed := False;
@@ -174,7 +174,7 @@ begin
       // the asset handler's constant refusal - both are "no bytes were
       // served", which is the property being asserted
       res := TJSResponse(await(JSValue,
-        window.fetch(WRONG_AUTHORITY_PROBE, fetchInit)));
+        window.fetch(WRONG_AUTHORITY_PROBE, fetchInit))); // cap8b-navsec-probe
       wrongAuthorityRefused := not res.ok;
     except
       wrongAuthorityRefused := True;

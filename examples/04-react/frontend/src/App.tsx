@@ -21,13 +21,13 @@ import { handshake, invoke, PWebError } from "@pweb/runtime";
 /* CAP-8B probe targets. `.invalid` is reserved by RFC 6761 and can never
  * resolve, so a regression that let one of these through would still
  * reach nothing - the failure is recorded, never acted on. */
-const CSP_SCRIPT_PROBE = "https://blocked.invalid/pweb-csp-probe.js";
+const CSP_SCRIPT_PROBE = "https://blocked.invalid/pweb-csp-probe.js"; // cap8b-navsec-probe
 const WRONG_AUTHORITY_PROBE = "pweb://evil/index.html";
 const SAME_ORIGIN_CONTROL = "/index.html";
-const EXTERNAL_NAV_PROBE = "https://blocked.invalid/pweb-nav-probe";
+const EXTERNAL_NAV_PROBE = "https://blocked.invalid/pweb-nav-probe"; // cap8b-navsec-probe
 /* http: is NOT in the ratified external allowlist (https and mailto
  * only), so this is a URI the native validator must refuse. */
-const REFUSED_SCHEME_PROBE = "http://blocked.invalid/pweb-open-probe";
+const REFUSED_SCHEME_PROBE = "http://blocked.invalid/pweb-open-probe"; // cap8b-navsec-probe
 const EXTERNAL_OPEN_CAPABILITY = "external.open";
 
 interface Verdict {
@@ -134,7 +134,7 @@ export function App(): JSX.Element {
         // request shape is shown to succeed on the trusted authority.
         let sameOriginServed = false;
         try {
-          const res = await fetch(SAME_ORIGIN_CONTROL, { cache: "no-store" });
+          const res = await fetch(SAME_ORIGIN_CONTROL, { cache: "no-store" }); // cap8b-navsec-probe
           sameOriginServed = res.ok;
         } catch {
           sameOriginServed = false;
@@ -144,7 +144,7 @@ export function App(): JSX.Element {
           // refused either by CSP (pweb://evil is a different origin) or
           // by the asset handler's constant refusal - both are "no bytes
           // were served", which is the property being asserted
-          const res = await fetch(WRONG_AUTHORITY_PROBE, { cache: "no-store" });
+          const res = await fetch(WRONG_AUTHORITY_PROBE, { cache: "no-store" }); // cap8b-navsec-probe
           wrongAuthorityRefused = !res.ok;
         } catch {
           wrongAuthorityRefused = true;
