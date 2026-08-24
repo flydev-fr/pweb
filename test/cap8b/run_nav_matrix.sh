@@ -94,7 +94,10 @@ Linux)
 Darwin)
     # shellcheck source=tools/macos-buildenv.sh
     . "${repo_root}/tools/macos-buildenv.sh"
-    pweb_macos_init
+    # the fpc-level init: PWEB_MACOS_STATIC_DIR and the FPC link arrays are
+    # its facts, not pweb_macos_init's (measured: hosted run 32740388070
+    # died on the unbound variable under set -u)
+    pweb_macos_init_fpc
     arch="$(uname -m)"
     case "${arch}" in
         x86_64) target='macos-x86_64' ;;
