@@ -1244,8 +1244,37 @@ void pweb_cocoa_nav_get_stats(pweb_cocoa_nav_stats_t *out) {
 
 /* ------------------------- the system opener ----------------------------- */
 
+typedef struct {
+  const void *url; /* NSURL *, borrowed for the synchronous call's duration */
+  int ok;
+} pweb_open_main_ctx;
+
+/* static, and dispatch_sync_f instead of a block ON PURPOSE: clang emits
+   global ___copy_helper_block/___destroy_helper_block TEXT symbols for a
+   block that captures an object pointer, and the CAP-7M1 seam gate rightly
+   refuses any callable export that is not pweb_cocoa_* (measured: hosted run
+   32739228213, both arches). A plain function pointer plus a stack context
+   generates no helper symbols at all. The exception barrier lives HERE, on
+   the executing thread - an NSException raised inside a GCD-submitted body
+   does NOT propagate to the submitting thread's frame. */
+static void pweb_cocoa_open_on_main(void *raw) {
+  pweb_open_main_ctx *ctx = (pweb_open_main_ctx *)raw;
+  @try {
+    ctx->ok =
+        ([[NSWorkspace sharedWorkspace] openURL:(NSURL *)ctx->url] != NO) ? 1
+                                                                          : 0;
+  } @catch (NSException *ex) {
+    (void)ex;
+    pweb_bump(&g_caught_exceptions);
+    ctx->ok = 0;
+  } @catch (...) {
+    pweb_bump(&g_caught_exceptions);
+    ctx->ok = 0;
+  }
+}
+
 int pweb_cocoa_open_external(const char *uri) {
-  __block int ok = 0;
+  int ok = 0;
   if ((uri == NULL) || (uri[0] == '\0')) {
     return 0;
   }
@@ -1268,18 +1297,23 @@ int pweb_cocoa_open_external(const char *uri) {
       /* ON THE MAIN THREAD, by marshalling rather than by assumption:
          NSWorkspace is an AppKit object and this function is reached from a
          scheduler WORKER (a bridge invocation never runs on the GUI thread).
-         dispatch_sync onto the main queue keeps the call synchronous - the
-         caller still learns the real outcome - and the is-main-thread check
-         keeps a future main-thread caller from deadlocking on itself. The
-         block only assigns a BOOL; the @catch barriers below still own every
-         exception, because dispatch_sync re-raises in the submitting thread's
-         frame for a synchronous block. */
+         dispatch_sync_f keeps the call synchronous - the caller still learns
+         the real outcome - and the is-main-thread check keeps a future
+         main-thread caller from deadlocking on itself. The NSURL is borrowed
+         across the synchronous hop; this frame outlives it by construction. */
       if ([NSThread isMainThread]) {
-        ok = ([[NSWorkspace sharedWorkspace] openURL:url] != NO) ? 1 : 0;
+        pweb_open_main_ctx here;
+        here.url = url;
+        here.ok = 0;
+        pweb_cocoa_open_on_main(&here);
+        ok = here.ok;
       } else {
-        dispatch_sync(dispatch_get_main_queue(), ^{
-          ok = ([[NSWorkspace sharedWorkspace] openURL:url] != NO) ? 1 : 0;
-        });
+        pweb_open_main_ctx ctx;
+        ctx.url = url;
+        ctx.ok = 0;
+        dispatch_sync_f(dispatch_get_main_queue(), &ctx,
+                        &pweb_cocoa_open_on_main);
+        ok = ctx.ok;
       }
     } @catch (NSException *ex) {
       (void)ex;
