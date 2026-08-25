@@ -95,18 +95,22 @@ Linux)
 
     # mechanical quickjs-libc audit of the RELEASE-SHIPPED object (its
     # bytes are already sha256-pinned via mormot.lock, this asserts the
-    # pinned bytes themselves carry no std/os surface). Explicit nm
-    # failure check: an empty pipe must never pass the audit. On Windows
-    # the sha256 pin alone stands (no guaranteed nm); Darwin audits its
-    # own freshly built object inside tools/build_quickjs_darwin.sh.
+    # pinned bytes themselves carry no std/os MODULE REGISTRATION
+    # surface: js_init_module_std/os, js_std_add_helpers, js_std_loop).
+    # A bare js_std_/js_os_ prefix match false-positives on the harmless
+    # js_std_eval_binary helper the pinned patch moved into quickjs.c
+    # (measured, hosted run 32857758203). Explicit nm failure check: an
+    # empty pipe must never pass the audit. On Windows the sha256 pin
+    # alone stands (no guaranteed nm); Darwin audits its own freshly
+    # built object inside tools/build_quickjs_darwin.sh.
     step 'quickjs-libc symbol audit of the pinned static object'
     qsyms="$(nm 'deps/mormot2/static/x86_64-linux/quickjs.o')" ||
         die 'nm failed on the pinned quickjs.o -- audit impossible'
     [ -n "${qsyms}" ] || die 'nm enumerated no symbols from the pinned quickjs.o'
-    if printf '%s\n' "${qsyms}" | grep -E ' T js_(std|os)_' > /dev/null; then
-        die 'quickjs-libc symbols found in the pinned quickjs.o -- refuse'
+    if printf '%s\n' "${qsyms}" | grep -E ' T (js_init_module_(std|os)|js_std_add_helpers|js_std_loop)$' > /dev/null; then
+        die 'quickjs-libc module-registration symbols found in the pinned quickjs.o -- refuse'
     fi
-    printf '[CAP-9A] pinned quickjs.o defines no js_std_*/js_os_* surface\n'
+    printf '[CAP-9A] pinned quickjs.o defines no quickjs-libc module-registration surface\n'
 
     step 'compile quickjsfoundation (production runtime + pinned QuickJS statics)'
     fpc -MObjFPC -Sh -B -FU"${unitdir}" -FE"${outdir}" \

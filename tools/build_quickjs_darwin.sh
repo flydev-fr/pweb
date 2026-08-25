@@ -75,10 +75,17 @@ clang_version="$(clang --version | head -n 1)"
 
 # 4. pinned static-build defines; conservative codegen flags for Darwin
 #    (no -fomit-frame-pointer: frame pointers are part of the arm64
-#    Darwin ABI; unwind tables stay, Pascal exceptions cross pas_assert)
+#    Darwin ABI; unwind tables stay, Pascal exceptions cross pas_assert).
+#    The -include prelude bridges two macOS-SDK-only gaps in the pinned
+#    sources (PATH_MAX location, js_std_dump_error prototype) WITHOUT
+#    touching them - see tools/quickjs_darwin_prelude.h.
+prelude="${root}/tools/quickjs_darwin_prelude.h"
+[ -f "${prelude}" ] || { echo "build_quickjs_darwin: prelude missing: ${prelude}" >&2; exit 1; }
+prelude_sha="$(shasum -a 256 "${prelude}" | cut -d ' ' -f 1)"
 clang -c -w -O2 -std=c99 -fno-stack-protector \
   -arch "${arch}" \
   -I"${src}" \
+  -include "${prelude}" \
   -DCONFIG_BIGNUM -DJS_STRICT_NAN_BOXING -DCONFIG_JSX -DCONFIG_DEBUGGER \
   -o "${out_dir}/quickjs.o" "${work}/quickjs2.c"
 
@@ -89,9 +96,15 @@ case "${lipo_info}" in
   *) echo "build_quickjs_darwin: unexpected architecture: ${lipo_info}" >&2; exit 1 ;;
 esac
 
-# 6. export audit: the object must not define any quickjs-libc surface.
-# nm output is captured with an explicit failure check first - a failed nm
-# feeding an empty pipe into grep would otherwise pass the audit silently.
+# 6. export audit: the object must not define the quickjs-libc MODULE
+# REGISTRATION surface (js_init_module_std/os, js_std_add_helpers,
+# js_std_loop). A bare js_std_/js_os_ prefix match would false-positive:
+# the pinned patch deliberately moved the harmless js_std_eval_binary /
+# js_module_set_import_meta helpers INTO quickjs.c (res/static/libquickjs
+# README), and js_std_dump_error is a Pascal-side export the object only
+# REFERENCES. nm output is captured with an explicit failure check first -
+# a failed nm feeding an empty pipe into grep would otherwise pass the
+# audit silently.
 syms="$(nm -gU "${out_dir}/quickjs.o")" || {
   echo "build_quickjs_darwin: nm failed on the produced object - audit impossible, refuse" >&2
   exit 1
@@ -100,8 +113,8 @@ if [ -z "${syms}" ]; then
   echo "build_quickjs_darwin: nm enumerated no defined symbols - not a credible QuickJS object, refuse" >&2
   exit 1
 fi
-if printf '%s\n' "${syms}" | grep -E ' _js_(std|os)_' > /dev/null; then
-  echo "build_quickjs_darwin: quickjs-libc symbols found in the object - refuse" >&2
+if printf '%s\n' "${syms}" | grep -E ' _(js_init_module_(std|os)|js_std_add_helpers|js_std_loop)$' > /dev/null; then
+  echo "build_quickjs_darwin: quickjs-libc module-registration symbols found in the object - refuse" >&2
   exit 1
 fi
 
@@ -110,6 +123,7 @@ fi
   echo "source=deps/mormot2/res/static/libquickjs (pinned quickjspp, QUICKJS_VERSION 2021-03-27)"
   echo "mormot_commit=${actual_commit}"
   echo "amalgamation_sha256=${src_sha}"
+  echo "prelude_sha256=${prelude_sha}"
   echo "clang=${clang_version}"
   echo "arch=${arch}"
   echo "defines=CONFIG_BIGNUM JS_STRICT_NAN_BOXING CONFIG_JSX CONFIG_DEBUGGER"
