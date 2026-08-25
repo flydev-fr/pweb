@@ -2,7 +2,7 @@
 title: 'CAP-9A — QuickJS engine and source-generic invocation foundation'
 type: 'feature'
 created: '2026-08-25'
-status: 'in-progress'
+status: 'done'
 review_loop_iteration: 0
 baseline_commit: '1af1b38e92ae684680c876510ceb405823b83f5b'
 context:
@@ -118,3 +118,85 @@ context:
 - `pwsh test/cap8c/run_multiprincipal.ps1` + `pwsh test/cap7f/check_divergence.ps1` — expected: CAP-8 regression + divergence sweep stay green.
 - Aggregator negative tests against fixture copies (field removed / digest mutated) — expected: refusal naming target/field; genuine downloads — PASS.
 - Hosted CI on the shard branch — expected: all jobs green incl. four-way `quickjs_corpus_digest` equality.
+
+## Suggested Review Order
+
+**Engine host + source adapter (the shard's production surface)**
+
+- The whole architecture in one header: ownership, sync model, envelope, limits, lifecycle.
+  [`pweb.script.quickjs.pas:1`](../../src/script/pweb.script.quickjs.pas#L1)
+
+- The one native callback: validate -> frozen TryEnqueue -> bounded wait -> JSON envelope.
+  [`pweb.script.quickjs.pas:536`](../../src/script/pweb.script.quickjs.pas#L536)
+
+- The completion sink: worker copies + signals only; result published before the done flag.
+  [`pweb.script.quickjs.pas:396`](../../src/script/pweb.script.quickjs.pas#L396)
+
+- Engine created AND destroyed on the plugin thread; per-script CPU bound never silently disabled.
+  [`pweb.script.quickjs.pas:578`](../../src/script/pweb.script.quickjs.pas#L578)
+
+- Frozen teardown order: Quiesce -> Close -> join; guarded against constructor-failure paths.
+  [`pweb.script.quickjs.pas:691`](../../src/script/pweb.script.quickjs.pas#L691)
+
+**Pin workarounds (measured defects, mORMot untouched)**
+
+- The correctly-typed `JS_SetMaxStackSize` external - the pinned binding corrupts the context.
+  [`pweb.script.quickjs.pas:275`](../../src/script/pweb.script.quickjs.pas#L275)
+
+- Darwin link block: CI-built object + aarch64 `pas_*` exports (widened vs the pin's cardinal).
+  [`pweb.script.quickjs.pas:208`](../../src/script/pweb.script.quickjs.pas#L208)
+
+**Script-facing surface**
+
+- The bootstrap shim: `pweb.invoke`/`pweb.handshake`, throw-on-error, raw callback removed from globals.
+  [`pweb.script.quickjs.pas:439`](../../src/script/pweb.script.quickjs.pas#L439)
+
+**Darwin build determinism**
+
+- Pin gate (HEAD + tree cleanliness), exact upstream amalgamation, arch check, fail-closed libc audit.
+  [`build_quickjs_darwin.sh:1`](../../tools/build_quickjs_darwin.sh#L1)
+
+**The Q1-Q30 proof**
+
+- The matrix map and determinism contract of the corpus digest.
+  [`quickjsfoundation.pas:3`](../../test/cap9a/quickjsfoundation.pas#L3)
+
+- Counting bridge: per-principal ledgers, held-call barrier, late-worker rendezvous fact.
+  [`quickjsfoundation.pas:470`](../../test/cap9a/quickjsfoundation.pas#L470)
+
+- Lifecycle legs q16-q19: Close mid-wait -> cancelled; deterministic late-completion rendezvous.
+  [`quickjsfoundation.pas:1128`](../../test/cap9a/quickjsfoundation.pas#L1128)
+
+- CAP-8A policy wiring: two pkQuickJS principals, explicit empty set for the denied one.
+  [`quickjsfoundation.pas:529`](../../test/cap9a/quickjsfoundation.pas#L529)
+
+- ABI section: sizes, pinned tags, 53-bit boundary, refcount round-trip, engine churn.
+  [`quickjsfoundation.pas:736`](../../test/cap9a/quickjsfoundation.pas#L736)
+
+**Evidence chain (must-PASS, four-way digest)**
+
+- Windows emitter: verbatim verdict, required counters, corpus digest.
+  [`emit_evidence.ps1:386`](../../test/cap7f/emit_evidence.ps1#L386)
+
+- Aggregator: mustPass + equality + the CAP-9A defense-in-depth refusals.
+  [`check_cap7f_aggregate.ps1:173`](../../test/cap7f/check_cap7f_aggregate.ps1#L173)
+
+- Selftest legs c11-c14: every new refusal branch proven red on fixtures.
+  [`check_cap7f_selftest.ps1:1`](../../test/cap7f/check_cap7f_selftest.ps1#L1)
+
+**Peripherals**
+
+- Windows runner: CAP-3U window, honest ABI-diff skip on broken toolchains.
+  [`run_quickjsfoundation.ps1:1`](../../test/cap9a/run_quickjsfoundation.ps1#L1)
+
+- POSIX runner: linux pinned-object audit; darwin build-then-link; paired C ABI diff always gates.
+  [`run_quickjsfoundation.sh:1`](../../test/cap9a/run_quickjsfoundation.sh#L1)
+
+- Paired C probe against the pinned headers.
+  [`abiprobe.c:1`](../../test/cap9a/abiprobe.c#L1)
+
+- The four platform-job gates (windows/linux/macos-x64/macos-arm64) + diagnostics paths.
+  [`ci.yml:1561`](../../.github/workflows/ci.yml#L1561)
+
+- Divergence-sweep allowlist entry for the one new platform-conditional file.
+  [`check_divergence.ps1:77`](../../test/cap7f/check_divergence.ps1#L77)
