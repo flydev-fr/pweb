@@ -1446,11 +1446,13 @@ end;
 //     BEFORE either webview_create; its single-shot Attach verifies the
 //     FIRST view, and the SECOND view's service is asserted through its own
 //     page-loaded report (the driver cannot report without being served).
-// The per-window navigation guards stay per-view on every platform, exactly
-// as instructed - NOTE the measured macOS consequence reported separately:
-// the frozen Cocoa guard also holds a single process-wide armed slot, so
-// the second guard Create refuses there ('a navigation guard is already
-// armed in this process') - an adapter-freeze escalation, not patched here.
+// The navigation guards are PER VIEW on every platform: per-controller
+// events on Windows, per-view signals on Linux, and - under the R-C4
+// ratification (CAP-8C Checkpoint follow-up) - per-view arming in the
+// private Cocoa bridge: each guard's Create stages its handle, its Attach
+// binds it to THAT window, and every decision resolves the arriving view to
+// its own guard. Double-arming a single view stays a loud pre-flight
+// refusal ('a navigation guard is already armed in this process').
 
 type
   { which asset arming this window performs (see the topology note above) }

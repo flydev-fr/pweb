@@ -356,6 +356,14 @@ type
 
   { CAP-8B: the privileged-navigation guard for one WebView.
 
+    R-C4 (CAP-8C, human-ratified): guards are PER VIEW - a multi-window host
+    creates one guard per privileged WebView, Create staging the guard's
+    handle and Attach committing it as that view's binding in the bridge.
+    The delegate OBJECT stays the process-wide singleton it always was; the
+    POLICY binding, the decisions and the per-slot counters are per view.
+    A single-window host (the release app, the CAP-8B nav matrix) is
+    byte-unchanged in behavior: one Create, one Attach, same refusals.
+
     Installs a WKNavigationDelegate on the WKWebView reached through
     webview_get_native_handle(BROWSER_CONTROLLER) - a seam upstream leaves
     unset, so its own WKUIDelegate (the open panel) is never displaced.
@@ -1891,6 +1899,14 @@ begin
     raise EPWebCocoaNavigationGuard.CreateFmt(
       'more than %d live navigation guards in one process',
       [PWEB_COCOA_MAX_HANDLERS]);
+  // R-C4 (CAP-8C, human-ratified): arming is PER VIEW. This call STAGES the
+  // guard's handle; Attach commits it as the binding of the ONE view it is
+  // called with, and the bridge resolves every decision through the arriving
+  // view's own binding - so multiple windows each carry their own guard with
+  // their own per-slot counters. Exactly one handle may be staged at a time:
+  // a refusal here means another guard was created and never attached (or a
+  // view is being double-armed) - the same loud pre-flight the original
+  // single-armed design gave, kept verbatim on purpose.
   if pweb_cocoa_nav_arm(fHandle) = 0 then
   begin
     PWebCocoaNavReleaseSlot(fHandle);

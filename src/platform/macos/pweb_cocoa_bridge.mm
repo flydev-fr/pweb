@@ -868,15 +868,61 @@ uint64_t pweb_cocoa_rss_kb(void) {
  *   URI comparison, no scheme test and no allowlist in this file.
  */
 
-/* The handle the delegate answers AS. 0 means disowned: no decision callback
-   can be made, and with no policy to consult every hook cancels. */
-static uint64_t g_nav_armed_handle = 0;
+/* R-C4 (CAP-8C, human-ratified): PER-VIEW arming.
+
+   The delegate OBJECT stays a process-wide singleton (WebKit holds it
+   weakly; the global below keeps it alive), but the POLICY BINDING is per
+   view: each armed guard handle is bound to exactly one WKWebView, and every
+   decision resolves the ARRIVING view to ITS handle - so two privileged
+   windows each answer through their own generation-checked Pascal guard,
+   with their own per-slot counters, through one shared classifier.
+
+   The two-step Create/Attach shape of the Pascal adapter is preserved
+   exactly: pweb_cocoa_nav_arm STAGES a handle (armed, awaiting its view) and
+   pweb_cocoa_nav_attach BINDS the staged handle to the view it is called
+   with. A second arm while another handle is still staged-unattached is
+   refused with the same one-armed message as before - that misuse (two
+   guards racing for one pending slot, or double-arming one view) remains a
+   loud pre-flight, never a silent rebinding.
+
+   A view with NO binding fails closed: the delegate cancels without calling
+   out, exactly as the disowned state always has. Slots are cleared handle
+   first, view second, so a concurrent lookup can never read a stale pair
+   (disown is callable from any thread; everything else here is main-thread
+   affine). */
+#define PWEB_COCOA_NAV_MAX_VIEWS 8
+typedef struct pweb_nav_binding {
+  void *view;      /* the WKWebView this binding serves; NULL = free slot */
+  uint64_t handle; /* the generation-checked Pascal handle; 0 = disowned */
+} pweb_nav_binding_t;
+static pweb_nav_binding_t g_nav_bindings[PWEB_COCOA_NAV_MAX_VIEWS];
+/* the handle armed by pweb_cocoa_nav_arm and not yet bound to a view */
+static uint64_t g_nav_pending_handle = 0;
 static pweb_cocoa_nav_fn g_nav_decide = NULL;
 static int g_nav_installed = 0;
 
+/* the binding lookup the delegate performs per decision: the ARRIVING view,
+   never a process-global answer. Returns 0 when the view is unbound. */
+static uint64_t pweb_nav_handle_for_view(void *view) {
+  int i;
+  if (view == NULL) {
+    return 0;
+  }
+  for (i = 0; i < PWEB_COCOA_NAV_MAX_VIEWS; i++) {
+    void *bound = __atomic_load_n(&g_nav_bindings[i].view, __ATOMIC_SEQ_CST);
+    if (bound == view) {
+      return __atomic_load_n(&g_nav_bindings[i].handle, __ATOMIC_SEQ_CST);
+    }
+  }
+  return 0;
+}
+
 @interface PWebCocoaNavigationDelegate : NSObject <WKNavigationDelegate>
 /* the ONE call out, and the only place a WebKit object becomes scalars */
-- (BOOL)allowUrl:(NSURL *)url kind:(int)kind activated:(BOOL)activated;
+- (BOOL)allowUrl:(NSURL *)url
+         forView:(WKWebView *)view
+            kind:(int)kind
+       activated:(BOOL)activated;
 - (void)refuseDownload:(WKDownload *)download;
 @end
 
@@ -887,13 +933,19 @@ static PWebCocoaNavigationDelegate *g_nav_delegate = nil;
 
 @implementation PWebCocoaNavigationDelegate
 
-- (BOOL)allowUrl:(NSURL *)url kind:(int)kind activated:(BOOL)activated {
-  const uint64_t handle = __atomic_load_n(&g_nav_armed_handle, __ATOMIC_SEQ_CST);
+- (BOOL)allowUrl:(NSURL *)url
+         forView:(WKWebView *)view
+            kind:(int)kind
+       activated:(BOOL)activated {
+  /* R-C4: the ARRIVING view resolves to ITS OWN guard handle - never a
+     process-global answer, so two privileged windows cannot consult each
+     other's policy binding or per-slot counters. */
+  const uint64_t handle = pweb_nav_handle_for_view((void *)view);
   pweb_cocoa_nav_fn decide = g_nav_decide;
   if ((handle == 0) || (decide == NULL)) {
-    /* disowned, or never armed: refuse, and NEVER call out. This is the state
-       teardown leaves behind, and it must not be a state in which untrusted
-       content can commit. */
+    /* disowned, unbound, or never armed: refuse, and NEVER call out. This is
+       the state teardown leaves behind, and it must not be a state in which
+       untrusted content can commit. */
     return NO;
   }
   /* THE URI IS THE WHOLE URI, for the same reason the asset seam insists on
@@ -918,7 +970,6 @@ static PWebCocoaNavigationDelegate *g_nav_delegate = nil;
     decidePolicyForNavigationAction:(WKNavigationAction *)action
                     decisionHandler:
                         (void (^)(WKNavigationActionPolicy))decisionHandler {
-  (void)webView;
   WKNavigationActionPolicy policy = WKNavigationActionPolicyCancel;
   pweb_bump(&g_nav_action_decisions);
   @try {
@@ -955,7 +1006,10 @@ static PWebCocoaNavigationDelegate *g_nav_delegate = nil;
     const BOOL activated =
         ([action navigationType] == WKNavigationTypeLinkActivated);
 
-    if ([self allowUrl:[[action request] URL] kind:kind activated:activated]) {
+    if ([self allowUrl:[[action request] URL]
+               forView:webView
+                  kind:kind
+             activated:activated]) {
       policy = WKNavigationActionPolicyAllow;
     }
     /* NEVER WKNavigationActionPolicyDownload: this WebView writes nothing. */
@@ -996,7 +1050,6 @@ static PWebCocoaNavigationDelegate *g_nav_delegate = nil;
     decidePolicyForNavigationResponse:(WKNavigationResponse *)navigationResponse
                       decisionHandler:
                           (void (^)(WKNavigationResponsePolicy))decisionHandler {
-  (void)webView;
   WKNavigationResponsePolicy policy = WKNavigationResponsePolicyCancel;
   pweb_bump(&g_nav_response_decisions);
   @try {
@@ -1007,6 +1060,7 @@ static PWebCocoaNavigationDelegate *g_nav_delegate = nil;
        from; the flag is diagnostic anyway and is reported as absent rather
        than invented */
     if ([self allowUrl:[[navigationResponse response] URL]
+               forView:webView
                   kind:kind
              activated:NO]) {
       policy = WKNavigationResponsePolicyAllow;
@@ -1118,10 +1172,13 @@ int pweb_cocoa_nav_arm(uint64_t handle) {
   if ((handle == 0) || !g_nav_installed) {
     return 0;
   }
-  /* One delegate, one policy: two live guards would both be served by a single
-     callback that can only consult one, so a second arm is refused rather than
-     silently resolved in someone's favour. */
-  if (!__atomic_compare_exchange_n(&g_nav_armed_handle, &expected, handle,
+  /* R-C4: arming STAGES this handle for the next attach; the per-view
+     binding is committed by pweb_cocoa_nav_attach. Exactly one handle may be
+     staged at a time - a second, different arm before the first was attached
+     (two guards racing one pending slot, or an attempt to double-arm one
+     view) is refused with the same loud pre-flight as ever, never silently
+     resolved in someone's favour. */
+  if (!__atomic_compare_exchange_n(&g_nav_pending_handle, &expected, handle,
                                    false, __ATOMIC_SEQ_CST,
                                    __ATOMIC_SEQ_CST)) {
     return (expected == handle) ? 1 : 0;
@@ -1131,12 +1188,26 @@ int pweb_cocoa_nav_arm(uint64_t handle) {
 
 void pweb_cocoa_nav_disown(uint64_t handle) {
   uint64_t expected = handle;
+  int i;
   if (handle == 0) {
     return;
   }
-  (void)__atomic_compare_exchange_n(&g_nav_armed_handle, &expected, (uint64_t)0,
-                                    false, __ATOMIC_SEQ_CST,
+  /* the staged-but-unattached state, if it is ours */
+  (void)__atomic_compare_exchange_n(&g_nav_pending_handle, &expected,
+                                    (uint64_t)0, false, __ATOMIC_SEQ_CST,
                                     __ATOMIC_SEQ_CST);
+  /* and every per-view binding carrying this handle: handle first, view
+     second, so a concurrent lookup can never resolve a stale pair (this is
+     the one entry point callable from any thread) */
+  for (i = 0; i < PWEB_COCOA_NAV_MAX_VIEWS; i++) {
+    if (__atomic_load_n(&g_nav_bindings[i].handle, __ATOMIC_SEQ_CST) ==
+        handle) {
+      __atomic_store_n(&g_nav_bindings[i].handle, (uint64_t)0,
+                       __ATOMIC_SEQ_CST);
+      __atomic_store_n(&g_nav_bindings[i].view, (void *)NULL,
+                       __ATOMIC_SEQ_CST);
+    }
+  }
 }
 
 int pweb_cocoa_nav_installed_on(void *view) {
@@ -1169,14 +1240,33 @@ int pweb_cocoa_nav_installed_on(void *view) {
 
 int pweb_cocoa_nav_attach(void *view) {
   int ok = 0;
+  uint64_t pending;
+  int i;
+  int slot = -1;
   if ((view == NULL) || !g_nav_installed || (g_nav_delegate == nil)) {
     return 0;
   }
   /* Attaching an UNARMED delegate would install a hook that cancels every
      navigation including the trusted one, which looks exactly like a broken
-     engine. Refuse instead. */
-  if (__atomic_load_n(&g_nav_armed_handle, __ATOMIC_SEQ_CST) == 0) {
+     engine. Refuse instead. (R-C4: "armed" is the STAGED handle awaiting
+     this attach.) */
+  pending = __atomic_load_n(&g_nav_pending_handle, __ATOMIC_SEQ_CST);
+  if (pending == 0) {
     return 0;
+  }
+  /* R-C4: one binding per view - a view that already has one is a
+     double-arm misuse and is refused loudly, exactly as before. */
+  if (pweb_nav_handle_for_view(view) != 0) {
+    return 0;
+  }
+  for (i = 0; i < PWEB_COCOA_NAV_MAX_VIEWS; i++) {
+    if (__atomic_load_n(&g_nav_bindings[i].view, __ATOMIC_SEQ_CST) == NULL) {
+      slot = i;
+      break;
+    }
+  }
+  if (slot < 0) {
+    return 0; /* more live guarded views than the registry holds: refuse */
   }
   @autoreleasepool {
     @try {
@@ -1194,6 +1284,15 @@ int pweb_cocoa_nav_attach(void *view) {
          handler instead of trusting the seam counter. */
       ok = (pweb_cocoa_nav_installed_on(view) == PWEB_COCOA_READBACK_OURS) ? 1
                                                                           : 0;
+      if (ok) {
+        /* commit the per-view binding: handle first, view second, so a
+           concurrent lookup that sees the view also sees its handle - then
+           clear the staging slot for the next guard's arm */
+        __atomic_store_n(&g_nav_bindings[slot].handle, pending,
+                         __ATOMIC_SEQ_CST);
+        __atomic_store_n(&g_nav_bindings[slot].view, view, __ATOMIC_SEQ_CST);
+        __atomic_store_n(&g_nav_pending_handle, (uint64_t)0, __ATOMIC_SEQ_CST);
+      }
     } @catch (NSException *ex) {
       (void)ex;
       pweb_bump(&g_nav_caught_exceptions);
@@ -1207,7 +1306,23 @@ int pweb_cocoa_nav_attach(void *view) {
 }
 
 void pweb_cocoa_nav_detach(void *view) {
-  if ((view == NULL) || (g_nav_delegate == nil)) {
+  int i;
+  if (view == NULL) {
+    return;
+  }
+  /* R-C4 defensive half: whatever the delegate state, THIS view's binding
+     slot is cleared (handle first, view second) - the caller has already
+     disowned by handle, so this only matters when the call orders drift,
+     and then it fails closed rather than leaving a resolvable pair. */
+  for (i = 0; i < PWEB_COCOA_NAV_MAX_VIEWS; i++) {
+    if (__atomic_load_n(&g_nav_bindings[i].view, __ATOMIC_SEQ_CST) == view) {
+      __atomic_store_n(&g_nav_bindings[i].handle, (uint64_t)0,
+                       __ATOMIC_SEQ_CST);
+      __atomic_store_n(&g_nav_bindings[i].view, (void *)NULL,
+                       __ATOMIC_SEQ_CST);
+    }
+  }
+  if (g_nav_delegate == nil) {
     return;
   }
   @autoreleasepool {

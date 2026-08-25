@@ -380,27 +380,38 @@ typedef struct pweb_cocoa_nav_stats {
    silently rebinding every future decision. Returns 1 on success. */
 int pweb_cocoa_nav_install(pweb_cocoa_nav_fn decide);
 
-/* Arm the navigation seam for one handler handle, exactly as pweb_cocoa_arm
-   does for the scheme handler and for the same reason: the delegate is a
-   process-wide singleton and a single callback can only consult one policy, so
-   a second, different handle is refused rather than resolved in someone's
-   favour. Returns 1 on success. */
+/* Arm the navigation seam for one handler handle.
+
+   R-C4 (CAP-8C, human-ratified): arming is PER VIEW. This call STAGES the
+   handle; the next pweb_cocoa_nav_attach binds it to the view it is called
+   with, and every decision then resolves the ARRIVING WKWebView to ITS OWN
+   handle - so multiple privileged windows each answer through their own
+   generation-checked guard while the delegate OBJECT stays the process-wide
+   singleton it always was (a single callback, one shared classifier, no
+   policy table here). Exactly one handle may be staged at a time: a second,
+   different arm before the first was attached (two guards racing one pending
+   slot, or a double-arm of one view) is refused rather than resolved in
+   someone's favour - the same loud pre-flight as the original single-armed
+   design. Returns 1 on success. */
 int pweb_cocoa_nav_arm(uint64_t handle);
 
-/* Disown: the delegate stops calling out. After this returns, no decision
-   callback can be made for `handle` - and because the delegate then has no
-   policy to consult, every hook FAILS CLOSED and cancels. Idempotent and safe
-   from any thread (one atomic store). */
+/* Disown: the delegate stops calling out FOR THIS HANDLE. Clears the staged
+   slot if it still carries `handle`, and every per-view binding that does
+   (handle first, view second, so a concurrent lookup can never resolve a
+   stale pair). A view left without a binding FAILS CLOSED: every hook
+   cancels. Idempotent and safe from any thread (atomic stores only). */
 void pweb_cocoa_nav_disown(uint64_t handle);
 
-/* Install the delegate on THIS WKWebView. `view` is the BROWSER_CONTROLLER
-   native handle, which on Cocoa is the WKWebView itself.
+/* Install the delegate on THIS WKWebView and COMMIT the staged handle as
+   this view's binding (R-C4). `view` is the BROWSER_CONTROLLER native
+   handle, which on Cocoa is the WKWebView itself.
 
    Returns 1 only if the read-back afterwards says OURS, so "attached" is a
-   measured property of the view rather than the absence of an exception.
-   Returns 0 - installing NOTHING - if a foreign delegate already owns this
-   view: upstream leaves the navigation delegate unset, so anything there is
-   somebody else's and displacing it would break them silently.
+   measured property of the view rather than the absence of an exception -
+   and only then is the binding committed and the staging slot cleared for
+   the next guard. Returns 0 - installing NOTHING - if a foreign delegate
+   already owns this view, if no handle is staged, or if this view ALREADY
+   has a binding (the double-arm misuse stays refused).
 
    Call it after webview_create and BEFORE webview_navigate. MEASURED (M5):
    this engine performs no initial about:blank at all, so there is no document
@@ -413,7 +424,9 @@ int pweb_cocoa_nav_attach(void *view);
    (-[WKWebView navigationDelegate]). */
 int pweb_cocoa_nav_installed_on(void *view);
 
-/* Remove the delegate from `view`, but ONLY if it is ours. Called AFTER
+/* Remove the delegate from `view`, but ONLY if it is ours, and clear this
+   view's binding slot whatever the delegate state (R-C4 defensive half; the
+   caller has normally already disowned by handle). Called AFTER
    pweb_cocoa_nav_disown and BEFORE the handle is released, so that a callback
    arriving in between finds a disowned seam and cancels rather than reaching a
    released Pascal object. */
