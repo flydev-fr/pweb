@@ -1432,8 +1432,34 @@ end;
 // ============================== GUI LEG ===================================
 // Two simultaneously live real WebViews (R-C1). Modeled on navmatrix's
 // construction/teardown; the run loop is on the Main view (run-owner).
+//
+// ASSET-ARMING TOPOLOGY, platform-honest (measured hosted, run 32770563751):
+//   - Windows/WebView2: the WebResourceRequested handler is PER CONTROLLER,
+//     so each window arms its own handler (proven green hosted);
+//   - Linux/WebKitGTK: the scheme registration is per WebKitWebContext, and
+//     both views created via webview_create(nil) share the DEFAULT context -
+//     a second registration is refused by the adapter. ONE handler is
+//     registered through the FIRST view's context and serves both;
+//   - macOS/WKWebView: the Cocoa bridge keeps a single process-wide armed
+//     handler whose pre-create seam installs it into EVERY
+//     WKWebViewConfiguration created while armed. ONE handler is created
+//     BEFORE either webview_create; its single-shot Attach verifies the
+//     FIRST view, and the SECOND view's service is asserted through its own
+//     page-loaded report (the driver cannot report without being served).
+// The per-window navigation guards stay per-view on every platform, exactly
+// as instructed - NOTE the measured macOS consequence reported separately:
+// the frozen Cocoa guard also holds a single process-wide armed slot, so
+// the second guard Create refuses there ('a navigation guard is already
+// armed in this process') - an adapter-freeze escalation, not patched here.
 
 type
+  { which asset arming this window performs (see the topology note above) }
+  TGuiAssetMode = (
+    gamPerView,     // Windows: this window creates its own store + handler
+    gamSharedFirst, // POSIX first window: arm/verify the ONE shared handler
+    gamNone         // POSIX second window: served by the shared arming
+  );
+
   TGuiWindow = record
     W: webview_t;
     Store: IAssetStore;
@@ -1458,26 +1484,34 @@ var
   gGuiBridge: IInvocationBridge;
   gGuiServer: TRestServerFullMemory;
   gGuiRealBridge: IInvocationBridge;
+  // the POSIX single arming (see the topology note above): ONE store, ONE
+  // handler for the whole process; nil throughout on Windows
+  gSharedStore: IAssetStore;
+  gSharedHandler: TPWebAssetHandler;
 
 procedure GuiBuildWindow(var AWin: TGuiWindow; APrincipal: Integer;
-  const AFixtureDir: TFileName; const ANavUrl: RawUtf8; const ATitle: RawUtf8);
+  const AFixtureDir: TFileName; const ANavUrl: RawUtf8;
+  const ATitle: RawUtf8; AAssetMode: TGuiAssetMode);
 var
   limits: TPWebSourceLimits;
   ctx: TInvocationContext;
   opts: TPWebWebViewBindingOptions;
 begin
-  AWin.Store := TFolderAssetStore.Create(AFixtureDir);
+  if AAssetMode = gamPerView then
+    AWin.Store := TFolderAssetStore.Create(AFixtureDir);
   limits := Default(TPWebSourceLimits);
   limits.MaxConcurrent := 4;
   limits.MaxQueueSize := 32;
   AWin.Source := gGuiScheduler.RegisterSource(limits);
 
-  {$ifdef DARWIN}
-  AWin.Handler := TCocoaAssetHandler.Create(AWin.Store);
-  {$endif DARWIN}
   AWin.W := WebViewCheckCreated(webview_create(0, nil));
   {$ifdef DARWIN}
-  AWin.Handler.Attach(AWin.W);
+  // the shared handler was created BEFORE any webview_create (RunGuiLeg), so
+  // this view's configuration went through the armed seam; the frozen class
+  // offers exactly one Attach, spent on the FIRST view - the second view's
+  // service is proven by its page-loaded report, never assumed
+  if AAssetMode = gamSharedFirst then
+    gSharedHandler.Attach(AWin.W);
   {$endif DARWIN}
   ctx := Default(TInvocationContext);
   if APrincipal = PRIN_MAIN then
@@ -1502,9 +1536,14 @@ begin
     'webview_set_size');
   {$ifndef DARWIN}
   {$ifdef LINUX}
-  AWin.Handler := TWebKitGtkAssetHandler.Create(AWin.W, AWin.Store);
+  // ONE registration per process, made through the FIRST view: both views
+  // share the default WebKitWebContext, so this single registration serves
+  // the second view too - a second Create would be refused by the adapter
+  if AAssetMode = gamSharedFirst then
+    gSharedHandler := TWebKitGtkAssetHandler.Create(AWin.W, gSharedStore);
   {$else}
-  AWin.Handler := TWebView2AssetHandler.Create(AWin.W, AWin.Store);
+  if AAssetMode = gamPerView then
+    AWin.Handler := TWebView2AssetHandler.Create(AWin.W, AWin.Store);
   {$endif LINUX}
   {$endif DARWIN}
   {$ifdef DARWIN}
@@ -1516,7 +1555,11 @@ begin
   WebViewCheck(webview_navigate(AWin.W, PAnsiChar(ANavUrl)), 'webview_navigate');
 end;
 
-procedure GuiTeardownWindow(var AWin: TGuiWindow; ADestroy: Boolean);
+{ detach this window's guard (counters captured first) and its PER-VIEW
+  handler where one exists (Windows); the POSIX shared handler is detached
+  ONCE, after both windows, in RunGuiLeg - after every guard has stopped
+  deciding and before any webview_destroy, the release-host order }
+procedure GuiDetachWindow(var AWin: TGuiWindow);
 {$ifdef DARWIN}
 var
   cocoaCounters: TPWebCocoaNavCounters;
@@ -1576,7 +1619,13 @@ begin
     end;
     FreeAndNil(AWin.Handler);
   end;
-  if ADestroy and (AWin.W <> nil) then
+end;
+
+{ post-loop native destruction; runs only after BOTH windows are detached
+  and the shared handler (POSIX) is detached - never mid-loop (R-C3) }
+procedure GuiDestroyWindow(var AWin: TGuiWindow);
+begin
+  if AWin.W <> nil then
   begin
     try
       WebViewCheck(webview_destroy(AWin.W), 'webview_destroy');
@@ -1671,15 +1720,29 @@ begin
   GuiBaseSettings[PRIN_PLUGIN] :=
     InterlockedCompareExchange(CountSettings[PRIN_PLUGIN], 0, 0);
   try
+    // the POSIX single arming, BEFORE any webview exists (see the topology
+    // note above): one shared store; on macOS the handler itself must be
+    // created pre-create so the armed seam reaches BOTH configurations,
+    // on Linux the handler is registered through the first view below
+    {$ifdef DARWIN}
+    gSharedStore := TFolderAssetStore.Create(AFixtureDir);
+    gSharedHandler := TCocoaAssetHandler.Create(gSharedStore);
+    {$else}
+    {$ifdef LINUX}
+    gSharedStore := TFolderAssetStore.Create(AFixtureDir);
+    {$endif LINUX}
+    {$endif DARWIN}
     // create Main first, Login second (destroy order is the reverse)
-    // CONTENT-SWAP: Main is served the LOGIN page bytes; Login the MAIN page
+    // CONTENT-SWAP: Main is served the LOGIN page bytes; Login the MAIN
+    // page - content is selected by URL PATH ONLY, so the one shared store
+    // serves both windows and the swap gate is unchanged
     GuiBuildWindow(gMainWin, PRIN_MAIN, AFixtureDir, 'pweb://app/login.html',
-      'PWeb CAP-8C Main');
+      'PWeb CAP-8C Main', {$ifdef OSWINDOWS} gamPerView {$else} gamSharedFirst {$endif});
     // from here a nil create is a DUAL-WINDOW regression, never an absent
     // runtime: the SKIP classification below reads this flag
     GuiFirstCreateOk := True;
     GuiBuildWindow(gLoginWin, PRIN_LOGIN, AFixtureDir, 'pweb://app/main.html',
-      'PWeb CAP-8C Login');
+      'PWeb CAP-8C Login', {$ifdef OSWINDOWS} gamPerView {$else} gamNone {$endif});
     AutoCloseHandle := Pointer(gMainWin.W); // the run-owner
 
     WatchdogEvent := RTLEventCreate;
@@ -1739,20 +1802,40 @@ begin
       try gMainWin.Binding.Close; except end;
     if gGuiSchedulerRef <> nil then
       try gGuiScheduler.Shutdown; except end;
-    // R-C2/R-C3 teardown: destroy AFTER the loop exits, REVERSE creation
-    // order (Login created second -> destroyed first), NO mid-loop destroy
+    // R-C2/R-C3 teardown: guards stop deciding first (reverse creation
+    // order), then the ONE shared handler (POSIX) stops serving - after
+    // every guard, before any destroy, the release-host order - then the
+    // views are destroyed post-loop, Login first. NO mid-loop destroy.
+    GuiDetachWindow(gLoginWin);
+    GuiDetachWindow(gMainWin);
+    if gSharedHandler <> nil then
+    begin
+      try
+        gSharedHandler.Detach;
+      except
+        on E: Exception do
+          WriteLn(StdErr, LOG_PREFIX, ': shared handler Detach: ', E.Message);
+      end;
+      try
+        FreeAndNil(gSharedHandler);
+      except
+        on E: Exception do
+          WriteLn(StdErr, LOG_PREFIX, ': shared handler Free: ', E.Message);
+      end;
+    end;
+    gSharedStore := nil;
     if safeToDestroy then
     begin
-      GuiTeardownWindow(gLoginWin, {destroy=}True);
-      GuiTeardownWindow(gMainWin, {destroy=}True);
+      GuiDestroyWindow(gLoginWin);
+      GuiDestroyWindow(gMainWin);
     end
     else
     begin
       // a wedged helper thread means the destroys were SKIPPED: a leaked
       // window/thread must never print MULTIPRINCIPAL PASS
       Fail('GUI: a helper thread did not terminate - window destroys skipped');
-      GuiTeardownWindow(gLoginWin, {destroy=}False);
-      GuiTeardownWindow(gMainWin, {destroy=}False);
+      gLoginWin.Binding := nil; gLoginWin.Source := nil; gLoginWin.Store := nil;
+      gMainWin.Binding := nil; gMainWin.Source := nil; gMainWin.Store := nil;
     end;
     InterlockedExchange(GuiPhase, 0);
   end;
@@ -1833,11 +1916,16 @@ var
   settingsMainDelta, settingsLoginDelta: LongInt;
 begin
   // both principals must have reported (aliveness); the content-swap facts
-  // are read from each principal's own report
+  // are read from each principal's own report. On the POSIX targets these
+  // two latches are ALSO the single-arming service proof: each report can
+  // only arrive if that window's document actually loaded over pweb://app,
+  // so the second window reporting IS the asserted evidence that ONE
+  // process-wide asset arming serves BOTH views (never an assumption)
   Expect(InterlockedCompareExchange(ReportMainLatch, 1, 1) = 1,
     'GUI: the Main window never reported');
   Expect(InterlockedCompareExchange(ReportLoginLatch, 1, 1) = 1,
-    'GUI: the Login window never reported');
+    'GUI: the Login window never reported (on POSIX this is also the ' +
+    'single-arming service proof for the second view)');
   mainJson := Dense(ReportMainJson);
   loginJson := Dense(ReportLoginJson);
   // Main (window:main) computed 42 despite loading the LOGIN page bytes
@@ -1955,6 +2043,7 @@ var
   stream: TFileStream;
   guiVerdict: RawUtf8;
   guiOut: RawUtf8;
+  canSkip: Boolean;
   mainDense, loginDense: RawUtf8;
 
 procedure WriteCorpusFile;
@@ -2026,24 +2115,29 @@ begin
         on E: Exception do
         begin
           guiOut := RawUtf8(E.Message);
-          {$ifndef DARWIN}
-          {$ifndef LINUX}
-          // Windows-only honest SKIP, and ONLY when the FIRST create came
-          // back nil (no WebView2 runtime / desktop session at all): a nil
-          // SECOND create after a successful first is a dual-window
-          // regression on a machine that demonstrably CAN open a WebView -
-          // that is a FAILURE, never a SKIP
-          if (not GuiFirstCreateOk) and
-             ((Pos('returned nil', guiOut) > 0) or
-              (Pos('WEBVIEW2 RUNTIME UNUSABLE', guiOut) > 0)) then
+          // SKIP is legitimate ONLY when the FIRST create came back nil (no
+          // WebView2 runtime / desktop session at all): a nil SECOND create
+          // after a successful first is a dual-window regression on a
+          // machine that demonstrably CAN open a WebView - a FAILURE, never
+          // a SKIP. The flag is read on EVERY platform (so the classification
+          // is one shared expression); POSIX then forces the answer to
+          // no-SKIP, because its runners always supply a real display.
+          canSkip := (not GuiFirstCreateOk) and
+            ((Pos('returned nil', guiOut) > 0) or
+             (Pos('WEBVIEW2 RUNTIME UNUSABLE', guiOut) > 0));
+          {$ifdef DARWIN}
+          canSkip := False;
+          {$endif DARWIN}
+          {$ifdef LINUX}
+          canSkip := False;
+          {$endif LINUX}
+          if canSkip then
           begin
             GuiSkipped := True;
             guiVerdict := 'SKIP';
             WriteLn(StdErr, LOG_PREFIX, ': GUI leg SKIP (', guiOut, ')');
           end
           else
-          {$endif LINUX}
-          {$endif DARWIN}
           begin
             Fail('GUI leg: ' + guiOut);
             guiVerdict := 'FAIL';

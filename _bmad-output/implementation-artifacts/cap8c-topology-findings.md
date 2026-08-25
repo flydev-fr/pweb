@@ -75,3 +75,19 @@ Human ratification, binding on Phase B:
 - **R-C3 RATIFIED** — the Windows thread-global-terminate nondeterminism and
   the macOS mid-loop `destroy(second)` process crash are recorded measured
   limitations in deferred-work; no platform-conditional workaround is built.
+
+## Ratification — R-C4 (2026-08-25, post-hosted-measurement)
+
+Hosted run 32770563751 and the arming fix measured a further frozen-surface
+constraint: the Cocoa bridge's navigation-guard registry is single-slot per
+process (`pweb_cocoa_nav_arm` refuses a second arming; single-shot Attach),
+so a second macOS window cannot receive the mandatory CAP-8B guard through
+the frozen adapters, and "security only on MainWindow" is forbidden.
+
+**R-C4 RATIFIED** — the human authorizes the MINIMAL private Cocoa-bridge
+extension: per-view navigation-guard arming in `pweb_cocoa_bridge.{h,mm}` +
+`pweb.platform.cocoa.pas`, mirroring the asset seam's multi-view design.
+Constraints: no public C ABI change, no new webview export, no upstream
+patch, the shared classifier/CSP/decision logic byte-untouched; the CAP-8B
+suites re-run as the regression proof. This is the same human-gate mechanism
+CAP-8B itself used to edit these files.
