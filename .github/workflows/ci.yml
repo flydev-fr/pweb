@@ -1549,6 +1549,37 @@ jobs:
             build/cap8c/multiprincipal-win.log
             build/cap8c-multiprincipal.log
 
+      # CAP-9A: the QuickJS invocation-foundation harness. Fully headless:
+      # two QuickJS plugin threads (calculator allowed / reporting denied)
+      # drive the UNCHANGED production scheduler + CAP-8A policy + real
+      # mORMot SOA bridge through the frozen IInvocationSource path, with
+      # the Q1-Q30 matrix, the ABI probes and the resource-limit gates. It
+      # writes build/cap9a/quickjs-corpus.txt (the cross-target digest
+      # source) and quickjsfoundation-windows-x86_64.json, which the CAP-7F
+      # emitter reads into quickjs_corpus (must-PASS; never SKIPs). It runs
+      # BEFORE the emitter so its verdict is this job's.
+      - name: CAP-9A QuickJS invocation foundation harness
+        shell: pwsh
+        timeout-minutes: 20
+        run: |
+          pwsh -NoProfile -File test/cap9a/run_quickjsfoundation.ps1 2>&1 |
+            Tee-Object -FilePath build/cap9a-quickjsfoundation.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-9A quickjsfoundation gate FAILED' }
+
+      - name: CAP-9A upload the Windows quickjs record
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap9a-quickjs-windows
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap9a/quickjsfoundation-windows-x86_64.json
+            build/cap9a/quickjs-corpus.txt
+            build/cap9a/abi-pascal.txt
+            build/cap9a/abi-c.txt
+            build/cap9a/quickjsfoundation-win.log
+            build/cap9a-quickjsfoundation.log
+
       - name: CAP-7F emit the Windows evidence artifact
         shell: pwsh
         timeout-minutes: 10
@@ -1581,6 +1612,8 @@ jobs:
             build/cap7f/
             build/cap7f-host-args.log
             build/cap7f-evidence.log
+            build/cap9a/
+            build/cap9a-quickjsfoundation.log
 
       # same deliberate deviation as CAP-6b2/6b3: no ~200-276 MB setup
       # binary is uploaded - the logs and the release index identify any
@@ -1936,6 +1969,30 @@ jobs:
             build/cap8c/security-corpus.txt
             build/cap8c/multiprincipal-posix.log
 
+      # CAP-9A: the QuickJS invocation-foundation harness. Fully headless
+      # (no display needed): the pinned x86_64-linux quickjs.o from the
+      # sha256-pinned mORMot statics, the Q1-Q30 matrix and the paired
+      # C/Pascal ABI diff (gcc always present here). Runs BEFORE the CAP-7F
+      # emitter, which reads its verdict into quickjs_corpus (must-PASS)
+      # and hashes the corpus into quickjs_corpus_digest.
+      - name: CAP-9A QuickJS invocation foundation harness
+        shell: bash
+        timeout-minutes: 20
+        run: test/cap9a/run_quickjsfoundation.sh
+
+      - name: CAP-9A upload the Linux quickjs record
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap9a-quickjs-linux
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap9a/quickjsfoundation-linux-x86_64.json
+            build/cap9a/quickjs-corpus.txt
+            build/cap9a/abi-pascal.txt
+            build/cap9a/abi-c.txt
+            build/cap9a/quickjsfoundation-posix.log
+
       - name: CAP-7F emit the Linux evidence artifact
         shell: bash
         timeout-minutes: 10
@@ -1962,6 +2019,7 @@ jobs:
           retention-days: 7
           path: |
             build/cap7f/
+            build/cap9a/
 
       - name: CAP-7L diagnostics on failure
         if: failure()
@@ -2365,6 +2423,34 @@ jobs:
             build/cap8c/security-corpus.txt
             build/cap8c/multiprincipal-posix.log
 
+      # CAP-9A: the QuickJS invocation-foundation harness. Fully headless.
+      # The pinned mORMot release ships NO darwin quickjs.o and the pinned
+      # defines never set LIBQUICKJSSTATIC on darwin, so the runner first
+      # compiles the object from the PINNED in-tree sources
+      # (tools/build_quickjs_darwin.sh - refuses a non-pinned checkout,
+      # records source sha256 + clang + arch) and links it itself. The
+      # paired C/Pascal ABI diff always runs (clang is native here). Runs
+      # BEFORE the CAP-7F emitter, which reads its verdict into
+      # quickjs_corpus (must-PASS) and hashes the corpus digest.
+      - name: CAP-9A QuickJS invocation foundation harness
+        shell: bash
+        timeout-minutes: 20
+        run: test/cap9a/run_quickjsfoundation.sh
+
+      - name: CAP-9A upload the macOS x64 quickjs record
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap9a-quickjs-macos-x64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap9a/quickjsfoundation-macos-x86_64.json
+            build/cap9a/quickjs-corpus.txt
+            build/cap9a/abi-pascal.txt
+            build/cap9a/abi-c.txt
+            build/cap9a/qjs-obj/quickjs-build-info.txt
+            build/cap9a/quickjsfoundation-posix.log
+
       # CAP-7F: additive, after every gate it summarizes. macOS runs no new
       # gate - the CAP-7M2 release suite above already executed the host
       # arguments (LaunchServices --pweb-verdict, argv-beats-env, refusal
@@ -2394,6 +2480,7 @@ jobs:
           retention-days: 7
           path: |
             build/cap7f/
+            build/cap9a/
 
       - name: CAP-7M0 per-arch headline facts to the run summary
         if: always()
@@ -2739,6 +2826,31 @@ jobs:
             build/cap8c/security-corpus.txt
             build/cap8c/multiprincipal-posix.log
 
+      # CAP-9A: see the x64 sibling - the runner builds the pinned QuickJS
+      # object with clang (no darwin artifact in the pinned release), links
+      # it, runs the headless Q1-Q30 matrix and the paired C/Pascal ABI
+      # diff. On aarch64-darwin the production unit additionally exports
+      # the pas_* heap family the pinned NOLIBCSTATIC define removes from
+      # mormot.lib.static. Runs BEFORE the CAP-7F emitter.
+      - name: CAP-9A QuickJS invocation foundation harness
+        shell: bash
+        timeout-minutes: 20
+        run: test/cap9a/run_quickjsfoundation.sh
+
+      - name: CAP-9A upload the macOS arm64 quickjs record
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap9a-quickjs-macos-arm64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap9a/quickjsfoundation-macos-arm64.json
+            build/cap9a/quickjs-corpus.txt
+            build/cap9a/abi-pascal.txt
+            build/cap9a/abi-c.txt
+            build/cap9a/qjs-obj/quickjs-build-info.txt
+            build/cap9a/quickjsfoundation-posix.log
+
       # CAP-7F: see the x64 sibling - the emitter summarizes gates that
       # already ran above in this job and re-enumerates the export trie.
       - name: CAP-7F emit the macOS arm64 evidence artifact
@@ -2764,6 +2876,7 @@ jobs:
           retention-days: 7
           path: |
             build/cap7f/
+            build/cap9a/
 
       - name: CAP-7M0 per-arch headline facts to the run summary
         if: always()
