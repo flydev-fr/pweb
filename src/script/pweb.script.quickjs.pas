@@ -220,15 +220,23 @@ implementation
   // mormot.lib.static's declarations. Darwin C symbols carry the '_'
   // prefix.
 
-function pas_malloc(size: cardinal): pointer; cdecl;
+{ size is PtrUInt, deliberately WIDER than the pinned mormot.lib.static
+  declaration (cardinal): the C side passes size_t, and truncating a
+  >4 GiB request to 32 bits would return an undersized buffer to the
+  engine. The pinned declaration carries that defect on the targets that
+  link mormot.lib.static; recorded in the deferred-work ledger as part
+  of the upstream report. }
+function pas_malloc(size: PtrUInt): pointer; cdecl;
   public name '_pas_malloc';
 begin
   GetMem(result, size);
 end;
 
-function pas_calloc(n, size: PtrInt): pointer; cdecl;
+function pas_calloc(n, size: PtrUInt): pointer; cdecl;
   public name '_pas_calloc';
 begin
+  if (n <> 0) and (size > High(PtrUInt) div n) then
+    exit(nil); // n*size overflow: fail the allocation, never undersize it
   result := AllocMem(size * n);
 end;
 
@@ -306,6 +314,13 @@ begin
   end;
 end;
 
+{ Data and (in ResultEnvelope) Value are spliced VERBATIM: TPWebJson's
+  frozen contract (pweb.rpc.intf) is that a value of that type holds
+  serialized VALID JSON with null spelled 'null', and the scheduler
+  normalizes the empty string before completion - so a malformed splice
+  here would mean a frozen-contract violation upstream, not a case this
+  layer papers over. Message goes through JsonEscape because it is plain
+  text, not JSON. }
 function ErrorEnvelope(const AError: TPWebError): RawUtf8;
 var
   data: RawUtf8;
@@ -353,7 +368,8 @@ type
   private
     FEvent: PRTLEvent;
     FResult: TPWebInvocationResult;
-    FDone: LongInt;
+    FClaimed: LongInt;  // exactly-once claim of the right to write FResult
+    FDone: LongInt;     // published ONLY AFTER FResult is fully written
     FCalls: LongInt;
   public
     constructor Create;
@@ -380,9 +396,14 @@ end;
 procedure TPluginCompletion.Complete(const AResult: TPWebInvocationResult);
 begin
   InterlockedIncrement(FCalls);
-  if InterlockedExchange(FDone, 1) <> 0 then
+  if InterlockedExchange(FClaimed, 1) <> 0 then
     exit; // idempotent - the frozen gate upstream makes this unreachable
+  // FResult (a managed record) is fully written BEFORE FDone publishes it:
+  // a waiter that times out of the event and then reads FDone must never
+  // observe a torn record. InterlockedExchange is a full barrier on every
+  // supported target.
   FResult := AResult;
+  InterlockedExchange(FDone, 1);
   RTLEventSetEvent(FEvent);
 end;
 
@@ -584,7 +605,13 @@ begin
       FErrorMsg := '';
       FTimeoutAborted := False;
       try
-        FEngine.TimeoutValue := FScriptTimeoutSec; // per-Evaluate bound
+        // per-Evaluate CPU bound: a request without its own bound keeps
+        // the plugin's configured limit - 0 must never silently disable
+        // the interrupt (only FLimits.TimeoutSeconds = 0 does, globally)
+        if FScriptTimeoutSec = 0 then
+          FEngine.TimeoutValue := FLimits.TimeoutSeconds
+        else
+          FEngine.TimeoutValue := FScriptTimeoutSec;
         v := FEngine.Evaluate(FScript, 'cap9a-script.js');
         if VarIsStr(v) then
           FResultJson := RawUtf8(VariantToUtf8(v))
@@ -666,6 +693,9 @@ begin
   if FUnloaded then
     exit;
   FUnloaded := True;
+  if FWork = nil then
+    exit; // the constructor raised before the events/thread existed:
+          // nothing was started, so there is nothing to quiesce or join
   // frozen source lifecycle first: refuse new invocations, cancel
   // queued ones, cooperatively cancel in-flight work (whose completion
   // - result or cancelled - releases any plugin-thread wait), then
