@@ -76,6 +76,8 @@ $allow = @{
         fingerprint = '7fc1e97c840d75a47f92771c8880861bc45a757806738932d4e80f39611a68b9' }
     'tools/bundler/pwebbundle.pas'       = @{ directives = 6;   # Windows wide-API walk (ledgered)
         fingerprint = '7e329077ac3048bfe7a25495f63fb060ebc782fce0115613120ca7ae51718842' }
+    'src/script/pweb.script.quickjs.pas' = @{ directives = 4;   # CAP-9A darwin {$L quickjs.o} link + aarch64-darwin pas_* export block (the pin ships no darwin QuickJS support)
+        fingerprint = 'dc0f70734b16d12e29ef25343797ab4318cd78d7fa0f7ed2c38a7438bba3f75b' }
 }
 
 function Get-DirectiveFingerprint([string[]]$Texts) {

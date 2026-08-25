@@ -15,7 +15,12 @@
 #   (c8) cap8c_denied_soa=1 with a PASS corpus -> defense-in-depth refusal
 #   (c9) cap8c_opener_nonmain=1 with a PASS corpus -> defense-in-depth refusal
 #   (c10) cap8c_secure_origin=false with a PASS corpus -> same refusal
-#   (c8-c10 additionally assert the refusal came through the EXPECTED branch)
+#   (c11) quickjs_corpus (CAP-9A) rewritten to FAIL -> mustPass refusal
+#   (c12) quickjs_corpus_digest diverging on one target -> same refusal
+#   (c13) cap9a_denied_bridge=1 with a PASS corpus -> defense-in-depth refusal
+#   (c14) cap9a_opener_reached=1 with a PASS corpus -> same refusal
+#   (c8-c14 additionally assert the refusal came through the EXPECTED branch
+#    where one is named)
 #   (e) a count-preserving directive swap in an allowlisted file
 #                                          -> divergence sweep refuses via the
 #                                             FINGERPRINT branch, restore -> green
@@ -233,6 +238,62 @@ $e.cap8c_secure_origin = 'false'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap8c-secure-origin' 'SECURE ORIGIN'
 
+# --- (c11) CAP-9A: quickjs_corpus rewritten to FAIL --------------------------
+# the CAP-9A mustPass field gets its own refusal proof: a QuickJS harness
+# verdict downgraded to FAIL must never aggregate as if the invocation
+# foundation were proven ('FAIL', not 'SKIP': the harness is fully headless
+# and never SKIPs, so the honest bad verdict is FAIL).
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['quickjs_corpus']) {
+    throw 'selftest quickjs-corpus-fail: the evidence carries no quickjs_corpus field - the emitters did not record it'
+}
+$e.quickjs_corpus = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'quickjs-corpus-fail' 'REQUIRED-PASS'
+
+# --- (c12) CAP-9A: quickjs_corpus_digest diverging on ONE target -------------
+# cross-target digest EQUALITY of the CAP-9A decision corpus gets its own
+# refusal proof (a divergence means the four targets did not compute the same
+# QuickJS invocation decisions - exactly what the aggregate exists to refuse).
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['quickjs_corpus_digest']) {
+    throw 'selftest quickjs-digest-divergence: the evidence carries no quickjs_corpus_digest field - the emitters did not record it'
+}
+$e.quickjs_corpus_digest = '0' * 64
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'quickjs-digest-divergence'
+
+# --- (c13) CAP-9A: a denied QuickJS principal that reached the bridge --------
+# denied-bridge>0 with the corpus still marked PASS is the shape of a policy
+# that ran after the bridge; the refusal must come through the dedicated
+# CAP-9A defense-in-depth branch.
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['cap9a_denied_bridge']) {
+    throw 'selftest cap9a-denied-bridge: the evidence carries no cap9a_denied_bridge field - the emitters did not record it'
+}
+$e.cap9a_denied_bridge = 1
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9a-denied-bridge' 'CAP-9A DENIED-BRIDGE'
+
+# --- (c14) CAP-9A: a plugin that reached the openExternal bridge arm ---------
+# neither reference plugin holds external.open, so opener_reached>0 with a
+# PASS corpus must refuse through the dedicated CAP-9A opener branch.
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['cap9a_opener_reached']) {
+    throw 'selftest cap9a-opener-reached: the evidence carries no cap9a_opener_reached field - the emitters did not record it'
+}
+$e.cap9a_opener_reached = 1
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9a-opener-reached' 'CAP-9A OPENER REACHED'
+
 # --- (d) divergence sweep must refuse an off-allowlist conditional -----------
 $fixturePas = 'src/zz_cap7f_selftest_fixture.pas'
 Remove-Item -Force -ErrorAction SilentlyContinue $fixturePas
@@ -288,4 +349,4 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Remove-Item -Force -ErrorAction SilentlyContinue $matrix
-Write-Host '[CAP-7F] selftest PASS - 12 aggregator refusals + 2 divergence refusals, all on copies or byte-restored'
+Write-Host '[CAP-7F] selftest PASS - 16 aggregator refusals + 2 divergence refusals, all on copies or byte-restored'

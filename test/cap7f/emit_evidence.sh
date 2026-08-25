@@ -476,6 +476,50 @@ printf '[CAP-7F] security_corpus_digest: %s\n' "${security_corpus_digest}"
 printf '[CAP-7F] security_corpus: %s (denied_soa=%s opener_nonmain=%s secure=%s)\n' \
     "${security_corpus}" "${cap8c_denied_soa}" "${cap8c_opener_nonmain}" "${cap8c_secure_origin}"
 
+# --- CAP-9A QuickJS invocation-foundation corpus + one canonical digest -----
+# Same honesty shape as the CAP-8C block: verdict recorded VERBATIM
+# (PASS|FAIL - the harness is fully headless and never SKIPs), required
+# counters that DIE rather than default to 0, and the corpus digest as the
+# sha256 of build/cap9a/quickjs-corpus.txt, identical on all four targets
+# by construction.
+qf_file="${repo_root}/build/cap9a/quickjsfoundation-${target}.json"
+[ -f "${qf_file}" ] ||
+    die "quickjsfoundation-${target}.json missing -- the CAP-9A gate has not run in this workspace"
+quickjs_corpus="$(sed -n 's/.*"overall"[[:space:]]*:[[:space:]]*"\([A-Z]*\)".*/\1/p' \
+    "${qf_file}" | head -n 1)"
+case "${quickjs_corpus}" in
+    PASS | FAIL) ;;
+    *) die "quickjsfoundation-${target}.json carries an unexpected verdict: ${quickjs_corpus}" ;;
+esac
+qf_num() {
+    local v
+    v="$(sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p" \
+        "${qf_file}" | head -n 1)"
+    [ -n "${v}" ] ||
+        die "quickjsfoundation record carries no '$1' counter -- refusing to default it to 0"
+    printf '%s' "${v}"
+}
+cap9a_denied_bridge="$(qf_num denied_bridge_add)"
+cap9a_opener_reached="$(qf_num opener_reached)"
+
+qf_corpus_file="${repo_root}/build/cap9a/quickjs-corpus.txt"
+if [ "${quickjs_corpus}" = 'PASS' ]; then
+    [ -f "${qf_corpus_file}" ] ||
+        die 'quickjs-corpus.txt missing while the harness records PASS'
+    head -n 1 "${qf_corpus_file}" | grep -qx 'schema=1' ||
+        die 'quickjs-corpus.txt carries no schema=1 header'
+    tail -n 1 "${qf_corpus_file}" | grep -qx 'verdict=PASS' ||
+        die 'quickjs-corpus.txt does not end in verdict=PASS while the harness records PASS'
+    quickjs_corpus_digest="$(file_sha "${qf_corpus_file}")"
+elif [ -f "${qf_corpus_file}" ]; then
+    quickjs_corpus_digest="$(file_sha "${qf_corpus_file}")"
+else
+    quickjs_corpus_digest='ABSENT'
+fi
+printf '[CAP-7F] quickjs_corpus_digest: %s\n' "${quickjs_corpus_digest}"
+printf '[CAP-7F] quickjs_corpus: %s (denied_bridge=%s opener_reached=%s)\n' \
+    "${quickjs_corpus}" "${cap9a_denied_bridge}" "${cap9a_opener_reached}"
+
 # ---------------------------- write the evidence -----------------------------
 # every interpolated free-text value goes through json_escape: the toolchain
 # banner lines especially are nobody's to promise quote-free
@@ -514,6 +558,10 @@ cat > "${work}/evidence.json" <<EOF
   "cap8c_denied_soa": ${cap8c_denied_soa},
   "cap8c_opener_nonmain": ${cap8c_opener_nonmain},
   "cap8c_secure_origin": "${cap8c_secure_origin}",
+  "quickjs_corpus": "${quickjs_corpus}",
+  "quickjs_corpus_digest": "${quickjs_corpus_digest}",
+  "cap9a_denied_bridge": ${cap9a_denied_bridge},
+  "cap9a_opener_reached": ${cap9a_opener_reached},
   "release_layout": "${release_layout}",
   "no_listener": "${no_listener}",
   "no_listener_provenance": "${no_listener_prov}",

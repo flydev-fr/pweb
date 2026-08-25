@@ -383,6 +383,50 @@ if ($securityCorpus -ceq 'PASS') {
 Write-Host "[CAP-7F] security_corpus_digest: $securityCorpusDigest"
 Write-Host "[CAP-7F] security_corpus: $securityCorpus (denied_soa=$cap8cDeniedSoa opener_nonmain=$cap8cOpenerNonMain secure=$cap8cSecureOrigin)"
 
+# --- CAP-9A QuickJS invocation-foundation corpus + one canonical digest -----
+# Same honesty shape as the CAP-8C block: the harness record's verdict is
+# recorded VERBATIM (PASS|FAIL - the harness is fully headless and never
+# SKIPs), the defense-in-depth counters are REQUIRED (an absent property
+# throws, never coerces to a fail-open 0), and the corpus digest is the
+# sha256 of build/cap9a/quickjs-corpus.txt, identical on all four targets
+# by construction.
+$qfFile = Join-Path $repoRoot 'build/cap9a/quickjsfoundation-windows-x86_64.json'
+if (-not (Test-Path $qfFile)) {
+    throw '[CAP-7F] quickjsfoundation-windows-x86_64.json missing -- the CAP-9A gate has not run in this workspace'
+}
+$qf = Get-Content $qfFile -Raw | ConvertFrom-Json
+if ($qf.schema -ne 1) { throw '[CAP-7F] quickjsfoundation json schema mismatch' }
+$quickjsCorpus = "$($qf.overall)"
+if ($quickjsCorpus -notin @('PASS', 'FAIL')) {
+    throw "[CAP-7F] quickjsfoundation json carries an unexpected verdict: $quickjsCorpus"
+}
+$cap9aDeniedBridge = Read-MpCounter $qf 'denied_bridge_add'
+$cap9aOpenerReached = Read-MpCounter $qf 'opener_reached'
+
+$qfCorpusFile = Join-Path $repoRoot 'build/cap9a/quickjs-corpus.txt'
+if ($quickjsCorpus -ceq 'PASS') {
+    if (-not (Test-Path $qfCorpusFile)) {
+        throw '[CAP-7F] quickjs-corpus.txt missing while the harness records PASS'
+    }
+    $qfRows = @(Get-Content $qfCorpusFile)
+    if ($qfRows.Count -lt 2) {
+        throw "[CAP-7F] quickjs-corpus.txt is empty or truncated ($($qfRows.Count) line(s))"
+    }
+    if ($qfRows[0] -cne 'schema=1') {
+        throw '[CAP-7F] quickjs-corpus.txt carries no schema=1 header'
+    }
+    if ($qfRows[-1] -cne 'verdict=PASS') {
+        throw '[CAP-7F] quickjs-corpus.txt does not end in verdict=PASS while the harness records PASS'
+    }
+    $quickjsCorpusDigest = (Get-FileHash $qfCorpusFile -Algorithm SHA256).Hash.ToLowerInvariant()
+} elseif (Test-Path $qfCorpusFile) {
+    $quickjsCorpusDigest = (Get-FileHash $qfCorpusFile -Algorithm SHA256).Hash.ToLowerInvariant()
+} else {
+    $quickjsCorpusDigest = 'ABSENT'
+}
+Write-Host "[CAP-7F] quickjs_corpus_digest: $quickjsCorpusDigest"
+Write-Host "[CAP-7F] quickjs_corpus: $quickjsCorpus (denied_bridge=$cap9aDeniedBridge opener_reached=$cap9aOpenerReached)"
+
 # --- run identity -----------------------------------------------------------
 $sha = $env:GITHUB_SHA
 if (-not $sha) { $sha = (& git rev-parse HEAD).Trim() }
@@ -416,6 +460,10 @@ $evidence = [ordered]@{
     cap8c_denied_soa                = $cap8cDeniedSoa
     cap8c_opener_nonmain            = $cap8cOpenerNonMain
     cap8c_secure_origin             = $cap8cSecureOrigin
+    quickjs_corpus                  = $quickjsCorpus
+    quickjs_corpus_digest           = $quickjsCorpusDigest
+    cap9a_denied_bridge             = $cap9aDeniedBridge
+    cap9a_opener_reached            = $cap9aOpenerReached
     release_layout                  = $releaseLayout
     no_listener                     = $noListener
     no_listener_provenance          = 'source-sweep re-executed (check_cap6_nonetwork.ps1); CAP-5/CAP-6 job gates precede this emitter'
