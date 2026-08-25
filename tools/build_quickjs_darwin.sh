@@ -41,6 +41,19 @@ if [ -z "${pinned_commit}" ] || [ "${pinned_commit}" != "${actual_commit}" ]; th
   echo "build_quickjs_darwin: deps/mormot2 HEAD ${actual_commit} does not match the mormot.lock pin ${pinned_commit} - STOP" >&2
   exit 1
 fi
+# HEAD equality is not enough: a locally edited pinned source file would
+# still pass it. The QuickJS source subtree must be byte-identical to the
+# pin - tracked changes AND untracked additions both refuse.
+if ! git -C "${root}/deps/mormot2" diff --exit-code --quiet HEAD -- res/static/libquickjs; then
+  echo "build_quickjs_darwin: deps/mormot2 res/static/libquickjs differs from the pinned commit - silent source substitution refused, STOP" >&2
+  exit 1
+fi
+untracked="$(git -C "${root}/deps/mormot2" ls-files --others --exclude-standard -- res/static/libquickjs)"
+if [ -n "${untracked}" ]; then
+  echo "build_quickjs_darwin: untracked files under res/static/libquickjs - silent source substitution refused, STOP:" >&2
+  echo "${untracked}" >&2
+  exit 1
+fi
 
 arch="$(uname -m)"          # arm64 or x86_64 (native runner per CI job)
 mkdir -p "${out_dir}"
@@ -76,8 +89,18 @@ case "${lipo_info}" in
   *) echo "build_quickjs_darwin: unexpected architecture: ${lipo_info}" >&2; exit 1 ;;
 esac
 
-# 6. export audit: the object must not define any quickjs-libc surface
-if nm -gU "${out_dir}/quickjs.o" | grep -E ' _js_(std|os)_' > /dev/null; then
+# 6. export audit: the object must not define any quickjs-libc surface.
+# nm output is captured with an explicit failure check first - a failed nm
+# feeding an empty pipe into grep would otherwise pass the audit silently.
+syms="$(nm -gU "${out_dir}/quickjs.o")" || {
+  echo "build_quickjs_darwin: nm failed on the produced object - audit impossible, refuse" >&2
+  exit 1
+}
+if [ -z "${syms}" ]; then
+  echo "build_quickjs_darwin: nm enumerated no defined symbols - not a credible QuickJS object, refuse" >&2
+  exit 1
+fi
+if printf '%s\n' "${syms}" | grep -E ' _js_(std|os)_' > /dev/null; then
   echo "build_quickjs_darwin: quickjs-libc symbols found in the object - refuse" >&2
   exit 1
 fi

@@ -26,6 +26,11 @@
 # static-build defines and diffs the two line sets byte-for-byte. Both
 # POSIX targets always have the toolchain, so the diff always gates here.
 #
+# Unlike Windows, POSIX needs NO CAP-3U patch window: the mORMot x64
+# call-method trampoline is a Win64-only concern (same reasoning and
+# wording as test/cap8c/run_multiprincipal.sh) - the ps1 sibling compiles
+# inside the window, this runner compiles the SOA path directly.
+#
 # Writes: build/cap9a/quickjsfoundation-<target>.json (PASS|FAIL),
 #         build/cap9a/quickjs-corpus.txt (the digest source),
 #         build/cap9a/abi-pascal.txt + abi-c.txt, and the run log.
@@ -57,6 +62,10 @@ done
 pass_marker="$(sed -n "s/^  MARKER_PASS = '\\([^']*\\)';\$/\\1/p" \
     test/cap9a/quickjsfoundation.pas)"
 [ -n "${pass_marker}" ] || die 'could not read MARKER_PASS from quickjsfoundation.pas'
+# exactly ONE marker line, like the ps1 sibling: a multi-line result would
+# quietly turn the grep -qF below into an any-of match
+[ "$(printf '%s\n' "${pass_marker}" | wc -l)" -eq 1 ] ||
+    die 'expected exactly one MARKER_PASS constant in quickjsfoundation.pas'
 printf '[CAP-9A] canonical pass marker: %s\n' "${pass_marker}"
 
 os_name="$(uname -s)"
@@ -83,6 +92,21 @@ Linux)
     [ -f 'deps/mormot2/static/x86_64-linux/quickjs.o' ] ||
         die 'pinned quickjs.o missing under deps/mormot2/static/x86_64-linux -- fetch the mORMot statics first'
     cprobe_cc='gcc'
+
+    # mechanical quickjs-libc audit of the RELEASE-SHIPPED object (its
+    # bytes are already sha256-pinned via mormot.lock, this asserts the
+    # pinned bytes themselves carry no std/os surface). Explicit nm
+    # failure check: an empty pipe must never pass the audit. On Windows
+    # the sha256 pin alone stands (no guaranteed nm); Darwin audits its
+    # own freshly built object inside tools/build_quickjs_darwin.sh.
+    step 'quickjs-libc symbol audit of the pinned static object'
+    qsyms="$(nm 'deps/mormot2/static/x86_64-linux/quickjs.o')" ||
+        die 'nm failed on the pinned quickjs.o -- audit impossible'
+    [ -n "${qsyms}" ] || die 'nm enumerated no symbols from the pinned quickjs.o'
+    if printf '%s\n' "${qsyms}" | grep -E ' T js_(std|os)_' > /dev/null; then
+        die 'quickjs-libc symbols found in the pinned quickjs.o -- refuse'
+    fi
+    printf '[CAP-9A] pinned quickjs.o defines no js_std_*/js_os_* surface\n'
 
     step 'compile quickjsfoundation (production runtime + pinned QuickJS statics)'
     fpc -MObjFPC -Sh -B -FU"${unitdir}" -FE"${outdir}" \

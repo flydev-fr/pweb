@@ -128,7 +128,11 @@ const
   M_NULL = 'Probe.Null';
   M_SHAPED = 'Probe.Shaped';
   M_SERR = 'Probe.Error';
+  M_ESC = 'Probe.Escaped';
   M_ECHO = 'Probe.Echo';
+  { a service_error message that NEEDS every interesting JsonEscape branch:
+    double quote, backslash and a control character (tab) }
+  ESC_MESSAGE = 'He said "no" \ and'#9'tab';
   M_FAULT = 'fault.raise';
   M_NOSUCH = 'No.SuchMethod';
 
@@ -161,7 +165,8 @@ type
   private
     FEvent: PRTLEvent;
     FResult: TPWebInvocationResult;
-    FDone: LongInt;
+    FClaimed: LongInt;  // exactly-once claim of the right to write FResult
+    FDone: LongInt;     // published only AFTER FResult is fully written
     FCalls: LongInt;
   public
     constructor Create;
@@ -192,8 +197,11 @@ var
   ReleaseFlag: LongInt;
   ArrivalEvent: PRTLEvent;
   BarrierArmed: LongInt;
-  HeldReturned: PRTLEvent;
-  HeldSignalArmed: LongInt;
+  // late-worker rendezvous: the counting bridge increments the counter and
+  // sets the event AFTER the real bridge returned on a held M_ADD call, so
+  // waiters synchronize on the fact itself, never on a timer alone
+  HeldInnerReturned: LongInt;
+  InnerReturnedEvent: PRTLEvent;
   // corpus + failure accumulation
   CorpusLines: RawUtf8;
   FailReasons: RawUtf8;
@@ -205,7 +213,7 @@ var
   gBridge: IInvocationBridge;
   gServer: TRestServerFullMemory;
   gRealBridge: IInvocationBridge;
-  gSrcCalc, gSrcRep, gSrcLimits: IInvocationSource;
+  gSrcCalc, gSrcRep: IInvocationSource;
   gSnap: TSnapshotAdapter;
   gSnapCb: TPWebQuickJSSnapshotEvent;
   gCalcPlugin, gRepPlugin, gLimitsPlugin: TPWebQuickJSPlugin;
@@ -372,8 +380,6 @@ begin
   while (InterlockedCompareExchange(ReleaseFlag, 0, 0) = 0) and
         (GetTickCount64 < deadline) do
     RTLEventWaitFor(ReleaseGate, 200);
-  if InterlockedCompareExchange(HeldSignalArmed, 0, 0) <> 0 then
-    RTLEventSetEvent(HeldReturned);
 end;
 
 function WaitHeld(ATarget: Integer): Boolean;
@@ -404,6 +410,25 @@ begin
   InterlockedExchange(ReleaseFlag, 1);
   InterlockedExchange(BarrierArmed, 0);
   RTLEventSetEvent(ReleaseGate);
+end;
+
+{ deterministic rendezvous with a released held worker: True once the
+  counting bridge has recorded ATarget held M_ADD calls RETURNING from the
+  real bridge (so the corpus-pinned counters are final and the worker's
+  terminal CompleteOnce is at most straight-line instructions away) }
+function WaitInnerReturned(ATarget: Integer): Boolean;
+var
+  deadline: QWord;
+begin
+  deadline := GetTickCount64 + BARRIER_WAIT_MS;
+  while InterlockedCompareExchange(HeldInnerReturned, 0, 0) < ATarget do
+  begin
+    if GetTickCount64 > deadline then
+      exit(False);
+    RTLEventWaitFor(InnerReturnedEvent, 200);
+    RTLEventResetEvent(InnerReturnedEvent);
+  end;
+  Result := True;
 end;
 
 { ---- the counting bridge -------------------------------------------------- }
@@ -447,15 +472,25 @@ function TCountingBridge.Invoke(const Context: TInvocationContext;
   const Token: ICancellationToken): TPWebInvocationResult;
 var
   p: Integer;
+  held: Boolean;
 begin
   p := PrincipalIndex(Context.PrincipalId);
-  if Pos('"hold":true', Args) > 0 then
+  held := Pos('"hold":true', Args) > 0;
+  if held then
     BarrierParkIfArmed;
   if Method = M_ADD then
   begin
     if p >= 0 then
       InterlockedIncrement(CountAdd[p]);
-    exit(FInner.Invoke(Context, Method, CleanAddArgs(Args), Token));
+    Result := FInner.Invoke(Context, Method, CleanAddArgs(Args), Token);
+    if held then
+    begin
+      // the rendezvous fact: this held call has fully RETURNED from the
+      // real bridge; every counter it touches is final by now
+      InterlockedIncrement(HeldInnerReturned);
+      RTLEventSetEvent(InnerReturnedEvent);
+    end;
+    exit;
   end;
   if Method = M_OPEN then
   begin
@@ -479,6 +514,8 @@ begin
   if Method = M_SERR then
     exit(PWebErrorResult(pecServiceError, 'Insufficient funds',
       '{"domainCode":"insufficient_funds"}'));
+  if Method = M_ESC then
+    exit(PWebErrorResult(pecServiceError, ESC_MESSAGE, '{"k":"v"}'));
   if Method = M_ECHO then
     exit(PWebSuccessResult(Args));
   if Method = M_FAULT then
@@ -504,6 +541,7 @@ begin
     b.RegisterZeroCapMethod(M_NULL);
     b.RegisterZeroCapMethod(M_SHAPED);
     b.RegisterZeroCapMethod(M_SERR);
+    b.RegisterZeroCapMethod(M_ESC);
     b.RegisterZeroCapMethod(M_ECHO);
     b.RegisterZeroCapMethod(M_FAULT);
     b.RegisterZeroCapMethod(M_NOSUCH);
@@ -556,9 +594,12 @@ end;
 procedure TRecordingCompletion.Complete(const AResult: TPWebInvocationResult);
 begin
   InterlockedIncrement(FCalls);
-  if InterlockedExchange(FDone, 1) <> 0 then
+  if InterlockedExchange(FClaimed, 1) <> 0 then
     exit;
+  // FResult written fully BEFORE FDone publishes it, so a waiter that
+  // timed out of the event never copies a torn managed record
   FResult := AResult;
+  InterlockedExchange(FDone, 1);
   RTLEventSetEvent(FEvent);
 end;
 
@@ -599,6 +640,19 @@ begin
     'data:(e.data===undefined?"__nodata__":e.data)});}})()';
 end;
 
+const
+  RUNPLUGIN_TIMEOUT_ERR = 'script did not complete within the bound';
+
+{ True only when a limit leg was contained SAFELY: either the engine
+  raised (a real EQuickJSEngine error, never the RunPlugin bound timeout,
+  which means the script is still running) or the script caught the limit
+  failure itself }
+function ContainedSafely(const AErr, ADense: RawUtf8): Boolean;
+begin
+  Result := ((AErr <> '') and (AErr <> RUNPLUGIN_TIMEOUT_ERR)) or
+    (JsonRawField(ADense, 'caught') = 'true');
+end;
+
 { runs one script on a plugin and returns the DENSE result JSON; engine
   errors surface through AEngineErr }
 function RunPlugin(APlugin: TPWebQuickJSPlugin; const AScript: RawUtf8;
@@ -610,7 +664,7 @@ begin
   AEngineErr := '';
   if not APlugin.Eval(AScript, json, AEngineErr, ATimeoutSec, SCRIPT_WAIT_MS) then
   begin
-    AEngineErr := 'script did not complete within the bound';
+    AEngineErr := RUNPLUGIN_TIMEOUT_ERR;
     exit;
   end;
   Result := DenseJson(json);
@@ -793,6 +847,25 @@ begin
   Expect(JsonRawField(dense, 'data') = '{"domainCode":"insufficient_funds"}',
     'q07 service_error data not verbatim');
 
+  // q07b: the envelope's JSON escaping proven on a message that NEEDS it
+  // (quote + backslash + tab); the script compares byte-exactly so the
+  // corpus pins the round-trip without native escape-aware parsing
+  dense := RunPlugin(gCalcPlugin,
+    '(function(){try{pweb.invoke("Probe.Escaped",null);return ' +
+    'JSON.stringify({thrown:false});}catch(e){return JSON.stringify({' +
+    'thrown:true,code:e.code,' +
+    'matches:e.message===''He said "no" \\ and\ttab'',' +
+    'dataOk:JSON.stringify(e.data)===''{"k":"v"}''});}})()', err);
+  Emit('q07b escaped thrown=' + JsonRawField(dense, 'thrown') +
+    ' code=' + JsonStrField(dense, 'code') +
+    ' matches=' + JsonRawField(dense, 'matches') +
+    ' dataOk=' + JsonRawField(dense, 'dataOk'));
+  Expect(JsonRawField(dense, 'thrown') = 'true', 'q07b did not throw');
+  Expect(JsonStrField(dense, 'code') = 'service_error', 'q07b code wrong');
+  Expect(JsonRawField(dense, 'matches') = 'true',
+    'q07b escaped message did not round-trip byte-exactly');
+  Expect(JsonRawField(dense, 'dataOk') = 'true', 'q07b data not verbatim');
+
   // q08: internal_error stays redacted (default message, null data)
   dense := RunPlugin(gCalcPlugin, InvokeScript(M_FAULT, 'null'), err);
   Emit('q08 internal code=' + JsonStrField(dense, 'code') +
@@ -809,7 +882,7 @@ begin
   dense := RunPlugin(gCalcPlugin, InvokeScript('not a method', 'null'), err);
   Emit('q09 malformed=' + JsonStrField(dense, 'code'));
   Expect(JsonStrField(dense, 'code') = 'invalid_request', 'q09 malformed');
-  Decision(gCalcPlugin, PRIN_CALC, 'q09', M_NOSUCH, 'null', 'method_not_found');
+  Decision(gCalcPlugin, PRIN_CALC, 'q09b', M_NOSUCH, 'null', 'method_not_found');
 
   // q10: positional args are not protocol v1
   dense := RunPlugin(gCalcPlugin, InvokeScript(M_ADD, '[20,22]'), err);
@@ -920,21 +993,21 @@ begin
   try
     Expect(gLimitsPlugin.WaitReady(15000),
       'limits plugin bootstrap failed: ' + gLimitsPlugin.InitError);
+    // a bounded-wait timeout means the script NEVER finished: that is a
+    // containment FAILURE, never counted as a safe engine error
     dense := RunPlugin(gLimitsPlugin,
       '(function(){try{var f=function(n){return f(n+1);};return String(f(0));}' +
       'catch(e){return JSON.stringify({caught:true});}})()', err, 5);
-    Emit('q22 recursion safe=' + YesNo((err <> '') or
-      (JsonRawField(dense, 'caught') = 'true')));
-    Expect((err <> '') or (JsonRawField(dense, 'caught') = 'true'),
-      'q22 deep recursion neither threw nor errored');
+    Emit('q22 recursion safe=' + YesNo(ContainedSafely(err, dense)));
+    Expect(ContainedSafely(err, dense),
+      'q22 deep recursion neither threw nor errored (or hung)');
     dense := RunPlugin(gLimitsPlugin,
       '(function(){try{var a=[];for(;;){a.push(new Array(4096).fill(1));}}' +
       'catch(e){return JSON.stringify({caught:true});}return "unreached";})()',
       err, 8);
-    Emit('q23 oom safe=' + YesNo((err <> '') or
-      (JsonRawField(dense, 'caught') = 'true')));
-    Expect((err <> '') or (JsonRawField(dense, 'caught') = 'true'),
-      'q23 over-allocation neither threw nor errored');
+    Emit('q23 oom safe=' + YesNo(ContainedSafely(err, dense)));
+    Expect(ContainedSafely(err, dense),
+      'q23 over-allocation neither threw nor errored (or hung)');
   finally
     gLimitsPlugin.Unload;
     Emit('q23 disposable engine_destroyed_on_owner=' +
@@ -985,11 +1058,14 @@ begin
     'catch(e){return JSON.stringify({ok:false,code:e.code});}})()', err);
   ReleaseBarrier;
   if c1.WaitResult(res, NATIVE_WAIT_MS) then
-    code1 := PWEB_ERROR_CODE_TEXT[res.Error.Code]
+  begin
+    if res.Kind = prkSuccess then
+      code1 := 'success'
+    else
+      code1 := PWEB_ERROR_CODE_TEXT[res.Error.Code];
+  end
   else
-    code1 := 'timeout';
-  if res.Kind = prkSuccess then
-    code1 := 'success';
+    code1 := 'timeout'; // and it STAYS timeout - never rewritten to success
   if c2.WaitResult(res, NATIVE_WAIT_MS) then
   begin
     if res.Kind = prkSuccess then
@@ -1054,6 +1130,7 @@ var
   dense, err: RawUtf8;
   json: RawUtf8;
   sinkCalls: LongInt;
+  innerBase: LongInt;
 begin
   // q16-q19: Quiesce/Close during the plugin thread's bounded wait. The
   // held invocation is parked IN the bridge when the source closes:
@@ -1062,8 +1139,7 @@ begin
   // frozen exactly-once gate - measured through the sink's attempt
   // counter after an explicit rendezvous, never assumed.
   ArmBarrier;
-  InterlockedExchange(HeldSignalArmed, 1);
-  RTLEventResetEvent(HeldReturned);
+  innerBase := InterlockedCompareExchange(HeldInnerReturned, 0, 0);
   Expect(gCalcPlugin.PostScript(
     InvokeScript(M_ADD, '{"a":20,"b":22,"hold":true}')),
     'q16 held post refused');
@@ -1081,12 +1157,16 @@ begin
     ' status=' + JsonRawField(dense, 'status'));
   Expect(JsonStrField(dense, 'code') = 'cancelled',
     'q16 in-flight resolution = ' + JsonStrField(dense, 'code'));
-  // release the parked worker; rendezvous with its late attempt
+  // release the parked worker; DETERMINISTIC rendezvous with the fact
+  // that its held call returned from the real bridge - past this wait
+  // the late CountAdd increment (corpus-pinned in q30) has happened and
+  // the worker's terminal CompleteOnce is straight-line instructions
+  // away, covered by the bounded settle below
   ReleaseBarrier;
-  RTLEventWaitFor(HeldReturned, NATIVE_WAIT_MS);
-  InterlockedExchange(HeldSignalArmed, 0);
-  RTLEventResetEvent(HeldReturned);
-  RTLEventWaitFor(HeldReturned, 100); // bounded settle; never set again
+  if not WaitInnerReturned(innerBase + 1) then
+    Fail('q17 the released late worker never returned from the bridge');
+  RTLEventResetEvent(InnerReturnedEvent);
+  RTLEventWaitFor(InnerReturnedEvent, 100); // bounded settle; never set again
   sinkCalls := gCalcPlugin.LastSinkDeliveries;
   Emit('q17 late_completion sink_deliveries=' + IntStr(sinkCalls));
   Expect(sinkCalls = 1, 'q17 sink deliveries = ' + IntStr(sinkCalls));
@@ -1176,7 +1256,7 @@ begin
   overall := 'FAIL';
   ReleaseGate := RTLEventCreate;
   ArrivalEvent := RTLEventCreate;
-  HeldReturned := RTLEventCreate;
+  InnerReturnedEvent := RTLEventCreate;
   try
     try
       root := RepoRootFromExecutable;
@@ -1263,7 +1343,7 @@ begin
     try
       FreeAndNil(gCalcPlugin);
       FreeAndNil(gRepPlugin);
-      gSrcCalc := nil; gSrcRep := nil; gSrcLimits := nil;
+      gSrcCalc := nil; gSrcRep := nil;
       gSchedulerRef := nil; gScheduler := nil;
       gPolicyRef := nil; gPolicy := nil;
       gBridge := nil; gRealBridge := nil;
@@ -1272,7 +1352,7 @@ begin
     end;
     if ReleaseGate <> nil then RTLEventDestroy(ReleaseGate);
     if ArrivalEvent <> nil then RTLEventDestroy(ArrivalEvent);
-    if HeldReturned <> nil then RTLEventDestroy(HeldReturned);
+    if InnerReturnedEvent <> nil then RTLEventDestroy(InnerReturnedEvent);
   end;
 
   // ---- the per-target record ----
