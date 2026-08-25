@@ -546,7 +546,10 @@ var
   envelope: RawUtf8;
 begin
   InterlockedIncrement(FCallbackCalls);
-  if GetCurrentThreadId <> ThreadID then
+  // explicit call parentheses: on POSIX TThreadID is pointer-sized, so a
+  // bare ObjFPC function reference in the comparison would be taken as a
+  // function POINTER, not a call (measured red on the hosted linux job)
+  if GetCurrentThreadId() <> ThreadID then
     InterlockedIncrement(FCallbackWrongThread);
   if (Length(Args) <> 2) or
      (not VarIsStr(Args[0])) or (not VarIsStr(Args[1])) then
@@ -633,7 +636,7 @@ begin
     // the frozen ownership rule: the engine dies on its owning thread
     try
       FreeAndNil(FEngine);
-      if GetCurrentThreadId = ThreadID then
+      if GetCurrentThreadId() = ThreadID then // explicit call: see InvokeJson note
         InterlockedExchange(FEngineDestroyedOnOwnThread, 1);
     except
       // never leak an exception out of the thread epilogue
