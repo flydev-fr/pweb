@@ -140,10 +140,21 @@ Linux)
     compile_pas() {
         local unitdir="$1" outdir="$2" src="$3"
         shift 3
+        # -k-lgcc_s is REQUIRED here and nowhere before, and the reason is
+        # worth stating: CAP-9C2 is the first Linux binary that links the
+        # pinned quickjs.o AND libwebview. quickjs.o references __divti3
+        # (128-bit division, a libgcc intrinsic). With quickjs.o alone the
+        # linker resolved it from the libgcc_s it pulls in implicitly; once
+        # libwebview joins the line, ld reports
+        #   'libgcc_s.so.1: error adding symbols: DSO missing from command
+        #    line'
+        # - the symbol is findable but the DSO was never named, which
+        # --as-needed will not do on the caller's behalf. Naming it is the
+        # documented fix and costs nothing on a target that already links it.
         fpc -MObjFPC -Sh -B -FU"${unitdir}" -FE"${outdir}" \
             "${host_units[@]}" -Fusrc/platform/linux "$@" \
             "${mormot_units[@]}" -Fldeps/mormot2/static/x86_64-linux \
-            "-Fl${dist}" -k'-rpath=$ORIGIN' "${src}"
+            "-Fl${dist}" -k'-rpath=$ORIGIN' -k-lgcc_s "${src}"
     }
     sample_listeners() {
         local pid="$1" n=0 t=0 u=0
