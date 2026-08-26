@@ -236,6 +236,22 @@ leak="$(printf '%s\n' "${plugin_names}" |
 add_row 'plugins_zip_carries_no_frontend' \
     "$([ -z "${leak}" ] && echo 1 || echo 0)" "leak=${leak}"
 
+# --- 0b. no CWD dependence, no discovery: source facts --------------------
+# See the ps1 sibling: two Never-list items that are properties of ALL
+# inputs rather than of the inputs a test happened to choose.
+cwd_rx='GetCurrentDir|SetCurrentDir|ChDir'
+discovery_rx='FindFirst|FindNext|FileAge|ReadDirectory|FindFirstChangeNotification|inotify|FSEvent|kqueue'
+hits="$(grep -c -E "${cwd_rx}" examples/07-quickjs/quickjsapp.pas || true)"
+add_row 'host_no_cwd_resolution' \
+    "$([ "${hits}" = '0' ] && echo 1 || echo 0)" "hits=${hits}"
+anchor="$(grep -c -E 'Executable\.ProgramFilePath' examples/07-quickjs/quickjsapp.pas || true)"
+add_row 'host_resolves_from_executable' \
+    "$([ "${anchor}" -ge 2 ] && echo 1 || echo 0)" "sites=${anchor}"
+hits="$(cat examples/07-quickjs/quickjsapp.pas test/cap9c2/quickjsgui.pas |
+    grep -c -E "${discovery_rx}" || true)"
+add_row 'no_plugin_discovery_or_watching' \
+    "$([ "${hits}" = '0' ] && echo 1 || echo 0)" "hits=${hits}"
+
 # --- 2. compile the host WITH the generated registry ----------------------
 compile_pas "${work}/app-fpc" "${work}/app-bin" \
     examples/07-quickjs/quickjsapp.pas -Fibuild/quickjs-release \

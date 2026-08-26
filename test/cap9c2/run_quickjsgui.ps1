@@ -144,6 +144,24 @@ $leak = @($pluginNames | Where-Object {
 })
 Add-Row 'plugins_zip_carries_no_frontend' ($leak.Count -eq 0) "entries=$($pluginNames.Count) leak=$($leak -join ',')"
 
+# --- 0b. no CWD dependence, no discovery: source facts ---------------------
+# Two of this shard's Never-list items are properties of ALL inputs, not of
+# the inputs a test happened to choose, and a source sweep is the only
+# place they can be proven that way. The host may read argv and the
+# environment - that is how a headless gate drives it, exactly as the CAP-6
+# release host does - but it must never resolve a path against the working
+# directory, and neither program may scan, watch or enumerate a directory.
+$cwdRx = 'GetCurrentDir|SetCurrentDir|ChDir'
+$discoveryRx = 'FindFirst|FindNext|FileAge|ReadDirectory|FindFirstChangeNotification|inotify|FSEvent|kqueue'
+$hits = @(Select-String -Path 'examples/07-quickjs/quickjsapp.pas' -Pattern $cwdRx)
+Add-Row 'host_no_cwd_resolution' ($hits.Count -eq 0) "hits=$($hits.Count)"
+$anchor = @(Select-String -Path 'examples/07-quickjs/quickjsapp.pas' `
+    -Pattern 'Executable\.ProgramFilePath')
+Add-Row 'host_resolves_from_executable' ($anchor.Count -ge 2) "sites=$($anchor.Count)"
+$hits = @(Select-String -Path 'examples/07-quickjs/quickjsapp.pas',
+    'test/cap9c2/quickjsgui.pas' -Pattern $discoveryRx)
+Add-Row 'no_plugin_discovery_or_watching' ($hits.Count -eq 0) "hits=$($hits.Count)"
+
 # --- 2. compile the host WITH the generated registry, inside CAP-3U --------
 try {
     pwsh -NoProfile -File tools/patch-cap3u.ps1
