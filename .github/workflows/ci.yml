@@ -1580,6 +1580,36 @@ jobs:
             build/cap9a/quickjsfoundation-win.log
             build/cap9a-quickjsfoundation.log
 
+      # CAP-9B1: the QuickJS plugin-package + deterministic module-loader
+      # harness. Fully headless and fixture-free on disk: it GENERATES the
+      # reference package and every hostile fixture from in-source byte
+      # constants into a temp folder AND an in-memory ZIP, then runs the
+      # P1-P40 matrix through both carriers against the UNCHANGED production
+      # scheduler + CAP-8A policy + real mORMot SOA bridge. It writes
+      # build/cap9b1/quickjs-package-corpus.txt (the cross-target digest
+      # source) and quickjspackage-windows-x86_64.json, which the CAP-7F
+      # emitter reads into quickjs_package_corpus (must-PASS; never SKIPs).
+      # It runs BEFORE the emitter so its verdict is this job's.
+      - name: CAP-9B1 QuickJS package and module-loader harness
+        shell: pwsh
+        timeout-minutes: 20
+        run: |
+          pwsh -NoProfile -File test/cap9b1/run_quickjspackage.ps1 2>&1 |
+            Tee-Object -FilePath build/cap9b1-quickjspackage.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-9B1 quickjspackage gate FAILED' }
+
+      - name: CAP-9B1 upload the Windows package record
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap9b1-package-windows
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap9b1/quickjspackage-windows-x86_64.json
+            build/cap9b1/quickjs-package-corpus.txt
+            build/cap9b1/quickjspackage-win.log
+            build/cap9b1-quickjspackage.log
+
       - name: CAP-7F emit the Windows evidence artifact
         shell: pwsh
         timeout-minutes: 10
@@ -1614,6 +1644,8 @@ jobs:
             build/cap7f-evidence.log
             build/cap9a/
             build/cap9a-quickjsfoundation.log
+            build/cap9b1/
+            build/cap9b1-quickjspackage.log
 
       # same deliberate deviation as CAP-6b2/6b3: no ~200-276 MB setup
       # binary is uploaded - the logs and the release index identify any
@@ -1993,6 +2025,28 @@ jobs:
             build/cap9a/abi-c.txt
             build/cap9a/quickjsfoundation-posix.log
 
+      # CAP-9B1: the QuickJS package + module-loader harness. Fully headless
+      # and fixture-free on disk (every package is generated in-process into
+      # a temp folder AND an in-memory ZIP), so it runs identically here and
+      # on Windows. Runs BEFORE the CAP-7F emitter, which reads its verdict
+      # into quickjs_package_corpus (must-PASS) and hashes the corpus into
+      # quickjs_package_digest.
+      - name: CAP-9B1 QuickJS package and module-loader harness
+        shell: bash
+        timeout-minutes: 20
+        run: test/cap9b1/run_quickjspackage.sh
+
+      - name: CAP-9B1 upload the Linux package record
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap9b1-package-linux
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap9b1/quickjspackage-linux-x86_64.json
+            build/cap9b1/quickjs-package-corpus.txt
+            build/cap9b1/quickjspackage-posix.log
+
       - name: CAP-7F emit the Linux evidence artifact
         shell: bash
         timeout-minutes: 10
@@ -2020,6 +2074,7 @@ jobs:
           path: |
             build/cap7f/
             build/cap9a/
+            build/cap9b1/
 
       - name: CAP-7L diagnostics on failure
         if: failure()
@@ -2451,6 +2506,28 @@ jobs:
             build/cap9a/qjs-obj/quickjs-build-info.txt
             build/cap9a/quickjsfoundation-posix.log
 
+      # CAP-9B1: the QuickJS package + module-loader harness, over the same
+      # CI-built pinned QuickJS object the CAP-9A step above produced. Fully
+      # headless and fixture-free on disk, so the P1-P40 matrix and its
+      # corpus digest are identical to the other three targets. Runs BEFORE
+      # the CAP-7F emitter, which reads its verdict into
+      # quickjs_package_corpus (must-PASS) and hashes quickjs_package_digest.
+      - name: CAP-9B1 QuickJS package and module-loader harness
+        shell: bash
+        timeout-minutes: 20
+        run: test/cap9b1/run_quickjspackage.sh
+
+      - name: CAP-9B1 upload the macOS x64 package record
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap9b1-package-macos-x64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap9b1/quickjspackage-macos-x86_64.json
+            build/cap9b1/quickjs-package-corpus.txt
+            build/cap9b1/quickjspackage-posix.log
+
       # CAP-7F: additive, after every gate it summarizes. macOS runs no new
       # gate - the CAP-7M2 release suite above already executed the host
       # arguments (LaunchServices --pweb-verdict, argv-beats-env, refusal
@@ -2481,6 +2558,7 @@ jobs:
           path: |
             build/cap7f/
             build/cap9a/
+            build/cap9b1/
 
       - name: CAP-7M0 per-arch headline facts to the run summary
         if: always()
@@ -2851,6 +2929,26 @@ jobs:
             build/cap9a/qjs-obj/quickjs-build-info.txt
             build/cap9a/quickjsfoundation-posix.log
 
+      # CAP-9B1: see the x64 sibling - the same headless, fixture-free
+      # P1-P40 package/module matrix over the CI-built pinned QuickJS
+      # object, producing the fourth quickjs_package_digest the aggregate
+      # requires to be equal. Runs BEFORE the CAP-7F emitter.
+      - name: CAP-9B1 QuickJS package and module-loader harness
+        shell: bash
+        timeout-minutes: 20
+        run: test/cap9b1/run_quickjspackage.sh
+
+      - name: CAP-9B1 upload the macOS arm64 package record
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap9b1-package-macos-arm64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap9b1/quickjspackage-macos-arm64.json
+            build/cap9b1/quickjs-package-corpus.txt
+            build/cap9b1/quickjspackage-posix.log
+
       # CAP-7F: see the x64 sibling - the emitter summarizes gates that
       # already ran above in this job and re-enumerates the export trie.
       - name: CAP-7F emit the macOS arm64 evidence artifact
@@ -2877,6 +2975,7 @@ jobs:
           path: |
             build/cap7f/
             build/cap9a/
+            build/cap9b1/
 
       - name: CAP-7M0 per-arch headline facts to the run summary
         if: always()
