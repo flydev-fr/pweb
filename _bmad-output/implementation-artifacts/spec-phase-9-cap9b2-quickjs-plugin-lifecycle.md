@@ -1,3 +1,19 @@
+---
+title: 'CAP-9B2 — QuickJS plugin lifecycle, export calls and transactional reload'
+type: 'feature'
+created: '2026-08-26'
+status: 'done'
+review_loop_iteration: 0
+baseline_commit: 'bc6b1d429d80fbc019ef7ee957089a92b3e115fd'
+context:
+  - '{project-root}/docs/kernel.md'
+  - '{project-root}/_bmad-output/specs/spec-pweb/threading-model.md'
+  - '{project-root}/_bmad-output/specs/spec-pweb/wire-semantics.md'
+  - '{project-root}/_bmad-output/specs/spec-pweb/security-model.md'
+  - '{project-root}/_bmad-output/implementation-artifacts/cap9a-final-artifact.md'
+  - '{project-root}/_bmad-output/implementation-artifacts/cap9b1-final-artifact.md'
+---
+
 # CAP-9B2 — QuickJS Plugin Lifecycle, Export Calls and Transactional Reload
 
 Shard spec. Builds one explicit, native-controlled plugin lifecycle around
