@@ -72,6 +72,8 @@ $required = @(
     'cap9c1_tamper_started', 'cap9c1_cwd_dependency',
     'cap9c1_package_sha256', 'cap9c1_package_bytes',
     'cap9c1_registry_sha256',
+    'quickjs_gui_corpus', 'quickjs_gui_digest', 'cap9c2_listeners',
+    'cap9c2_negative_reparse', 'cap9c2_license_sha256', 'cap9c2_gates',
     'release_layout', 'no_listener', 'app_pwb_react_sha256',
     'logical_inventory_sha256_react', 'github_sha', 'github_run_id', 'waivers'
 )
@@ -88,7 +90,7 @@ $absolutePins = @{
 $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
     'navigation_security', 'security_corpus', 'quickjs_corpus',
     'quickjs_package_corpus', 'quickjs_lifecycle_corpus',
-    'quickjs_release_corpus')
+    'quickjs_release_corpus', 'quickjs_gui_corpus')
 # fields that must agree, value-for-value, across all four targets
 # (capability_policy_digest is the CAP-8A structured policy-decision corpus and
 # navigation_policy_digest the CAP-8B one: four targets, one byte-identical
@@ -107,7 +109,29 @@ $equalityFields = @(
     # targets would be an untrue requirement. Determinism is proven where
     # it is real - the gate stages the payload twice on each target and
     # requires byte equality there.
-    'quickjs_release_digest', 'cap9c1_inventory_digest', 'github_sha'
+    'quickjs_release_digest', 'cap9c1_inventory_digest',
+    # CAP-9C2: the GUI corpus is entirely semantic - gate verdicts,
+    # identities and orderings, no byte counts and no per-engine numbers -
+    # so unlike the archive it MUST be identical on all four targets. The
+    # licence is byte-pinned for the same reason: it is assembled from
+    # pinned sources and LF-normalized precisely so it can be.
+    'quickjs_gui_digest', 'cap9c2_license_sha256', 'github_sha'
+)
+# the CAP-9C2 semantic gate names, carried in ONE place across the two
+# emitters and this aggregator (see test/cap7f/emit_evidence.ps1)
+$CAP9C2_GATE_FIELDS = @(
+    'ui_rendered', 'ui_add', 'quickjs_add', 'reporting_code',
+    'reporting_soa_count', 'reporting_denied_bridge', 'opener_reached',
+    'same_scheduler', 'same_policy', 'same_bridge', 'same_server',
+    'browser_plugin_store_arrivals', 'quickjs_app_store_arrivals',
+    'browser_plugin_script_marker', 'raw_channel_source_bytes',
+    'quickjs_window_absent', 'quickjs_document_absent',
+    'quickjs_webkit_channel_absent', 'quickjs_webview2_channel_absent',
+    'quickjs_raw_webview_invoke_absent', 'concurrent_overlap',
+    'no_cross_delivery', 'plugin_archive_verified',
+    'plugin_inventory_verified', 'neighbour_survived_timeout',
+    'ui_survived_timeout', 'reload_generation_changed', 'clean_shutdown',
+    'release_layout', 'hostile_running', 'hostile_failed'
 )
 # targets that additionally carry a pas2js logical inventory
 $pas2jsTargets = @('linux-x86_64', 'macos-x86_64', 'macos-arm64')
@@ -321,6 +345,47 @@ foreach ($t in $evidence.Keys) {
             $failures.Add("CAP-9C1 EMPTY-PACKAGE: target=$t cap9c1_package_bytes=$pb -- a verified package cannot be empty")
         }
     }
+    # CAP-9C2 defense in depth. Unlike C1 there is nothing here that is
+    # reported-but-not-compared: the shard's claim is that ONE
+    # architecture answers on all four targets, so every gate below is a
+    # semantic verdict that must read exactly 'yes' everywhere. The rule
+    # is deliberately uniform - a gate whose expected value has to be
+    # looked up is a gate that gets the wrong expectation written beside
+    # it one day.
+    if ("$($e.quickjs_gui_corpus)" -ceq 'PASS') {
+        $gates = $e.cap9c2_gates
+        if ($null -eq $gates) {
+            $failures.Add("CAP-9C2 NO-GATES: target=$t carries no cap9c2_gates object")
+        } else {
+            foreach ($g in $CAP9C2_GATE_FIELDS) {
+                $v = "$($gates.$g)"
+                if ($v -eq '') {
+                    $failures.Add("CAP-9C2 MISSING-GATE: target=$t gate '$g' is absent -- refusing to read an absent gate as green")
+                } elseif ($v -cne 'yes') {
+                    $failures.Add("CAP-9C2 GATE NOT GREEN: target=$t $g='$v' (expected 'yes')")
+                }
+            }
+        }
+        # a listening socket anywhere in the plugin-enabled application is
+        # the one thing the whole architecture promises cannot exist
+        $lc = 0
+        if (-not [int]::TryParse("$($e.cap9c2_listeners)", [ref]$lc)) {
+            $failures.Add("CAP-9C2 NON-NUMERIC: target=$t cap9c2_listeners='$($e.cap9c2_listeners)'")
+        } elseif ($lc -ne 0) {
+            $failures.Add("CAP-9C2 LISTENERS>0: target=$t cap9c2_listeners=$lc -- the plugin-enabled application opened a listening socket")
+        }
+        # the reparse-point negative is machine-dependent to CREATE but
+        # never to REQUIRE: a waiver is recorded honestly by the runner
+        # and refused here, exactly like a SKIP
+        if ("$($e.cap9c2_negative_reparse)" -cne 'yes') {
+            $failures.Add("CAP-9C2 REPARSE NOT PROVEN: target=$t cap9c2_negative_reparse='$($e.cap9c2_negative_reparse)' -- a waiver never promotes to a proof")
+        }
+        # the frozen QuickJS licence, byte-pinned, on every target
+        if ("$($e.cap9c2_license_sha256)" -cne
+            '8310e7a6c52cd3b45a0aedb5620ef79408c8c155594f37259ba801f6a2fbe2fc') {
+            $failures.Add("CAP-9C2 LICENSE SHA: target=$t cap9c2_license_sha256='$($e.cap9c2_license_sha256)'")
+        }
+    }
 }
 
 # --- cross-target equality ---------------------------------------------------
@@ -469,6 +534,7 @@ foreach ($t in $evidence.Keys) {
         quickjs_package_corpus = $e.quickjs_package_corpus
         quickjs_lifecycle_corpus = $e.quickjs_lifecycle_corpus
         quickjs_release_corpus = $e.quickjs_release_corpus
+        quickjs_gui_corpus = $e.quickjs_gui_corpus
         cap9c1_package_sha256 = $e.cap9c1_package_sha256
         cap9c1_package_bytes = $e.cap9c1_package_bytes
         cap9c1_registry_sha256 = $e.cap9c1_registry_sha256
@@ -491,7 +557,7 @@ $summary += '| target | engine | host_args | cap_policy | nav_security | sec_cor
 $summary += '|---|---|---|---|---|---|---|---|---|---|---|---|---|'
 foreach ($t in $evidence.Keys) {
     $e = $evidence[$t]
-    $summary += "| $t | $($e.engine) | $($e.host_args) | $($e.capability_policy) | $($e.navigation_security) | $($e.security_corpus) | $($e.quickjs_corpus) | $($e.quickjs_package_corpus) | $($e.quickjs_lifecycle_corpus) | $($e.quickjs_release_corpus) | $($e.release_layout) | $($e.no_listener) | $($e.extra_exports_rtti) |"
+    $summary += "| $t | $($e.engine) | $($e.host_args) | $($e.capability_policy) | $($e.navigation_security) | $($e.security_corpus) | $($e.quickjs_corpus) | $($e.quickjs_package_corpus) | $($e.quickjs_lifecycle_corpus) | $($e.quickjs_release_corpus) | $($e.quickjs_gui_corpus) | $($e.release_layout) | $($e.no_listener) | $($e.extra_exports_rtti) |"
 }
 $summary += ''
 $summary += "- webview pin ``$($first.webview_pin)``, surface ``$($first.webview_surface)``, origin ``$($first.origin)`` (secure=$($first.secure)), RPC Add(20,22)=$($first.rpc_add_20_22)"
@@ -507,6 +573,8 @@ foreach ($t in $evidence.Keys) {
     $e = $evidence[$t]
     $summary += "  - $t plugins.zip sha256 ``$($e.cap9c1_package_sha256)`` ($($e.cap9c1_package_bytes) bytes), registry ``$($e.cap9c1_registry_sha256)``"
 }
+$summary += "- CAP-9C2 quickjs_gui_digest ``$($first.quickjs_gui_digest)`` equal on all four targets (the plugin-enabled GUI corpus: UI + QuickJS over one scheduler/policy/bridge/server)"
+$summary += "- CAP-9C2 LICENSE.quickjs ``$($first.cap9c2_license_sha256)`` byte-identical on all four targets; listeners=0 everywhere"
 $summary += "- react logical_inventory_sha256 ``$($first.logical_inventory_sha256_react)`` equal on all four targets"
 $summary += "- pas2js logical_inventory_sha256 ``$($matrix.agreement.logical_inventory_sha256_pas2js)`` equal on linux/macos-x64/macos-arm64"
 $summaryText = $summary -join "`n"

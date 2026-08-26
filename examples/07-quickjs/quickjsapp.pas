@@ -1946,9 +1946,14 @@ begin
 
   if ExitCode = 0 then
   begin
+    { two rows, not one: every gate row is exactly name=yes|no so the
+      aggregator's rule can stay trivial, and the ACTUAL teardown order -
+      which this shard is required to record rather than describe - gets
+      its own row. It is identical on all four targets because it is
+      built by the same statements. }
     Emit('clean_shutdown=' +
-      YesNo(InterlockedCompareExchange(ShutdownFailures, 0, 0) = 0) +
-      ' order=' + shutdownOrder, '');
+      YesNo(InterlockedCompareExchange(ShutdownFailures, 0, 0) = 0), '');
+    Emit('shutdown_order=' + shutdownOrder, '');
     Emit('policy_projection=' + PolicyProjection, '');
     if (InterlockedCompareExchange(GateFailures, 0, 0) <> 0) or
        (InterlockedCompareExchange(ShutdownFailures, 0, 0) <> 0) then

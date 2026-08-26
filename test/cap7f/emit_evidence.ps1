@@ -25,6 +25,24 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Set-Location $repoRoot
 
+# The CAP-9C2 semantic gate names, in ONE place: the two emitters and the
+# aggregator's negative self-test all read this list, so a gate cannot be
+# added to the corpus and forgotten by the thing that refuses it.
+$CAP9C2_GATE_FIELDS = @(
+    'ui_rendered', 'ui_add', 'quickjs_add', 'reporting_code',
+    'reporting_soa_count', 'reporting_denied_bridge', 'opener_reached',
+    'same_scheduler', 'same_policy', 'same_bridge', 'same_server',
+    'browser_plugin_store_arrivals', 'quickjs_app_store_arrivals',
+    'browser_plugin_script_marker', 'raw_channel_source_bytes',
+    'quickjs_window_absent', 'quickjs_document_absent',
+    'quickjs_webkit_channel_absent', 'quickjs_webview2_channel_absent',
+    'quickjs_raw_webview_invoke_absent', 'concurrent_overlap',
+    'no_cross_delivery', 'plugin_archive_verified',
+    'plugin_inventory_verified', 'neighbour_survived_timeout',
+    'ui_survived_timeout', 'reload_generation_changed', 'clean_shutdown',
+    'release_layout', 'hostile_running', 'hostile_failed'
+)
+
 foreach ($pre in 'build/webview-dist/webview.dll',
                  'build/cap6/app.pwb',
                  'build/cap6/release/releaseapp.exe',
@@ -631,6 +649,78 @@ Write-Host "[CAP-7F] quickjs_release_digest: $quickjsReleaseDigest"
 Write-Host "[CAP-7F] quickjs_release_corpus: $quickjsReleaseCorpus (browser_store=$cap9c1BrowserArrivals denied_bridge=$cap9c1DeniedBridge tamper_started=$cap9c1TamperStarted cwd=$cap9c1CwdDependency)"
 Write-Host "[CAP-7F] cap9c1 package sha256=$cap9c1PackageSha bytes=$cap9c1PackageBytes (per-target, reported not compared)"
 
+# --- CAP-9C2 plugin-enabled GUI corpus + one canonical digest ---------------
+# The shard's whole point is that the SAME architecture answers on all four
+# targets, so unlike the C1 block above there is nothing here that is
+# reported-but-not-compared: every field is a semantic verdict. The one
+# per-machine fact - whether a file symlink could be created for the
+# reparse-point negative - is carried as its own field so the aggregator
+# can refuse a waiver instead of hashing one into the digest.
+$qgFile = Join-Path $repoRoot 'build/cap9c2/quickjsgui-windows-x86_64.json'
+if (-not (Test-Path $qgFile)) {
+    throw '[CAP-7F] quickjsgui-windows-x86_64.json missing -- the CAP-9C2 gate has not run in this workspace'
+}
+$qg = Get-Content $qgFile -Raw | ConvertFrom-Json
+if ($qg.schema -ne 1) { throw '[CAP-7F] quickjsgui json schema mismatch' }
+$quickjsGuiCorpus = "$($qg.overall)"
+if ($quickjsGuiCorpus -notin @('PASS', 'FAIL')) {
+    throw "[CAP-7F] quickjsgui json carries an unexpected verdict: $quickjsGuiCorpus"
+}
+$cap9c2Listeners = Read-MpCounter $qg 'listeners'
+$cap9c2Reparse = "$($qg.negative_reparse)"
+$cap9c2License = "$($qg.license_quickjs_sha256)"
+
+# The semantic gates, carried through individually so the aggregator can
+# refuse a specific one by name instead of only noticing that a digest
+# moved. The rule the aggregator applies is deliberately trivial - EVERY
+# field here must read exactly 'yes' on EVERY target - because a gate
+# whose expected value has to be looked up is a gate that gets a wrong
+# expectation written next to it one day.
+$cap9c2Gates = [ordered]@{}
+foreach ($f in $CAP9C2_GATE_FIELDS) {
+    $value = "$($qg.$f)"
+    if ($quickjsGuiCorpus -ceq 'PASS' -and $value -eq '') {
+        throw "[CAP-7F] quickjsgui record carries no '$f' gate -- refusing to default it"
+    }
+    $cap9c2Gates[$f] = $value
+}
+
+$qgCorpusFile = Join-Path $repoRoot 'build/cap9c2/quickjs-gui-corpus.txt'
+if ($quickjsGuiCorpus -ceq 'PASS') {
+    if (-not (Test-Path $qgCorpusFile)) {
+        throw '[CAP-7F] quickjs-gui-corpus.txt missing while the gate records PASS'
+    }
+    $qgRows = @(Get-Content $qgCorpusFile)
+    if ($qgRows.Count -lt 2) {
+        throw "[CAP-7F] quickjs-gui-corpus.txt is empty or truncated ($($qgRows.Count) line(s))"
+    }
+    if ($qgRows[0] -cne 'schema=1') {
+        throw '[CAP-7F] quickjs-gui-corpus.txt carries no schema=1 header'
+    }
+    if ($qgRows[-1] -cne 'verdict=PASS') {
+        throw '[CAP-7F] quickjs-gui-corpus.txt does not end in verdict=PASS while the gate records PASS'
+    }
+    # a green corpus with no assembled release would be a gate that proved
+    # nothing shipped
+    foreach ($staged in 'quickjsapp.exe', 'app.pwb', 'plugins.zip',
+                        'webview.dll', 'LICENSE.quickjs') {
+        if (-not (Test-Path (Join-Path $repoRoot "build/cap9c2/release/$staged"))) {
+            throw "[CAP-7F] the CAP-9C2 release layout is missing $staged while the gate records PASS"
+        }
+    }
+    $quickjsGuiDigest = (Get-FileHash $qgCorpusFile -Algorithm SHA256).Hash.ToLowerInvariant()
+} elseif (Test-Path $qgCorpusFile) {
+    $qgRows = @(Get-Content $qgCorpusFile)
+    if ($qgRows.Count -gt 0 -and $qgRows[-1] -ceq 'verdict=PASS') {
+        throw '[CAP-7F] quickjs-gui-corpus.txt ends in verdict=PASS while the gate records FAIL'
+    }
+    $quickjsGuiDigest = (Get-FileHash $qgCorpusFile -Algorithm SHA256).Hash.ToLowerInvariant()
+} else {
+    $quickjsGuiDigest = 'ABSENT'
+}
+Write-Host "[CAP-7F] quickjs_gui_digest: $quickjsGuiDigest"
+Write-Host "[CAP-7F] quickjs_gui_corpus: $quickjsGuiCorpus (listeners=$cap9c2Listeners reparse=$cap9c2Reparse)"
+
 # --- run identity -----------------------------------------------------------
 $sha = $env:GITHUB_SHA
 if (-not $sha) { $sha = (& git rev-parse HEAD).Trim() }
@@ -697,6 +787,12 @@ $evidence = [ordered]@{
     cap9c1_package_sha256           = $cap9c1PackageSha
     cap9c1_package_bytes            = $cap9c1PackageBytes
     cap9c1_registry_sha256          = $cap9c1RegistrySha
+    quickjs_gui_corpus              = $quickjsGuiCorpus
+    quickjs_gui_digest              = $quickjsGuiDigest
+    cap9c2_listeners                = $cap9c2Listeners
+    cap9c2_negative_reparse         = $cap9c2Reparse
+    cap9c2_license_sha256           = $cap9c2License
+    cap9c2_gates                    = $cap9c2Gates
     release_layout                  = $releaseLayout
     no_listener                     = $noListener
     no_listener_provenance          = 'source-sweep re-executed (check_cap6_nonetwork.ps1); CAP-5/CAP-6 job gates precede this emitter'

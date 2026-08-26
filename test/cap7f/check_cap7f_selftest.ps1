@@ -42,7 +42,28 @@
 #   (c33) a malformed cap9c1_package_sha256 -> BAD-PACKAGE-SHA refusal, the
 #         per-target facts the equality set deliberately does NOT compare
 #   (c34) cap9c1_package_bytes=0 with a PASS corpus -> EMPTY-PACKAGE refusal
-#   (c8-c34 additionally assert the refusal came through the EXPECTED branch
+#   (c35) quickjs_gui_corpus (CAP-9C2) ABSENT -> required-field refusal
+#   (c36) quickjs_gui_corpus rewritten to SKIP -> mustPass refusal
+#   (c37) quickjs_gui_digest diverging on one target -> equality refusal
+#   (c38) browser_plugin_store_arrivals not green -> a pweb://app probe
+#         reached the plugin package bytes
+#   (c39) browser_plugin_script_marker not green -> plugin source executed
+#         as WebView JavaScript
+#   (c40) raw_channel_source_bytes not green -> plugin bytes in a browser
+#         or native result
+#   (c41) reporting_soa_count not green -> denied plugin activity reached
+#         the SOA layer
+#   (c42) same_scheduler / same_bridge not green -> the UI and the plugins
+#         ran on DIFFERENT runtime objects, which CAP-9 refuses even when
+#         both answered 42
+#   (c43) ui_survived_timeout / neighbour_survived_timeout not green -> a
+#         resource-limit failure took the UI or a neighbour with it
+#   (c44) a cap9c2_gates member ABSENT -> MISSING-GATE refusal (a renamed
+#         field must not read as green)
+#   (c45) cap9c2_listeners=1 -> LISTENERS>0 refusal
+#   (c46) cap9c2_negative_reparse='waived' -> a waiver never promotes
+#   (c47) cap9c2_license_sha256 not the frozen digest -> LICENSE SHA refusal
+#   (c8-c47 additionally assert the refusal came through the EXPECTED branch
 #    where one is named)
 #   (e) a count-preserving directive swap in an allowlisted file
 #                                          -> divergence sweep refuses via the
@@ -604,6 +625,144 @@ $e.cap9c1_package_bytes = 0
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap9c1-empty-package' 'CAP-9C1 EMPTY-PACKAGE'
 
+# --- (c35) CAP-9C2: the GUI corpus absent -----------------------------------
+# The first thing a shard's evidence loses when a step is quietly dropped
+# from CI is the field itself, so the aggregator must refuse an ABSENT
+# corpus as loudly as a failing one.
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['quickjs_gui_corpus']) {
+    throw 'selftest cap9c2-absent: the evidence carries no quickjs_gui_corpus field - the emitters did not record it'
+}
+$e.PSObject.Properties.Remove('quickjs_gui_corpus')
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9c2-absent' 'quickjs_gui_corpus'
+
+# --- (c36) CAP-9C2: the GUI corpus reading SKIP -----------------------------
+# a real WebView opens on every one of the four runners, so a SKIP here is
+# a gate that stopped running, never a machine that could not run it
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.quickjs_gui_corpus = 'SKIP'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9c2-skip' 'SKIP/WAIVED NEVER PROMOTES'
+
+# --- (c37) CAP-9C2: the GUI digest diverging on one target ------------------
+# the corpus is entirely semantic, so a divergence is a real architectural
+# difference between two targets - never a toolchain artefact
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.quickjs_gui_digest = ('0' * 64)
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9c2-digest' 'FIELD DISAGREES: quickjs_gui_digest'
+
+# --- (c38) CAP-9C2: a browser probe that reached the plugin package store ---
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['cap9c2_gates']) {
+    throw 'selftest cap9c2-browser-arrival: the evidence carries no cap9c2_gates object - the emitters did not record it'
+}
+$e.cap9c2_gates.browser_plugin_store_arrivals = 'no'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9c2-browser-arrival' 'CAP-9C2 GATE NOT GREEN'
+
+# --- (c39) CAP-9C2: plugin source that executed as browser JavaScript -------
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.cap9c2_gates.browser_plugin_script_marker = 'no'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9c2-script-marker' 'browser_plugin_script_marker'
+
+# --- (c40) CAP-9C2: plugin source bytes in a browser or native result -------
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.cap9c2_gates.raw_channel_source_bytes = 'no'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9c2-source-bytes' 'raw_channel_source_bytes'
+
+# --- (c41) CAP-9C2: denied plugin activity that reached the SOA layer -------
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.cap9c2_gates.reporting_soa_count = 'no'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9c2-denied-soa' 'reporting_soa_count'
+
+# --- (c42) CAP-9C2: the UI and the plugins on DIFFERENT runtime objects -----
+# CAP-9's contract is one architecture, not merely equivalent output, so a
+# second scheduler/policy/bridge/server is a failure even if every value
+# still came back 42
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.cap9c2_gates.same_scheduler = 'no'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9c2-same-scheduler' 'same_scheduler'
+
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.cap9c2_gates.same_bridge = 'no'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9c2-same-bridge' 'same_bridge'
+
+# --- (c43) CAP-9C2: a resource-limit failure that took the UI with it -------
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.cap9c2_gates.ui_survived_timeout = 'no'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9c2-ui-timeout' 'ui_survived_timeout'
+
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.cap9c2_gates.neighbour_survived_timeout = 'no'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9c2-neighbour-timeout' 'neighbour_survived_timeout'
+
+# --- (c44) CAP-9C2: a gate that vanished from the record --------------------
+# an ABSENT gate must refuse exactly like a red one: the failure mode this
+# closes is a field quietly renamed in the runner and read as green here
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.cap9c2_gates.PSObject.Properties.Remove('same_server')
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9c2-missing-gate' 'CAP-9C2 MISSING-GATE'
+
+# --- (c45) CAP-9C2: a listening socket in the plugin-enabled application ----
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.cap9c2_listeners = 1
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9c2-listeners' 'CAP-9C2 LISTENERS>0'
+
+# --- (c46) CAP-9C2: a waived reparse-point negative -------------------------
+# the runner records a waiver honestly; this is the leg that proves the
+# aggregator never promotes one
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.cap9c2_negative_reparse = 'waived'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9c2-reparse-waived' 'CAP-9C2 REPARSE NOT PROVEN'
+
+# --- (c47) CAP-9C2: a licence that is not the frozen one --------------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.cap9c2_license_sha256 = ('a' * 64)
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9c2-license' 'CAP-9C2 LICENSE SHA'
+
 # --- (d) divergence sweep must refuse an off-allowlist conditional -----------
 $fixturePas = 'src/zz_cap7f_selftest_fixture.pas'
 Remove-Item -Force -ErrorAction SilentlyContinue $fixturePas
@@ -659,4 +818,4 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Remove-Item -Force -ErrorAction SilentlyContinue $matrix
-Write-Host '[CAP-7F] selftest PASS - 36 aggregator refusals + 2 divergence refusals, all on copies or byte-restored'
+Write-Host '[CAP-7F] selftest PASS - 51 aggregator refusals + 2 divergence refusals, all on copies or byte-restored'

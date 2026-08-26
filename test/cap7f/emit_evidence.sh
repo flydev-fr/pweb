@@ -724,6 +724,103 @@ printf '[CAP-7F] quickjs_release_corpus: %s (browser_store=%s denied_bridge=%s t
 printf '[CAP-7F] cap9c1 package sha256=%s bytes=%s (per-target, reported not compared)\n' \
     "${cap9c1_package_sha}" "${cap9c1_package_bytes}"
 
+# --- CAP-9C2 plugin-enabled GUI corpus + one canonical digest ---------------
+# The shard's whole point is that the SAME architecture answers on all four
+# targets, so unlike the C1 block above there is nothing here that is
+# reported-but-not-compared: every field is a semantic verdict. The one
+# per-machine fact - whether a file symlink could be created for the
+# reparse-point negative - is carried as its own field so the aggregator
+# can refuse a waiver instead of hashing one into the digest.
+case "${target}" in
+    linux-x86_64)
+        cap9c2_release_exe="${repo_root}/dist/linux-x64/quickjs-release/quickjsapp" ;;
+    macos-x86_64)
+        cap9c2_release_exe="${repo_root}/dist/macos-x86_64/PWebQuickJS.app/Contents/MacOS/quickjsapp" ;;
+    macos-arm64)
+        cap9c2_release_exe="${repo_root}/dist/macos-arm64/PWebQuickJS.app/Contents/MacOS/quickjsapp" ;;
+    *) die "CAP-9C2: no release layout is defined for target ${target}" ;;
+esac
+qg_file="${repo_root}/build/cap9c2/quickjsgui-${target}.json"
+[ -f "${qg_file}" ] ||
+    die "quickjsgui-${target}.json missing -- the CAP-9C2 gate has not run in this workspace"
+quickjs_gui_corpus="$(sed -n 's/.*"overall"[[:space:]]*:[[:space:]]*"\([A-Z]*\)".*/\1/p' \
+    "${qg_file}" | head -n 1)"
+case "${quickjs_gui_corpus}" in
+    PASS | FAIL) ;;
+    *) die "quickjsgui-${target}.json carries an unexpected verdict: ${quickjs_gui_corpus}" ;;
+esac
+qg_num() {
+    local v
+    v="$(sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p" \
+        "${qg_file}" | head -n 1)"
+    [ -n "${v}" ] ||
+        die "quickjsgui record carries no '$1' counter -- refusing to default it to 0"
+    printf '%s' "${v}"
+}
+qg_str() {
+    local v
+    v="$(sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+        "${qg_file}" | head -n 1)"
+    printf '%s' "${v}"
+}
+cap9c2_listeners="$(qg_num listeners)"
+cap9c2_reparse="$(qg_str negative_reparse)"
+cap9c2_license="$(qg_str license_quickjs_sha256)"
+
+# The CAP-9C2 semantic gate names, in ONE place - the same list the ps1
+# emitter and the aggregator's negative self-test carry, so a gate cannot
+# be added to the corpus and forgotten by the thing that refuses it. The
+# aggregator's rule is deliberately trivial: EVERY field must read exactly
+# 'yes' on EVERY target.
+cap9c2_gate_fields='ui_rendered ui_add quickjs_add reporting_code
+reporting_soa_count reporting_denied_bridge opener_reached
+same_scheduler same_policy same_bridge same_server
+browser_plugin_store_arrivals quickjs_app_store_arrivals
+browser_plugin_script_marker raw_channel_source_bytes
+quickjs_window_absent quickjs_document_absent
+quickjs_webkit_channel_absent quickjs_webview2_channel_absent
+quickjs_raw_webview_invoke_absent concurrent_overlap
+no_cross_delivery plugin_archive_verified
+plugin_inventory_verified neighbour_survived_timeout
+ui_survived_timeout reload_generation_changed clean_shutdown
+release_layout hostile_running hostile_failed'
+cap9c2_gates_json=''
+for gate in ${cap9c2_gate_fields}; do
+    value="$(qg_str "${gate}")"
+    if [ "${quickjs_gui_corpus}" = 'PASS' ] && [ -z "${value}" ]; then
+        die "quickjsgui record carries no '${gate}' gate -- refusing to default it"
+    fi
+    if [ -n "${cap9c2_gates_json}" ]; then
+        cap9c2_gates_json="${cap9c2_gates_json},"
+    fi
+    cap9c2_gates_json="${cap9c2_gates_json}
+    \"${gate}\": \"${value}\""
+done
+
+qg_corpus_file="${repo_root}/build/cap9c2/quickjs-gui-corpus.txt"
+if [ "${quickjs_gui_corpus}" = 'PASS' ]; then
+    [ -f "${qg_corpus_file}" ] ||
+        die 'quickjs-gui-corpus.txt missing while the gate records PASS'
+    head -n 1 "${qg_corpus_file}" | grep -qx 'schema=1' ||
+        die 'quickjs-gui-corpus.txt carries no schema=1 header'
+    tail -n 1 "${qg_corpus_file}" | grep -qx 'verdict=PASS' ||
+        die 'quickjs-gui-corpus.txt does not end in verdict=PASS while the gate records PASS'
+    # a green corpus with no assembled release would be a gate that proved
+    # nothing shipped
+    [ -x "${cap9c2_release_exe}" ] ||
+        die "the CAP-9C2 release layout is missing its executable while the gate records PASS"
+    quickjs_gui_digest="$(file_sha "${qg_corpus_file}")"
+elif [ -f "${qg_corpus_file}" ]; then
+    tail -n 1 "${qg_corpus_file}" | grep -qx 'verdict=PASS' &&
+        die 'quickjs-gui-corpus.txt ends in verdict=PASS while the gate records FAIL'
+    quickjs_gui_digest="$(file_sha "${qg_corpus_file}")"
+else
+    quickjs_gui_digest='ABSENT'
+fi
+printf '[CAP-7F] quickjs_gui_digest: %s\n' "${quickjs_gui_digest}"
+printf '[CAP-7F] quickjs_gui_corpus: %s (listeners=%s reparse=%s)\n' \
+    "${quickjs_gui_corpus}" "${cap9c2_listeners}" "${cap9c2_reparse}"
+
 # ---------------------------- write the evidence -----------------------------
 # every interpolated free-text value goes through json_escape: the toolchain
 # banner lines especially are nobody's to promise quote-free
@@ -795,6 +892,13 @@ cat > "${work}/evidence.json" <<EOF
   "cap9c1_package_sha256": "${cap9c1_package_sha}",
   "cap9c1_package_bytes": ${cap9c1_package_bytes},
   "cap9c1_registry_sha256": "${cap9c1_registry_sha}",
+  "quickjs_gui_corpus": "${quickjs_gui_corpus}",
+  "quickjs_gui_digest": "${quickjs_gui_digest}",
+  "cap9c2_listeners": ${cap9c2_listeners},
+  "cap9c2_negative_reparse": "${cap9c2_reparse}",
+  "cap9c2_license_sha256": "${cap9c2_license}",
+  "cap9c2_gates": {${cap9c2_gates_json}
+  },
   "release_layout": "${release_layout}",
   "no_listener": "${no_listener}",
   "no_listener_provenance": "${no_listener_prov}",

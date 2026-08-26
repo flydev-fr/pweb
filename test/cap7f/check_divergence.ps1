@@ -1,7 +1,7 @@
 # CAP-7F: platform-divergence sweep over the PRODUCTION surface (src/**,
-# examples/08-release/, tools/bundler/, tools/quickjs/) against an explicit,
-# ratified allowlist. Checkout-only: no build, no toolchain - it runs in the
-# cap7-aggregate job and on any dev host.
+# examples/07-quickjs/, examples/08-release/, tools/bundler/, tools/quickjs/)
+# against an explicit, ratified allowlist. Checkout-only: no build, no
+# toolchain - it runs in the cap7-aggregate job and on any dev host.
 #
 # WHAT COUNTS AS A DIVERGENCE: a compiler conditional whose condition names
 # a platform symbol ({$ifdef DARWIN}, {$IF Defined(WIN64)}, {$ifndef LINUX},
@@ -68,6 +68,13 @@ function Get-PlatformDirectiveMatches([string]$Line) {
 $allow = @{
     'examples/08-release/releaseapp.pas' = @{ directives = 38;  # +6: the CAP-8B guard construction/teardown platform regions
         fingerprint = '8ee3c9085f4af8c3129fd822915f1b6578da94f6d96f6a2f3e9ea5d37fdd572a' }
+    # CAP-9C2: the plugin-enabled acceptance host. Fewer regions than the
+    # CAP-6 release host because it carries no fixed-runtime profile: the
+    # platform alias block, the three pre-create checks, the Cocoa
+    # two-phase handler/guard seam, the .app-relative resolution of
+    # app.pwb and plugins.zip, and the Windows-only atomic-replace window.
+    'examples/07-quickjs/quickjsapp.pas' = @{ directives = 34;
+        fingerprint = '4be277b371a7f178e182ca9743a73d25202083775f017b12997da06b5e538c00' }
     'src/lib/pweb.lib.webview.pas'       = @{ directives = 4;   # LIB_WEBVIEW selection block
         fingerprint = 'cec476fd99b6cc8603a8fe330d52982a4c660ae3ffb0af4ec5658e356bce4496' }
     'src/assets/pweb.assets.folder.pas'  = @{ directives = 10;  # Darwin F_GETPATH / Windows wide-API split
@@ -114,7 +121,8 @@ function Get-RelPath([string]$FullName) {
 # did: a build tool that decides what ships is production surface, and a
 # platform conditional appearing there unremarked is exactly the drift
 # this sweep exists to catch.
-$pascalRoots = @('src', 'examples/08-release', 'tools/bundler', 'tools/quickjs')
+$pascalRoots = @('src', 'examples/07-quickjs', 'examples/08-release',
+    'tools/bundler', 'tools/quickjs')
 $pascalFiles = foreach ($root in $pascalRoots) {
     if (Test-Path $root) {
         Get-ChildItem $root -Recurse -File -Include '*.pas', '*.pp', '*.inc' |
