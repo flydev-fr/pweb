@@ -52,6 +52,15 @@ examples/05-pas2js/frontend/src/**/*.css text eol=lf
 examples/05-pas2js/frontend/src/**/*.js text eol=lf
 examples/05-pas2js/frontend/src/**/*.json text eol=lf
 examples/05-pas2js/frontend/src/**/*.svg text eol=lf
+# CAP-9C2: the plugin-enabled acceptance frontend, for the identical
+# reason - its build cpSync's src/index.html into dist/ verbatim, so a
+# CRLF checkout would make the Windows app.pwb logical inventory diverge
+# from the Linux/macOS one by exactly the carriage returns.
+examples/07-quickjs/frontend/src/**/*.html text eol=lf
+examples/07-quickjs/frontend/src/**/*.css text eol=lf
+examples/07-quickjs/frontend/src/**/*.js text eol=lf
+examples/07-quickjs/frontend/src/**/*.json text eol=lf
+examples/07-quickjs/frontend/src/**/*.svg text eol=lf
 
 # CAP-9C1: the QuickJS plugin sources that ship VERBATIM inside
 # plugins.zip, and the trusted build-time list that names them. The

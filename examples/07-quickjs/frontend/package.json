@@ -1,0 +1,21 @@
+{
+  "name": "pweb-example-quickjs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@pweb/runtime": "file:../../../sdk/typescript",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  }
+}

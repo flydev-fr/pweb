@@ -117,3 +117,4 @@ node_modules/
 /sdk/pas2js/test/pwebsdktests.js
 /examples/04-react/frontend/dist/
 /examples/05-pas2js/frontend/dist/
+/examples/07-quickjs/frontend/dist/

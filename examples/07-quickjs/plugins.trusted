@@ -22,6 +22,17 @@
 # The manifest "id" inside each root must equal its plugin id: the
 # archive sub-tree, the native PluginId and the descriptive manifest id
 # are ONE name.
+#
+# CAP-9C2 extended the two acceptance plugins with the exports the real
+# GUI process needs to PROVE containment rather than assert it: a
+# guarded browser-execution marker in the calculator's leaf module, an
+# `env` sandbox-visibility probe, a `memhog` memory-bound leg, a
+# `runaway` CPU-bound leg and an `alive` handshake for the denied
+# principal. None of that reaches this file: an export is script
+# content, and this list still carries no capability, no resource bound
+# and no way to register a plugin at run time. The exports are callable
+# only through the native acceptance harness - there is no plugin
+# management API in JavaScript and no browser route to an export.
 
 plugin    = quickjs.calculator
 principal = plugin:calculator
