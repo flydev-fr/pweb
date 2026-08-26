@@ -181,6 +181,35 @@ fi
 printf '[CAP-9C1] structural browser invisibility: %s platform/webview/release-host files, zero references to the plugin package\n' \
     "${surface_files}"
 
+# --- 0b. zero network, zero CWD, zero ambient input -------------------------
+# Three of this shard's Never-list items are source facts, and a source
+# sweep is the only place they can be proven for ALL inputs rather than for
+# the inputs a test happened to choose: the release path must fetch nothing
+# over a network, must resolve nothing against the working directory, and
+# must take no descriptor data from argv or the environment. The two
+# PRODUCTION units carry the whole ban; the private packager is a build
+# tool, so it keeps argv and the CWD (that is how it is invoked) but is
+# still banned from every network transport.
+step 'zero-network / zero-ambient source proof'
+net_rx='TRestHttpServer|THttpServer|mormot\.rest\.http|mormot\.net\.(server|client|http)|localhost|127\.0\.0\.1|socket|https?://|wss?://|file://'
+ambient_rx='GetCurrentDir|SetCurrentDir|ParamStr|GetEnvironmentVariable'
+bad=0
+for f in src/script/pweb.script.release.pas src/script/pweb.script.startup.pas \
+         tools/quickjs/pwebqjspack.pas; do
+    if grep -niE "${net_rx}" "${f}"; then
+        printf 'FORBIDDEN CAP-9C1 TRANSPORT in %s\n' "${f}" >&2
+        bad=$((bad + 1))
+    fi
+done
+for f in src/script/pweb.script.release.pas src/script/pweb.script.startup.pas; do
+    if grep -niE "${ambient_rx}" "${f}"; then
+        printf 'FORBIDDEN CAP-9C1 AMBIENT INPUT in %s\n' "${f}" >&2
+        bad=$((bad + 1))
+    fi
+done
+[ "${bad}" -eq 0 ] || die 'zero-network / zero-ambient source proof failed'
+printf '[CAP-9C1] source proof: no network transport, no CWD lookup, no argv or environment input\n'
+
 # --- 1. build the private packager ------------------------------------------
 step 'compile pwebqjspack (the private deterministic packager)'
 packfpc="${work}/pack-fpc"

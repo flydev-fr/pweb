@@ -116,6 +116,36 @@ if ($leaks) {
 }
 Write-Host "[CAP-9C1] structural browser invisibility: $($browserSurface.Count) platform/webview/release-host files, zero references to the plugin package"
 
+# --- 0b. zero network, zero CWD, zero ambient input -------------------------
+# Three of this shard's Never-list items are source facts, and a source
+# sweep is the only place they can be proven for ALL inputs rather than for
+# the inputs a test happened to choose: the release path must fetch nothing
+# over a network, must resolve nothing against the working directory, and
+# must take no descriptor data from argv or the environment. The two
+# PRODUCTION units carry the whole ban; the private packager is a build
+# tool, so it keeps argv and the CWD (that is how it is invoked) but is
+# still banned from every network transport.
+$netRx = 'TRestHttpServer|THttpServer|mormot\.rest\.http|' +
+    'mormot\.net\.(server|client|http)|localhost|127\.0\.0\.1|' +
+    'socket|https?://|wss?://|file://'
+$ambientRx = 'GetCurrentDir|SetCurrentDir|ParamStr|GetEnvironmentVariable'
+$bad = 0
+foreach ($h in @(Select-String -Path 'src/script/pweb.script.release.pas',
+                                     'src/script/pweb.script.startup.pas',
+                                     'tools/quickjs/pwebqjspack.pas' `
+        -Pattern $netRx -CaseSensitive:$false)) {
+    Write-Host "FORBIDDEN CAP-9C1 TRANSPORT: $($h.Path):$($h.LineNumber): $($h.Line.Trim())"
+    $bad++
+}
+foreach ($h in @(Select-String -Path 'src/script/pweb.script.release.pas',
+                                     'src/script/pweb.script.startup.pas' `
+        -Pattern $ambientRx -CaseSensitive:$false)) {
+    Write-Host "FORBIDDEN CAP-9C1 AMBIENT INPUT: $($h.Path):$($h.LineNumber): $($h.Line.Trim())"
+    $bad++
+}
+if ($bad) { throw 'CAP-9C1 zero-network / zero-ambient source proof failed' }
+Write-Host '[CAP-9C1] source proof: no network transport, no CWD lookup, no argv or environment input'
+
 # --- 1. build the private packager (no CAP-3U window needed) ----------------
 New-Item -ItemType Directory -Force build/cap9c1/pack-fpc, build/cap9c1/pack-bin | Out-Null
 fpc -Px86_64 -Twin64 -MObjFPC -Sh -B -Xm `
