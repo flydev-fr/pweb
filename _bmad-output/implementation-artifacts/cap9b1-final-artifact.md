@@ -11,7 +11,7 @@ artifact does not yet carry.
 One existing `IAssetStore` per plugin package — no interface change, no
 enumeration added, no filesystem/archive/platform API anywhere in the
 loader. `TFolderAssetStore` and `TZipAssetStore` (built in memory from the
-same bytes) run the identical corpus: every one of the ~45 corpus rows
+same bytes) run the identical corpus: every one of the ~60 corpus rows
 carries `parity=yes`, and the reference package's outcome digest — module
 list, module hashes, import graph, evaluation result, invocation result,
 loader/normalize counts, sandbox projection — is identical between the two
@@ -154,16 +154,89 @@ windows/linux/macos-x64/macos-arm64; the emitters record
 `quickjs_package_corpus` (must-PASS, never SKIP) and
 `quickjs_package_digest` plus four required counters; the aggregator adds
 them to the required/must-PASS/four-way-equality sets; the committed
-negative selftest grows from 16 to 20 aggregator refusal legs, each proven
+negative selftest grows from 16 to 21 aggregator refusal legs, each proven
 to refuse through its named branch. Local digest at closure:
-`f7208419d54323fb1793709679ee62c3fdafe862374470b52a85cbfc29071c8b`.
+`4b01cf06677ff52fb26c74b031c72282258f26b7c5b44bd44131586c77209c45`,
+byte-identical across three consecutive runs on the dev host — the
+determinism that four-way equality depends on, measured rather than
+assumed.
+
+## Adversarial review
+Three independent context-free review layers ran over the full diff after
+the sixteen-question challenge in the brief had already been answered
+inline. They were worth their cost: they found defects the inline pass
+missed, including one that crashed the process.
+
+**Confirmed and fixed (production):**
+- **A constructor that raises before `inherited Create` crashes.** Both
+  `Create` and `CreatePackage` validated their arguments before
+  constructing the `TThread` base; an escaping exception then runs the
+  destructor over a never-constructed base (measured:
+  `EAccessViolation` at process teardown, reproducible from ANY
+  descriptor rejection). Fixed twice over: `PWebLoadQuickJSPackage` now
+  validates through a new non-raising
+  `PWebValidateQuickJSPackageDescriptor` and never builds a doomed
+  object, and both constructors build the base first (suspended, then
+  `Start`) so a direct caller's raise is safe too. This was latent in
+  the CAP-9A constructor shape as well, and stayed invisible because no
+  test had ever constructed a plugin with bad input.
+- **A data race on the atomic-failure path**: the plugin's refcounted
+  error strings were read before the join, while the plugin thread could
+  still be writing them. The join now comes first.
+- **`Engine.TimeoutSeconds = 0` could wedge startup**: package loading
+  runs plugin code before readiness, so an uninterruptible
+  `while (true) {}` entry made `WaitReady` time out and the failure
+  path's join block forever. Package descriptors now refuse a zero CPU
+  bound — deliberately stricter than the CAP-9A post-script path.
+- **`RawUtf8(PAnsiChar)` in both loader callbacks** — the code-page trap
+  the rest of this change avoids; now `FastSetString`.
+- Size bounds now fire on the RAW asset length before any copy; the
+  unit header's claim was also corrected to say what the frozen
+  `IAssetStore.TryRead` actually permits. `PackageError` goes through
+  the same sanitizer as `PackageDetail` (a blind byte truncation could
+  split UTF-8). Two silent fallbacks in the graph became hard failures.
+  The edge ledger gained its own bound and geometric growth. `{"schema":01}`,
+  a bare `.js` dotfile, an unclamped public manifest call and a scoping
+  prefix with no room for a module path are all refused.
+- **A package that queues a job at top level is now refused**
+  (`plcPendingJobs`) instead of being accepted with a silently dead
+  asynchronous half — nothing drains the QuickJS job queue, and adding
+  a pump is out of scope. A load interrupted by the CPU bound is now
+  diagnosed as `plcTimeout` rather than mis-reported as a compile error.
+
+**Confirmed and fixed (evidence).** The third layer demonstrated each gap
+with a mutation that left the whole matrix green: the schema and SemVer
+checks, the whole `PWebClampPackageLimits` behaviour, `MaxSpecifierBytes`
+and the rejected-descriptor arm could each be deleted with P1–P40 still
+passing. All now have legs, as do `plcEvaluate` (the one failure mode
+where attacker code has already run), the C1-control rule, a doubled BOM
+and a dotfile module. The parsed manifest, the previously-dead
+`LoadTimeInvokes` counter, and `PluginId`/`TrustedContent` as the bridge
+received them are now observed rather than assumed. Engine text can no
+longer reach a corpus line (it would have surfaced a target hiccup as an
+opaque digest mismatch); a fatal exception can no longer ship
+`verdict=PASS` beside `overall=FAIL`; and `source_open_after_failure` and
+`opener_reached` are promoted into the evidence so the aggregate can
+cross-check them. The selftest gained the non-numeric leg its own comment
+had claimed.
+
+**Deferred** (ledgered, not this shard's): O(n²) graph lookup at the 4096
+hard cap, a carrier-side materialisation bound, whether module source
+should have its own UTF-8 validator permitting C1, and the same
+`-match`/`mktemp` weaknesses in CAP-9A's runners.
+
+**Rejected:** reusing `pecRuntimeClosed` for the load-time refusal (the
+brief ratified it, and the nine-code taxonomy is frozen), and fixtures
+for `plcThread`/`plcEngine` (unreachable without fault injection).
 
 ## Regressions
 CAP-9A re-run green with `quickjs_corpus_digest`
 `601b86ffd24d5642174758120d58d240da6e5cc0d4e0cc3a40b3ec0847e7909f`
 **byte-identical** to its closure value — the strongest available proof
-that the CAP-9A engine/thread/scheduler path is unchanged. CAP-8C
-`security_corpus_digest c5fc378b…` likewise unchanged. `pwebtests`
+that the CAP-9A engine/thread/scheduler path is unchanged. The CAP-8C
+multi-principal gate re-run green with `security_corpus_digest`
+`c5fc378bc3c6eb6aa6db753e35287db5cb7ed6332aeac77b75767919e5adbdf4`,
+likewise unchanged from the CAP-8 closure. `pwebtests`
 2419/2419 assertions pass after the `pweb.assets.support` change. The
 divergence sweep reports 68 platform conditionals inside the unchanged
 allowlist — both new units carry no platform `{$ifdef}` at all. The CAP-9A
