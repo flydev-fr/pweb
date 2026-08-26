@@ -577,6 +577,63 @@ printf '[CAP-7F] quickjs_package_corpus: %s (loadtime_bridge=%s loader_wrong_thr
     "${quickjs_package_corpus}" "${cap9b1_loadtime_bridge}" \
     "${cap9b1_loader_wrong_thread}" "${cap9b1_store_wrong_thread}"
 
+# --- CAP-9B2 QuickJS lifecycle/reload corpus + one canonical digest ---------
+# Identical honesty shape to the two blocks above: verdict recorded
+# VERBATIM (the harness is headless and never SKIPs), required counters
+# that DIE rather than default to 0, and the digest as the sha256 of
+# build/cap9b2/quickjs-lifecycle-corpus.txt - identical on all four
+# targets because every fixture is generated in-process and every
+# cross-thread ordering is a rendezvous rather than a delay.
+ql_file="${repo_root}/build/cap9b2/quickjslifecycle-${target}.json"
+[ -f "${ql_file}" ] ||
+    die "quickjslifecycle-${target}.json missing -- the CAP-9B2 gate has not run in this workspace"
+quickjs_lifecycle_corpus="$(sed -n 's/.*"overall"[[:space:]]*:[[:space:]]*"\([A-Z]*\)".*/\1/p' \
+    "${ql_file}" | head -n 1)"
+case "${quickjs_lifecycle_corpus}" in
+    PASS | FAIL) ;;
+    *) die "quickjslifecycle-${target}.json carries an unexpected verdict: ${quickjs_lifecycle_corpus}" ;;
+esac
+ql_num() {
+    local v
+    v="$(sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p" \
+        "${ql_file}" | head -n 1)"
+    [ -n "${v}" ] ||
+        die "quickjslifecycle record carries no '$1' counter -- refusing to default it to 0"
+    printf '%s' "${v}"
+}
+cap9b2_two_active="$(ql_num two_active_generations)"
+cap9b2_stale="$(ql_num stale_completion)"
+cap9b2_reload_lost_old="$(ql_num reload_lost_old)"
+cap9b2_export_wrong_thread="$(ql_num export_wrong_thread)"
+cap9b2_quarantine_unexpected="$(ql_num quarantine_unexpected)"
+# EXACTLY 1: the deliberately injected last-resort row. Zero would mean
+# the quarantine path was never exercised at all.
+cap9b2_quarantine_injected="$(ql_num quarantine_injected)"
+cap9b2_denied_bridge="$(ql_num denied_bridge_add)"
+cap9b2_opener_reached="$(ql_num opener_reached)"
+
+ql_corpus_file="${repo_root}/build/cap9b2/quickjs-lifecycle-corpus.txt"
+if [ "${quickjs_lifecycle_corpus}" = 'PASS' ]; then
+    [ -f "${ql_corpus_file}" ] ||
+        die 'quickjs-lifecycle-corpus.txt missing while the harness records PASS'
+    head -n 1 "${ql_corpus_file}" | grep -qx 'schema=1' ||
+        die 'quickjs-lifecycle-corpus.txt carries no schema=1 header'
+    tail -n 1 "${ql_corpus_file}" | grep -qx 'verdict=PASS' ||
+        die 'quickjs-lifecycle-corpus.txt does not end in verdict=PASS while the harness records PASS'
+    quickjs_lifecycle_digest="$(file_sha "${ql_corpus_file}")"
+elif [ -f "${ql_corpus_file}" ]; then
+    tail -n 1 "${ql_corpus_file}" | grep -qx 'verdict=PASS' &&
+        die 'quickjs-lifecycle-corpus.txt ends in verdict=PASS while the harness records FAIL'
+    quickjs_lifecycle_digest="$(file_sha "${ql_corpus_file}")"
+else
+    quickjs_lifecycle_digest='ABSENT'
+fi
+printf '[CAP-7F] quickjs_lifecycle_digest: %s\n' "${quickjs_lifecycle_digest}"
+printf '[CAP-7F] quickjs_lifecycle_corpus: %s (two_active=%s stale=%s reload_lost_old=%s quarantine=%s/%s)\n' \
+    "${quickjs_lifecycle_corpus}" "${cap9b2_two_active}" "${cap9b2_stale}" \
+    "${cap9b2_reload_lost_old}" "${cap9b2_quarantine_injected}" \
+    "${cap9b2_quarantine_unexpected}"
+
 # ---------------------------- write the evidence -----------------------------
 # every interpolated free-text value goes through json_escape: the toolchain
 # banner lines especially are nobody's to promise quote-free
@@ -627,6 +684,16 @@ cat > "${work}/evidence.json" <<EOF
   "cap9b1_denied_bridge": ${cap9b1_denied_bridge},
   "cap9b1_source_open_after_failure": ${cap9b1_source_open},
   "cap9b1_opener_reached": ${cap9b1_opener_reached},
+  "quickjs_lifecycle_corpus": "${quickjs_lifecycle_corpus}",
+  "quickjs_lifecycle_digest": "${quickjs_lifecycle_digest}",
+  "cap9b2_two_active_generations": ${cap9b2_two_active},
+  "cap9b2_stale_completion": ${cap9b2_stale},
+  "cap9b2_reload_lost_old": ${cap9b2_reload_lost_old},
+  "cap9b2_export_wrong_thread": ${cap9b2_export_wrong_thread},
+  "cap9b2_quarantine_injected": ${cap9b2_quarantine_injected},
+  "cap9b2_quarantine_unexpected": ${cap9b2_quarantine_unexpected},
+  "cap9b2_denied_bridge": ${cap9b2_denied_bridge},
+  "cap9b2_opener_reached": ${cap9b2_opener_reached},
   "release_layout": "${release_layout}",
   "no_listener": "${no_listener}",
   "no_listener_provenance": "${no_listener_prov}",

@@ -486,6 +486,70 @@ if ($quickjsPackageCorpus -ceq 'PASS') {
 Write-Host "[CAP-7F] quickjs_package_digest: $quickjsPackageDigest"
 Write-Host "[CAP-7F] quickjs_package_corpus: $quickjsPackageCorpus (loadtime_bridge=$cap9b1LoadTimeBridge loader_wrong_thread=$cap9b1LoaderWrongThread store_wrong_thread=$cap9b1StoreWrongThread)"
 
+# --- CAP-9B2 QuickJS lifecycle/reload corpus + one canonical digest ---------
+# Identical honesty shape to the two blocks above: the harness is fully
+# headless and never SKIPs, the counters are REQUIRED (an absent property
+# throws rather than coercing to a fail-open 0), and the digest is the
+# sha256 of build/cap9b2/quickjs-lifecycle-corpus.txt, which is identical
+# on all four targets by construction - every fixture is generated
+# in-process from byte constants, and every cross-thread ordering in the
+# matrix is a rendezvous rather than a delay, so no line depends on how
+# fast a particular runner happens to be.
+$qlFile = Join-Path $repoRoot 'build/cap9b2/quickjslifecycle-windows-x86_64.json'
+if (-not (Test-Path $qlFile)) {
+    throw '[CAP-7F] quickjslifecycle-windows-x86_64.json missing -- the CAP-9B2 gate has not run in this workspace'
+}
+$ql = Get-Content $qlFile -Raw | ConvertFrom-Json
+if ($ql.schema -ne 1) { throw '[CAP-7F] quickjslifecycle json schema mismatch' }
+$quickjsLifecycleCorpus = "$($ql.overall)"
+if ($quickjsLifecycleCorpus -notin @('PASS', 'FAIL')) {
+    throw "[CAP-7F] quickjslifecycle json carries an unexpected verdict: $quickjsLifecycleCorpus"
+}
+# the six invariants the AGGREGATE re-refuses on its own, rather than
+# trusting the harness's single verdict line
+$cap9b2TwoActive = Read-MpCounter $ql 'two_active_generations'
+$cap9b2Stale = Read-MpCounter $ql 'stale_completion'
+$cap9b2ReloadLostOld = Read-MpCounter $ql 'reload_lost_old'
+$cap9b2ExportWrongThread = Read-MpCounter $ql 'export_wrong_thread'
+$cap9b2QuarantineUnexpected = Read-MpCounter $ql 'quarantine_unexpected'
+# EXACTLY 1: the deliberately injected last-resort row. Zero would mean
+# the quarantine path was never exercised at all, which is just as wrong
+# as a spurious quarantine.
+$cap9b2QuarantineInjected = Read-MpCounter $ql 'quarantine_injected'
+$cap9b2DeniedBridge = Read-MpCounter $ql 'denied_bridge_add'
+$cap9b2OpenerReached = Read-MpCounter $ql 'opener_reached'
+
+$qlCorpusFile = Join-Path $repoRoot 'build/cap9b2/quickjs-lifecycle-corpus.txt'
+if ($quickjsLifecycleCorpus -ceq 'PASS') {
+    if (-not (Test-Path $qlCorpusFile)) {
+        throw '[CAP-7F] quickjs-lifecycle-corpus.txt missing while the harness records PASS'
+    }
+    $qlRows = @(Get-Content $qlCorpusFile)
+    if ($qlRows.Count -lt 2) {
+        throw "[CAP-7F] quickjs-lifecycle-corpus.txt is empty or truncated ($($qlRows.Count) line(s))"
+    }
+    if ($qlRows[0] -cne 'schema=1') {
+        throw '[CAP-7F] quickjs-lifecycle-corpus.txt carries no schema=1 header'
+    }
+    if ($qlRows[-1] -cne 'verdict=PASS') {
+        throw '[CAP-7F] quickjs-lifecycle-corpus.txt does not end in verdict=PASS while the harness records PASS'
+    }
+    $quickjsLifecycleDigest = (Get-FileHash $qlCorpusFile -Algorithm SHA256).Hash.ToLowerInvariant()
+} elseif (Test-Path $qlCorpusFile) {
+    # the FAIL direction matters too: a corpus still carrying verdict=PASS
+    # beside a FAIL record is a disagreement that would otherwise be
+    # hashed into the digest and sail through
+    $qlRows = @(Get-Content $qlCorpusFile)
+    if ($qlRows.Count -gt 0 -and $qlRows[-1] -ceq 'verdict=PASS') {
+        throw '[CAP-7F] quickjs-lifecycle-corpus.txt ends in verdict=PASS while the harness records FAIL'
+    }
+    $quickjsLifecycleDigest = (Get-FileHash $qlCorpusFile -Algorithm SHA256).Hash.ToLowerInvariant()
+} else {
+    $quickjsLifecycleDigest = 'ABSENT'
+}
+Write-Host "[CAP-7F] quickjs_lifecycle_digest: $quickjsLifecycleDigest"
+Write-Host "[CAP-7F] quickjs_lifecycle_corpus: $quickjsLifecycleCorpus (two_active=$cap9b2TwoActive stale=$cap9b2Stale reload_lost_old=$cap9b2ReloadLostOld quarantine=$cap9b2QuarantineInjected/$cap9b2QuarantineUnexpected)"
+
 # --- run identity -----------------------------------------------------------
 $sha = $env:GITHUB_SHA
 if (-not $sha) { $sha = (& git rev-parse HEAD).Trim() }
@@ -531,6 +595,16 @@ $evidence = [ordered]@{
     cap9b1_denied_bridge            = $cap9b1DeniedBridge
     cap9b1_source_open_after_failure = $cap9b1SourceOpen
     cap9b1_opener_reached           = $cap9b1OpenerReached
+    quickjs_lifecycle_corpus        = $quickjsLifecycleCorpus
+    quickjs_lifecycle_digest        = $quickjsLifecycleDigest
+    cap9b2_two_active_generations   = $cap9b2TwoActive
+    cap9b2_stale_completion         = $cap9b2Stale
+    cap9b2_reload_lost_old          = $cap9b2ReloadLostOld
+    cap9b2_export_wrong_thread      = $cap9b2ExportWrongThread
+    cap9b2_quarantine_injected      = $cap9b2QuarantineInjected
+    cap9b2_quarantine_unexpected    = $cap9b2QuarantineUnexpected
+    cap9b2_denied_bridge            = $cap9b2DeniedBridge
+    cap9b2_opener_reached           = $cap9b2OpenerReached
     release_layout                  = $releaseLayout
     no_listener                     = $noListener
     no_listener_provenance          = 'source-sweep re-executed (check_cap6_nonetwork.ps1); CAP-5/CAP-6 job gates precede this emitter'

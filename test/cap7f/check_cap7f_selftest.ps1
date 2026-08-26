@@ -24,7 +24,15 @@
 #   (c17) cap9b1_loadtime_bridge=1 with a PASS corpus -> defense-in-depth refusal
 #   (c18) cap9b1_loader_wrong_thread=1 with a PASS corpus -> same refusal
 #   (c19) a non-numeric CAP-9B1 counter -> NON-NUMERIC refusal
-#   (c8-c19 additionally assert the refusal came through the EXPECTED branch
+#   (c20) quickjs_lifecycle_corpus (CAP-9B2) rewritten to FAIL -> mustPass refusal
+#   (c21) quickjs_lifecycle_digest diverging on one target -> same refusal
+#   (c22) cap9b2_two_active_generations=1 with a PASS corpus -> defense-in-depth
+#   (c23) cap9b2_reload_lost_old=1 with a PASS corpus -> same refusal
+#   (c24) cap9b2_quarantine_unexpected=1 with a PASS corpus -> same refusal
+#   (c25) cap9b2_quarantine_injected=0 with a PASS corpus -> the OTHER direction:
+#         an unexercised last-resort path is refused too
+#   (c26) a non-numeric CAP-9B2 counter -> NON-NUMERIC refusal
+#   (c8-c26 additionally assert the refusal came through the EXPECTED branch
 #    where one is named)
 #   (e) a count-preserving directive swap in an allowlisted file
 #                                          -> divergence sweep refuses via the
@@ -376,6 +384,107 @@ $e.cap9b1_store_wrong_thread = 'n/a'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap9b1-non-numeric' 'CAP-9B1 NON-NUMERIC'
 
+# --- (c20) CAP-9B2: quickjs_lifecycle_corpus rewritten to FAIL ---------------
+# the CAP-9B2 mustPass field gets its own refusal proof: a lifecycle verdict
+# downgraded to FAIL must never aggregate as if bounded unload, transactional
+# reload and generation isolation were proven ('FAIL', not 'SKIP': the
+# harness is fully headless and never SKIPs).
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['quickjs_lifecycle_corpus']) {
+    throw 'selftest quickjs-lifecycle-fail: the evidence carries no quickjs_lifecycle_corpus field - the emitters did not record it'
+}
+$e.quickjs_lifecycle_corpus = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'quickjs-lifecycle-fail' 'REQUIRED-PASS'
+
+# --- (c21) CAP-9B2: quickjs_lifecycle_digest diverging on ONE target ---------
+# cross-target digest EQUALITY of the lifecycle corpus gets its own refusal
+# proof: a divergence means one target took a different lifecycle decision -
+# a different unload outcome, a different reload verdict, a different
+# generation sequence - which is precisely the platform-specific lifecycle
+# semantics this shard forbids.
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['quickjs_lifecycle_digest']) {
+    throw 'selftest quickjs-lifecycle-divergence: the evidence carries no quickjs_lifecycle_digest field - the emitters did not record it'
+}
+$e.quickjs_lifecycle_digest = '0' * 64
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'quickjs-lifecycle-divergence'
+
+# --- (c22) CAP-9B2: two generations accepting invocations -------------------
+# the single most important lifecycle invariant, and the one a reader cannot
+# recover from the corpus text alone.
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['cap9b2_two_active_generations']) {
+    throw 'selftest cap9b2-two-active: the evidence carries no cap9b2_two_active_generations field - the emitters did not record it'
+}
+$e.cap9b2_two_active_generations = 1
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9b2-two-active' 'CAP9B2_TWO_ACTIVE_GENERATIONS'
+
+# --- (c23) CAP-9B2: a failed staging that lost the old generation ------------
+# the transactional guarantee itself: a reload that fails must leave the old
+# generation Running and unchanged, so this counter is the one a regression
+# in the staging path would move first.
+# The seven CAP-9B2 zero-counters share ONE loop body in the aggregator, so
+# c22/c23/c24 drive its >0 arm and c26 drives the [int]::TryParse arm; c25
+# covers the SEPARATE exactly-one check that sits beside the loop. The
+# harness gates on all of them before any can reach the evidence.
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['cap9b2_reload_lost_old']) {
+    throw 'selftest cap9b2-reload-lost-old: the evidence carries no cap9b2_reload_lost_old field - the emitters did not record it'
+}
+$e.cap9b2_reload_lost_old = 1
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9b2-reload-lost-old' 'CAP9B2_RELOAD_LOST_OLD'
+
+# --- (c24) CAP-9B2: a routine unload that needed the quarantine path ---------
+# quarantine is the last resort. A run in which an ORDINARY unload had to
+# leak a generation is a run whose bounded-shutdown budget no longer holds,
+# even though every other verdict would still read PASS.
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['cap9b2_quarantine_unexpected']) {
+    throw 'selftest cap9b2-quarantine-unexpected: the evidence carries no cap9b2_quarantine_unexpected field - the emitters did not record it'
+}
+$e.cap9b2_quarantine_unexpected = 1
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9b2-quarantine-unexpected' 'CAP9B2_QUARANTINE_UNEXPECTED'
+
+# --- (c25) CAP-9B2: the last-resort path never exercised ---------------------
+# the OTHER direction, which no zero-counter can express: an injected
+# quarantine count of 0 means the unjoinable-thread path was never taken, so
+# "no quarantine failures" would be a statement about a path nothing ran.
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['cap9b2_quarantine_injected']) {
+    throw 'selftest cap9b2-quarantine-missing: the evidence carries no cap9b2_quarantine_injected field - the emitters did not record it'
+}
+$e.cap9b2_quarantine_injected = 0
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9b2-quarantine-missing' 'QUARANTINE-INJECTED'
+
+# --- (c26) CAP-9B2: a counter that is not a number ---------------------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['cap9b2_export_wrong_thread']) {
+    throw 'selftest cap9b2-non-numeric: the evidence carries no cap9b2_export_wrong_thread field - the emitters did not record it'
+}
+$e.cap9b2_export_wrong_thread = 'n/a'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9b2-non-numeric' 'CAP-9B2 NON-NUMERIC'
+
 # --- (d) divergence sweep must refuse an off-allowlist conditional -----------
 $fixturePas = 'src/zz_cap7f_selftest_fixture.pas'
 Remove-Item -Force -ErrorAction SilentlyContinue $fixturePas
@@ -431,4 +540,4 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Remove-Item -Force -ErrorAction SilentlyContinue $matrix
-Write-Host '[CAP-7F] selftest PASS - 21 aggregator refusals + 2 divergence refusals, all on copies or byte-restored'
+Write-Host '[CAP-7F] selftest PASS - 28 aggregator refusals + 2 divergence refusals, all on copies or byte-restored'
