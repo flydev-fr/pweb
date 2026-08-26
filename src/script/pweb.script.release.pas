@@ -1595,6 +1595,13 @@ end;
     no check/open window to race; a short read is a refusal, never a
     truncated buffer. }
 {$ifdef WINDOWS}
+const
+  { Declared here rather than assumed from the RTL: the FPC Windows unit
+    of the pinned toolchain does not export it, and a security flag that
+    silently resolves to something else would be worse than none. Value
+    from the Win32 SDK (winbase.h). }
+  PWEB_FILE_FLAG_OPEN_REPARSE_POINT = $00200000;
+
 function ReadAndHashOnce(const AFileName: TFileName; AMaxBytes: Int64;
   out AData: RawByteString; out ASha256: RawUtf8;
   out ACode: TPWebReleaseCode; out ADetail: RawUtf8): Boolean;
@@ -1610,8 +1617,20 @@ var
 begin
   Result := False;
   wide := Utf8ToSynUnicode(StringToUtf8(AFileName));
+  { FILE_FLAG_OPEN_REPARSE_POINT is what makes the attribute test below
+    REACHABLE, and its absence is the defect CAP-9C2 found by driving a
+    real symlinked plugins.zip through a real release layout on the
+    hosted Windows runner: without the flag CreateFileW FOLLOWS the link
+    and hands back a handle to the TARGET, whose attributes of course
+    carry no FILE_ATTRIBUTE_REPARSE_POINT - so the check could never
+    fire and the archive was read through the indirection it exists to
+    refuse. With the flag the handle refers to the reparse point itself
+    and the test refuses it; on an ordinary file the flag is a no-op, so
+    the ONE-handle / no-second-read / no-TOCTOU property is unchanged.
+    (POSIX already had this right through O_NOFOLLOW.) }
   h := CreateFileW(PWideChar(wide), GENERIC_READ, FILE_SHARE_READ, nil,
-    OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, 0);
+    OPEN_EXISTING,
+    FILE_FLAG_SEQUENTIAL_SCAN or PWEB_FILE_FLAG_OPEN_REPARSE_POINT, 0);
   if h = INVALID_HANDLE_VALUE then
   begin
     if GetLastError = ERROR_FILE_NOT_FOUND then
