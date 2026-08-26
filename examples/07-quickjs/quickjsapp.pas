@@ -1147,21 +1147,33 @@ begin
       readiness race from every UI round after it: a first eval issued
       before the document is ready can be delivered late, which would
       turn the concurrency barrier below into a timing accident. }
+    { Bounded by the CLOCK, never by an attempt count. Each probe returns
+      as soon as its own report lands - typically in milliseconds - so
+      "sixty attempts" collapses to about three seconds, which is long
+      enough for React to mount on a fast developer machine and not on a
+      hosted runner. MEASURED exactly that way: every other row on the
+      hosted Windows job was green and this one alone was red, because
+      the loop had spent its sixty tries before the tree existed. It is
+      the same defect the service barrier had - an iteration count is not
+      a timeout - and it is why both are now written against a tick. }
     rendered := False;
-    for i := 1 to 60 do
+    waitedFor := GetTickCount64;
+    while (not rendered) and
+          (Int64(GetTickCount64) - waitedFor < REPORT_WAIT_MS) do
     begin
       if RunUiRound('render', RENDER_PROBE_JS, uiJson, 2000) and
          JsonHas(uiJson, '"tag":"render"') then
-      begin
         { BOTH acceptance elements must exist. An empty <div id="root">
           still yields a non-empty document, so "the body has bytes" is
           not evidence that the component tree mounted - it was the
           false positive that hid a two-React-instance bundle. }
         rendered := (not JsonHas(uiJson, '"result":"<none>"')) and
                     (not JsonHas(uiJson, '"probe":"<none>"'));
-        if rendered then
-          break;
-      end;
+      if not rendered then
+        { a POLL INTERVAL, not evidence: GateThreadDone is set once, at
+          the very end of this gate, so waiting on it here is simply a
+          bounded pause that no signal can shorten }
+        RTLEventWaitFor(GateThreadDone, 250);
     end;
     Require('ui_rendered', rendered, 'page=' + uiJson);
 
