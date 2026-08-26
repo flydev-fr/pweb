@@ -234,9 +234,10 @@ confirmed and fixed:
   snapshot never listed, so the host answered `no_export` for something
   plainly there. The snapshot is now the table's own-property set.
 - **An embedded NUL in an export name aliased another export.**
-  `JS_AtomToCString` truncates at the NUL, so `add x` collapsed to
-  `add` and would have resolved a real export's spelling. The snapshot now
-  reads through the atom's string and compares its true byte length.
+  `JS_AtomToCString` truncates at the NUL, so a name spelled
+  `add` + U+0000 + `x` collapsed to `add` and would have resolved a real
+  export's spelling. The snapshot now reads through the atom's string and
+  compares its true byte length.
 - **A registered-but-closed source produced a silently dead generation.**
   `RegisterSource` returns a `pssClosed` source once the scheduler is
   shutting down (frozen, fail-closed by design); a generation published
