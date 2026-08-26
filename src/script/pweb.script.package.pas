@@ -90,7 +90,12 @@ type
     plcTimeout,                 // the CPU bound interrupted the load
     plcPendingJobs,             // top-level code queued work nothing drains
     plcEngine,                  // engine creation / bootstrap failure
-    plcThread);                 // a callback ran off the owning thread
+    plcThread,                  // a callback ran off the owning thread
+    // CAP-9B2 export-surface refusals, appended so no existing ordinal
+    // moves. Both fire at the load commit point, after the graph has
+    // evaluated cleanly and before the package is ever Running.
+    plcExportName,              // an export name fails PWebExportNameValid
+    plcExportCount);            // more than PWEB_EXPORT_MAX_COUNT exports
 
   { Per-package deterministic bounds, enforced BEFORE anything is
     compiled: charging a whole graph into the engine and hoping the
@@ -147,6 +152,21 @@ const
   /// bound on the entry / any module logical path, in bytes
   PWEB_PACKAGE_ENTRY_MAX_BYTES = 256;
 
+  { CAP-9B2 host-to-plugin export call. The name of the ONE native
+    export table a package fills during load; it is created natively
+    with a null prototype, sealed when the package is accepted and then
+    deleted from the global object, so nothing a plugin adds afterwards
+    can become an export (see pweb.script.quickjs). }
+  PWEB_EXPORT_TABLE: RawUtf8 = 'pwebExports';
+  /// bound on an export name, in bytes
+  PWEB_EXPORT_NAME_MAX_BYTES = 64;
+  /// bound on the single JSON argument handed to an export, in bytes
+  PWEB_EXPORT_ARG_MAX_BYTES = 64 shl 10;      // 64 KiB
+  /// bound on the JSON result an export may return, in bytes
+  PWEB_EXPORT_RESULT_MAX_BYTES = 1 shl 20;    // 1 MiB
+  /// how many exports one generation may publish
+  PWEB_EXPORT_MAX_COUNT = 256;
+
   PWEB_PACKAGE_LOAD_TEXT: array[TPWebPackageLoadCode] of RawUtf8 = (
     'ok',
     'descriptor',
@@ -175,7 +195,9 @@ const
     'timeout',
     'pending_jobs',
     'engine',
-    'thread');
+    'thread',
+    'export_name',
+    'export_count');
 
   { Ratified defaults (CAP-9B1 spec). Hosts may lower them; the HARD
     maxima below can never be exceeded, so a mis-set descriptor cannot
@@ -305,6 +327,18 @@ function PWebPackageVersionValid(const AVersion: RawUtf8): Boolean;
 // explicit '.js' or '.mjs' extension and a length bound
 // - no implicit index.js, no extension probing, no directory form
 function PWebPackageEntryValid(const AEntry: RawUtf8): Boolean;
+
+/// CAP-9B2 export-name grammar: [A-Za-z_][A-Za-z0-9_]* , ASCII,
+// 1..64 bytes, exact case
+// - deliberately SMALLER than "any JavaScript property name": no dot, so
+// no property-path traversal; no '$'; no digit first; no Unicode, no
+// normalization and no case folding, so a name either matches an export
+// the plugin registered byte-for-byte or it does not exist
+// - the grammar is a second line of defence only. The export table is
+// created with a NULL prototype and sealed before any host call, so
+// Object.prototype members were already unreachable; measured, because
+// a plain {} table makes CallExport('toString') silently succeed
+function PWebExportNameValid(const AName: RawUtf8): Boolean;
 
 /// strict plugin.json scanner - see the unit header for why this is not
 // a general JSON parser
@@ -504,6 +538,32 @@ begin
   Result := (Length(AEntry) <= PWEB_PACKAGE_ENTRY_MAX_BYTES) and
             PWebAssetPathValid(AEntry) and
             HasModuleExtension(AEntry);
+end;
+
+function PWebExportNameValid(const AName: RawUtf8): Boolean;
+var
+  i, len: PtrInt;
+  c: AnsiChar;
+begin
+  Result := False;
+  len := Length(AName);
+  if (len = 0) or
+     (len > PWEB_EXPORT_NAME_MAX_BYTES) then
+    exit;
+  for i := 1 to len do
+  begin
+    c := AName[i];
+    if ((c >= 'a') and (c <= 'z')) or
+       ((c >= 'A') and (c <= 'Z')) or
+       (c = '_') then
+      continue;
+    // a digit is legal, but never first: '0' as an export name would be
+    // an array index on the table, which is a different lookup shape
+    if ((c >= '0') and (c <= '9')) and (i > 1) then
+      continue;
+    exit;
+  end;
+  Result := True;
 end;
 
 { ---------------- module specifier resolution ---------------- }

@@ -51,6 +51,38 @@
     ON ITS OWNING THREAD in Execute's epilogue. A late worker completion
     dies at the frozen exactly-once gate and never touches the engine.
 
+  CAP-9B2 adds, around that unchanged shape:
+  - ONE GENERATION PER INSTANCE. This class is now explicitly a single
+    plugin generation - thread + engine + context + module cache + graph
+    + source + export surface. It never reloads itself and never owns a
+    second engine. pweb.script.plugin owns generations; nothing here
+    knows that a previous or next generation exists.
+  - THE EXPORT SURFACE. A native, NULL-PROTOTYPE table is defined as
+    globalThis.pwebExports before the entry module compiles; package
+    modules register callables on it during load. At the load commit
+    point native code re-imposes the null prototype, makes the object
+    non-extensible, snapshots the names and deletes the global. There is
+    NO way to reach a module's ES named exports in this pin
+    (js_get_module_ns is static in quickjs.c and quickjs.h exports only
+    JS_GetModuleName), and the one route that does work - a synthetic
+    `import * as ns` module - costs an extra normalize call and a graph
+    edge, which would move the FROZEN CAP-9B1 corpus digest. Measured,
+    ratified at Checkpoint 1.
+  - CallExport: one exact export name, one JSON argument, one JSON
+    result, executed only on the owning thread through the same
+    single-slot mailbox. A concurrent second call is refused with
+    peccBusy, synchronously and without blocking - the same shape as the
+    frozen TryEnqueue/perBusy rule, and the reason a lifecycle lock
+    never waits on a QuickJS call.
+  - FAIL-CLOSED ASYNC. After every export call JS_IsJobPending is
+    checked and a thenable result is refused: nothing drains the job
+    queue, so a queued microtask would never run and the call would only
+    LOOK complete. Both taint the generation.
+  - BOUNDED TEARDOWN. Unload's join is bounded by FExited (set as the
+    thread's very last act). On timeout the generation is QUARANTINED:
+    nothing it may still touch is freed and the instance is leaked by
+    choice. No thread is ever forcibly terminated.
+
   Darwin note: mormot.defines.inc auto-defines LIBQUICKJSSTATIC only for
   FPC Linux-Intel and Windows-Intel, and mormot.lib.quickjs's static
   {$L} table has no OSDARWIN clause. Both macOS targets therefore build
@@ -97,6 +129,39 @@ type
     qlsLoading,
     qlsRunning,
     qlsFailed);
+
+  { CAP-9B2 outcome of ONE host-to-plugin export call. Deliberately NOT
+    the nine-code RPC taxonomy (wire-semantics.md): an export call is a
+    private native lifecycle operation, not an invocation, and nothing
+    here ever reaches the wire.
+
+    Which codes TAINT the generation (the host closes it, bounded, and
+    never lets it serve again) is stated beside each one: a contained
+    plugin exception leaves a valid engine, a broken asynchronous
+    contract or a blown resource bound does not. }
+  TPWebExportCallCode = (
+    peccOk,
+    peccUnavailable,    // not Running / closing / already tainted
+    peccBusy,           // another export call is in flight on this generation
+    peccBadName,        // the name fails PWebExportNameValid
+    peccNoExport,       // no such export in the sealed native snapshot
+    peccNotCallable,    // the export exists but is not a function
+    peccBadArgs,        // the argument is not valid JSON, or oversized
+    peccThrew,          // ordinary contained plugin exception - NO taint
+    peccBadResult,      // not JSON-serializable, circular, or oversized
+    peccAsyncResult,    // a Promise/thenable came back        - TAINTS
+    peccPendingJobs,    // the call left queued jobs            - TAINTS
+    peccResourceLimit,  // CPU / stack / memory bound fired     - TAINTS
+    peccInternal);      // engine or marshalling failure        - TAINTS
+
+  { CAP-9B2 outcome of a bounded plugin teardown. puoQuarantined means
+    the owning thread could NOT be joined inside the ratified budget:
+    nothing the thread might still touch has been freed, and the caller
+    must leak the plugin by choice rather than produce a use-after-free
+    (see TPWebQuickJSPlugin.Unload). }
+  TPWebUnloadOutcome = (
+    puoClean,
+    puoQuarantined);
 
   { Per-engine resource bounds, applied on the plugin thread right after
     engine creation. Zero disables the corresponding limit. }
@@ -151,6 +216,9 @@ type
     FWork: PRTLEvent;
     FDone: PRTLEvent;
     FReady: PRTLEvent;
+    FExited: PRTLEvent;                    // CAP-9B2: set LAST in Execute
+    FExitedFlag: LongInt;                  // 1 once the thread body is over
+    FJobKind: LongInt;                     // PWEB_JOB_SCRIPT | PWEB_JOB_EXPORT
     FScript: RawUtf8;
     FScriptTimeoutSec: Cardinal;
     FResultJson: RawUtf8;
@@ -182,6 +250,20 @@ type
     FLoaderCalls: LongInt;
     FLoaderWrongThread: LongInt;           // MUST stay 0
     FLoadTimeInvokes: LongInt;             // pweb.invoke refused while Loading
+    // ---- CAP-9B2 export surface / lifecycle (owning thread only) ----
+    FExportTable: JSValue;                 // owned reference, freed on the thread
+    FHasExportTable: Boolean;
+    FExportNames: TRawUtf8DynArray;        // the sealed native snapshot
+    FExportWrongThread: LongInt;           // MUST stay 0
+    FTainted: LongInt;                     // 1 once the generation is unusable
+    FGenerationId: Int64;                  // host lifecycle metadata only
+    FUnloadOutcome: TPWebUnloadOutcome;
+    // export-call mailbox slot (single producer = the host)
+    FExportName: RawUtf8;
+    FExportArg: TPWebJson;
+    FExportCode: TPWebExportCallCode;
+    FExportJson: TPWebJson;
+    FExportDetail: RawUtf8;
     function InvokeJson(const This: variant;
       const Args: array of variant): variant;
     procedure ApplyLimits;
@@ -195,6 +277,12 @@ type
       const ABase, ASpecifier: PAnsiChar): PAnsiChar;
     function LoadModule(ctx: JSContext; AName: PAnsiChar): JSModuleDef;
     procedure LoadPackageOnOwnThread;
+    procedure InstallExportTable;
+    function SealExportTable(out ACode: TPWebPackageLoadCode;
+      out ADetail: RawUtf8): Boolean;
+    function IndexOfExport(const AName: RawUtf8): PtrInt;
+    function TakeExceptionText: RawUtf8;
+    procedure CallExportOnOwnThread;
   protected
     procedure Execute; override;
   public
@@ -232,10 +320,39 @@ type
     function Eval(const AScript: RawUtf8; out AJson, AError: RawUtf8;
       ATimeoutSec: Cardinal = 0; AWaitMs: Integer = 15000): Boolean;
 
+    { CAP-9B2 host-to-plugin export call. Serialized onto the OWNING
+      plugin thread through the same single-slot mailbox as PostScript,
+      so no caller thread ever touches JSContext, JSValue, the export
+      table or the global object.
+
+      Non-blocking with respect to other calls: a concurrent second call
+      returns peccBusy synchronously, exactly like the frozen
+      TryEnqueue/perBusy backpressure rule - which is also why no
+      lifecycle lock is ever held waiting for a QuickJS call.
+
+      AArgsJson is one JSON-compatible value or PWEB_JSON_NULL ('null');
+      the empty string is normalized to 'null' and never spliced.
+      On peccOk, AResultJson is the JSON serialization of the returned
+      value ('null' for undefined). ADetail is a short sanitized native
+      diagnostic, never engine stack-trace text and never a host path.
+      After a code that taints (see TPWebExportCallCode) the generation
+      is unusable and the host must unload it. }
+    function CallExport(const AName: RawUtf8; const AArgsJson: TPWebJson;
+      out AResultJson: TPWebJson; out ADetail: RawUtf8;
+      AWaitMs: Integer = 0): TPWebExportCallCode;
+
     { Frozen teardown order: Quiesce -> Close the source, then stop the
       mailbox loop and join - the engine is destroyed on its own thread
-      in Execute's epilogue. Idempotent. }
-    procedure Unload;
+      in Execute's epilogue. Idempotent.
+
+      CAP-9B2: the join is BOUNDED. AJoinMs <= 0 uses
+      PWEB_QUICKJS_UNLOAD_JOIN_MS. On puoQuarantined the thread could not
+      be joined inside the budget: NOTHING has been freed - not this
+      object, not its events, not its source reference, not its graph -
+      and the caller MUST leak it by choice (never Free it) rather than
+      hand a live thread freed memory. No thread is ever forcibly
+      terminated. }
+    function Unload(AJoinMs: Integer = 0): TPWebUnloadOutcome;
 
     property Source: IInvocationSource read FSource;
     property InitError: RawUtf8 read FInitError;
@@ -274,6 +391,31 @@ type
     function LoaderCalls: LongInt;
     function LoaderWrongThreadCalls: LongInt;
     function LoadTimeInvokes: LongInt;
+
+    { ---- CAP-9B2 generation surface (read after a successful load) ---- }
+    { The sealed export-name snapshot, in the order the package
+      registered them - a NATIVE fact taken once at the load commit
+      point, not a property of the live object. An empty set is legal:
+      a package need not export anything. }
+    function ExportCount: Integer;
+    function ExportName(AIndex: Integer): RawUtf8;
+    { True once a call broke the synchronous contract or blew a resource
+      bound. A tainted generation refuses every further export call and
+      the host must unload it. }
+    function Tainted: Boolean;
+    { MUST stay 0: an export call that ran off the owning thread. }
+    function ExportWrongThreadCalls: LongInt;
+    { The outcome of the (idempotent) Unload that already ran. }
+    property UnloadOutcome: TPWebUnloadOutcome read FUnloadOutcome;
+    { True once the thread body is completely over. The ONLY field of a
+      quarantined plugin that is safe to read: it is an interlocked flag
+      the thread writes last, and reading it never frees anything. }
+    function HasExited: Boolean;
+    { Host lifecycle metadata, assigned once by the lifecycle owner
+      before this generation is ever published and never read by the
+      plugin thread. It is NOT a capability identity: runtime grants
+      stay keyed by the native PrincipalId (CAP-8, frozen). }
+    property GenerationId: Int64 read FGenerationId write FGenerationId;
   end;
 
 { The ONE shared app-lifetime engine manager: mints caller-owned engines
@@ -315,6 +457,56 @@ const
     StackLimitBytes: 1 shl 20;     // 1 MB
     InvokeWaitMs: 15000
   );
+
+  { CAP-9B2 default bound on ONE host-to-plugin export call. It must
+    exceed InvokeWaitMs, because an export that calls pweb.invoke blocks
+    for up to that long inside the frozen bounded wait. }
+  PWEB_QUICKJS_EXPORT_WAIT_MS = 30000;
+
+  { CAP-9B2 default bound on the plugin-thread join during Unload. It
+    must exceed the worst legitimate case - an export blocked in
+    pweb.invoke (InvokeWaitMs) plus the CPU bound that ends a runaway
+    call - or a healthy plugin would be quarantined for being slow. }
+  PWEB_QUICKJS_UNLOAD_JOIN_MS = 45000;
+
+  PWEB_EXPORT_CALL_TEXT: array[TPWebExportCallCode] of RawUtf8 = (
+    'ok',
+    'unavailable',
+    'busy',
+    'bad_name',
+    'no_export',
+    'not_callable',
+    'bad_args',
+    'threw',
+    'bad_result',
+    'async_result',
+    'pending_jobs',
+    'resource_limit',
+    'internal');
+
+  PWEB_UNLOAD_OUTCOME_TEXT: array[TPWebUnloadOutcome] of RawUtf8 = (
+    'clean',
+    'quarantined');
+
+{ True for the codes that make the generation unusable: the host closes
+  it, bounded, and never lets it serve another call. A contained plugin
+  exception is deliberately NOT one of them - the engine is still
+  valid, measured. }
+function PWebExportCallTaints(ACode: TPWebExportCallCode): Boolean;
+
+{ ---------------- CAP-9B2 quarantine ledger ---------------- }
+
+{ Take permanent custody of a plugin whose owning thread could not be
+  joined. The instance is NEVER freed and never reused - a deliberate,
+  counted, loud leak, because the alternative is handing a live thread
+  freed memory. There is no un-quarantine: that is the point. }
+procedure PWebQuarantineQuickJSPlugin(APlugin: TPWebQuickJSPlugin);
+/// how many generations have ever been quarantined in this process
+function PWebQuickJSQuarantineCount: Integer;
+/// how many of them have since finished their thread body
+// - lets a harness prove the leak was safe (the thread really was still
+// live at quarantine time and ended later) WITHOUT freeing anything
+function PWebQuickJSQuarantineExited: Integer;
 
 implementation
 
@@ -396,6 +588,71 @@ var
 function PWebQuickJSManager: TThreadSafeManager;
 begin
   Result := GManager;
+end;
+
+type
+  { JS_GetOwnPropertyNames hands back a js_malloc'd C array; the pinned
+    binding types it as a single PJSPropertyEnum, so indexing it needs
+    this array view rather than pointer arithmetic. }
+  TJSPropertyEnumArray =
+    array[0..(MaxInt div SizeOf(JSPropertyEnum)) - 1] of JSPropertyEnum;
+  PJSPropertyEnumArray = ^TJSPropertyEnumArray;
+
+const
+  { the two mailbox job kinds - one slot, one consumer (the plugin thread) }
+  PWEB_JOB_SCRIPT = 0;
+  PWEB_JOB_EXPORT = 1;
+
+function PWebExportCallTaints(ACode: TPWebExportCallCode): Boolean;
+begin
+  Result := ACode in [peccAsyncResult, peccPendingJobs, peccResourceLimit,
+                      peccInternal];
+end;
+
+{ ---------------- the quarantine ledger ---------------- }
+
+var
+  GQuarantineLock: TRTLCriticalSection;
+  GQuarantine: TList;  // of TPWebQuickJSPlugin - NEVER freed, by design
+
+procedure PWebQuarantineQuickJSPlugin(APlugin: TPWebQuickJSPlugin);
+begin
+  if APlugin = nil then
+    exit;
+  EnterCriticalSection(GQuarantineLock);
+  try
+    if GQuarantine.IndexOf(APlugin) < 0 then
+      GQuarantine.Add(APlugin);
+  finally
+    LeaveCriticalSection(GQuarantineLock);
+  end;
+end;
+
+function PWebQuickJSQuarantineCount: Integer;
+begin
+  EnterCriticalSection(GQuarantineLock);
+  try
+    Result := GQuarantine.Count;
+  finally
+    LeaveCriticalSection(GQuarantineLock);
+  end;
+end;
+
+function PWebQuickJSQuarantineExited: Integer;
+var
+  i: Integer;
+begin
+  Result := 0;
+  EnterCriticalSection(GQuarantineLock);
+  try
+    for i := 0 to GQuarantine.Count - 1 do
+      // HasExited is an interlocked flag read - the one field of a
+      // quarantined plugin that is safe to touch
+      if TPWebQuickJSPlugin(GQuarantine[i]).HasExited then
+        Inc(Result);
+  finally
+    LeaveCriticalSection(GQuarantineLock);
+  end;
 end;
 
 { ---------------- JSON helpers ---------------- }
@@ -604,9 +861,11 @@ begin
   if FLimits.InvokeWaitMs <= 0 then
     FLimits.InvokeWaitMs := PWEB_QUICKJS_DEFAULT_LIMITS.InvokeWaitMs;
   FOnSnapshot := AOnSnapshot;
+  FExportTable := JSValue(JS_UNDEFINED);
   FWork := RTLEventCreate;
   FDone := RTLEventCreate;
   FReady := RTLEventCreate;
+  FExited := RTLEventCreate;
 end;
 
 constructor TPWebQuickJSPlugin.Create(const ASource: IInvocationSource;
@@ -667,7 +926,18 @@ end;
 
 destructor TPWebQuickJSPlugin.Destroy;
 begin
-  Unload; // idempotent; joins the thread so the events are unobserved
+  // idempotent; the BOUNDED join makes the events unobserved
+  if Unload = puoQuarantined then
+    // The owning thread could not be joined. Every field below is
+    // something that thread may still read or write, so freeing any of
+    // it - including this instance - would be a use-after-free. Raising
+    // here aborts the destructor before FreeInstance runs, so the object
+    // leaks by choice, which is the ratified last-resort behaviour.
+    // A correct host never reaches this: it moves a quarantined
+    // generation to the quarantine ledger instead of freeing it.
+    raise EPWebQuickJSPlugin.Create(
+      'TPWebQuickJSPlugin.Free on a QUARANTINED plugin: the owning ' +
+      'thread was not joined; the instance must be leaked, not freed');
   inherited Destroy; // TThread.Destroy joins again (no-op when finished)
   if FWork <> nil then
     RTLEventDestroy(FWork);
@@ -675,6 +945,8 @@ begin
     RTLEventDestroy(FDone);
   if FReady <> nil then
     RTLEventDestroy(FReady);
+  if FExited <> nil then
+    RTLEventDestroy(FExited);
   FreeAndNil(FGraph);
 end;
 
@@ -998,6 +1270,375 @@ begin
   // unnecessary and its use_realpath branch touches the filesystem
 end;
 
+{ ---------------- CAP-9B2 export surface ---------------- }
+
+procedure TPWebQuickJSPlugin.InstallExportTable;
+var
+  tbl: JSValueRaw;
+begin
+  // A NULL-PROTOTYPE object, deliberately. With a plain {} the
+  // prototype chain is live, so CallExport('toString') resolves
+  // Object.prototype.toString and SUCCEEDS - measured at Checkpoint 1,
+  // which is why the container is native rather than a convention.
+  tbl := JS_NewObjectProto(FEngine.cx, JS_NULL);
+  if JSValue(tbl).IsException then
+  begin
+    RecordPackageFailure(plcEngine, 'export table');
+    exit;
+  end;
+  // CONFIGURABLE (so native can delete it once the package is accepted)
+  // but NOT writable: module code is always strict, so replacing the
+  // table raises "'pwebExports' is read-only" rather than shadowing it,
+  // and a sloppy write is a silent no-op. Measured both ways.
+  JS_DefinePropertyValueStr(FEngine.cx, FEngine.GlobalObj.Raw,
+    pointer(PWEB_EXPORT_TABLE), tbl, JS_PROP_CONFIGURABLE);
+  // DefinePropertyValue CONSUMED tbl; re-read to hold an OWNED
+  // reference. It is freed on this thread in Execute's epilogue - a
+  // JSValue still alive at JS_FreeRuntime trips the pinned
+  // assert(list_empty(&rt->gc_obj_list)) and kills the process with no
+  // catchable Pascal exception (measured).
+  FExportTable := JSValue(JS_GetPropertyStr(FEngine.cx,
+    FEngine.GlobalObj.Raw, pointer(PWEB_EXPORT_TABLE)));
+  FHasExportTable := FExportTable.IsObject;
+  if not FHasExportTable then
+    RecordPackageFailure(plcEngine, 'export table');
+end;
+
+function TPWebQuickJSPlugin.SealExportTable(
+  out ACode: TPWebPackageLoadCode; out ADetail: RawUtf8): Boolean;
+var
+  tab: PJSPropertyEnum;
+  n: Cardinal;
+  // SIGNED, deliberately: JS_GetOwnPropertyNames reports a Cardinal
+  // count, and `for i := 0 to n - 1` with n = 0 underflows to 4 billion
+  // iterations over freed memory. An export set of zero is the NORMAL
+  // case (every CAP-9B1 package has one), so this is the common path.
+  count, i: Integer;
+  p: PAnsiChar;
+  name: RawUtf8;
+  atom: JSAtom;
+begin
+  Result := False;
+  ACode := plcNone;
+  ADetail := '';
+  FExportNames := nil;
+  if not FHasExportTable then
+  begin
+    ACode := plcEngine;
+    ADetail := 'export table';
+    exit;
+  end;
+  // 1. RE-IMPOSE the null prototype. A package can call
+  //    Object.setPrototypeOf(pwebExports, Object.prototype) during load
+  //    and it works (measured), which puts toString/constructor back in
+  //    reach. The prototype is therefore forced, never trusted.
+  JS_SetPrototype(FEngine.cx, JSValueRaw(FExportTable), JS_NULL);
+  // 2. Freeze the SHAPE: no export can appear after the package is
+  //    accepted, and a non-extensible object also refuses any further
+  //    setPrototypeOf. Values may still be reassigned by the plugin -
+  //    that is the plugin's own business, and the NAME set is what the
+  //    host resolves against.
+  JS_PreventExtensions(FEngine.cx, JSValueRaw(FExportTable));
+  // 3. Snapshot the names natively, in registration order.
+  tab := nil;
+  n := 0;
+  if JS_GetOwnPropertyNames(FEngine.cx, @tab, @n, JSValueRaw(FExportTable),
+       JS_GPN_STRING_MASK or JS_GPN_ENUM_ONLY) <> 0 then
+  begin
+    ACode := plcEngine;
+    ADetail := 'export names';
+    exit;
+  end;
+  count := Integer(n);
+  try
+    if count > PWEB_EXPORT_MAX_COUNT then
+    begin
+      ACode := plcExportCount;
+      ADetail := 'exports=' + RawUtf8(IntToStr(count));
+      exit;
+    end;
+    SetLength(FExportNames, count);
+    for i := 0 to count - 1 do
+    begin
+      p := JS_AtomToCString(FEngine.cx, PJSPropertyEnumArray(tab)^[i].atom);
+      if p = nil then
+      begin
+        ACode := plcEngine;
+        ADetail := 'export name';
+        exit;
+      end;
+      // bytes, never RawUtf8(PAnsiChar): the cast goes through the
+      // string's code page (the CAP-9B1 trap)
+      FastSetString(name, p, StrLen(p));
+      JS_FreeCString(FEngine.cx, p);
+      if not PWebExportNameValid(name) then
+      begin
+        // LOUD, not skipped: a package whose export the host can never
+        // name is a packaging mistake, and silently dropping it would
+        // surface much later as an unexplained no_export
+        ACode := plcExportName;
+        ADetail := name;
+        exit;
+      end;
+      FExportNames[i] := name;
+    end;
+    Result := True;
+  finally
+    for i := 0 to count - 1 do
+      JS_FreeAtom(FEngine.cx, PJSPropertyEnumArray(tab)^[i].atom);
+    js_free(FEngine.cx, tab);
+    if not Result then
+      FExportNames := nil;
+    // 4. Whatever happened, take the table off the global object: from
+    //    here nothing script-visible names it, so no export can be added
+    //    or replaced through the global. A reference a module stashed
+    //    during load still points at the object - which is exactly why
+    //    step 2, not this step, is the security property.
+    atom := JS_NewAtom(FEngine.cx, pointer(PWEB_EXPORT_TABLE));
+    JS_DeleteProperty(FEngine.cx, FEngine.GlobalObj.Raw, atom, 0);
+    JS_FreeAtom(FEngine.cx, atom);
+  end;
+end;
+
+function TPWebQuickJSPlugin.IndexOfExport(const AName: RawUtf8): PtrInt;
+var
+  i: PtrInt;
+begin
+  for i := 0 to High(FExportNames) do
+    if FExportNames[i] = AName then // byte-exact, no case folding
+      exit(i);
+  Result := -1;
+end;
+
+{ Take the pending exception and reduce it to bounded, sanitized
+  'Name: message' text. Deliberately NOT cx^.ErrorMessage(stacktrace) -
+  a stack-overflow diagnostic there is ~20 KB of repeated frames
+  (measured), and a host lifecycle failure has no use for a stack. }
+function TPWebQuickJSPlugin.TakeExceptionText: RawUtf8;
+var
+  exc: JSValue;
+  name, msg: RawUtf8;
+
+  { read one string property, and never leave a getter's own throw
+    pending on the context - the next call would inherit it }
+  function StrProp(const AProp: PAnsiChar): RawUtf8;
+  var
+    v, e: JSValue;
+  begin
+    Result := '';
+    v := JSValue(JS_GetPropertyStr(FEngine.cx, JSValueRaw(exc), AProp));
+    if v.IsException then
+    begin
+      e := JSValue(JS_GetException(FEngine.cx));
+      FEngine.cx^.Free(e);
+      exit;
+    end;
+    if v.IsString then
+      Result := FEngine.cx^.ToUtf8(v);
+    FEngine.cx^.Free(v);
+  end;
+
+begin
+  Result := '';
+  exc := JSValue(JS_GetException(FEngine.cx));
+  if exc.IsUndefined or exc.IsNull then
+  begin
+    FEngine.cx^.Free(exc);
+    exit;
+  end;
+  try
+    if exc.IsObject then
+    begin
+      name := StrProp('name');
+      msg := StrProp('message');
+    end
+    else
+      msg := FEngine.cx^.ToUtf8(exc, {noJson=}True);
+  finally
+    FEngine.cx^.Free(exc);
+  end;
+  if name = '' then
+    Result := msg
+  else if msg = '' then
+    Result := name
+  else
+    Result := name + ': ' + msg;
+  Result := SafeDetail(Result);
+end;
+
+procedure TPWebQuickJSPlugin.CallExportOnOwnThread;
+var
+  fn, arg, res, js, thenv: JSValue;
+  argv: array[0..0] of JSValueConst;
+  text: RawUtf8;
+  isLimit: Boolean;
+begin
+  FExportCode := peccInternal;
+  FExportJson := '';
+  FExportDetail := '';
+  // engine-thread affinity, asserted rather than assumed
+  if GetCurrentThreadId() <> ThreadID then
+  begin
+    InterlockedIncrement(FExportWrongThread);
+    FExportDetail := 'wrong thread';
+    exit;
+  end;
+  if not FHasExportTable then
+  begin
+    FExportCode := peccNoExport;
+    exit;
+  end;
+  if not PWebExportNameValid(FExportName) then
+  begin
+    FExportCode := peccBadName;
+    exit;
+  end;
+  // membership in the SEALED NATIVE snapshot decides existence. The
+  // null prototype already makes Object.prototype members unreachable;
+  // this makes the export set a native fact, so a value the plugin
+  // reassigned to a name it never registered still cannot be reached.
+  if IndexOfExport(FExportName) < 0 then
+  begin
+    FExportCode := peccNoExport;
+    exit;
+  end;
+  if Length(FExportArg) > PWEB_EXPORT_ARG_MAX_BYTES then
+  begin
+    FExportCode := peccBadArgs;
+    FExportDetail := 'argument too large';
+    exit;
+  end;
+  fn := JSValue(JS_GetPropertyStr(FEngine.cx, JSValueRaw(FExportTable),
+    pointer(FExportName)));
+  if fn.IsException then
+  begin
+    FExportDetail := TakeExceptionText;
+    exit;
+  end;
+  if not JS_IsFunction(FEngine.cx, JSValueRaw(fn)) then
+  begin
+    FEngine.cx^.Free(fn);
+    FExportCode := peccNotCallable;
+    exit;
+  end;
+  arg := JSValue(JS_ParseJSON(FEngine.cx, pointer(FExportArg),
+    Length(FExportArg), 'pweb-export-arg.json'));
+  if arg.IsException then
+  begin
+    FExportDetail := TakeExceptionText;
+    FEngine.cx^.Free(fn);
+    FExportCode := peccBadArgs;
+    exit;
+  end;
+  argv[0] := JSValueRaw(arg);
+  try
+    // ARM the CPU window. Measured mandatory: TQuickJSEngine.Evaluate is
+    // the only public API that sets the interrupt's start tick, and
+    // WITHOUT this call a long JS_Call aborts on its very first
+    // interrupt poll ('THREW after 0ms timeoutAborted=yes'). One armed
+    // window covers exactly this one export call.
+    FEngine.TimeoutValue := FLimits.TimeoutSeconds;
+    FEngine.Evaluate('0', 'pweb-arm.js');
+  except
+    on E: Exception do
+    begin
+      FEngine.cx^.Free(arg);
+      FEngine.cx^.Free(fn);
+      FExportDetail := SafeDetail(RawUtf8(E.Message));
+      exit; // peccInternal - the engine could not even be armed
+    end;
+  end;
+  res := JSValue(JS_Call(FEngine.cx, JSValueRaw(fn), JS_UNDEFINED, 1, @argv[0]));
+  FEngine.cx^.Free(arg);
+  FEngine.cx^.Free(fn);
+  if res.IsException then
+  begin
+    text := TakeExceptionText;
+    FExportDetail := text;
+    // TimeoutAborted is an ENGINE fact and outranks any text. The other
+    // two bounds have no API in this pin, so they are recognised by the
+    // exact literals the pinned C throws (quickjs.c JS_ThrowStackOverflow
+    // / JS_ThrowOutOfMemory). Ambiguity resolves TOWARDS the limit: a
+    // plugin that fakes the text only gets its own generation unloaded,
+    // whereas mistaking a real bound for an ordinary throw would keep a
+    // degraded engine serving.
+    isLimit := FEngine.TimeoutAborted or
+               (text = 'InternalError: interrupted') or
+               (text = 'InternalError: stack overflow') or
+               (text = 'InternalError: out of memory');
+    if isLimit then
+      FExportCode := peccResourceLimit
+    else
+      FExportCode := peccThrew;
+  end
+  else
+  begin
+    FExportCode := peccOk;
+    // Promise / thenable: this pin has NO JS_PromiseState, and
+    // JSON.stringify(promise) is '{}' (measured), so the structural
+    // thenable probe is the only detection that works.
+    if res.IsObject then
+    begin
+      thenv := JSValue(JS_GetPropertyStr(FEngine.cx, JSValueRaw(res), 'then'));
+      if thenv.IsException then
+      begin
+        FExportDetail := TakeExceptionText;
+        FExportCode := peccBadResult;
+      end
+      else
+      begin
+        if JS_IsFunction(FEngine.cx, JSValueRaw(thenv)) then
+        begin
+          FExportCode := peccAsyncResult;
+          FExportDetail := 'thenable result';
+        end;
+        FEngine.cx^.Free(thenv);
+      end;
+    end;
+    if FExportCode = peccOk then
+    begin
+      js := JSValue(JS_JSONStringify(FEngine.cx, JSValueRaw(res),
+        JS_UNDEFINED, JS_UNDEFINED));
+      if js.IsException then
+      begin
+        // circular, or a throwing toJSON - measured as a real TypeError
+        FExportDetail := TakeExceptionText;
+        FExportCode := peccBadResult;
+      end
+      else
+      begin
+        // JSON.stringify(undefined) returns JS undefined, NOT an
+        // exception (measured); the frozen TPWebJson contract spells
+        // null 'null' and never the empty string
+        if js.IsUndefined then
+          FExportJson := PWEB_JSON_NULL
+        else
+          FExportJson := FEngine.cx^.ToUtf8(js);
+        FEngine.cx^.Free(js);
+        if Length(FExportJson) > PWEB_EXPORT_RESULT_MAX_BYTES then
+        begin
+          FExportJson := '';
+          FExportDetail := 'result too large';
+          FExportCode := peccBadResult;
+        end;
+      end;
+    end;
+    FEngine.cx^.Free(res);
+  end;
+  // AFTER every call, including one that threw: nothing in PWeb drains
+  // the QuickJS job queue, so a queued microtask would never run and the
+  // call only LOOKS complete. Fail closed and let the host unload.
+  if JS_IsJobPending(FEngine.rt) then
+  begin
+    FExportJson := '';
+    FExportCode := peccPendingJobs;
+    if FExportDetail = '' then
+      FExportDetail := 'queued job after a synchronous call';
+  end;
+  if PWebExportCallTaints(FExportCode) then
+    InterlockedExchange(FTainted, 1);
+end;
+
 procedure TPWebQuickJSPlugin.LoadPackageOnOwnThread;
 var
   asset: TAssetResponse;
@@ -1105,6 +1746,18 @@ begin
   JS_SetModuleLoaderFunc(FEngine.rt,
     PJSModuleNormalizeFunc(@PWebQuickJSNormalize),
     PJSModuleLoaderFunc(@PWebQuickJSLoad), self);
+  // 5b. CAP-9B2: the native export table, created BEFORE any package
+  // code runs so modules can register callables on it during load. An
+  // EMPTY export set is legal - a package need not export anything, and
+  // the whole CAP-9B1 corpus loads without touching it. Nothing about
+  // the module graph, the store or the resolver is involved, so the
+  // frozen CAP-9B1 package corpus is unaffected by construction.
+  InstallExportTable;
+  if not FHasExportTable then
+  begin
+    Fail(plcEngine, 'export table');
+    exit;
+  end;
   // 6. arm the CPU bound. TQuickJSEngine.Evaluate is the only public API
   // that sets the interrupt's start tick (fTimeoutStartTickSec is
   // protected and starts at 0), so without this one trivial global eval
@@ -1150,7 +1803,16 @@ begin
     Fail(plcPendingJobs, FManifest.Entry);
     exit;
   end;
-  // 10. accepted: the graph is sealed and pweb.invoke opens
+  // 10. CAP-9B2 load commit point: force the export table's prototype
+  // back to null, freeze its shape, snapshot the names natively and
+  // take it off the global object. From here the export set is a fixed
+  // native fact; nothing a later call adds can become an export.
+  if not SealExportTable(code, detail) then
+  begin
+    Fail(code, detail);
+    exit;
+  end;
+  // 11. accepted: the graph is sealed and pweb.invoke opens
   InterlockedExchange(FLoadState, Ord(qlsRunning));
 end;
 
@@ -1192,7 +1854,25 @@ begin
       if InterlockedCompareExchange(FStop, 0, 0) <> 0 then
         break;
       if InterlockedCompareExchange(FPending, 0, 1) <> 1 then
-        continue; // spurious wake or no fresh script
+        continue; // spurious wake or no fresh job
+      if InterlockedCompareExchange(FJobKind, 0, 0) = PWEB_JOB_EXPORT then
+      begin
+        // CAP-9B2: a host export call, executed HERE and only here
+        try
+          CallExportOnOwnThread;
+        except
+          on E: Exception do
+          begin
+            FExportCode := peccInternal;
+            FExportJson := '';
+            FExportDetail := SafeDetail(RawUtf8(E.Message));
+            InterlockedExchange(FTainted, 1);
+          end;
+        end;
+        InterlockedExchange(FDoneFlag, 1);
+        RTLEventSetEvent(FDone);
+        continue;
+      end;
       FResultJson := '';
       FErrorMsg := '';
       FTimeoutAborted := False;
@@ -1224,6 +1904,16 @@ begin
   finally
     // the frozen ownership rule: the engine dies on its owning thread
     try
+      // CAP-9B2: the captured export table FIRST. A JSValue still alive
+      // when JS_FreeRuntime runs trips the pinned
+      // assert(list_empty(&rt->gc_obj_list)) and kills the process with
+      // no catchable Pascal exception - measured, so this ordering is
+      // not a tidiness preference.
+      if FHasExportTable and (FEngine <> nil) then
+      begin
+        FEngine.cx^.Free(FExportTable);
+        FHasExportTable := False;
+      end;
       FreeAndNil(FEngine);
       if GetCurrentThreadId() = ThreadID then // explicit call: see InvokeJson note
         InterlockedExchange(FEngineDestroyedOnOwnThread, 1);
@@ -1232,6 +1922,12 @@ begin
     end;
     RTLEventSetEvent(FReady); // unblock WaitReady on early failure paths
     RTLEventSetEvent(FDone);  // unblock a waiter racing Unload
+    // CAP-9B2: LAST, and after everything this thread will ever touch.
+    // Unload's bounded join waits on exactly this, and treats its
+    // absence as "the thread may still be running" - which is what makes
+    // quarantine safe instead of a use-after-free.
+    InterlockedExchange(FExitedFlag, 1);
+    RTLEventSetEvent(FExited);
   end;
 end;
 
@@ -1247,13 +1943,80 @@ begin
   if (InterlockedCompareExchange(FStop, 0, 0) <> 0) or Finished then
     exit(False);
   if InterlockedCompareExchange(FBusy, 1, 0) <> 0 then
-    exit(False); // one script at a time - the mailbox has a single slot
+    exit(False); // one job at a time - the mailbox has a single slot
   FScript := AScript;
   FScriptTimeoutSec := ATimeoutSec;
+  InterlockedExchange(FJobKind, PWEB_JOB_SCRIPT);
+  InterlockedExchange(FDoneFlag, 0);
   RTLEventResetEvent(FDone);
   InterlockedExchange(FPending, 1);
   RTLEventSetEvent(FWork);
   Result := True;
+end;
+
+function TPWebQuickJSPlugin.CallExport(const AName: RawUtf8;
+  const AArgsJson: TPWebJson; out AResultJson: TPWebJson;
+  out ADetail: RawUtf8; AWaitMs: Integer): TPWebExportCallCode;
+begin
+  AResultJson := '';
+  ADetail := '';
+  // Every gate below is an explicit STATE test - never "the thread is
+  // alive" or "a pointer is non-nil" (the lifecycle invariant).
+  if (InterlockedCompareExchange(FStop, 0, 0) <> 0) or
+     Finished or
+     (InterlockedCompareExchange(FLoadState, 0, 0) <> Ord(qlsRunning)) then
+    exit(peccUnavailable);
+  if InterlockedCompareExchange(FTainted, 0, 0) <> 0 then
+    exit(peccUnavailable);
+  // grammar first, so a hostile name never even claims the mailbox slot
+  if not PWebExportNameValid(AName) then
+    exit(peccBadName);
+  if InterlockedCompareExchange(FBusy, 1, 0) <> 0 then
+    // deterministic, synchronous, NON-BLOCKING - the same shape as the
+    // frozen TryEnqueue/perBusy rule, and the reason a lifecycle lock
+    // never has to wait on a QuickJS call
+    exit(peccBusy);
+  try
+    FExportName := AName;
+    UniqueString(FExportName);
+    if AArgsJson = '' then
+      FExportArg := PWEB_JSON_NULL // '' is not a valid TPWebJson value
+    else
+      FExportArg := AArgsJson;
+    UniqueString(FExportArg);
+    FExportCode := peccInternal;
+    FExportJson := '';
+    FExportDetail := '';
+    InterlockedExchange(FJobKind, PWEB_JOB_EXPORT);
+    InterlockedExchange(FDoneFlag, 0);
+    RTLEventResetEvent(FDone);
+    InterlockedExchange(FPending, 1);
+    RTLEventSetEvent(FWork);
+    if AWaitMs <= 0 then
+      AWaitMs := PWEB_QUICKJS_EXPORT_WAIT_MS;
+    RTLEventWaitFor(FDone, AWaitMs);
+    if InterlockedCompareExchange(FDoneFlag, 0, 1) <> 1 then
+    begin
+      // The call is STILL RUNNING: the slot is deliberately NOT released
+      // (the plugin thread still owns the request fields), the
+      // generation is tainted, and the host unloads it - the bounded
+      // shutdown path, not a retry.
+      InterlockedExchange(FTainted, 1);
+      ADetail := 'export call did not complete within the bound';
+      exit(peccResourceLimit);
+    end;
+    Result := FExportCode;
+    AResultJson := FExportJson;
+    ADetail := FExportDetail;
+    InterlockedExchange(FBusy, 0); // release the slot last
+  except
+    on E: Exception do
+    begin
+      InterlockedExchange(FTainted, 1);
+      ADetail := SafeDetail(RawUtf8(E.Message));
+      Result := peccInternal;
+    end;
+  end;
 end;
 
 function TPWebQuickJSPlugin.WaitScript(out AJson, AError: RawUtf8;
@@ -1280,18 +2043,20 @@ begin
     WaitScript(AJson, AError, AWaitMs);
 end;
 
-procedure TPWebQuickJSPlugin.Unload;
+function TPWebQuickJSPlugin.Unload(AJoinMs: Integer): TPWebUnloadOutcome;
 begin
   if FUnloaded then
-    exit;
+    exit(FUnloadOutcome); // idempotent, and repeats the same verdict
   FUnloaded := True;
+  FUnloadOutcome := puoClean;
   if FWork = nil then
-    exit; // the constructor raised before the events/thread existed:
-          // nothing was started, so there is nothing to quiesce or join
+    exit(puoClean); // the constructor raised before the events/thread
+                    // existed: nothing started, nothing to quiesce/join
   // frozen source lifecycle first: refuse new invocations, cancel
   // queued ones, cooperatively cancel in-flight work (whose completion
-  // - result or cancelled - releases any plugin-thread wait), then
-  // close. Both are non-blocking and idempotent.
+  // - result or cancelled - releases any plugin-thread wait, including
+  // one inside an export call blocked in pweb.invoke), then close. Both
+  // are non-blocking and idempotent.
   try
     FSource.Quiesce;
     FSource.Close;
@@ -1300,7 +2065,25 @@ begin
   end;
   InterlockedExchange(FStop, 1);
   RTLEventSetEvent(FWork);
-  WaitFor; // joins; the engine was destroyed in Execute's epilogue
+  if AJoinMs <= 0 then
+    AJoinMs := PWEB_QUICKJS_UNLOAD_JOIN_MS;
+  // BOUNDED join. FExited is set as the very last act of the thread
+  // body, after the engine has been destroyed on this thread, so
+  // observing it means WaitFor cannot block for meaningful time.
+  RTLEventWaitFor(FExited, AJoinMs);
+  if InterlockedCompareExchange(FExitedFlag, 0, 0) = 0 then
+  begin
+    // The thread is still somewhere we cannot bound - a runaway native
+    // frame, a wedged call. NOTHING is freed here: not the engine (the
+    // thread owns it), not the events, not the source reference, not
+    // the graph, not this instance. The caller must leak it by choice.
+    // Forcible termination is never an option: killing a thread inside
+    // QuickJS leaves the runtime's allocator and object list corrupt.
+    FUnloadOutcome := puoQuarantined;
+    exit(puoQuarantined);
+  end;
+  WaitFor; // returns promptly; the engine died in Execute's epilogue
+  Result := puoClean;
 end;
 
 function TPWebQuickJSPlugin.CallbackCalls: LongInt;
@@ -1350,6 +2133,34 @@ end;
 function TPWebQuickJSPlugin.LoadTimeInvokes: LongInt;
 begin
   Result := InterlockedCompareExchange(FLoadTimeInvokes, 0, 0);
+end;
+
+function TPWebQuickJSPlugin.ExportCount: Integer;
+begin
+  Result := Length(FExportNames);
+end;
+
+function TPWebQuickJSPlugin.ExportName(AIndex: Integer): RawUtf8;
+begin
+  if (AIndex < 0) or (AIndex >= Length(FExportNames)) then
+    Result := ''
+  else
+    Result := FExportNames[AIndex];
+end;
+
+function TPWebQuickJSPlugin.Tainted: Boolean;
+begin
+  Result := InterlockedCompareExchange(FTainted, 0, 0) <> 0;
+end;
+
+function TPWebQuickJSPlugin.ExportWrongThreadCalls: LongInt;
+begin
+  Result := InterlockedCompareExchange(FExportWrongThread, 0, 0);
+end;
+
+function TPWebQuickJSPlugin.HasExited: Boolean;
+begin
+  Result := InterlockedCompareExchange(FExitedFlag, 0, 0) <> 0;
 end;
 
 { ---------------- atomic package load ---------------- }
@@ -1457,7 +2268,17 @@ begin
   // ordered by the FReady event; joining first makes all of them so.
   // The join is bounded because CreatePackage refuses a descriptor with
   // TimeoutSeconds = 0, so the interrupt always ends the evaluation.
-  plugin.Unload;
+  if plugin.Unload = puoQuarantined then
+  begin
+    // the load itself wedged the owning thread. Nothing on the plugin
+    // may be read (the thread may still be writing its refcounted error
+    // strings) and nothing may be freed, so the verdict comes from
+    // constants alone and the instance is leaked by choice.
+    PWebQuarantineQuickJSPlugin(plugin);
+    ACode := plcTimeout;
+    ADetail := 'plugin thread quarantined during load';
+    exit;
+  end;
   ACode := plugin.PackageCode;
   if plugin.LoaderWrongThreadCalls > 0 then
     // the thread-affinity gate must not be reachable only through a
@@ -1479,8 +2300,15 @@ end;
 
 initialization
   GManager := TThreadSafeManager.Create(TQuickJSEngine, nil, 256);
+  InitCriticalSection(GQuarantineLock);
+  GQuarantine := TList.Create;
 
 finalization
   FreeAndNil(GManager);
+  // GQuarantine's ENTRIES are deliberately not freed - each one may
+  // still own a running thread. The list itself goes; the plugins stay
+  // leaked, which is the whole contract.
+  FreeAndNil(GQuarantine);
+  DoneCriticalSection(GQuarantineLock);
 
 end.
