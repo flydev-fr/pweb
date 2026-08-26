@@ -2,7 +2,7 @@
 title: 'CAP-9B1 — QuickJS plugin package and deterministic module loader'
 type: 'feature'
 created: '2026-08-26'
-status: 'in-review'
+status: 'done'
 review_loop_iteration: 0
 baseline_commit: 'b04caf12bf6af494d9791221da26e8dc0b27085b'
 context:

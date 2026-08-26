@@ -1,11 +1,23 @@
 # CAP-9B1 — Final Artifact: QuickJS Package and Module Loader
 
-CAP-9B1 builds a package/module-loader layer *behind* the frozen CAP-9A
-engine on branch `phase/cap-9/b1-plugin-package-loader` (baseline
-`b04caf1`). Every claim below is measured, on the Windows dev host, with
-the P1–P40 headless matrix and a Checkpoint-1 probe against the pinned
-tree; the four-target proof is the hosted CI run and is the one gate this
-artifact does not yet carry.
+CAP-9B1 closes on hosted run **32975110018** (2026-08-26, commit
+`e62331d799c809aefe771a48ff4d1010ff6bf815`, branch
+`phase/cap-9/b1-plugin-package-loader`, baseline `b04caf1`): all six jobs
+green, `cap7 aggregate` recording `quickjs_package_corpus: PASS` on every
+target and ONE `quickjs_package_digest`
+`4b01cf06677ff52fb26c74b031c72282258f26b7c5b44bd44131586c77209c45` equal
+on windows-x86_64, linux-x86_64, macos-x86_64 and macos-arm64 — the same
+digest independently measured on the Windows dev host, and stable across
+three consecutive local runs. The run's commit is the branch head and
+contains the final implementation commit `a190677`
+(`fix(script): harden the CAP-9B1 package loader per adversarial review`).
+The committed negative selftest reported `21 aggregator refusals + 2
+divergence refusals` on the same run, so the new refusal branches are
+proven red on fixtures before the real aggregation is trusted.
+
+It builds a package/module-loader layer *behind* the frozen CAP-9A engine.
+Every claim below is measured — the P1–P40 headless matrix on four
+targets, plus a Checkpoint-1 probe against the pinned tree.
 
 ## Package carrier
 One existing `IAssetStore` per plugin package — no interface change, no
@@ -230,13 +242,19 @@ brief ratified it, and the nine-code taxonomy is frozen), and fixtures
 for `plcThread`/`plcEngine` (unreachable without fault injection).
 
 ## Regressions
-CAP-9A re-run green with `quickjs_corpus_digest`
-`601b86ffd24d5642174758120d58d240da6e5cc0d4e0cc3a40b3ec0847e7909f`
-**byte-identical** to its closure value — the strongest available proof
-that the CAP-9A engine/thread/scheduler path is unchanged. The CAP-8C
-multi-principal gate re-run green with `security_corpus_digest`
-`c5fc378bc3c6eb6aa6db753e35287db5cb7ed6332aeac77b75767919e5adbdf4`,
-likewise unchanged from the CAP-8 closure. `pwebtests`
+On the closure run, `quickjs_corpus_digest`
+`601b86ffd24d5642174758120d58d240da6e5cc0d4e0cc3a40b3ec0847e7909f` is
+**byte-identical** to the CAP-9A closure value on all four targets — the
+strongest available proof that the CAP-9A engine/thread/scheduler path is
+unchanged, and it held through the constructor restructure the adversarial
+review forced. `security_corpus_digest`
+`c5fc378bc3c6eb6aa6db753e35287db5cb7ed6332aeac77b75767919e5adbdf4` and
+`capability_policy_digest`
+`23b87da524b158f4b1a8ca53057ad794f485086257997534b426b28334bddb2f` are
+likewise unchanged from the CAP-8 closure, so no CAP-7/CAP-8/CAP-9A gate
+was weakened to let this shard through. `macos-x86_64` reports 8
+`extra_exports_rtti`, exactly as it did on the CAP-9A closure run
+(32863002073) — pre-existing and untouched by CAP-9B1. `pwebtests`
 2419/2419 assertions pass after the `pweb.assets.support` change. The
 divergence sweep reports 68 platform conditionals inside the unchanged
 allowlist — both new units carry no platform `{$ifdef}` at all. The CAP-9A
@@ -261,9 +279,11 @@ packages; dynamic `import()` stays unavailable pending a ratified Promise/
 job pump; the `JS_ExecutePendingJob(nil)` null-write hazard is recorded so
 nobody adds the first call carelessly; the `ci.yml` documentation-budget
 overage is carried forward (153 KB) alongside the ratified 23 KB spec
-overage. The four-target hosted run has not executed yet — this artifact
-is complete on every gate that can be measured locally, and CAP-9B1 is not
-closed until `quickjs_package_corpus` is PASS on all four targets with one
-equal `quickjs_package_digest`.
+overage. Five review findings are deferred rather than fixed here: the
+O(n²) graph lookup that only matters near the 4096-module hard cap; a
+carrier-side materialisation bound, which needs `IAssetStore` ratification
+because the frozen `TryRead` has no size or streaming form; whether module
+source should have its own UTF-8 validator permitting the C1 block; and
+the `-match`/`mktemp` weaknesses that remain in CAP-9A's own runners.
 
-**CAP-9B1 NOT READY — hosted four-target CI green outstanding**
+**CAP-9B1 PASS — QUICKJS PACKAGE AND MODULE LOADER FROZEN**
