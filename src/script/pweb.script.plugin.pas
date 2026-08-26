@@ -232,6 +232,20 @@ type
     { The published generation's sealed export names, comma-joined, or
       '' when nothing is published. Evidence, not a call surface. }
     function ExportNames: RawUtf8;
+    { CAP-9C1 ADDITIVE, read-only: the published generation's module
+      graph as canonical text - one 'module=<name>' line per module in
+      LOADER order, then one 'edge=<importer>><imported>' line per
+      resolution edge. '' when nothing is published.
+
+      Additive evidence only: no lifecycle state is exposed, nothing is
+      script-visible, and no behaviour changes. It exists so the
+      CAP-9C1 package loader can compare the graph it actually got
+      against the graph its compiled registry pinned, instead of
+      inferring one from the other. The graph is immutable once the
+      generation leaves Loading (the owning thread is the only writer,
+      and it is done writing before the load commit point), and the
+      slot is read under FLifeLock exactly like ExportNames. }
+    function GraphProjection: RawUtf8;
     function PrincipalId: Utf8String;
     function PluginId: Utf8String;
     { counters, for the CAP-9B2 corpus }
@@ -828,6 +842,30 @@ begin
         Result := Result + ',';
       Result := Result + FCurrent.ExportName(i);
     end;
+  finally
+    LeaveCriticalSection(FLifeLock);
+  end;
+end;
+
+function TPWebQuickJSPluginHost.GraphProjection: RawUtf8;
+var
+  g: TPWebModuleGraph;
+  i: Integer;
+begin
+  Result := '';
+  // same discipline as ExportNames: the slot is read under FLifeLock,
+  // and the graph itself is immutable once the generation left Loading
+  EnterCriticalSection(FLifeLock);
+  try
+    if FCurrent = nil then
+      exit;
+    g := FCurrent.ModuleGraph;
+    if g = nil then
+      exit;
+    for i := 0 to g.LoadedCount - 1 do
+      Result := Result + 'module=' + g.LoadedName(i) + #10;
+    for i := 0 to g.EdgeCount - 1 do
+      Result := Result + 'edge=' + g.Edge(i) + #10;
   finally
     LeaveCriticalSection(FLifeLock);
   end;

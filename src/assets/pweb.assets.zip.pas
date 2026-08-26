@@ -69,6 +69,22 @@ type
     destructor Destroy; override;
     function TryRead(const Path: RawUtf8;
       out Asset: TAssetResponse): Boolean;
+    { CAP-9C1 ADDITIVE read-only enumeration of the archive's own
+      construction-time validated index, in its bytewise sort order.
+
+      IAssetStore is UNCHANGED and gained nothing - this is a concrete
+      class accessor, deliberately not on the frozen interface, and
+      nothing in the asset-serving path calls it. It exists so the
+      plugin-release verifier can prove an EXACT archive inventory:
+      without enumeration, an entry the registry does not know about is
+      caught only by the whole-archive digest, and "the inventory is
+      exactly this" would be an inference rather than a check.
+
+      This is NOT discovery: it enumerates one already-verified archive
+      that the caller opened, never a filesystem. }
+    function EntryCount: Integer;
+    { '' when AIndex is out of range - never raises. }
+    function EntryName(AIndex: Integer): RawUtf8;
   end;
 
 implementation
@@ -252,6 +268,20 @@ begin
   Asset.Content := content;
   Asset.ContentType := PWebAssetMimeType(Path);
   Result := True;
+end;
+
+function TZipAssetStore.EntryCount: Integer;
+begin
+  Result := Length(fNames);
+end;
+
+function TZipAssetStore.EntryName(AIndex: Integer): RawUtf8;
+begin
+  if (AIndex < 0) or
+     (AIndex >= Length(fNames)) then
+    Result := ''    // fail-closed, like every other read here
+  else
+    Result := fNames[AIndex];
 end;
 
 end.
