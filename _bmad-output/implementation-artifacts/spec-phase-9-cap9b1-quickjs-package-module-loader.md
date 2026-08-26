@@ -2,7 +2,7 @@
 title: 'CAP-9B1 — QuickJS plugin package and deterministic module loader'
 type: 'feature'
 created: '2026-08-26'
-status: 'in-progress'
+status: 'in-review'
 review_loop_iteration: 0
 baseline_commit: 'b04caf12bf6af494d9791221da26e8dc0b27085b'
 context:
@@ -99,16 +99,16 @@ Every claim below was measured at plan time on Windows x64 / FPC 3.2.2 with a th
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `src/assets/pweb.assets.support.pas` -- expose the existing private `StrictUtf8` as `PWebStrictUtf8` (pure addition, body unchanged) -- keeps ONE UTF-8 truth for paths, manifest and module source.
-- [ ] `src/script/pweb.script.package.pas` -- NEW pure unit, no QuickJS dependency: `TPWebPackageLimits` + defaults/hard maxima; `TPWebPackageLoadCode` + text table; `TPWebPackageManifest`; `PWebPackageIdValid`; `PWebPackageEntryValid`; `PWebParsePluginManifest` (strict scanner); `PWebResolveModuleSpecifier`; `PWebPrepareModuleSource` (BOM-once, strict UTF-8, NUL refusal); `TPWebScopedAssetStore` -- headless-testable without an engine.
-- [ ] `src/script/pweb.script.quickjs.pas` -- add `TPWebQuickJSPackageDescriptor` (native authority), the private normalize/loader callbacks with thread assertions and graph accounting, the arm-then-compile-then-evaluate entry step inside `Execute`, the Loading gate in `InvokeJson`, and `PWebLoadQuickJSPackage` (atomic; nil + code + native detail on failure) -- CAP-9A paths unchanged when no descriptor is supplied.
-- [ ] `test/cap9b1/quickjspackage.pas` -- NEW P1–P40 harness: generates the reference package and every hostile fixture from in-source byte constants into a temp folder AND an in-memory ZIP, runs both carriers through the real scheduler / CAP-8A policy / mORMot bridge, covers every I/O-matrix row, and writes `build/cap9b1/quickjs-package-corpus.txt` (schema 1: manifest projection, module list, module hashes, import-graph hash, hostile decisions, counters, `verdict=PASS`) plus `quickjspackage-<target>.json`.
-- [ ] `test/cap9b1/run_quickjspackage.ps1` + `run_quickjspackage.sh` -- runners mirroring the CAP-9A pair.
-- [ ] `test/cap7f/emit_evidence.ps1` + `emit_evidence.sh` -- record `quickjs_package_corpus` (PASS|FAIL, never SKIP), `quickjs_package_digest`, and the load-time-invocation and denied-bridge ledgers.
-- [ ] `test/cap7f/check_cap7f_aggregate.ps1` -- add both fields to the required / must-PASS / equal-across-targets sets and the summary table.
-- [ ] `test/cap7f/check_cap7f_selftest.ps1` -- two committed refusal legs: `quickjs_package_corpus` forced FAIL, and `quickjs_package_digest` diverging on one target.
-- [ ] `.github/workflows/ci.yml` -- run the CAP-9B1 gate before the CAP-7F emitter on all four platform jobs, with uploads and diagnostics mirroring CAP-9A.
-- [ ] `_bmad-output/implementation-artifacts/deferred-work.md` -- append what CAP-9B1 leaves to CAP-9B2/CAP-9C (lifecycle/reload, discovery, signed packages, `import()`/Promise pump) and the `JS_ExecutePendingJob(nil)` null-write hazard found in the pin.
+- [x] `src/assets/pweb.assets.support.pas` -- expose the existing private `StrictUtf8` as `PWebStrictUtf8` (pure addition, body unchanged) -- keeps ONE UTF-8 truth for paths, manifest and module source.
+- [x] `src/script/pweb.script.package.pas` -- NEW pure unit, no QuickJS dependency: `TPWebPackageLimits` + defaults/hard maxima; `TPWebPackageLoadCode` + text table; `TPWebPackageManifest`; `PWebPackageIdValid`; `PWebPackageEntryValid`; `PWebParsePluginManifest` (strict scanner); `PWebResolveModuleSpecifier`; `PWebPrepareModuleSource` (BOM-once, strict UTF-8, NUL refusal); `TPWebScopedAssetStore` -- headless-testable without an engine.
+- [x] `src/script/pweb.script.quickjs.pas` -- add `TPWebQuickJSPackageDescriptor` (native authority), the private normalize/loader callbacks with thread assertions and graph accounting, the arm-then-compile-then-evaluate entry step inside `Execute`, the Loading gate in `InvokeJson`, and `PWebLoadQuickJSPackage` (atomic; nil + code + native detail on failure) -- CAP-9A paths unchanged when no descriptor is supplied.
+- [x] `test/cap9b1/quickjspackage.pas` -- NEW P1–P40 harness: generates the reference package and every hostile fixture from in-source byte constants into a temp folder AND an in-memory ZIP, runs both carriers through the real scheduler / CAP-8A policy / mORMot bridge, covers every I/O-matrix row, and writes `build/cap9b1/quickjs-package-corpus.txt` (schema 1: manifest projection, module list, module hashes, import-graph hash, hostile decisions, counters, `verdict=PASS`) plus `quickjspackage-<target>.json`.
+- [x] `test/cap9b1/run_quickjspackage.ps1` + `run_quickjspackage.sh` -- runners mirroring the CAP-9A pair.
+- [x] `test/cap7f/emit_evidence.ps1` + `emit_evidence.sh` -- record `quickjs_package_corpus` (PASS|FAIL, never SKIP), `quickjs_package_digest`, and the load-time-invocation and denied-bridge ledgers.
+- [x] `test/cap7f/check_cap7f_aggregate.ps1` -- add both fields to the required / must-PASS / equal-across-targets sets and the summary table.
+- [x] `test/cap7f/check_cap7f_selftest.ps1` -- two committed refusal legs: `quickjs_package_corpus` forced FAIL, and `quickjs_package_digest` diverging on one target.
+- [x] `.github/workflows/ci.yml` -- run the CAP-9B1 gate before the CAP-7F emitter on all four platform jobs, with uploads and diagnostics mirroring CAP-9A.
+- [x] `_bmad-output/implementation-artifacts/deferred-work.md` -- append what CAP-9B1 leaves to CAP-9B2/CAP-9C (lifecycle/reload, discovery, signed packages, `import()`/Promise pump) and the `JS_ExecutePendingJob(nil)` null-write hazard found in the pin.
 
 **Acceptance Criteria:**
 - Given a package whose `plugin.json` matches the native descriptor, when it loads through either carrier, then the plugin reaches Running, the CAP-9A `CalculatorService.Add` path still returns 42, and both carriers produce byte-identical corpus lines.

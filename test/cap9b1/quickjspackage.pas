@@ -934,6 +934,7 @@ end;
 procedure PManifest;
 var
   files: TPkgFiles;
+  lim: TPWebPackageLimits;
 
   function Mutated(const AManifest: RawByteString): TPkgFiles;
   begin
@@ -994,6 +995,11 @@ begin
   RemoveFile(files, 'main.js');
   HostileCase('entry_missing', files, plcEntryMissing, ENTRY,
     PWEB_PACKAGE_DEFAULT_LIMITS);
+  // the manifest SIZE bound, refused before a byte of it is parsed
+  lim := PWEB_PACKAGE_DEFAULT_LIMITS;
+  lim.ManifestMaxBytes := 64;
+  HostileCase('limit_manifest_size', ReferencePackage, plcManifestTooLarge,
+    ENTRY, lim);
 end;
 
 procedure PResolution;

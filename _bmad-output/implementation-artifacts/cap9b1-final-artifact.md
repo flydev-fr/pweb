@@ -156,7 +156,7 @@ windows/linux/macos-x64/macos-arm64; the emitters record
 them to the required/must-PASS/four-way-equality sets; the committed
 negative selftest grows from 16 to 20 aggregator refusal legs, each proven
 to refuse through its named branch. Local digest at closure:
-`ac62fcf7481c9a293ee387b78c56ebf17d5eaa0a41d6ddaab48b28328abaac90`.
+`f7208419d54323fb1793709679ee62c3fdafe862374470b52a85cbfc29071c8b`.
 
 ## Regressions
 CAP-9A re-run green with `quickjs_corpus_digest`
