@@ -3,11 +3,22 @@ program quickjslifecycle;
 { CAP-9B2: the QuickJS plugin LIFECYCLE + transactional reload harness.
   Headless and deterministic on all four targets - every line it writes
   to build/cap9b2/quickjs-lifecycle-corpus.txt is a decision, a native
-  code, a generation id or a counter this program produced itself. No
-  timing, no pointer, no engine text and no host path ever reaches the
-  corpus, so the file bytes (and the sha256 the CAP-7F emitters record
-  as quickjs_lifecycle_digest) are identical on windows-x86_64 /
+  code, a generation id or a DETERMINISTIC counter. No timing, no
+  pointer, no engine text and no host path ever reaches the corpus, so
+  the file bytes (and the sha256 the CAP-7F emitters record as
+  quickjs_lifecycle_digest) are identical on windows-x86_64 /
   linux-x86_64 / macos-x86_64 / macos-arm64 by construction.
+
+  DETERMINISTIC is the load-bearing word, and it is narrower than it
+  looks. Several rows deliberately RACE two lifecycle operations, and
+  both outcomes are correct - so which one won must never reach the
+  hash. Those rows record a normalised token (`reload_in_ratified_set`),
+  and totals that a race can move are reduced to the invariant that
+  actually matters (`service_reached`, `held_service_calls_at_most_one`)
+  rather than printed as counts. The exact per-target numbers live in
+  the JSON record, which the aggregate reports but does not compare.
+  A count that four targets need not agree on is not evidence; it is a
+  future red build with an opaque cause.
 
   WHAT RUNS: the UNCHANGED production runtime - frozen scheduler +
   CAP-8A policy + the REAL TMormotInvocationBridge (TRestServer.Uri)
@@ -1480,11 +1491,17 @@ begin
        (CallToken(h, 'seen', 'null') <> 'ok:"undefined"') or
        (CallToken(h, 'add', '{"x":40,"y":1}') <> 'ok:42') then
       InterlockedIncrement(StaleCompletion);
-    // the in-flight invocation ran BEFORE the commit, so it reached the
-    // service exactly once and nothing after the commit added to it
-    Emit('L27 held_service_calls=' +
-      IntStr(InterlockedCompareExchange(NativeServiceAdd, 0, 0) - addsBefore) +
+    // The in-flight invocation ran BEFORE the commit. What must hold is
+    // that it reached the service AT MOST once and that nothing after
+    // the commit added to it - "at most", not "exactly", because a
+    // cancellation landing before the frozen bridge's token re-check is
+    // an equally correct order, and hashing the exact count would make
+    // that ordering a cross-target digest difference.
+    Emit('L27 held_service_calls_at_most_one=' +
+      YesNo(InterlockedCompareExchange(NativeServiceAdd, 0, 0) - addsBefore <= 1) +
       ' hold_hits=' + IntStr(HoldHits));
+    Expect(InterlockedCompareExchange(NativeServiceAdd, 0, 0) - addsBefore <= 1,
+      'L27 the held invocation reached the service more than once');
     Emit('L27 two_active=' + IntStr(TwoActiveGenerations) +
       ' stale=' + IntStr(StaleCompletion));
     Emit('L26-27 unload=' + PWEB_PLUGIN_LIFECYCLE_TEXT[h.Unload]);
@@ -1854,7 +1871,26 @@ end;
 
 procedure LLedger;
 begin
-  Emit('ledger service_add=' + IntStr(NativeServiceAdd));
+  // WHAT IS AND IS NOT HASHED. The corpus is compared byte-for-byte
+  // across four targets, so only DETERMINISTIC facts may enter it. Two
+  // totals are deliberately reduced to invariants rather than printed:
+  //
+  //   service_add  - L18 releases a held invocation and then unloads; if
+  //                  Close lands before the frozen bridge re-checks the
+  //                  cancellation token, that invocation never reaches
+  //                  the service. Both orders are correct.
+  //   sources_made - L34 races Reload against Unload; the reload stages
+  //                  a generation (and consumes a source) only when it
+  //                  wins the operation lock. That race IS the test.
+  //
+  // Neither total carries evidence the per-row lines do not already
+  // carry: `svcadd=ok:42` rows prove the real mORMot service was
+  // reached, and the generation-id rows prove each generation got its
+  // own source. The exact per-target numbers stay in the JSON record,
+  // which the aggregate reports but does not compare.
+  Emit('ledger service_reached=' + YesNo(NativeServiceAdd > 0));
+  Expect(NativeServiceAdd > 0,
+    'the real mORMot service was never reached');
   Emit('ledger two_active_generations=' + IntStr(TwoActiveGenerations));
   Emit('ledger stale_completion=' + IntStr(StaleCompletion));
   Emit('ledger reload_lost_old=' + IntStr(ReloadLostOld));
@@ -1863,7 +1899,8 @@ begin
   Emit('ledger opener_reached=' + IntStr(OpenerReached));
   Emit('ledger quarantine_injected=' + IntStr(QuarantineInjected));
   Emit('ledger quarantine_unexpected=' + IntStr(QuarantineUnexpected));
-  Emit('ledger sources_made=' + IntStr(gFactory.Made));
+  Emit('ledger sources_made_positive=' + YesNo(gFactory.Made > 0));
+  Expect(gFactory.Made > 0, 'no invocation source was ever created');
   Expect(TwoActiveGenerations = 0, 'two generations accepted invocations');
   Expect(StaleCompletion = 0, 'a stale completion reached a live generation');
   Expect(ReloadLostOld = 0, 'a failed staging lost the old generation');
