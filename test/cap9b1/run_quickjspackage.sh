@@ -131,8 +131,13 @@ json="${work}/quickjspackage-${target}.json"
 rm -f -- "${json}"
 
 step "run the headless P1-P40 matrix (${target})"
+# run from a throwaway CWD (nothing may resolve relative to it) and clean
+# it up: a per-run temp directory that is never removed is a leak on any
+# machine that runs this gate more than once
+runcwd="$(mktemp -d)"
+trap 'rm -rf -- "${runcwd}"' EXIT
 set +e
-( cd -- "$(mktemp -d)" && "${exe}" ) > "${qlog}" 2>&1
+( cd -- "${runcwd}" && "${exe}" ) > "${qlog}" 2>&1
 code=$?
 set -e
 cat "${qlog}"

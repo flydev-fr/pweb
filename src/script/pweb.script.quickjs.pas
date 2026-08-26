@@ -282,6 +282,15 @@ type
   TThreadSafeManager.Destroy raises on unreleased engines). }
 function PWebQuickJSManager: TThreadSafeManager;
 
+{ Validate a native plugin descriptor WITHOUT raising and without
+  constructing anything. PWebLoadQuickJSPackage calls this before it
+  builds a plugin, so a malformed descriptor never reaches a
+  constructor; a host calling CreatePackage directly should call it too
+  (that constructor still raises, for callers who prefer exceptions). }
+function PWebValidateQuickJSPackageDescriptor(
+  const ADescriptor: TPWebQuickJSPackageDescriptor;
+  out ACode: TPWebPackageLoadCode; out ADetail: RawUtf8): Boolean;
+
 { ATOMIC package load - the entry point hosts should use.
   On True: APlugin is a Running plugin owned by the caller.
   On False: APlugin is nil, the engine has been destroyed on its owning
@@ -604,9 +613,17 @@ constructor TPWebQuickJSPlugin.Create(const ASource: IInvocationSource;
   const AContext: TInvocationContext; const ALimits: TPWebQuickJSLimits;
   const AOnSnapshot: TPWebQuickJSSnapshotEvent);
 begin
+  // The TThread base is constructed FIRST, suspended. When an exception
+  // escapes a constructor, Object Pascal runs the destructor - and
+  // TThread.Destroy on a base whose Create never ran dereferences
+  // uninitialised handles (measured: EAccessViolation, reproducible from
+  // any descriptor-validation raise). Constructing suspended keeps the
+  // old ordering guarantee too: the thread cannot observe a field
+  // InitCommon has not assigned yet, because it does not run until Start.
+  inherited Create({suspended=}True);
   InitCommon(ASource, AContext, ALimits, AOnSnapshot);
   // no package: qlsIdle, and Execute keeps the exact CAP-9A shape
-  inherited Create({suspended=}False);
+  Start;
 end;
 
 constructor TPWebQuickJSPlugin.CreatePackage(const ASource: IInvocationSource;
@@ -614,23 +631,16 @@ constructor TPWebQuickJSPlugin.CreatePackage(const ASource: IInvocationSource;
   const AOnSnapshot: TPWebQuickJSSnapshotEvent);
 var
   ctx: TInvocationContext;
+  code: TPWebPackageLoadCode;
+  detail: RawUtf8;
 begin
-  // the descriptor is validated BEFORE the thread exists, so a bad one
-  // never gets as far as an engine
-  if ADescriptor.PackageStore = nil then
-    raise EPWebQuickJSPlugin.Create('plugin descriptor requires a store');
-  if ADescriptor.PrincipalId = '' then
-    raise EPWebQuickJSPlugin.Create(
-      'plugin descriptor requires a native PrincipalId');
-  if ADescriptor.PluginId = '' then
-    raise EPWebQuickJSPlugin.Create(
-      'plugin descriptor requires a native PluginId');
-  if not PWebPackageIdValid(ADescriptor.ExpectedPackageId) then
-    raise EPWebQuickJSPlugin.Create(
-      'plugin descriptor requires a valid ExpectedPackageId');
-  if not PWebPackageEntryValid(ADescriptor.ExpectedEntryPoint) then
-    raise EPWebQuickJSPlugin.Create(
-      'plugin descriptor requires a canonical ExpectedEntryPoint');
+  // TThread base first and suspended - see the note in Create. Every
+  // raise below would otherwise send the destructor into an
+  // unconstructed TThread.
+  inherited Create({suspended=}True);
+  if not PWebValidateQuickJSPackageDescriptor(ADescriptor, code, detail) then
+    raise EPWebQuickJSPlugin.CreateFmt('plugin descriptor rejected: %s (%s)',
+      [PWEB_PACKAGE_LOAD_TEXT[code], detail]);
   // the context is built HERE, natively, from the descriptor alone -
   // pkQuickJS is not a choice, and WindowId is always empty for a
   // plugin principal (security-model.md)
@@ -641,13 +651,18 @@ begin
   ctx.WindowId := '';
   ctx.Capabilities := ADescriptor.Capabilities;
   ctx.TrustedContent := False;
-  InitCommon(ASource, ctx, ADescriptor.Engine, AOnSnapshot);
+  // EVERYTHING that can raise happens BEFORE InitCommon allocates the
+  // events: once FWork is non-nil, Unload no longer takes its
+  // never-started guard, so a raise between here and inherited Create
+  // would send the destructor into WaitFor on a thread that does not
+  // exist. Create the graph first and that window does not exist.
   FPackage := ADescriptor;
   FHasPackage := True;
   FPackageLimits := PWebClampPackageLimits(ADescriptor.Package);
   FGraph := TPWebModuleGraph.Create(FPackageLimits);
   InterlockedExchange(FLoadState, Ord(qlsLoading));
-  inherited Create({suspended=}False);
+  InitCommon(ASource, ctx, ADescriptor.Engine, AOnSnapshot);
+  Start;
 end;
 
 destructor TPWebQuickJSPlugin.Destroy;
@@ -769,16 +784,18 @@ const
   PWEB_PACKAGE_ERROR_MAX = 2048;
 
 { Reduce attacker-influenced text to printable ASCII and bound it, so a
-  module name or specifier recorded natively can never carry control
-  bytes into a log, and never grows without limit. }
-function SafeDetail(const AText: RawUtf8): RawUtf8;
+  module name, specifier or engine diagnostic recorded natively can never
+  carry control bytes into a host's log, never grows without limit, and
+  can never be truncated into invalid UTF-8 (every retained byte is
+  ASCII, so there is no multi-byte sequence left to cut). }
+function SafeText(const AText: RawUtf8; AMax: PtrInt): RawUtf8;
 var
   i, n: PtrInt;
   c: AnsiChar;
 begin
   n := Length(AText);
-  if n > PWEB_PACKAGE_DETAIL_MAX then
-    n := PWEB_PACKAGE_DETAIL_MAX;
+  if n > AMax then
+    n := AMax;
   SetLength(Result, n);
   for i := 1 to n do
   begin
@@ -788,6 +805,11 @@ begin
     else
       Result[i] := c;
   end;
+end;
+
+function SafeDetail(const AText: RawUtf8): RawUtf8;
+begin
+  Result := SafeText(AText, PWEB_PACKAGE_DETAIL_MAX);
 end;
 
 { The two cdecl trampolines registered with JS_SetModuleLoaderFunc. The
@@ -855,8 +877,14 @@ begin
     JS_ThrowReferenceError(ctx, PWEB_THROW_CLOSED);
     exit;
   end;
-  base := RawUtf8(ABase);
-  spec := RawUtf8(ASpecifier);
+  // FastSetString, never RawUtf8(PAnsiChar): the cast goes through the
+  // string's code page, and it is byte-verbatim here only because mORMot
+  // happens to have switched the RTL default to UTF-8 at startup. This
+  // is the same trap StripBom's byte-literal comparison and the harness
+  // Bytes() helper exist to avoid; a module specifier is bytes, and the
+  // resolver must see the bytes QuickJS handed it.
+  FastSetString(base, ABase, StrLen(ABase));
+  FastSetString(spec, ASpecifier, StrLen(ASpecifier));
   // ALL resolution happens here: QuickJS joins nothing and hands the
   // specifier through verbatim
   if not PWebResolveModuleSpecifier(base, spec,
@@ -908,7 +936,7 @@ begin
     JS_ThrowReferenceError(ctx, PWEB_THROW_CLOSED);
     exit;
   end;
-  name := RawUtf8(AName);
+  FastSetString(name, AName, StrLen(AName)); // bytes, not a code page
   // defence in depth: NormalizeModule produced this name, but a module
   // name reaching a store read unvalidated is precisely the hole this
   // layer exists to close
@@ -923,6 +951,15 @@ begin
   begin
     RecordPackageFailure(plcModuleMissing, name);
     JS_ThrowReferenceError(ctx, PWEB_THROW_MISSING);
+    exit;
+  end;
+  // bound the RAW asset first: IAssetStore is frozen with no size form,
+  // so this is the earliest point the length is observable - and it
+  // refuses before PWebPrepareModuleSource copies the whole thing again
+  if PtrUInt(Length(asset.Content)) > FPackageLimits.ModuleMaxBytes then
+  begin
+    RecordPackageFailure(plcModuleTooLarge, name);
+    JS_ThrowReferenceError(ctx, PWEB_THROW_LIMIT);
     exit;
   end;
   if not PWebPrepareModuleSource(asset.Content, src, code) then
@@ -977,11 +1014,32 @@ var
       FInitError := FInitError + ' (' + FPackageDetail + ')';
   end;
 
-  procedure CaptureEngineError;
+  { The ONE armed CPU window spans manifest -> entry -> whole graph,
+    which is the property that makes the bound meaningful (re-arming per
+    module would hand a 256-module graph 256x the budget). But it means
+    a slow-I/O abort arrives as a compile or evaluate exception, and
+    reporting THAT as plcCompile misdiagnoses a timeout as a syntax
+    error. Fix the diagnosis, never the bound. }
+  function TimeoutOr(ACode: TPWebPackageLoadCode): TPWebPackageLoadCode;
   begin
-    FEngine.cx^.ErrorMessage({stacktrace=}True, FPackageError);
-    if Length(FPackageError) > PWEB_PACKAGE_ERROR_MAX then
-      SetLength(FPackageError, PWEB_PACKAGE_ERROR_MAX);
+    if (FEngine <> nil) and FEngine.TimeoutAborted then
+      Result := plcTimeout
+    else
+      Result := ACode;
+  end;
+
+  procedure CaptureEngineError;
+  var
+    raw: RawUtf8;
+  begin
+    FEngine.cx^.ErrorMessage({stacktrace=}True, raw);
+    // through the SAME sanitizer as PackageDetail: a blind
+    // SetLength(..., MAX) can cut a multi-byte sequence in half and hand
+    // a host invalid UTF-8 to log, and the property's own contract
+    // promises bounded, path-free text. Printable ASCII satisfies both
+    // unconditionally - QuickJS's diagnostics are ASCII in practice, and
+    // anything else in them is not something to forward verbatim.
+    FPackageError := SafeText(raw, PWEB_PACKAGE_ERROR_MAX);
   end;
 
 begin
@@ -989,6 +1047,14 @@ begin
   if not FPackage.PackageStore.TryRead(PWEB_PACKAGE_MANIFEST, asset) then
   begin
     Fail(plcManifestMissing, PWEB_PACKAGE_MANIFEST);
+    exit;
+  end;
+  // bound the raw bytes at the earliest observable point, before the
+  // scanner copies or walks them (see the limits record's honest-scope
+  // note about the frozen IAssetStore having no size form)
+  if PtrUInt(Length(asset.Content)) > FPackageLimits.ManifestMaxBytes then
+  begin
+    Fail(plcManifestTooLarge, PWEB_PACKAGE_MANIFEST);
     exit;
   end;
   // 2. strict parse
@@ -1058,7 +1124,7 @@ begin
   if v.IsException then
   begin
     CaptureEngineError;
-    Fail(plcCompile, FManifest.Entry);
+    Fail(TimeoutOr(plcCompile), FManifest.Entry);
     exit;
   end;
   // 8. evaluate: resolves and evaluates the whole static graph
@@ -1067,12 +1133,24 @@ begin
   begin
     CaptureEngineError;
     // the loader may already have recorded a precise reason; Fail keeps
-    // the first one and only falls back to plcEvaluate
-    Fail(plcEvaluate, FManifest.Entry);
+    // the first one and only falls back to the generic code
+    Fail(TimeoutOr(plcEvaluate), FManifest.Entry);
     exit;
   end;
   FEngine.cx^.Free(r);
-  // 9. accepted: the graph is sealed and pweb.invoke opens
+  // 9. nothing in PWeb drains the QuickJS job queue, so top-level code
+  // that queued work - a bare Promise.reject(), a .then(), a dynamic
+  // import() - has queued something that will NEVER run. Accepting such
+  // a package would report Running for a plugin whose asynchronous half
+  // is silently dead. Adding a pump is out of scope (it would also
+  // enable dynamic import), so refuse LOUDLY instead: deterministic,
+  // fail-closed, and a startup error rather than a silent trap.
+  if JS_IsJobPending(FEngine.rt) then
+  begin
+    Fail(plcPendingJobs, FManifest.Entry);
+    exit;
+  end;
+  // 10. accepted: the graph is sealed and pweb.invoke opens
   InterlockedExchange(FLoadState, Ord(qlsRunning));
 end;
 
@@ -1276,6 +1354,41 @@ end;
 
 { ---------------- atomic package load ---------------- }
 
+function PWebValidateQuickJSPackageDescriptor(
+  const ADescriptor: TPWebQuickJSPackageDescriptor;
+  out ACode: TPWebPackageLoadCode; out ADetail: RawUtf8): Boolean;
+begin
+  ACode := plcDescriptor;
+  Result := False;
+  if ADescriptor.PackageStore = nil then
+    ADetail := 'no package store'
+  else if ADescriptor.PrincipalId = '' then
+    ADetail := 'no native PrincipalId'
+  else if ADescriptor.PluginId = '' then
+    ADetail := 'no native PluginId'
+  else if not PWebPackageIdValid(ADescriptor.ExpectedPackageId) then
+    ADetail := 'invalid ExpectedPackageId'
+  else if not PWebPackageEntryValid(ADescriptor.ExpectedEntryPoint) then
+    ADetail := 'non-canonical ExpectedEntryPoint'
+  else if ADescriptor.Engine.TimeoutSeconds = 0 then
+    // A package load evaluates ARBITRARY plugin top-level code before
+    // the plugin is ever reported ready, so CAP-9A's allowance that
+    // TimeoutSeconds = 0 disables the interrupt cannot carry over: with
+    // it off, a `while (true) {}` entry module is never interrupted,
+    // WaitReady times out, and the atomic-failure path's join then
+    // blocks forever - one bad package would wedge host startup with no
+    // recovery. Package plugins are deliberately stricter than the
+    // CAP-9A post-script path, which only ever runs code the host chose
+    // to post AFTER readiness.
+    ADetail := 'TimeoutSeconds must be nonzero for a package load'
+  else
+  begin
+    ACode := plcNone;
+    ADetail := '';
+    Result := True;
+  end;
+end;
+
 function PWebLoadQuickJSPackage(
   const ADescriptor: TPWebQuickJSPackageDescriptor;
   const ASource: IInvocationSource;
@@ -1286,6 +1399,7 @@ function PWebLoadQuickJSPackage(
   out ADetail: RawUtf8): Boolean;
 var
   plugin: TPWebQuickJSPlugin;
+  ready: Boolean;
 begin
   APlugin := nil;
   ACode := plcNone;
@@ -1293,42 +1407,73 @@ begin
   Result := False;
   if AReadyWaitMs <= 0 then
     AReadyWaitMs := 15000;
+  // validate BEFORE constructing: a doomed object is never built, so the
+  // constructor-raise path (and everything a partially built TThread
+  // implies) is simply not on this route
+  if not PWebValidateQuickJSPackageDescriptor(ADescriptor, ACode, ADetail) then
+  begin
+    // no thread, no engine - but still close the source, so a rejected
+    // descriptor leaves nothing queueable behind
+    if ASource <> nil then
+      try
+        ASource.Quiesce;
+        ASource.Close;
+      except
+        // a closed/shutdown source must never abort teardown
+      end;
+    exit;
+  end;
   try
     plugin := TPWebQuickJSPlugin.CreatePackage(
       ASource, ADescriptor, AOnSnapshot);
   except
     on E: Exception do
     begin
-      // the thread never started and no engine ever existed; still close
-      // the source so a rejected descriptor leaves nothing open
-      ACode := plcDescriptor;
+      // defence in depth: the validator above already covers every
+      // descriptor rejection, so reaching here means the thread or the
+      // graph could not be created at all
+      ACode := plcEngine;
       ADetail := SafeDetail(RawUtf8(E.Message));
       if ASource <> nil then
         try
           ASource.Quiesce;
           ASource.Close;
         except
-          // a closed/shutdown source must never abort teardown
         end;
       exit;
     end;
   end;
-  plugin.WaitReady(AReadyWaitMs);
-  if plugin.LoadState = qlsRunning then
+  ready := plugin.WaitReady(AReadyWaitMs);
+  if ready and (plugin.LoadState = qlsRunning) then
   begin
     APlugin := plugin;
     exit(True);
   end;
+  // ATOMIC FAILURE: Quiesce -> Close -> JOIN first, and only then read
+  // the plugin's fields. On the ready-TIMEOUT path the plugin thread may
+  // still be inside LoadPackageOnOwnThread assigning the refcounted
+  // FPackageDetail/FPackageError, so reading them before the join is an
+  // unsynchronised read of a managed string. Every non-timeout read is
+  // ordered by the FReady event; joining first makes all of them so.
+  // The join is bounded because CreatePackage refuses a descriptor with
+  // TimeoutSeconds = 0, so the interrupt always ends the evaluation.
+  plugin.Unload;
   ACode := plugin.PackageCode;
-  if ACode = plcNone then
-    ACode := plcEngine; // ready timed out, or the engine never came up
+  if plugin.LoaderWrongThreadCalls > 0 then
+    // the thread-affinity gate must not be reachable only through a
+    // SUCCESSFUL load: if a callback ran off the owning thread, that is
+    // the finding, whatever else also went wrong
+    ACode := plcThread
+  else if ACode = plcNone then
+    if ready then
+      ACode := plcEngine  // the engine never came up
+    else
+      ACode := plcTimeout; // WaitReady itself timed out
   ADetail := plugin.PackageDetail;
   if ADetail = '' then
     ADetail := SafeDetail(plugin.PackageError);
-  // ATOMIC FAILURE: Quiesce -> Close -> join, with the engine destroyed
-  // on its owning thread in Execute's epilogue. Nothing stays Running,
-  // no invocation stays pending, and APlugin stays nil.
-  plugin.Unload;
+  // the engine was destroyed on its owning thread in Execute's epilogue;
+  // nothing stays Running, no invocation stays pending, APlugin is nil
   plugin.Free;
 end;
 

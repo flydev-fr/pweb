@@ -60,6 +60,7 @@ $required = @(
     'quickjs_package_corpus', 'quickjs_package_digest',
     'cap9b1_loadtime_bridge', 'cap9b1_loader_wrong_thread',
     'cap9b1_store_wrong_thread', 'cap9b1_denied_bridge',
+    'cap9b1_source_open_after_failure', 'cap9b1_opener_reached',
     'release_layout', 'no_listener', 'app_pwb_react_sha256',
     'logical_inventory_sha256_react', 'github_sha', 'github_run_id', 'waivers'
 )
@@ -209,7 +210,11 @@ foreach ($t in $evidence.Keys) {
             @{ field = 'cap9b1_store_wrong_thread'
                why   = 'the plugin package store was read off its owning plugin thread' },
             @{ field = 'cap9b1_denied_bridge'
-               why   = 'a forbidden plugin principal reached the bridge' })) {
+               why   = 'a forbidden plugin principal reached the bridge' },
+            @{ field = 'cap9b1_source_open_after_failure'
+               why   = 'a failed package load left a queueable invocation source' },
+            @{ field = 'cap9b1_opener_reached'
+               why   = 'a plugin reached the openExternal bridge arm without external.open' })) {
             $v = 0
             if (-not [int]::TryParse("$($e.($pair.field))", [ref]$v)) {
                 $failures.Add("CAP-9B1 NON-NUMERIC: target=$t $($pair.field)='$($e.($pair.field))'")

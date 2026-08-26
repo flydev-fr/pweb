@@ -101,7 +101,10 @@ Write-Host $out
 if (-not (Test-Path $corpus)) {
     throw "CAP-9B1: the quickjs-package-corpus digest source was not written -- see $log"
 }
-if (-not ($out -match [regex]::Escape($passMarker))) {
+# -cmatch, not -match: the marker was extracted -CaseSensitive, so it must
+# be tested case-sensitively too - otherwise a marker differing only in case
+# would satisfy the Windows gate while the bash sibling's grep -qF refused it
+if (-not ($out -cmatch [regex]::Escape($passMarker))) {
     throw "CAP-9B1 quickjspackage FAILED (exit $code) -- see $log"
 }
 if ($code -ne 0) {

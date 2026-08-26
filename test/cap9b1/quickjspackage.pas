@@ -177,15 +177,14 @@ type
   TCountingStore = class(TInterfacedObject, IAssetStore)
   private
     FInner: IAssetStore;
-    FFirst: TThreadID;
-    FHasFirst: LongInt;
+    FFirst: LongInt; // LongInt so the winner publishes with one CAS
     FOther: LongInt;
     FReads: LongInt;
   public
     constructor Create(const AInner: IAssetStore);
     function TryRead(const Path: RawUtf8;
       out Asset: TAssetResponse): Boolean;
-    function FirstThread: TThreadID;
+    function FirstThread: LongInt;
     function OtherThreadReads: LongInt;
     function Reads: LongInt;
   end;
@@ -205,6 +204,11 @@ var
   BridgeDuringLoad: LongInt;      // armed while a package is loading
   NullSinkCalls: LongInt;         // MUST stay 0 (a closed source never sinks)
   SourceOpenAfterFailure: LongInt;// MUST stay 0 (P33)
+  StoreNeverRead: LongInt;        // MUST stay 0 (a load that read nothing)
+  StoreForeignFirstReader: LongInt; // MUST stay 0 (first reader != plugin)
+  LoadTimeInvokeGate: LongInt;    // times the Loading gate actually FIRED
+  BridgePluginId: RawUtf8;        // PluginId as the BRIDGE received it
+  BridgeTrusted: RawUtf8;         // TrustedContent as the bridge saw it
   // runtime under test
   gScheduler: TInvocationScheduler;
   gSchedulerRef: IInvocationScheduler;
@@ -221,6 +225,8 @@ var
   // when set, RunPackage evaluates it on the loaded plugin and records the
   // answer plus the loader-call count that followed
   gProbeScript: RawUtf8;
+  // per-fixture engine bounds; reset to the defaults after every use
+  gEngineLimits: TPWebQuickJSLimits;
 
 { ---- corpus + failure helpers ------------------------------------------- }
 
@@ -366,7 +372,19 @@ begin
   if Method = M_ADD then
   begin
     if Context.PrincipalId = ID_CALC then
-      InterlockedIncrement(CountAddByPrincipal[0])
+    begin
+      InterlockedIncrement(CountAddByPrincipal[0]);
+      // record the two context fields CreatePackage builds NATIVELY, as
+      // the bridge actually received them: the CAP-8A policy makes no
+      // identity check on either for a pkQuickJS principal, so without
+      // this nothing in the suite would ever observe them and a
+      // regression that mis-set them would pass every gate
+      BridgePluginId := Context.PluginId;
+      if Context.TrustedContent then
+        BridgeTrusted := 'true'
+      else
+        BridgeTrusted := 'false';
+    end
     else if Context.PrincipalId = ID_REP then
       InterlockedIncrement(CountAddByPrincipal[1]);
     exit(FInner.Invoke(Context, Method, Args, Token));
@@ -413,22 +431,27 @@ end;
 
 function TCountingStore.TryRead(const Path: RawUtf8;
   out Asset: TAssetResponse): Boolean;
+var
+  tid: LongInt;
 begin
   InterlockedIncrement(StoreReads);
   InterlockedIncrement(FReads);
-  if InterlockedExchange(FHasFirst, 1) = 0 then
-    FFirst := GetCurrentThreadId()
-  else if GetCurrentThreadId() <> FFirst then
-  begin
-    InterlockedIncrement(FOther);
-    InterlockedIncrement(StoreWrongThread);
-  end;
+  // publish the winner ATOMICALLY: with a separate flag and assignment a
+  // second thread could read FFirst in the window between them, and this
+  // counter has to be trustworthy at exactly 0
+  tid := LongInt(PtrUInt(GetCurrentThreadId()));
+  if InterlockedCompareExchange(FFirst, tid, 0) <> 0 then
+    if FFirst <> tid then
+    begin
+      InterlockedIncrement(FOther);
+      InterlockedIncrement(StoreWrongThread);
+    end;
   Result := FInner.TryRead(Path, Asset);
 end;
 
-function TCountingStore.FirstThread: TThreadID;
+function TCountingStore.FirstThread: LongInt;
 begin
-  Result := FFirst;
+  Result := InterlockedCompareExchange(FFirst, 0, 0);
 end;
 
 function TCountingStore.OtherThreadReads: LongInt;
@@ -600,6 +623,8 @@ type
     LoadInvoke: RawUtf8;
     StateRuns: RawUtf8;
     Sandbox: RawUtf8;
+    Manifest: RawUtf8;       // the PARSED projection, not our constants
+    LoadTimeInvokes: Integer;// times the Loading gate refused an invoke
     Probe: RawUtf8;          // gProbeScript's answer, when one is set
     ProbeLoaderCalls: Integer; // loader calls AFTER the probe ran
     StoreThreadOk: Boolean;
@@ -677,6 +702,24 @@ begin
   end;
 end;
 
+{ Evaluate on the loaded plugin and return the answer, or ONE fixed token
+  on any failure. Never the engine's own text: corpus bytes must be a
+  function of the decisions, not of how a particular target's engine
+  phrased a timeout. }
+function EvalToken(APlugin: TPWebQuickJSPlugin;
+  const AScript: RawUtf8): RawUtf8;
+var
+  js, err: RawUtf8;
+begin
+  if APlugin.Eval(AScript, js, err, 0, SCRIPT_WAIT_MS) then
+    Result := js
+  else
+  begin
+    Result := 'evalfail';
+    Fail('a post-load Eval did not complete (corpus token: evalfail)');
+  end;
+end;
+
 { Load one package through one store and, on success, exercise it.
   Always tears the plugin and its source down before returning, so no
   fixture can leak a live engine into the next one. }
@@ -717,7 +760,7 @@ begin
   desc.PackageStore := countingRef;
   desc.ExpectedPackageId := PKG_ID;
   desc.ExpectedEntryPoint := AExpectedEntry;
-  desc.Engine := PWEB_QUICKJS_DEFAULT_LIMITS;
+  desc.Engine := gEngineLimits;
   desc.Package := ALimits;
   InterlockedExchange(BridgeDuringLoad, 1);
   plugin := nil;
@@ -741,45 +784,53 @@ begin
       exit;
     end;
     // the loader AND every package store read must have happened on the
-    // plugin's own thread - measured, never assumed
-    InterlockedExchange(LoaderWrongThread,
-      LoaderWrongThread + plugin.LoaderWrongThreadCalls);
+    // plugin's own thread - measured, never assumed. (On the FAILURE
+    // path PWebLoadQuickJSPackage forces ACode := plcThread when its own
+    // counter is nonzero, so the gate is not reachable only through a
+    // successful load.)
+    InterlockedExchangeAdd(LoaderWrongThread, plugin.LoaderWrongThreadCalls);
+    // three DISTINCT conditions, reported separately: TryRead already
+    // counts an off-thread read into StoreWrongThread, so re-counting it
+    // here would double it and conflate "read by two threads" with
+    // "never read" and "first reader was not the plugin thread"
+    if counting.Reads = 0 then
+      InterlockedIncrement(StoreNeverRead);
+    if counting.FirstThread <> LongInt(PtrUInt(plugin.ThreadID)) then
+      InterlockedIncrement(StoreForeignFirstReader);
     Result.StoreThreadOk := (counting.OtherThreadReads = 0) and
-      (counting.Reads > 0) and (counting.FirstThread = plugin.ThreadID);
-    if not Result.StoreThreadOk then
-      InterlockedIncrement(StoreWrongThread);
+      (counting.Reads > 0) and
+      (counting.FirstThread = LongInt(PtrUInt(plugin.ThreadID)));
     Result.LoaderCalls := plugin.LoaderCalls;
     Result.NormalizeCalls := plugin.NormalizeCalls;
+    // the counter that proves the P32 gate FIRED, as opposed to the
+    // fixture simply never reaching pweb.invoke - __loadInvoke alone
+    // cannot tell those two apart
+    Result.LoadTimeInvokes := plugin.LoadTimeInvokes;
+    InterlockedExchangeAdd(LoadTimeInvokeGate, plugin.LoadTimeInvokes);
+    // the PARSED manifest, not the harness's own constants: without this
+    // a regression that dropped or mis-parsed "version" would pass every
+    // gate on all four targets
+    Result.Manifest := plugin.Manifest.Id + '@' + plugin.Manifest.Version +
+      ' schema=' + IntStr(plugin.Manifest.Schema) +
+      ' entry=' + plugin.Manifest.Entry;
     Result.Modules := ModuleList(plugin.ModuleGraph);
     Result.Edges := SortedEdges(plugin.ModuleGraph);
     Result.Hashes := ModuleHashes(plugin.ModuleGraph, AStore);
-    if plugin.Eval('String(globalThis.__loadInvoke)', js, err, 0,
-        SCRIPT_WAIT_MS) then
-      Result.LoadInvoke := js
-    else
-      Result.LoadInvoke := 'unavailable';
-    if plugin.Eval('String(globalThis.__stateRuns)', js, err, 0,
-        SCRIPT_WAIT_MS) then
-      Result.StateRuns := js
-    else
-      Result.StateRuns := 'unavailable';
-    if plugin.Eval('String(globalThis.__sandbox)', js, err, 0,
-        SCRIPT_WAIT_MS) then
-      Result.Sandbox := js
-    else
-      Result.Sandbox := 'unavailable';
-    if plugin.Eval(
-        'try { String(globalThis.pluginAdd(40, 2)) } ' +
-        'catch (e) { "throw:" + e.code }', js, err, 0, SCRIPT_WAIT_MS) then
-      Result.Result42 := js
-    else
-      Result.Result42 := 'error:' + err;
+    // EVERY corpus-bound field carries a FIXED token on failure, never
+    // engine text: an Eval that times out or errors would otherwise put
+    // QuickJS's own message into a corpus line, so a hiccup on one
+    // target would surface as an opaque quickjs_package_digest mismatch
+    // instead of a named failure. The Fail() also makes the run red, so
+    // divergent bytes can never be what CI notices first.
+    Result.LoadInvoke := EvalToken(plugin, 'String(globalThis.__loadInvoke)');
+    Result.StateRuns := EvalToken(plugin, 'String(globalThis.__stateRuns)');
+    Result.Sandbox := EvalToken(plugin, 'String(globalThis.__sandbox)');
+    Result.Result42 := EvalToken(plugin,
+      'try { String(globalThis.pluginAdd(40, 2)) } ' +
+      'catch (e) { "throw:" + e.code }');
     if gProbeScript <> '' then
     begin
-      if plugin.Eval(gProbeScript, js, err, 0, SCRIPT_WAIT_MS) then
-        Result.Probe := js
-      else
-        Result.Probe := 'error:' + err;
+      Result.Probe := EvalToken(plugin, gProbeScript);
       // read AFTER the probe: a post-load import that reached the loader
       // would show up here as a call the load itself did not make
       Result.ProbeLoaderCalls := plugin.LoaderCalls;
@@ -806,6 +857,7 @@ begin
     ' code=' + PWEB_PACKAGE_LOAD_TEXT[AOut.Code]);
   if AOut.Ok then
   begin
+    Emit(ATag + ' manifest=' + AOut.Manifest);
     Emit(ATag + ' modules=' + AOut.Modules);
     Emit(ATag + ' hashes=' + AOut.Hashes);
     Emit(ATag + ' graph=' + AOut.Edges);
@@ -819,10 +871,11 @@ end;
 
 function OutcomeDigest(const AOut: TLoadOutcome): RawUtf8;
 begin
-  Result := YesNo(AOut.Ok) + ';' + AOut.Modules + ';' + AOut.Hashes + ';' +
-    AOut.Edges + ';' + AOut.LoadInvoke + ';' + AOut.StateRuns + ';' +
-    AOut.Result42 + ';' + AOut.Sandbox + ';' +
-    IntStr(AOut.LoaderCalls) + ';' + IntStr(AOut.NormalizeCalls);
+  Result := YesNo(AOut.Ok) + ';' + AOut.Manifest + ';' + AOut.Modules + ';' +
+    AOut.Hashes + ';' + AOut.Edges + ';' + AOut.LoadInvoke + ';' +
+    AOut.StateRuns + ';' + AOut.Result42 + ';' + AOut.Sandbox + ';' +
+    IntStr(AOut.LoaderCalls) + ';' + IntStr(AOut.NormalizeCalls) + ';' +
+    IntStr(AOut.LoadTimeInvokes);
 end;
 
 { Build both carriers over the SAME bytes and hand each to ARun. }
@@ -985,7 +1038,8 @@ begin
     '{"schema":1,"id":"quickjs.calculator","version":"1.0.0",' +
     '"entry":"other.js"}'), plcEntryMismatch, ENTRY,
     PWEB_PACKAGE_DEFAULT_LIMITS);
-  // P1 (missing manifest)
+  // a package with no manifest at all (plcManifestMissing is a
+  // first-class code; it is not one of the numbered P1-P40 rows)
   files := ReferencePackage;
   RemoveFile(files, 'plugin.json');
   HostileCase('manifest_missing', files, plcManifestMissing, ENTRY,
@@ -1000,6 +1054,43 @@ begin
   lim.ManifestMaxBytes := 64;
   HostileCase('limit_manifest_size', ReferencePackage, plcManifestTooLarge,
     ENTRY, lim);
+  // the two terminal manifest validations. Without these legs the schema
+  // check and the whole SemVer grammar can be deleted with the matrix
+  // still green - the package would then load a "schema":2 manifest
+  // under schema-1 semantics.
+  HostileCase('manifest_schema_2', Mutated(
+    '{"schema":2,"id":"quickjs.calculator","version":"1.0.0",' +
+    '"entry":"main.js"}'), plcManifestSchema, ENTRY,
+    PWEB_PACKAGE_DEFAULT_LIMITS);
+  HostileCase('manifest_schema_leading_zero', Mutated(
+    '{"schema":01,"id":"quickjs.calculator","version":"1.0.0",' +
+    '"entry":"main.js"}'), plcManifestSyntax, ENTRY,
+    PWEB_PACKAGE_DEFAULT_LIMITS);
+  HostileCase('manifest_version_two_parts', Mutated(
+    '{"schema":1,"id":"quickjs.calculator","version":"1.0",' +
+    '"entry":"main.js"}'), plcManifestVersion, ENTRY,
+    PWEB_PACKAGE_DEFAULT_LIMITS);
+  HostileCase('manifest_version_leading_zero', Mutated(
+    '{"schema":1,"id":"quickjs.calculator","version":"01.0.0",' +
+    '"entry":"main.js"}'), plcManifestVersion, ENTRY,
+    PWEB_PACKAGE_DEFAULT_LIMITS);
+  HostileCase('manifest_version_prerelease', Mutated(
+    '{"schema":1,"id":"quickjs.calculator","version":"1.0.0-rc1",' +
+    '"entry":"main.js"}'), plcManifestVersion, ENTRY,
+    PWEB_PACKAGE_DEFAULT_LIMITS);
+  // a doubled BOM must NOT be stripped twice - the stray U+FEFF makes it
+  // a syntax error, which is the loud, correct outcome
+  files := ReferencePackage;
+  ReplaceFile(files, 'plugin.json',
+    Bytes([$EF, $BB, $BF, $EF, $BB, $BF]) + RawByteString(MANIFEST_OK));
+  HostileCase('manifest_double_bom', files, plcManifestSyntax, ENTRY,
+    PWEB_PACKAGE_DEFAULT_LIMITS);
+  // ...while a SINGLE manifest BOM is accepted
+  files := ReferencePackage;
+  ReplaceFile(files, 'plugin.json',
+    Bytes([$EF, $BB, $BF]) + RawByteString(MANIFEST_OK));
+  LegalCase('manifest_single_bom', files, ENTRY,
+    PWEB_PACKAGE_DEFAULT_LIMITS);
 end;
 
 procedure PResolution;
@@ -1051,6 +1142,38 @@ begin
   ReplaceFile(files, 'lib/state.js', 'export const q = ;;;'#10);
   HostileCase('module_syntax_error', files, plcCompile, ENTRY,
     PWEB_PACKAGE_DEFAULT_LIMITS);
+  // the ONE failure mode where attacker code has already RUN: a module
+  // that throws at top level. Without this leg CaptureEngineError, the
+  // first-failure-wins fallback and the whole atomic-teardown guarantee
+  // are proven only for refusals that happen before evaluation.
+  files := ReferencePackage;
+  ReplaceFile(files, 'shared/unit.js',
+    'globalThis.__ranBeforeThrow = 1;'#10 +
+    'throw new Error("package says no");'#10 +
+    'export const unit = 1;'#10);
+  HostileCase('module_throws_at_top_level', files, plcEvaluate, ENTRY,
+    PWEB_PACKAGE_DEFAULT_LIMITS);
+  // an over-long specifier that FOLDS to a short valid path: without the
+  // pre-fold bound this resolves cleanly, so the only ratified limit
+  // with no leg gets one
+  files := ReferencePackage;
+  ReplaceFile(files, 'main.js',
+    RawByteString('import ".') + Repeated('/x/..', 120) +
+    RawByteString('/lib/state.js";'#10'globalThis.__x = 1;'#10));
+  HostileCase('limit_specifier_length', files, plcSpecifier, ENTRY,
+    PWEB_PACKAGE_DEFAULT_LIMITS);
+  // a raw C1 control byte in module source: refused, because the one
+  // shared UTF-8 validator carries the asset-path portability rule.
+  // Pinned so the inherited strictness cannot change silently.
+  files := ReferencePackage;
+  ReplaceFile(files, 'shared/unit.js',
+    RawByteString('export const unit = 1; // ') + Bytes([$C2, $85]) +
+    RawByteString(#10));
+  HostileCase('module_c1_control', files, plcModuleEncoding, ENTRY,
+    PWEB_PACKAGE_DEFAULT_LIMITS);
+  // a dotfile is not a module
+  HostileCase('spec_dotfile', Importing('./lib/.js'),
+    plcSpecifier, ENTRY, PWEB_PACKAGE_DEFAULT_LIMITS);
   // legal: a cycle is valid ES and must LOAD
   files := ReferencePackage;
   ReplaceFile(files, 'main.js',
@@ -1148,6 +1271,26 @@ begin
         RawByteString(#10);
     AddFile(Result, 'd' + IntStr(i) + '.js', body);
   end;
+end;
+
+{ A flat fan-out: the entry imports ACount siblings, so the graph is
+  WIDE at depth 1. Reaching the module-count bound with a chain would
+  trip the depth bound first, which proves the wrong thing. }
+function FanOutPackage(ACount: Integer): TPkgFiles;
+var
+  i: Integer;
+  entry: RawByteString;
+begin
+  Result := nil;
+  AddFile(Result, 'plugin.json', MANIFEST_OK);
+  entry := '';
+  for i := 1 to ACount do
+  begin
+    entry := entry + RawByteString('import "./f' + IntStr(i) + '.js";'#10);
+    AddFile(Result, 'f' + IntStr(i) + '.js',
+      'globalThis.__f' + IntStr(i) + ' = 1;'#10);
+  end;
+  AddFile(Result, 'main.js', entry + RawByteString('globalThis.__fan = 1;'#10));
 end;
 
 procedure PLimits;
@@ -1262,11 +1405,14 @@ begin
   Emit('forge ok=' + YesNo(o.Ok) + ' add=' + o.Result42 +
     ' opener_reached=' + IntStr(CountOpenReached));
   Expect(o.Ok, 'P36 the forging package must still load (code is code)');
-  Expect(Copy(o.Result42, 1, 13) = '42|forbidden|',
+  // EXACT, not a prefix plus a not-equals: with only those two, any
+  // outcome shaped '42|forbidden|<anything else>' passed, so a change in
+  // where the forged call died would go unnoticed. The forged fields are
+  // refused by the wire grammar before they could reach the policy at
+  // all - which is the finding, and it should be pinned as such.
+  Expect(o.Result42 = '42|forbidden|invalid_request',
     'P36/P35 forged identity or capability changed the outcome: ' +
     o.Result42);
-  Expect(o.Result42 <> '42|forbidden|none',
-    'P36 an invocation carrying forged identity fields was accepted');
   Expect(CountOpenReached = 0,
     'P35 pweb.openExternal reached the bridge ' +
     IntStr(CountOpenReached) + ' times');
@@ -1341,9 +1487,10 @@ end;
 procedure PAdversarial;
 var
   files: TPkgFiles;
-  fs, zs: IAssetStore;
+  fs, zs, scoped: IAssetStore;
   o: TLoadOutcome;
   refused: RawUtf8;
+  cl, hard: TPWebPackageLimits;
 begin
   files := ReferencePackage;
   ReplaceFile(files, 'main.js',
@@ -1384,7 +1531,9 @@ begin
   // message never echoes the prefix back
   refused := 'accepted';
   try
-    TPWebScopedAssetStore.Create(fs, '../escape/');
+    // held in an interface reference: if the constructor ever stopped
+    // raising, a bare object reference here would leak
+    scoped := TPWebScopedAssetStore.Create(fs, '../escape/');
   except
     on E: EPWebPackage do
       if Pos('escape', RawUtf8(E.Message)) > 0 then
@@ -1392,18 +1541,189 @@ begin
       else
         refused := 'refused';
   end;
+  scoped := nil;
   Emit('scoped_prefix_traversal=' + refused);
   Expect(refused = 'refused',
     'a traversing scope prefix was ' + refused);
   refused := 'accepted';
   try
-    TPWebScopedAssetStore.Create(fs, 'plugins/../other/');
+    scoped := TPWebScopedAssetStore.Create(fs, 'plugins/../other/');
   except
     on E: EPWebPackage do
       refused := 'refused';
   end;
+  scoped := nil;
   Emit('scoped_prefix_embedded_traversal=' + refused);
   Expect(refused = 'refused', 'an embedded-traversal scope prefix was accepted');
+  // a prefix long enough to crowd out a module path is a CONFIGURATION
+  // refusal, not a runtime miss
+  refused := 'accepted';
+  try
+    scoped := TPWebScopedAssetStore.Create(fs,
+      Repeated('abcdefgh/', 250) + 'x/');
+  except
+    on E: EPWebPackage do
+      refused := 'refused';
+  end;
+  Emit('scoped_prefix_no_headroom=' + refused);
+  Expect(refused = 'refused',
+    'a scope prefix leaving no room for a module path was accepted');
+
+  { The clamp is the ONLY thing standing between a host that leaves
+    TPWebQuickJSPackageDescriptor.Package at its all-zero record default
+    and a load with no bounds at all. Every fixture above supplies
+    explicit in-range limits, so the clamp is the identity function
+    throughout the matrix and its three behaviours are never observed -
+    "zero means the default" could be inverted to "zero means unlimited"
+    with the whole suite still green. Observe it directly. }
+  cl := PWebClampPackageLimits(Default(TPWebPackageLimits));
+  Emit('clamp zeros module=' + IntStr(cl.ModuleMaxBytes) +
+    ' total=' + IntStr(cl.TotalSourceMaxBytes) +
+    ' count=' + IntStr(cl.MaxModules) +
+    ' depth=' + IntStr(cl.MaxGraphDepth) +
+    ' specifier=' + IntStr(cl.MaxSpecifierBytes) +
+    ' manifest=' + IntStr(cl.ManifestMaxBytes));
+  Expect((cl.ModuleMaxBytes = PWEB_PACKAGE_DEFAULT_LIMITS.ModuleMaxBytes) and
+    (cl.TotalSourceMaxBytes = PWEB_PACKAGE_DEFAULT_LIMITS.TotalSourceMaxBytes) and
+    (cl.MaxModules = PWEB_PACKAGE_DEFAULT_LIMITS.MaxModules) and
+    (cl.MaxGraphDepth = PWEB_PACKAGE_DEFAULT_LIMITS.MaxGraphDepth) and
+    (cl.MaxSpecifierBytes = PWEB_PACKAGE_DEFAULT_LIMITS.MaxSpecifierBytes) and
+    (cl.ManifestMaxBytes = PWEB_PACKAGE_DEFAULT_LIMITS.ManifestMaxBytes),
+    'a zero-valued limits record did not clamp to the ratified defaults');
+  hard := Default(TPWebPackageLimits);
+  hard.ModuleMaxBytes := High(PtrUInt) div 2;
+  hard.TotalSourceMaxBytes := High(PtrUInt) div 2;
+  hard.ManifestMaxBytes := High(PtrUInt) div 2;
+  hard.MaxModules := High(Integer);
+  hard.MaxGraphDepth := High(Integer);
+  hard.MaxSpecifierBytes := High(Integer);
+  cl := PWebClampPackageLimits(hard);
+  Emit('clamp overhard module=' + IntStr(cl.ModuleMaxBytes) +
+    ' count=' + IntStr(cl.MaxModules) + ' depth=' + IntStr(cl.MaxGraphDepth));
+  Expect((cl.MaxModules = PWEB_PACKAGE_HARD_LIMITS.MaxModules) and
+    (cl.MaxGraphDepth = PWEB_PACKAGE_HARD_LIMITS.MaxGraphDepth) and
+    (cl.MaxSpecifierBytes = PWEB_PACKAGE_HARD_LIMITS.MaxSpecifierBytes) and
+    (cl.TotalSourceMaxBytes = PWEB_PACKAGE_HARD_LIMITS.TotalSourceMaxBytes) and
+    (cl.ManifestMaxBytes = PWEB_PACKAGE_HARD_LIMITS.ManifestMaxBytes) and
+    (cl.ModuleMaxBytes <= cl.TotalSourceMaxBytes),
+    'an over-hard limits record was not clamped to the hard maxima');
+  // and end to end: a package that exceeds a DEFAULT bound must be
+  // refused when the descriptor carries the all-zero record
+  // a WIDE graph (depth 1 throughout) so the module-COUNT default is the
+  // only bound that can fire - a deep chain would trip plcDepth first and
+  // prove nothing about the count
+  HostileCase('limit_zero_record_uses_defaults', FanOutPackage(300),
+    plcModuleCount, ENTRY, Default(TPWebPackageLimits));
+end;
+
+{ The three paths no fixture reached: a descriptor rejected before any
+  thread exists (and its source teardown), a package that queues work
+  nothing will ever drain, and the CPU bound firing during the load. }
+procedure PDescriptorAndRuntime;
+var
+  files: TPkgFiles;
+  fs, zs: IAssetStore;
+  o: TLoadOutcome;
+
+  { Drive PWebLoadQuickJSPackage directly with a deliberately bad
+    descriptor, and prove the source it was handed is closed - the arm
+    whose whole promise is "a rejected descriptor leaves nothing open",
+    and which the load-failure probe in RunPackage never reaches. }
+  procedure BadDescriptor(const ATag, AEntry, APrincipal: RawUtf8);
+  var
+    desc: TPWebQuickJSPackageDescriptor;
+    src: IInvocationSource;
+    srcLim: TPWebSourceLimits;
+    plugin: TPWebQuickJSPlugin;
+    code: TPWebPackageLoadCode;
+    detail: RawUtf8;
+    ctx: TInvocationContext;
+    closed: Boolean;
+  begin
+    srcLim := Default(TPWebSourceLimits);
+    srcLim.MaxConcurrent := 1;
+    srcLim.MaxQueueSize := 1;
+    src := gScheduler.RegisterSource(srcLim);
+    desc := Default(TPWebQuickJSPackageDescriptor);
+    desc.PrincipalId := APrincipal;
+    desc.PluginId := 'calculator';
+    desc.PackageStore := fs;
+    desc.ExpectedPackageId := PKG_ID;
+    desc.ExpectedEntryPoint := AEntry;
+    desc.Engine := PWEB_QUICKJS_DEFAULT_LIMITS;
+    desc.Package := PWEB_PACKAGE_DEFAULT_LIMITS;
+    plugin := nil;
+    if PWebLoadQuickJSPackage(desc, src, gSnapCb, READY_WAIT_MS,
+        plugin, code, detail) then
+    begin
+      Fail(ATag + ' a malformed descriptor was ACCEPTED');
+      if plugin <> nil then
+      begin
+        plugin.Unload;
+        plugin.Free;
+      end;
+      exit;
+    end;
+    ctx := Default(TInvocationContext);
+    ctx.PrincipalKind := pkQuickJS;
+    ctx.PrincipalId := ID_CALC;
+    ctx.PluginId := 'calculator';
+    closed := src.TryEnqueue(ctx, M_ADD, '{"a":1,"b":1}',
+      TNullCompletion.Create) = perClosed;
+    Emit('descriptor ' + ATag + ' code=' + PWEB_PACKAGE_LOAD_TEXT[code] +
+      ' plugin=' + YesNo(plugin <> nil) + ' source_closed=' + YesNo(closed));
+    Expect(plugin = nil, ATag + ' returned a plugin on a rejected descriptor');
+    Expect(code = plcDescriptor, ATag + ' code was ' +
+      PWEB_PACKAGE_LOAD_TEXT[code] + ', expected descriptor');
+    Expect(closed, ATag + ' left the supplied source OPEN');
+    if not closed then
+      InterlockedIncrement(SourceOpenAfterFailure);
+    src := nil;
+  end;
+
+begin
+  files := ReferencePackage;
+  WithBothCarriers(files, fs, zs);
+  BadDescriptor('entry_traversal', '../main.js', ID_CALC);
+  BadDescriptor('empty_principal', ENTRY, '');
+
+  // a zero CPU bound would let a runaway top-level loop block the join
+  // in the atomic-failure path forever, so a package descriptor must
+  // refuse it outright
+  gEngineLimits := PWEB_QUICKJS_DEFAULT_LIMITS;
+  gEngineLimits.TimeoutSeconds := 0;
+  try
+    o := RunPackage(fs, 0, ENTRY, PWEB_PACKAGE_DEFAULT_LIMITS);
+  finally
+    gEngineLimits := PWEB_QUICKJS_DEFAULT_LIMITS;
+  end;
+  Emit('descriptor zero_timeout code=' + PWEB_PACKAGE_LOAD_TEXT[o.Code]);
+  Expect((not o.Ok) and (o.Code = plcDescriptor),
+    'a descriptor with TimeoutSeconds=0 was accepted for a package load');
+
+  // top-level code that queues work nothing drains must be REFUSED, not
+  // silently accepted with a dead asynchronous half
+  files := ReferencePackage;
+  ReplaceFile(files, 'shared/unit.js',
+    'Promise.resolve(1).then(function () { globalThis.__late = 1; });'#10 +
+    'export const unit = 1;'#10);
+  HostileCase('pending_jobs_at_load', files, plcPendingJobs, ENTRY,
+    PWEB_PACKAGE_DEFAULT_LIMITS);
+
+  // the armed CPU window really does cover the WHOLE graph evaluation,
+  // and a runaway load is diagnosed as a timeout rather than as a
+  // compile or evaluate error
+  gEngineLimits := PWEB_QUICKJS_DEFAULT_LIMITS;
+  gEngineLimits.TimeoutSeconds := 1;
+  try
+    files := ReferencePackage;
+    ReplaceFile(files, 'shared/unit.js',
+      'while (true) { }'#10'export const unit = 1;'#10);
+    HostileCase('load_time_infinite_loop', files, plcTimeout, ENTRY,
+      PWEB_PACKAGE_DEFAULT_LIMITS);
+  finally
+    gEngineLimits := PWEB_QUICKJS_DEFAULT_LIMITS;
+  end;
 end;
 
 procedure PLedger;
@@ -1416,6 +1736,25 @@ begin
   Emit('ledger store_wrong_thread=' + IntStr(StoreWrongThread));
   Emit('ledger source_open_after_failure=' + IntStr(SourceOpenAfterFailure));
   Emit('ledger null_sink_calls=' + IntStr(NullSinkCalls));
+  Emit('ledger store_never_read=' + IntStr(StoreNeverRead));
+  Emit('ledger store_foreign_first_reader=' + IntStr(StoreForeignFirstReader));
+  Emit('ledger loadtime_invoke_gate=' + IntStr(LoadTimeInvokeGate));
+  Emit('ledger context_pluginid=' + BridgePluginId +
+    ' trusted=' + BridgeTrusted);
+  Expect(StoreNeverRead = 0,
+    'a package loaded without ever reading its store');
+  Expect(StoreForeignFirstReader = 0,
+    'the first package-store reader was not the owning plugin thread');
+  // the gate must have FIRED, not merely "not been reached": the
+  // reference package calls pweb.invoke at top level on every load
+  Expect(LoadTimeInvokeGate > 0,
+    'the Loading gate never refused an invocation - P32 is unproven');
+  // the two context fields CreatePackage sets natively, as the BRIDGE
+  // saw them: without this nothing in the suite observes either
+  Expect(BridgePluginId = 'calculator',
+    'the bridge saw PluginId ' + BridgePluginId + ', expected calculator');
+  Expect(BridgeTrusted = 'false',
+    'the bridge saw TrustedContent ' + BridgeTrusted + ', expected false');
   Expect(SourceOpenAfterFailure = 0,
     'P33 ' + IntStr(SourceOpenAfterFailure) +
     ' failed load(s) left an open invocation source');
@@ -1498,6 +1837,7 @@ begin
       gSchedulerRef := gScheduler;
       gSnap := TSnapshotAdapter.Create;
       gSnapCb := gSnap.Snapshot; // Delphi-mode event assignment
+      gEngineLimits := PWEB_QUICKJS_DEFAULT_LIMITS;
 
       Emit('schema=1');
       Emit('pin quickjs=2021-03-27 nanboxing=strict libc=none');
@@ -1519,6 +1859,7 @@ begin
       PSecurity;
       PSandbox;
       PAdversarial;
+      PDescriptorAndRuntime;
       PLedger;
 
       gSchedulerRef.Shutdown;
@@ -1540,6 +1881,12 @@ begin
         Fail(RawUtf8(E.ClassName) + ': ' + RawUtf8(E.Message));
         overall := 'FAIL';
         WriteLn(StdErr, LOG_PREFIX, ': FATAL ', E.ClassName, ': ', E.Message);
+        // a corpus that already carries verdict=PASS must be REWRITTEN,
+        // not left alone: shipping verdict=PASS beside overall=FAIL was
+        // a mismatch the emitters (which only check the PASS direction)
+        // would have hashed into quickjs_package_digest and passed
+        CorpusLines := StringReplaceAll(CorpusLines,
+          'verdict=PASS'#10, 'verdict=FAIL'#10);
         if Pos('verdict=', CorpusLines) = 0 then
           Emit('verdict=FAIL');
         WriteCorpusFile;
@@ -1567,7 +1914,9 @@ begin
     '  "loadtime_bridge": ' + IntStr(LoadTimeBridge) + ',' + #10 +
     '  "loader_wrong_thread": ' + IntStr(LoaderWrongThread) + ',' + #10 +
     '  "store_wrong_thread": ' + IntStr(StoreWrongThread) + ',' + #10 +
-    '  "source_open_after_failure": ' + IntStr(SourceOpenAfterFailure) + ',' + #10;
+    '  "source_open_after_failure": ' + IntStr(SourceOpenAfterFailure) + ',' + #10 +
+    '  "store_never_read": ' + IntStr(StoreNeverRead) + ',' + #10 +
+    '  "store_foreign_first_reader": ' + IntStr(StoreForeignFirstReader) + ',' + #10;
   if FailReasons <> '' then
     json := json + '  "failures": "' + JsonSafeText(FailReasons) + '"' + #10
   else

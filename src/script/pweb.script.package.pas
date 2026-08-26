@@ -87,13 +87,26 @@ type
     plcTotalSource,
     plcCompile,                 // QuickJS syntax/compile failure
     plcEvaluate,                // the graph threw while evaluating
+    plcTimeout,                 // the CPU bound interrupted the load
+    plcPendingJobs,             // top-level code queued work nothing drains
     plcEngine,                  // engine creation / bootstrap failure
     plcThread);                 // a callback ran off the owning thread
 
-  { Per-package deterministic bounds, enforced BEFORE the QuickJS heap
-    limit: allocating a whole oversized graph and hoping the runtime
-    memory cap catches it is not a bound, it is a race. Zero means
-    "use the default" - never "unlimited". }
+  { Per-package deterministic bounds, enforced BEFORE anything is
+    compiled: charging a whole graph into the engine and hoping the
+    runtime memory cap catches it is not a bound, it is a race. Zero
+    means "use the default" - never "unlimited".
+
+    HONEST SCOPE (the one thing these bounds do NOT do): IAssetStore.
+    TryRead is frozen and returns a fully materialised TAssetResponse
+    with no size, HEAD or streaming form, so a carrier has already
+    allocated the asset by the time its length is observable here - for
+    TZipAssetStore that means a highly compressible entry is inflated
+    first. These bounds are therefore checked at the EARLIEST point this
+    layer can observe (the raw asset length, before any copy, parse or
+    compile), and what materialises before that is the carrier's
+    contract, not this layer's. CAP-4's ratified v1 asset policy already
+    holds that bulk media is not an ordinary bundle asset. }
   TPWebPackageLimits = record
     ManifestMaxBytes: PtrUInt;
     ModuleMaxBytes: PtrUInt;
@@ -102,6 +115,19 @@ type
     MaxSpecifierBytes: Integer;
     MaxGraphDepth: Integer;
   end;
+
+const
+  /// how many resolution edges one module may contribute, on average,
+  // before the graph ledger itself is treated as the attack
+  // - the edge list exists to make the import graph observable; without
+  // its own bound an import-dense package inside TotalSourceMaxBytes
+  // could grow it far past anything the module bounds account for
+  PWEB_PACKAGE_EDGES_PER_MODULE = 8;
+
+  /// bound on the manifest "version" string, in bytes
+  PWEB_PACKAGE_VERSION_MAX_BYTES = 32;
+
+type
 
   { The manifest projection. Descriptive only - see the unit header. }
   TPWebPackageManifest = record
@@ -146,6 +172,8 @@ const
     'total_source',
     'compile',
     'evaluate',
+    'timeout',
+    'pending_jobs',
     'engine',
     'thread');
 
@@ -300,6 +328,14 @@ function PWebResolveModuleSpecifier(const ABase, ASpecifier: RawUtf8;
 // sequence PWebStrictUtf8 refuses, and otherwise preserves the bytes
 // verbatim: line endings are NOT translated and no platform code-page
 // conversion ever runs. An empty module is legal
+// - INHERITED STRICTNESS, stated because it is surprising: sharing the
+// one PWebStrictUtf8 validator with asset paths means module source
+// also inherits its C1-control rule, so a raw U+0080..U+009F byte
+// sequence (even inside a comment or string literal) is refused, while
+// C0 controls other than NUL pass through. That asymmetry exists
+// because the validator was written for portable PATH segments. It is
+// deterministic and fail-closed, and a source-specific validator that
+// permits C1 is a ratification question, not a silent second copy
 function PWebPrepareModuleSource(const ARaw: RawByteString;
   out ASource: RawUtf8; out ACode: TPWebPackageLoadCode): Boolean;
 
@@ -414,7 +450,7 @@ begin
   Result := False;
   len := Length(AVersion);
   if (len = 0) or
-     (len > 32) then
+     (len > PWEB_PACKAGE_VERSION_MAX_BYTES) then
     exit;
   parts := 1;
   digits := 0;
@@ -447,11 +483,20 @@ end;
 
 function HasModuleExtension(const APath: RawUtf8): Boolean;
 var
-  len: PtrInt;
+  len, dot: PtrInt;
 begin
+  Result := False;
   len := Length(APath);
-  Result := ((len > 3) and (Copy(APath, len - 2, 3) = '.js')) or
-            ((len > 4) and (Copy(APath, len - 3, 4) = '.mjs'));
+  if (len > 3) and (Copy(APath, len - 2, 3) = '.js') then
+    dot := len - 2
+  else if (len > 4) and (Copy(APath, len - 3, 4) = '.mjs') then
+    dot := len - 3
+  else
+    exit;
+  // require a real basename before the extension: '.js' and 'lib/.js'
+  // are dotfiles, not modules, and a package that ships one is far more
+  // likely to be probing the resolver than to mean it
+  Result := (dot > 1) and (APath[dot - 1] <> '/');
 end;
 
 function PWebPackageEntryValid(const AEntry: RawUtf8): Boolean;
@@ -612,6 +657,7 @@ var
                         // it can never be a for-loop counter (FPC refuses)
   seenSchema, seenId, seenVersion, seenEntry: Boolean;
   key: RawUtf8;
+  lim: TPWebPackageLimits;
 
   procedure Fail(ACodeIn: TPWebPackageLoadCode; const ADetailIn: RawUtf8);
   begin
@@ -674,11 +720,13 @@ var
   var
     digits: Integer;
     v: Int64;
+    leadingZero: Boolean;
   begin
     AValue := 0;
     Result := False;
     digits := 0;
     v := 0;
+    leadingZero := (p <= len) and (text[p] = '0');
     while (p <= len) and (text[p] >= '0') and (text[p] <= '9') do
     begin
       // an integer literal only: '1.0', '"1"', '+1', '1e0' are all
@@ -697,6 +745,13 @@ var
       Fail(plcManifestSyntax, 'integer expected');
       exit;
     end;
+    if leadingZero and (digits > 1) then
+    begin
+      // '01' is not JSON, and a scanner that refuses 1.0 and "1" while
+      // quietly taking 01 is not the strict scanner it claims to be
+      Fail(plcManifestSyntax, 'leading zero');
+      exit;
+    end;
     AValue := Integer(v);
     Result := True;
   end;
@@ -706,7 +761,11 @@ begin
   ACode := plcNone;
   ADetail := '';
   Result := False;
-  if PtrUInt(Length(ABytes)) > ALimits.ManifestMaxBytes then
+  // clamp HERE too: this is a public entry point, and a caller passing a
+  // zero-valued record means "use the defaults" everywhere else in this
+  // unit - it must not mean "refuse every manifest" only here
+  lim := PWebClampPackageLimits(ALimits);
+  if PtrUInt(Length(ABytes)) > lim.ManifestMaxBytes then
   begin
     Fail(plcManifestTooLarge, '');
     exit;
@@ -902,9 +961,16 @@ begin
   Result := IndexOf(AName);
   if Result >= 0 then
   begin
-    // first sight wins: a module reached again by a longer path keeps
-    // its shortest known depth, so the depth cap measures the graph,
-    // not the traversal order
+    // a module reached again by a shorter path keeps the smaller depth
+    // for REPORTING, but note what the bound below actually enforces:
+    // MaxGraphDepth is applied on FIRST SIGHT of a module, and lowering
+    // a depth here does not re-walk descendants already interned. The
+    // decision is therefore traversal-order dependent - always in the
+    // fail-closed direction (a diamond whose long arm is walked first
+    // can be refused though its shortest path is inside the bound; a
+    // graph deeper than the bound can never be accepted). Making it
+    // order-independent means a propagation pass over fEdges, which
+    // buys nothing a package author cannot get by importing sanely.
     if ADepth < fDepths[Result] then
       fDepths[Result] := ADepth;
     exit;
@@ -946,11 +1012,26 @@ begin
   ACode := plcNone;
   baseDepth := DepthOf(ABase);
   if baseDepth < 0 then
-    baseDepth := 0; // an importer we never interned: treat it as the root
+  begin
+    // an importer QuickJS resolved from is always a module we interned
+    // (the entry via AddEntry, everything else via a previous AddEdge).
+    // Treating an unknown importer as the root would silently under-
+    // count the depth of its whole subtree, so it is a hard failure
+    // rather than a quiet default.
+    ACode := plcEngine;
+    exit(False);
+  end;
   if Intern(AChild, baseDepth + 1, ACode) < 0 then
     exit(False);
+  // the edge ledger needs its own bound: it is written from attacker-
+  // supplied import statements and is not covered by any module bound
+  if fEdgeCount >= fLimits.MaxModules * PWEB_PACKAGE_EDGES_PER_MODULE then
+  begin
+    ACode := plcModuleCount;
+    exit(False);
+  end;
   if fEdgeCount >= Length(fEdges) then
-    SetLength(fEdges, fEdgeCount + 16);
+    SetLength(fEdges, fEdgeCount * 2 + 16); // geometric, never quadratic
   fEdges[fEdgeCount] := ABase + '>' + AChild;
   Inc(fEdgeCount);
   Result := True;
@@ -975,16 +1056,19 @@ begin
     ACode := plcTotalSource;
     exit(False);
   end;
-  // NEVER re-intern at depth 0 here: AddEntry/AddEdge already assigned
-  // this module's depth, and Intern keeps the SMALLEST depth it is
-  // told - so charging at 0 would flatten the whole graph to depth 1
-  // and silently disable the depth bound (measured: a 6-deep chain
-  // loaded under MaxGraphDepth = 3)
+  // NEVER intern at depth 0 here: AddEntry/AddEdge already assigned this
+  // module's depth, and Intern keeps the SMALLEST depth it is told - so
+  // charging at 0 would flatten the whole graph to depth 1 and silently
+  // disable the depth bound (measured: a 6-deep chain loaded under
+  // MaxGraphDepth = 3). An uninterned module reaching Charge would mean
+  // the loader read source for something resolution never produced, so
+  // it is a hard failure, not a re-intern.
   ndx := IndexOf(AName);
   if ndx < 0 then
-    ndx := Intern(AName, 0, ACode); // only reachable for the entry itself
-  if ndx < 0 then
+  begin
+    ACode := plcEngine;
     exit(False);
+  end;
   Inc(fTotalBytes, ABytes);
   if fLoaded[ndx] = 0 then
   begin
@@ -1030,6 +1114,15 @@ begin
     raise EPWebPackage.CreateFmt(
       'TPWebScopedAssetStore: non-canonical prefix (%d bytes)',
       [Length(APrefix)]); // the prefix itself is never echoed
+  // a prefix long enough to crowd out a full-length module path would
+  // turn legal modules into plcModuleMissing at LOOKUP time - a host
+  // configuration error surfacing as a runtime miss. Refuse it now, at
+  // startup, where a configuration error belongs.
+  if Length(bare) + 1 + PWEB_PACKAGE_ENTRY_MAX_BYTES >
+       PWEB_ASSET_PATH_MAX_BYTES then
+    raise EPWebPackage.CreateFmt(
+      'TPWebScopedAssetStore: prefix leaves no room for a module path ' +
+      '(%d bytes)', [Length(APrefix)]);
   fInner := AInner;
   fPrefix := bare + '/';
 end;

@@ -548,6 +548,10 @@ cap9b1_loadtime_bridge="$(qp_num loadtime_bridge)"
 cap9b1_loader_wrong_thread="$(qp_num loader_wrong_thread)"
 cap9b1_store_wrong_thread="$(qp_num store_wrong_thread)"
 cap9b1_denied_bridge="$(qp_num denied_bridge_add)"
+# promoted so the AGGREGATE can cross-check them, not only the harness's
+# own verdict
+cap9b1_source_open="$(qp_num source_open_after_failure)"
+cap9b1_opener_reached="$(qp_num opener_reached)"
 
 qp_corpus_file="${repo_root}/build/cap9b1/quickjs-package-corpus.txt"
 if [ "${quickjs_package_corpus}" = 'PASS' ]; then
@@ -559,6 +563,11 @@ if [ "${quickjs_package_corpus}" = 'PASS' ]; then
         die 'quickjs-package-corpus.txt does not end in verdict=PASS while the harness records PASS'
     quickjs_package_digest="$(file_sha "${qp_corpus_file}")"
 elif [ -f "${qp_corpus_file}" ]; then
+    # the FAIL direction matters too: a corpus still carrying
+    # verdict=PASS beside a FAIL record is a disagreement that would
+    # otherwise be hashed into the digest and sail through
+    tail -n 1 "${qp_corpus_file}" | grep -qx 'verdict=PASS' &&
+        die 'quickjs-package-corpus.txt ends in verdict=PASS while the harness records FAIL'
     quickjs_package_digest="$(file_sha "${qp_corpus_file}")"
 else
     quickjs_package_digest='ABSENT'
@@ -616,6 +625,8 @@ cat > "${work}/evidence.json" <<EOF
   "cap9b1_loader_wrong_thread": ${cap9b1_loader_wrong_thread},
   "cap9b1_store_wrong_thread": ${cap9b1_store_wrong_thread},
   "cap9b1_denied_bridge": ${cap9b1_denied_bridge},
+  "cap9b1_source_open_after_failure": ${cap9b1_source_open},
+  "cap9b1_opener_reached": ${cap9b1_opener_reached},
   "release_layout": "${release_layout}",
   "no_listener": "${no_listener}",
   "no_listener_provenance": "${no_listener_prov}",

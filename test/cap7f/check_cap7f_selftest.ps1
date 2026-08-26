@@ -23,7 +23,8 @@
 #   (c16) quickjs_package_digest diverging on one target -> same refusal
 #   (c17) cap9b1_loadtime_bridge=1 with a PASS corpus -> defense-in-depth refusal
 #   (c18) cap9b1_loader_wrong_thread=1 with a PASS corpus -> same refusal
-#   (c8-c18 additionally assert the refusal came through the EXPECTED branch
+#   (c19) a non-numeric CAP-9B1 counter -> NON-NUMERIC refusal
+#   (c8-c19 additionally assert the refusal came through the EXPECTED branch
 #    where one is named)
 #   (e) a count-preserving directive swap in an allowlisted file
 #                                          -> divergence sweep refuses via the
@@ -347,11 +348,10 @@ Invoke-AggExpectFail 'cap9b1-loadtime-bridge' 'CAP9B1_LOADTIME_BRIDGE'
 # loader_wrong_thread>0 with a PASS corpus means a scheduler worker resolved,
 # read or compiled plugin source - the one thing the engine-thread affinity
 # rule exists to forbid.
-# c17 and c18 deliberately cover TWO of the four CAP-9B1 counters: unlike the
-# CAP-9A pair, all four share ONE loop body in the aggregator, so two legs
-# exercise both the non-numeric and the >0 arms of that single branch. The
-# harness itself gates on all four (and on source_open_after_failure) before
-# any of them can ever reach the evidence.
+# The six CAP-9B1 counters share ONE loop body in the aggregator, so the legs
+# here exercise that body's two arms rather than every field: c17/c18 drive
+# the >0 arm and c19 drives the [int]::TryParse arm. The harness itself gates
+# on all six before any of them can reach the evidence at all.
 Reset-Fixture
 $f = Join-Path $fx 'ev/macos-x64/evidence.json'
 $e = Get-Content $f -Raw | ConvertFrom-Json
@@ -361,6 +361,20 @@ if ($null -eq $e.PSObject.Properties['cap9b1_loader_wrong_thread']) {
 $e.cap9b1_loader_wrong_thread = 1
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap9b1-loader-thread' 'CAP9B1_LOADER_WRONG_THREAD'
+
+# --- (c19) CAP-9B1: a counter that is not a number ---------------------------
+# the OTHER arm of the shared loop body: a counter that cannot be parsed must
+# refuse rather than silently compare as 0, which is how a fail-open default
+# would look from the outside.
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['cap9b1_store_wrong_thread']) {
+    throw 'selftest cap9b1-non-numeric: the evidence carries no cap9b1_store_wrong_thread field - the emitters did not record it'
+}
+$e.cap9b1_store_wrong_thread = 'n/a'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9b1-non-numeric' 'CAP-9B1 NON-NUMERIC'
 
 # --- (d) divergence sweep must refuse an off-allowlist conditional -----------
 $fixturePas = 'src/zz_cap7f_selftest_fixture.pas'
@@ -417,4 +431,4 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Remove-Item -Force -ErrorAction SilentlyContinue $matrix
-Write-Host '[CAP-7F] selftest PASS - 20 aggregator refusals + 2 divergence refusals, all on copies or byte-restored'
+Write-Host '[CAP-7F] selftest PASS - 21 aggregator refusals + 2 divergence refusals, all on copies or byte-restored'

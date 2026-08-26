@@ -448,6 +448,12 @@ $cap9b1LoadTimeBridge = Read-MpCounter $qp 'loadtime_bridge'
 $cap9b1LoaderWrongThread = Read-MpCounter $qp 'loader_wrong_thread'
 $cap9b1StoreWrongThread = Read-MpCounter $qp 'store_wrong_thread'
 $cap9b1DeniedBridge = Read-MpCounter $qp 'denied_bridge_add'
+# promoted so the AGGREGATE can cross-check them, not only the harness's
+# own verdict: a failed load that left a queueable source, or a plugin
+# that reached the openExternal bridge arm, are exactly the invariants a
+# defense-in-depth counter exists to let a second reader refuse
+$cap9b1SourceOpen = Read-MpCounter $qp 'source_open_after_failure'
+$cap9b1OpenerReached = Read-MpCounter $qp 'opener_reached'
 
 $qpCorpusFile = Join-Path $repoRoot 'build/cap9b1/quickjs-package-corpus.txt'
 if ($quickjsPackageCorpus -ceq 'PASS') {
@@ -466,6 +472,13 @@ if ($quickjsPackageCorpus -ceq 'PASS') {
     }
     $quickjsPackageDigest = (Get-FileHash $qpCorpusFile -Algorithm SHA256).Hash.ToLowerInvariant()
 } elseif (Test-Path $qpCorpusFile) {
+    # the FAIL direction matters too: a corpus still carrying verdict=PASS
+    # beside a FAIL record is a disagreement that would otherwise be
+    # hashed into the digest and sail through
+    $qpRows = @(Get-Content $qpCorpusFile)
+    if ($qpRows.Count -gt 0 -and $qpRows[-1] -ceq 'verdict=PASS') {
+        throw '[CAP-7F] quickjs-package-corpus.txt ends in verdict=PASS while the harness records FAIL'
+    }
     $quickjsPackageDigest = (Get-FileHash $qpCorpusFile -Algorithm SHA256).Hash.ToLowerInvariant()
 } else {
     $quickjsPackageDigest = 'ABSENT'
@@ -516,6 +529,8 @@ $evidence = [ordered]@{
     cap9b1_loader_wrong_thread      = $cap9b1LoaderWrongThread
     cap9b1_store_wrong_thread       = $cap9b1StoreWrongThread
     cap9b1_denied_bridge            = $cap9b1DeniedBridge
+    cap9b1_source_open_after_failure = $cap9b1SourceOpen
+    cap9b1_opener_reached           = $cap9b1OpenerReached
     release_layout                  = $releaseLayout
     no_listener                     = $noListener
     no_listener_provenance          = 'source-sweep re-executed (check_cap6_nonetwork.ps1); CAP-5/CAP-6 job gates precede this emitter'
