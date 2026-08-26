@@ -77,7 +77,18 @@ function Add-Row([string]$Name, [bool]$Ok, [string]$Detail) {
     $rows.Add("$Name=$value")
     if ($Detail) { Write-Host "[CAP-9C2] $Name=$value | $Detail" }
     else { Write-Host "[CAP-9C2] $Name=$value" }
-    if (-not $Ok) { throw "CAP-9C2 gate failed: $Name ($Detail)" }
+    if (-not $Ok) {
+        # The failing process's own output goes to the JOB log, not only to
+        # a file an upload step may never reach: a hosted gate that fails
+        # while its diagnostics live in a skipped artifact costs a whole
+        # 20-minute cycle to learn nothing. MEASURED on run 33017918894.
+        if (Test-Path $log) {
+            Write-Host '----- CAP-9C2 process output (tail) -----'
+            Get-Content $log -Tail 120 | ForEach-Object { Write-Host $_ }
+            Write-Host '----- end of process output -----'
+        }
+        throw "CAP-9C2 gate failed: $Name ($Detail)"
+    }
 }
 
 # the canonical marker, from the one source

@@ -75,7 +75,16 @@ add_row() {
     else
         printf '[CAP-9C2] %s=%s\n' "${name}" "${value}"
     fi
-    [ "${ok}" = '1' ] || die "gate failed: ${name} (${detail})"
+    if [ "${ok}" != '1' ]; then
+        # the failing process's own output goes to the JOB log, not only to
+        # a file an upload step may never reach - see the ps1 sibling
+        if [ -f "${log}" ]; then
+            printf -- '----- CAP-9C2 process output (tail) -----\n'
+            tail -n 120 "${log}"
+            printf -- '----- end of process output -----\n'
+        fi
+        die "gate failed: ${name} (${detail})"
+    fi
 }
 add_literal() { rows="${rows}$1"$'\n'; printf '[CAP-9C2] %s\n' "$1"; }
 
