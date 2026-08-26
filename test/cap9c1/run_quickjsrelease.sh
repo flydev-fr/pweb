@@ -88,8 +88,14 @@ mormot_units=(
     -Fudeps/mormot2/src/script
 )
 pweb_units=(-Fusrc/script -Fusrc/rpc -Fusrc/security -Fusrc/assets)
-extra_fpc=()
-link_flags=()
+
+# ONE compile entry point, defined per platform rather than assembled from
+# shared arrays. bash 3.2 (macOS /bin/bash) errors on expanding an EMPTY
+# array under `set -u`, so a "${extra_flags[@]}" that happens to be empty
+# on one target only is a latent break - the same bash-3.2 rule
+# test/cap7f/emit_evidence.sh states in its header. "$@" with zero
+# arguments is safe, so the per-call extras go through it.
+#   compile_pas <unitdir> <outdir> <source> [extra fpc flags...]
 
 case "${os_name}" in
 
@@ -98,7 +104,16 @@ Linux)
     target='linux-x86_64'
     [ -f 'deps/mormot2/static/x86_64-linux/quickjs.o' ] ||
         die 'pinned quickjs.o missing under deps/mormot2/static/x86_64-linux -- fetch the mORMot statics first'
-    link_flags=(-Fldeps/mormot2/static/x86_64-linux)
+    compile_pas() {
+        local unitdir="$1"
+        local outdir="$2"
+        local src="$3"
+        shift 3
+        fpc -MObjFPC -Sh -B -FU"${unitdir}" -FE"${outdir}" \
+            "${pweb_units[@]}" "$@" "${mormot_units[@]}" \
+            -Fldeps/mormot2/static/x86_64-linux \
+            "${src}"
+    }
     ;;
 
 # ============================ macOS (both arches) ============================
@@ -116,8 +131,17 @@ Darwin)
     qjs_obj_dir="${work}/qjs-obj"
     tools/build_quickjs_darwin.sh "${qjs_obj_dir}" ||
         die 'tools/build_quickjs_darwin.sh FAILED'
-    extra_fpc=(-dLIBQUICKJSSTATIC "-Fo${qjs_obj_dir}")
-    link_flags=("${PWEB_MACOS_FPC_FLAGS[@]}" "${PWEB_MACOS_FPC_LINK_MORMOT[@]}")
+    compile_pas() {
+        local unitdir="$1"
+        local outdir="$2"
+        local src="$3"
+        shift 3
+        fpc -MObjFPC -Sh -B -FU"${unitdir}" -FE"${outdir}" \
+            "${pweb_units[@]}" "$@" "${mormot_units[@]}" \
+            -dLIBQUICKJSSTATIC "-Fo${qjs_obj_dir}" \
+            "${PWEB_MACOS_FPC_FLAGS[@]}" "${PWEB_MACOS_FPC_LINK_MORMOT[@]}" \
+            "${src}"
+    }
     ;;
 
 *)
@@ -138,6 +162,7 @@ leaks=''
 for root in src/platform src/webview examples/08-release; do
     [ -d "${root}" ] || continue
     while IFS= read -r f; do
+        [ -n "${f}" ] || continue
         surface_files=$((surface_files + 1))
         hit="$(grep -n -E 'pweb\.script\.release|pweb\.script\.startup|plugins\.zip' \
             "${f}" || true)"
@@ -162,10 +187,7 @@ packfpc="${work}/pack-fpc"
 packbin="${work}/pack-bin"
 rm -rf -- "${packfpc}" "${packbin}"
 mkdir -p -- "${packfpc}" "${packbin}"
-fpc -MObjFPC -Sh -B -FU"${packfpc}" -FE"${packbin}" \
-    "${pweb_units[@]}" "${mormot_units[@]}" \
-    "${extra_fpc[@]}" "${link_flags[@]}" \
-    tools/quickjs/pwebqjspack.pas ||
+compile_pas "${packfpc}" "${packbin}" tools/quickjs/pwebqjspack.pas ||
     die 'pwebqjspack.pas compile FAILED'
 packer="${packbin}/pwebqjspack"
 
@@ -204,10 +226,8 @@ relfpc="${work}/rel-fpc"
 relbin="${work}/rel-bin"
 rm -rf -- "${relfpc}" "${relbin}"
 mkdir -p -- "${relfpc}" "${relbin}"
-fpc -MObjFPC -Sh -B -FU"${relfpc}" -FE"${relbin}" \
-    "${pweb_units[@]}" -Fibuild/quickjs-release "${mormot_units[@]}" \
-    "${extra_fpc[@]}" "${link_flags[@]}" \
-    test/cap9c1/quickjsrelease.pas ||
+compile_pas "${relfpc}" "${relbin}" test/cap9c1/quickjsrelease.pas \
+    -Fibuild/quickjs-release ||
     die 'quickjsrelease.pas compile FAILED'
 exe="${relbin}/quickjsrelease"
 
