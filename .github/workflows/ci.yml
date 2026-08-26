@@ -1675,6 +1675,65 @@ jobs:
             build/cap9c1-quickjsrelease.log
             build/quickjs-release/
 
+      # CAP-9C2: the plugin-enabled acceptance frontend. It imports the
+      # CAP-5 App component UNMODIFIED across the example boundary and
+      # adds the browser-invisibility probe block beside it, so the CAP-8
+      # corpus this page runs cannot drift from the release host's - and
+      # examples/04-react stays byte-untouched, which is what keeps every
+      # existing app.pwb hash and logical-inventory gate unaffected.
+      - name: CAP-9C2 plugin-enabled acceptance frontend build
+        shell: pwsh
+        run: |
+          Push-Location examples/07-quickjs/frontend
+          try {
+            npm ci
+            if ($LASTEXITCODE -ne 0) { throw 'quickjs frontend npm ci failed' }
+            npm run typecheck
+            if ($LASTEXITCODE -ne 0) { throw 'quickjs frontend typecheck failed' }
+            npm run build
+            if ($LASTEXITCODE -ne 0) { throw 'quickjs frontend build failed' }
+          }
+          finally { Pop-Location }
+          foreach ($f in 'examples/07-quickjs/frontend/dist/index.html',
+                         'examples/07-quickjs/frontend/dist/assets/app.js') {
+            if (-not (Test-Path $f)) { throw "quickjs frontend output missing: $f" }
+          }
+
+      # CAP-9C2: the plugin-enabled release layout and its real-GUI
+      # acceptance. Reuses the payload the CAP-9C1 step above staged
+      # (this shard does not re-derive the package - building it twice
+      # would prove a second builder), compiles the host WITH the
+      # generated registry include, assembles and asserts the EXACT
+      # release layout, runs a real WebView plus two QuickJS plugins
+      # concurrently while sampling listening sockets, drives the
+      # whole-archive negative matrix against that same layout, and runs
+      # the hostile-package harness. Writes
+      # build/cap9c2/quickjs-gui-corpus.txt (the cross-target digest
+      # source) and quickjsgui-windows-x86_64.json, which the CAP-7F
+      # emitter reads into quickjs_gui_corpus (must-PASS; never SKIPs).
+      - name: CAP-9C2 plugin-enabled release layout and real-GUI acceptance
+        shell: pwsh
+        timeout-minutes: 40
+        run: |
+          pwsh -NoProfile -File test/cap9c2/run_quickjsgui.ps1 2>&1 |
+            Tee-Object -FilePath build/cap9c2-quickjsgui.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-9C2 quickjsgui gate FAILED' }
+
+      - name: CAP-9C2 upload the Windows plugin-enabled record and layout
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap9c2-gui-windows
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap9c2/quickjsgui-windows-x86_64.json
+            build/cap9c2/quickjs-gui-corpus.txt
+            build/cap9c2/host-rows.txt
+            build/cap9c2/hostile-rows.txt
+            build/cap9c2/runner-rows.txt
+            build/cap9c2/quickjsgui-win.log
+            build/cap9c2-quickjsgui.log
+
       - name: CAP-7F emit the Windows evidence artifact
         shell: pwsh
         timeout-minutes: 10
@@ -2164,6 +2223,44 @@ jobs:
             build/cap9c1/quickjsrelease-posix.log
             build/cap9c1/pwebqjspack-posix.log
             build/quickjs-release/
+
+      # CAP-9C2: see the Windows job for the rationale. Same frontend
+      # sources, same SDK, same pinned toolchain - the plugin-enabled
+      # acceptance page is one product on four targets, not four pages.
+      - name: CAP-9C2 plugin-enabled acceptance frontend build
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          cd examples/07-quickjs/frontend
+          npm ci
+          npm run typecheck
+          npm run build
+          cd ../../..
+          for f in examples/07-quickjs/frontend/dist/index.html \
+                   examples/07-quickjs/frontend/dist/assets/app.js; do
+            [ -f "${f}" ] || { echo "quickjs frontend output missing: ${f}"; exit 1; }
+          done
+
+      # Under Xvfb: the layout gate opens a REAL WebKitGTK window and
+      # drives it while two QuickJS plugin threads run beside it.
+      - name: CAP-9C2 plugin-enabled release layout and real-GUI acceptance
+        shell: bash
+        timeout-minutes: 40
+        run: xvfb-run -a test/cap9c2/run_quickjsgui.sh
+
+      - name: CAP-9C2 upload the Linux plugin-enabled record and layout
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap9c2-gui-linux
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap9c2/quickjsgui-linux-x86_64.json
+            build/cap9c2/quickjs-gui-corpus.txt
+            build/cap9c2/host-rows.txt
+            build/cap9c2/hostile-rows.txt
+            build/cap9c2/runner-rows.txt
+            build/cap9c2/quickjsgui-posix.log
 
       - name: CAP-7F emit the Linux evidence artifact
         shell: bash
@@ -2691,6 +2788,42 @@ jobs:
             build/cap9c1/pwebqjspack-posix.log
             build/quickjs-release/
 
+      # CAP-9C2: see the Windows job for the rationale.
+      - name: CAP-9C2 plugin-enabled acceptance frontend build
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          cd examples/07-quickjs/frontend
+          npm ci
+          npm run typecheck
+          npm run build
+          cd ../../..
+          for f in examples/07-quickjs/frontend/dist/index.html \
+                   examples/07-quickjs/frontend/dist/assets/app.js; do
+            [ -f "${f}" ] || { echo "quickjs frontend output missing: ${f}"; exit 1; }
+          done
+
+      # A real WKWebView inside a real PWebQuickJS.app bundle, driven
+      # while two QuickJS plugin threads run beside it.
+      - name: CAP-9C2 plugin-enabled release layout and real-GUI acceptance
+        shell: bash
+        timeout-minutes: 40
+        run: test/cap9c2/run_quickjsgui.sh
+
+      - name: CAP-9C2 upload the macOS x64 plugin-enabled record and layout
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap9c2-gui-macos-x64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap9c2/quickjsgui-macos-x86_64.json
+            build/cap9c2/quickjs-gui-corpus.txt
+            build/cap9c2/host-rows.txt
+            build/cap9c2/hostile-rows.txt
+            build/cap9c2/runner-rows.txt
+            build/cap9c2/quickjsgui-posix.log
+
       # CAP-7F: additive, after every gate it summarizes. macOS runs no new
       # gate - the CAP-7M2 release suite above already executed the host
       # arguments (LaunchServices --pweb-verdict, argv-beats-env, refusal
@@ -3154,6 +3287,42 @@ jobs:
             build/cap9c1/quickjsrelease-posix.log
             build/cap9c1/pwebqjspack-posix.log
             build/quickjs-release/
+
+      # CAP-9C2: see the Windows job for the rationale.
+      - name: CAP-9C2 plugin-enabled acceptance frontend build
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          cd examples/07-quickjs/frontend
+          npm ci
+          npm run typecheck
+          npm run build
+          cd ../../..
+          for f in examples/07-quickjs/frontend/dist/index.html \
+                   examples/07-quickjs/frontend/dist/assets/app.js; do
+            [ -f "${f}" ] || { echo "quickjs frontend output missing: ${f}"; exit 1; }
+          done
+
+      # A real WKWebView inside a real PWebQuickJS.app bundle, driven
+      # while two QuickJS plugin threads run beside it.
+      - name: CAP-9C2 plugin-enabled release layout and real-GUI acceptance
+        shell: bash
+        timeout-minutes: 40
+        run: test/cap9c2/run_quickjsgui.sh
+
+      - name: CAP-9C2 upload the macOS arm64 plugin-enabled record and layout
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap9c2-gui-macos-arm64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap9c2/quickjsgui-macos-arm64.json
+            build/cap9c2/quickjs-gui-corpus.txt
+            build/cap9c2/host-rows.txt
+            build/cap9c2/hostile-rows.txt
+            build/cap9c2/runner-rows.txt
+            build/cap9c2/quickjsgui-posix.log
 
       # CAP-7F: see the x64 sibling - the emitter summarizes gates that
       # already ran above in this job and re-enumerates the export trie.
