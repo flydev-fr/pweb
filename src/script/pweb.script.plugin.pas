@@ -410,6 +410,25 @@ begin
     ALife := plfSource;
     exit;
   end;
+  if src.State <> pssRunning then
+  begin
+    // The frozen contract makes RegisterSource return an already-CLOSED
+    // source once the scheduler has begun shutting down - fail closed,
+    // by design. A generation published over one would load perfectly
+    // and then answer runtime_closed to everything: Running by the state
+    // machine, dead in fact. Refuse the staging instead, and close the
+    // source so nothing is left registered.
+    try
+      src.Quiesce;
+      src.Close;
+    except
+      // a closed/shutdown source must never abort teardown
+    end;
+    InterlockedIncrement(FStagingFailures);
+    ADetail := 'invocation source is not running';
+    ALife := plfSource;
+    exit;
+  end;
   // The staged generation gets its OWN source, thread, engine, context,
   // module cache and graph. pweb.invoke stays refused for the whole of
   // its load (the frozen CAP-9B1 Loading gate), so staging can produce

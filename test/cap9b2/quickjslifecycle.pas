@@ -165,10 +165,16 @@ type
   TSourceFactory = class
   private
     FFail: Boolean;
+    FPreClosed: Boolean;
     FMade: LongInt;
   public
     function Make: IInvocationSource;
     property Fail: Boolean read FFail write FFail;
+    { hand back a real, registered source that is already pssClosed - the
+      shape RegisterSource returns once the scheduler is shutting down.
+      A generation published over one would look Running and answer
+      runtime_closed to everything. }
+    property PreClosed: Boolean read FPreClosed write FPreClosed;
     function Made: LongInt;
   end;
 
@@ -418,6 +424,11 @@ begin
   lim.MaxConcurrent := 4;
   lim.MaxQueueSize := 16;
   Result := gScheduler.RegisterSource(lim);
+  if FPreClosed then
+  begin
+    Result.Quiesce;
+    Result.Close;
+  end;
 end;
 
 function TSourceFactory.Made: LongInt;
@@ -543,7 +554,12 @@ const
     '};'#10 +
     'pwebExports.cyc = function () { var o = {}; o.self = o; return o; };'#10 +
     'pwebExports.undef = function () { return undefined; };'#10 +
-    'pwebExports.notFn = 7;'#10;
+    'pwebExports.notFn = 7;'#10 +
+    // NON-ENUMERABLE, deliberately: the native snapshot must be the
+    // table's own-property set, not just its enumerable half, or an
+    // export would sit visibly in the table and answer no_export
+    'Object.defineProperty(pwebExports, "hidden",'#10 +
+    '  { value: function () { return "hidden"; } });'#10;
 
 function MainJs(AVersion: Integer): RawUtf8;
 begin
@@ -830,6 +846,11 @@ begin
     Emit('L5 notcallable=' + CallToken(h, 'notFn', 'null'));
     Expect(CallToken(h, 'notFn', 'null') = 'not_callable',
       'L5 a non-callable export was not rejected');
+    // a NON-ENUMERABLE own export is still a real export: the snapshot is
+    // the table's own-property set, so it must be reachable
+    Emit('L5 nonenumerable=' + CallToken(h, 'hidden', 'null'));
+    Expect(CallToken(h, 'hidden', 'null') = 'ok:"hidden"',
+      'L5 a non-enumerable own export was not reachable');
 
     // L6 JSON argument/result round-trip
     Emit('L6 add=' + CallToken(h, 'add', '{"x":40,"y":1}'));
@@ -1208,6 +1229,30 @@ begin
       'import { unit } from "./lib/unit.js";'#10 +
       'pwebExports["bad-name"] = function () { return unit; };'#10);
     Row('L21b', files);
+
+    // An export name carrying an EMBEDDED NUL, built with
+    // String.fromCharCode(0) so the MODULE SOURCE stays pure ASCII and
+    // passes CAP-9B1's embedded-NUL refusal. Read through
+    // JS_AtomToCString alone the name would truncate to 'add' and alias
+    // a real export's spelling; the snapshot compares the atom's true
+    // byte length and refuses the load instead.
+    files := Broken;
+    ReplaceFile(files, 'main.js',
+      'import { unit } from "./lib/unit.js";'#10 +
+      'pwebExports["add" + String.fromCharCode(0) + "x"] =' +
+      ' function () { return unit; };'#10);
+    Row('L21g', files);
+
+    // a source that is registered but already CLOSED - the shape
+    // RegisterSource returns once the scheduler is shutting down. A
+    // generation published over one would look Running and answer
+    // runtime_closed to everything, so the staging is refused.
+    gFactory.PreClosed := True;
+    try
+      Row('L22b', PackageV(2, '2.0.0'));
+    finally
+      gFactory.PreClosed := False;
+    end;
 
     // L21c the DESCRIPTOR itself would move native identity - refused
     // before a thread, an engine or a source is ever created

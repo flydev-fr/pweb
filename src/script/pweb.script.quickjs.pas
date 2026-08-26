@@ -1314,8 +1314,11 @@ var
   // iterations over freed memory. An export set of zero is the NORMAL
   // case (every CAP-9B1 package has one), so this is the common path.
   count, i: Integer;
+  len: PtrUInt;
+  truncated: Boolean;
   p: PAnsiChar;
   name: RawUtf8;
+  sv: JSValue;
   atom: JSAtom;
 begin
   Result := False;
@@ -1339,39 +1342,66 @@ begin
   //    that is the plugin's own business, and the NAME set is what the
   //    host resolves against.
   JS_PreventExtensions(FEngine.cx, JSValueRaw(FExportTable));
-  // 3. Snapshot the names natively, in registration order.
+  // 3. Snapshot the names natively, in registration order. ALL own string
+  //    properties, NOT just the enumerable ones: with JS_GPN_ENUM_ONLY a
+  //    package that used Object.defineProperty would put an export in the
+  //    table that the snapshot never listed, and the host would answer
+  //    no_export for something visibly present. The snapshot must BE the
+  //    table's own-property set.
   tab := nil;
   n := 0;
   if JS_GetOwnPropertyNames(FEngine.cx, @tab, @n, JSValueRaw(FExportTable),
-       JS_GPN_STRING_MASK or JS_GPN_ENUM_ONLY) <> 0 then
+       JS_GPN_STRING_MASK) <> 0 then
   begin
     ACode := plcEngine;
     ADetail := 'export names';
     exit;
   end;
-  count := Integer(n);
+  // compare as CARDINAL before narrowing: Integer(n) of a huge count would
+  // go negative and slip past the bound below
+  if n > Cardinal(PWEB_EXPORT_MAX_COUNT) then
+    count := PWEB_EXPORT_MAX_COUNT + 1
+  else
+    count := Integer(n);
   try
     if count > PWEB_EXPORT_MAX_COUNT then
     begin
       ACode := plcExportCount;
-      ADetail := 'exports=' + RawUtf8(IntToStr(count));
+      ADetail := 'exports=' + RawUtf8(IntToStr(n));
+      count := Integer(n); // so the finally still frees every atom
       exit;
     end;
     SetLength(FExportNames, count);
     for i := 0 to count - 1 do
     begin
-      p := JS_AtomToCString(FEngine.cx, PJSPropertyEnumArray(tab)^[i].atom);
-      if p = nil then
+      // via the atom's STRING, so the true byte length is observable.
+      // JS_AtomToCString alone would hand back a NUL-terminated buffer,
+      // and a property name containing an embedded U+0000 would silently
+      // truncate - aliasing one export onto another's spelling.
+      sv := JSValue(JS_AtomToString(FEngine.cx,
+        PJSPropertyEnumArray(tab)^[i].atom));
+      if sv.IsException then
       begin
         ACode := plcEngine;
         ADetail := 'export name';
         exit;
       end;
+      len := 0;
+      p := JS_ToCStringLen2(FEngine.cx, @len, JSValueRaw(sv), {cesu8=}False);
+      if p = nil then
+      begin
+        FEngine.cx^.Free(sv);
+        ACode := plcEngine;
+        ADetail := 'export name';
+        exit;
+      end;
+      truncated := PtrUInt(StrLen(p)) <> len;
       // bytes, never RawUtf8(PAnsiChar): the cast goes through the
       // string's code page (the CAP-9B1 trap)
       FastSetString(name, p, StrLen(p));
       JS_FreeCString(FEngine.cx, p);
-      if not PWebExportNameValid(name) then
+      FEngine.cx^.Free(sv);
+      if truncated or not PWebExportNameValid(name) then
       begin
         // LOUD, not skipped: a package whose export the host can never
         // name is a packaging mistake, and silently dropping it would
