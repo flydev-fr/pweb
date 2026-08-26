@@ -32,7 +32,17 @@
 #   (c25) cap9b2_quarantine_injected=0 with a PASS corpus -> the OTHER direction:
 #         an unexercised last-resort path is refused too
 #   (c26) a non-numeric CAP-9B2 counter -> NON-NUMERIC refusal
-#   (c8-c26 additionally assert the refusal came through the EXPECTED branch
+#   (c27) quickjs_release_corpus (CAP-9C1) rewritten to FAIL -> mustPass refusal
+#   (c28) quickjs_release_digest diverging on one target -> same refusal
+#   (c29) cap9c1_inventory_digest diverging on one target -> the SEMANTIC
+#         equality that survives the archive bytes differing per toolchain
+#   (c30) cap9c1_browser_store_arrivals=1 with a PASS corpus -> defense-in-depth
+#   (c31) cap9c1_tamper_started=1 with a PASS corpus -> same refusal
+#   (c32) cap9c1_cwd_dependency=1 with a PASS corpus -> same refusal
+#   (c33) a malformed cap9c1_package_sha256 -> BAD-PACKAGE-SHA refusal, the
+#         per-target facts the equality set deliberately does NOT compare
+#   (c34) cap9c1_package_bytes=0 with a PASS corpus -> EMPTY-PACKAGE refusal
+#   (c8-c34 additionally assert the refusal came through the EXPECTED branch
 #    where one is named)
 #   (e) a count-preserving directive swap in an allowlisted file
 #                                          -> divergence sweep refuses via the
@@ -485,6 +495,115 @@ $e.cap9b2_export_wrong_thread = 'n/a'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap9b2-non-numeric' 'CAP-9B2 NON-NUMERIC'
 
+# --- (c27) CAP-9C1: quickjs_release_corpus rewritten to FAIL -----------------
+# the CAP-9C1 mustPass field gets its own refusal proof: a release verdict
+# downgraded to FAIL must never aggregate as if whole-package verification,
+# browser invisibility and the tamper matrix were proven ('FAIL', not
+# 'SKIP': the harness is fully headless and never SKIPs).
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['quickjs_release_corpus']) {
+    throw 'selftest quickjs-release-fail: the evidence carries no quickjs_release_corpus field - the emitters did not record it'
+}
+$e.quickjs_release_corpus = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'quickjs-release-fail' 'REQUIRED-PASS'
+
+# --- (c28) CAP-9C1: quickjs_release_digest diverging on ONE target -----------
+# cross-target equality of the SEMANTIC release corpus. A divergence means
+# one target reached a different packaging or verification decision, which
+# is exactly the per-platform package trust semantics this shard forbids.
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['quickjs_release_digest']) {
+    throw 'selftest quickjs-release-divergence: the evidence carries no quickjs_release_digest field - the emitters did not record it'
+}
+$e.quickjs_release_digest = '0' * 64
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'quickjs-release-divergence'
+
+# --- (c29) CAP-9C1: cap9c1_inventory_digest diverging on ONE target ----------
+# the SECOND equality, and the one that has to carry the weight the archive
+# bytes cannot: plugins.zip is deterministic per toolchain but not across
+# them (MEASURED for app.pwb in pweb.test.bundle.pas), so the inventory -
+# canonical names, uncompressed lengths, content digests - is what proves
+# the four targets packaged the same MEANING.
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['cap9c1_inventory_digest']) {
+    throw 'selftest cap9c1-inventory-divergence: the evidence carries no cap9c1_inventory_digest field - the emitters did not record it'
+}
+$e.cap9c1_inventory_digest = 'a' * 64
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9c1-inventory-divergence'
+
+# --- (c30) CAP-9C1: a browser probe that reached the package store ----------
+# the CAP-8B lesson made mechanical: an absent public shim is not isolation,
+# and this counter is the only place a SECOND reader can see that a
+# pweb://app request actually arrived at the plugin bytes.
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['cap9c1_browser_store_arrivals']) {
+    throw 'selftest cap9c1-browser-arrival: the evidence carries no cap9c1_browser_store_arrivals field - the emitters did not record it'
+}
+$e.cap9c1_browser_store_arrivals = 1
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9c1-browser-arrival' 'CAP9C1_BROWSER_STORE_ARRIVALS'
+
+# --- (c31) CAP-9C1: a plugin published despite a registry mismatch ----------
+# the whole trust chain in one counter: if a generation can publish while
+# its compiled graph digest disagrees with the archive it loaded, package
+# integrity has become decorative.
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['cap9c1_tamper_started']) {
+    throw 'selftest cap9c1-tamper-started: the evidence carries no cap9c1_tamper_started field - the emitters did not record it'
+}
+$e.cap9c1_tamper_started = 1
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9c1-tamper-started' 'CAP9C1_TAMPER_STARTED'
+
+# --- (c32) CAP-9C1: verification that depended on the working directory -----
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['cap9c1_cwd_dependency']) {
+    throw 'selftest cap9c1-cwd: the evidence carries no cap9c1_cwd_dependency field - the emitters did not record it'
+}
+$e.cap9c1_cwd_dependency = 1
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9c1-cwd' 'CAP9C1_CWD_DEPENDENCY'
+
+# --- (c33) CAP-9C1: a malformed per-target package digest -------------------
+# cap9c1_package_sha256 is deliberately NOT in the equality set, so nothing
+# else would notice it going empty or non-hex. This leg is what keeps the
+# fields the aggregate only REPORTS from becoming fields nobody checks.
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['cap9c1_package_sha256']) {
+    throw 'selftest cap9c1-bad-sha: the evidence carries no cap9c1_package_sha256 field - the emitters did not record it'
+}
+$e.cap9c1_package_sha256 = 'not-a-digest'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9c1-bad-sha' 'CAP-9C1 BAD-PACKAGE-SHA'
+
+# --- (c34) CAP-9C1: a verified package that weighs nothing ------------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['cap9c1_package_bytes']) {
+    throw 'selftest cap9c1-empty-package: the evidence carries no cap9c1_package_bytes field - the emitters did not record it'
+}
+$e.cap9c1_package_bytes = 0
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9c1-empty-package' 'CAP-9C1 EMPTY-PACKAGE'
+
 # --- (d) divergence sweep must refuse an off-allowlist conditional -----------
 $fixturePas = 'src/zz_cap7f_selftest_fixture.pas'
 Remove-Item -Force -ErrorAction SilentlyContinue $fixturePas
@@ -540,4 +659,4 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Remove-Item -Force -ErrorAction SilentlyContinue $matrix
-Write-Host '[CAP-7F] selftest PASS - 28 aggregator refusals + 2 divergence refusals, all on copies or byte-restored'
+Write-Host '[CAP-7F] selftest PASS - 36 aggregator refusals + 2 divergence refusals, all on copies or byte-restored'

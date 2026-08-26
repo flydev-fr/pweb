@@ -634,6 +634,96 @@ printf '[CAP-7F] quickjs_lifecycle_corpus: %s (two_active=%s stale=%s reload_los
     "${cap9b2_reload_lost_old}" "${cap9b2_quarantine_injected}" \
     "${cap9b2_quarantine_unexpected}"
 
+# --- CAP-9C1 QuickJS release-package corpus + one canonical digest ----------
+# Same honesty shape as the three blocks above, with ONE deliberate
+# difference worth stating rather than hiding: the archive's SHA-256, its
+# byte length and the generated registry's digest are recorded but are NOT
+# four-way compared. CAP-6/CAP-7L already MEASURED that the mORMot static
+# DEFLATE object emits different bytes for x86_64-win64 and x86_64-linux
+# (pweb.test.bundle.pas pins app.pwb's golden hash per toolchain for
+# exactly that reason), so requiring archive equality across targets would
+# be requiring something untrue. What IS compared is the SEMANTIC corpus
+# and the inventory digest - canonical names, uncompressed lengths and
+# content digests - which are toolchain-independent.
+qr_file="${repo_root}/build/cap9c1/quickjsrelease-${target}.json"
+[ -f "${qr_file}" ] ||
+    die "quickjsrelease-${target}.json missing -- the CAP-9C1 gate has not run in this workspace"
+quickjs_release_corpus="$(sed -n 's/.*"overall"[[:space:]]*:[[:space:]]*"\([A-Z]*\)".*/\1/p' \
+    "${qr_file}" | head -n 1)"
+case "${quickjs_release_corpus}" in
+    PASS | FAIL) ;;
+    *) die "quickjsrelease-${target}.json carries an unexpected verdict: ${quickjs_release_corpus}" ;;
+esac
+qr_num() {
+    local v
+    v="$(sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p" \
+        "${qr_file}" | head -n 1)"
+    [ -n "${v}" ] ||
+        die "quickjsrelease record carries no '$1' counter -- refusing to default it to 0"
+    printf '%s' "${v}"
+}
+qr_hex() {
+    # LENIENT on purpose: on a FAIL record these may be empty, and dying
+    # here would mask the harness failure that actually matters. The
+    # PASS-guarded shape check below is what refuses a malformed digest.
+
+    local v
+    v="$(sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([0-9a-f]*\)\".*/\1/p" \
+        "${qr_file}" | head -n 1)"
+    printf '%s' "${v}"
+}
+cap9c1_browser_arrivals="$(qr_num browser_store_arrivals)"
+cap9c1_denied_bridge="$(qr_num denied_bridge_add)"
+cap9c1_opener_reached="$(qr_num opener_reached)"
+cap9c1_tamper_started="$(qr_num tamper_started)"
+cap9c1_cwd_dependency="$(qr_num cwd_dependency)"
+# reported per target, never compared across them
+cap9c1_package_sha="$(qr_hex package_sha256)"
+cap9c1_package_bytes="$(qr_num package_bytes)"
+cap9c1_registry_sha="$(qr_hex registry_sha256)"
+# compared across targets: the archive's MEANING, not its bytes
+cap9c1_inventory_digest="$(qr_hex inventory_digest)"
+if [ "${quickjs_release_corpus}" = 'PASS' ]; then
+    for d in "${cap9c1_inventory_digest}" "${cap9c1_package_sha}" \
+             "${cap9c1_registry_sha}"; do
+        case "${d}" in
+            ????????????????????????????????????????????????????????????????) ;;
+            *) die "quickjsrelease carries a malformed digest: '${d}'" ;;
+        esac
+    done
+fi
+
+qr_corpus_file="${repo_root}/build/cap9c1/quickjs-release-corpus.txt"
+if [ "${quickjs_release_corpus}" = 'PASS' ]; then
+    [ -f "${qr_corpus_file}" ] ||
+        die 'quickjs-release-corpus.txt missing while the harness records PASS'
+    head -n 1 "${qr_corpus_file}" | grep -qx 'schema=1' ||
+        die 'quickjs-release-corpus.txt carries no schema=1 header'
+    tail -n 1 "${qr_corpus_file}" | grep -qx 'verdict=PASS' ||
+        die 'quickjs-release-corpus.txt does not end in verdict=PASS while the harness records PASS'
+    # the staged release payload must exist beside the evidence: a green
+    # corpus with no artifacts would be a gate that proved nothing shipped
+    for staged in plugins.zip pweb.quickjs.registry.inc LICENSE.quickjs \
+                  package-inventory.txt package-build-info.txt; do
+        [ -f "${repo_root}/build/quickjs-release/${staged}" ] ||
+            die "the CAP-9C1 release staging is missing ${staged} while the harness records PASS"
+    done
+    quickjs_release_digest="$(file_sha "${qr_corpus_file}")"
+elif [ -f "${qr_corpus_file}" ]; then
+    tail -n 1 "${qr_corpus_file}" | grep -qx 'verdict=PASS' &&
+        die 'quickjs-release-corpus.txt ends in verdict=PASS while the harness records FAIL'
+    quickjs_release_digest="$(file_sha "${qr_corpus_file}")"
+else
+    quickjs_release_digest='ABSENT'
+fi
+printf '[CAP-7F] quickjs_release_digest: %s\n' "${quickjs_release_digest}"
+printf '[CAP-7F] quickjs_release_corpus: %s (browser_store=%s denied_bridge=%s tamper_started=%s cwd=%s)\n' \
+    "${quickjs_release_corpus}" "${cap9c1_browser_arrivals}" \
+    "${cap9c1_denied_bridge}" "${cap9c1_tamper_started}" \
+    "${cap9c1_cwd_dependency}"
+printf '[CAP-7F] cap9c1 package sha256=%s bytes=%s (per-target, reported not compared)\n' \
+    "${cap9c1_package_sha}" "${cap9c1_package_bytes}"
+
 # ---------------------------- write the evidence -----------------------------
 # every interpolated free-text value goes through json_escape: the toolchain
 # banner lines especially are nobody's to promise quote-free
@@ -694,6 +784,17 @@ cat > "${work}/evidence.json" <<EOF
   "cap9b2_quarantine_unexpected": ${cap9b2_quarantine_unexpected},
   "cap9b2_denied_bridge": ${cap9b2_denied_bridge},
   "cap9b2_opener_reached": ${cap9b2_opener_reached},
+  "quickjs_release_corpus": "${quickjs_release_corpus}",
+  "quickjs_release_digest": "${quickjs_release_digest}",
+  "cap9c1_inventory_digest": "${cap9c1_inventory_digest}",
+  "cap9c1_browser_store_arrivals": ${cap9c1_browser_arrivals},
+  "cap9c1_denied_bridge": ${cap9c1_denied_bridge},
+  "cap9c1_opener_reached": ${cap9c1_opener_reached},
+  "cap9c1_tamper_started": ${cap9c1_tamper_started},
+  "cap9c1_cwd_dependency": ${cap9c1_cwd_dependency},
+  "cap9c1_package_sha256": "${cap9c1_package_sha}",
+  "cap9c1_package_bytes": ${cap9c1_package_bytes},
+  "cap9c1_registry_sha256": "${cap9c1_registry_sha}",
   "release_layout": "${release_layout}",
   "no_listener": "${no_listener}",
   "no_listener_provenance": "${no_listener_prov}",

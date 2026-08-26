@@ -125,6 +125,37 @@ Darwin)
     ;;
 esac
 
+# --- 0. STRUCTURAL browser invisibility -------------------------------------
+# The C22 rows prove dynamically that no pweb://app request reaches the
+# plugin bytes. This proves it STRUCTURALLY, which is the half a runtime
+# probe can never cover: no platform resource handler, no WebView unit and
+# no release host may so much as NAME the release package units or the
+# archive. If one ever does, a future host could hand the package store to
+# a scheme handler and every dynamic probe would still pass.
+step 'structural browser invisibility sweep'
+surface_files=0
+leaks=''
+for root in src/platform src/webview examples/08-release; do
+    [ -d "${root}" ] || continue
+    while IFS= read -r f; do
+        surface_files=$((surface_files + 1))
+        hit="$(grep -n -E 'pweb\.script\.release|pweb\.script\.startup|plugins\.zip' \
+            "${f}" || true)"
+        [ -z "${hit}" ] || leaks="${leaks}${f}: ${hit}"$'\n'
+    done <<EOF
+$(find "${root}" -type f \( -name '*.pas' -o -name '*.pp' -o -name '*.inc' \
+    -o -name '*.mm' -o -name '*.h' \))
+EOF
+done
+[ "${surface_files}" -gt 0 ] ||
+    die 'the browser-surface sweep matched no files -- it would pass vacuously'
+if [ -n "${leaks}" ]; then
+    printf '%s' "${leaks}" >&2
+    die 'the plugin package is named on the browser-facing surface'
+fi
+printf '[CAP-9C1] structural browser invisibility: %s platform/webview/release-host files, zero references to the plugin package\n' \
+    "${surface_files}"
+
 # --- 1. build the private packager ------------------------------------------
 step 'compile pwebqjspack (the private deterministic packager)'
 packfpc="${work}/pack-fpc"

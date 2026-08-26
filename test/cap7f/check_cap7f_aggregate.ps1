@@ -66,6 +66,12 @@ $required = @(
     'cap9b2_reload_lost_old', 'cap9b2_export_wrong_thread',
     'cap9b2_quarantine_injected', 'cap9b2_quarantine_unexpected',
     'cap9b2_denied_bridge', 'cap9b2_opener_reached',
+    'quickjs_release_corpus', 'quickjs_release_digest',
+    'cap9c1_inventory_digest', 'cap9c1_browser_store_arrivals',
+    'cap9c1_denied_bridge', 'cap9c1_opener_reached',
+    'cap9c1_tamper_started', 'cap9c1_cwd_dependency',
+    'cap9c1_package_sha256', 'cap9c1_package_bytes',
+    'cap9c1_registry_sha256',
     'release_layout', 'no_listener', 'app_pwb_react_sha256',
     'logical_inventory_sha256_react', 'github_sha', 'github_run_id', 'waivers'
 )
@@ -81,7 +87,8 @@ $absolutePins = @{
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
 $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
     'navigation_security', 'security_corpus', 'quickjs_corpus',
-    'quickjs_package_corpus', 'quickjs_lifecycle_corpus')
+    'quickjs_package_corpus', 'quickjs_lifecycle_corpus',
+    'quickjs_release_corpus')
 # fields that must agree, value-for-value, across all four targets
 # (capability_policy_digest is the CAP-8A structured policy-decision corpus and
 # navigation_policy_digest the CAP-8B one: four targets, one byte-identical
@@ -91,7 +98,16 @@ $equalityFields = @(
     'bundle_protocol', 'rpc_add_20_22', 'logical_inventory_sha256_react',
     'capability_policy_digest', 'navigation_policy_digest',
     'security_corpus_digest', 'quickjs_corpus_digest',
-    'quickjs_package_digest', 'quickjs_lifecycle_digest', 'github_sha'
+    'quickjs_package_digest', 'quickjs_lifecycle_digest',
+    # CAP-9C1: the SEMANTIC corpus and the inventory digest are compared;
+    # cap9c1_package_sha256 / _bytes / _registry_sha256 deliberately are
+    # NOT. CAP-6/CAP-7L MEASURED that the mORMot static DEFLATE object
+    # emits different bytes per toolchain (app.pwb's golden hash is pinned
+    # per toolchain for the same reason), so archive equality across
+    # targets would be an untrue requirement. Determinism is proven where
+    # it is real - the gate stages the payload twice on each target and
+    # requires byte equality there.
+    'quickjs_release_digest', 'cap9c1_inventory_digest', 'github_sha'
 )
 # targets that additionally carry a pas2js logical inventory
 $pas2jsTargets = @('linux-x86_64', 'macos-x86_64', 'macos-arm64')
@@ -266,6 +282,45 @@ foreach ($t in $evidence.Keys) {
             $failures.Add("CAP-9B2 QUARANTINE-INJECTED<>1: target=$t cap9b2_quarantine_injected=$qi -- the injected unjoinable-thread row did not run exactly once")
         }
     }
+    # CAP-9C1 defense in depth, only meaningful where the release corpus
+    # is PASS. Five zero-invariants a SECOND reader must be able to refuse
+    # on its own: package integrity that is never checked by anyone but
+    # the harness that produced it is not integrity.
+    if ("$($e.quickjs_release_corpus)" -ceq 'PASS') {
+        foreach ($pair in @(
+            @{ field = 'cap9c1_browser_store_arrivals'
+               why   = 'a pweb://app probe reached the plugin package store' },
+            @{ field = 'cap9c1_denied_bridge'
+               why   = 'a forbidden packaged plugin principal reached the bridge' },
+            @{ field = 'cap9c1_opener_reached'
+               why   = 'a packaged plugin reached the openExternal bridge arm' },
+            @{ field = 'cap9c1_tamper_started'
+               why   = 'a plugin published despite a registry/package mismatch' },
+            @{ field = 'cap9c1_cwd_dependency'
+               why   = 'package verification depended on the working directory' })) {
+            $v = 0
+            if (-not [int]::TryParse("$($e.($pair.field))", [ref]$v)) {
+                $failures.Add("CAP-9C1 NON-NUMERIC: target=$t $($pair.field)='$($e.($pair.field))'")
+            } elseif ($v -ne 0) {
+                $failures.Add("CAP-9C1 $($pair.field.ToUpperInvariant())>0: target=$t $($pair.field)=$v -- $($pair.why)")
+            }
+        }
+        # the per-target facts must still be well formed and non-trivial:
+        # an empty digest or a zero-byte archive would sail through the
+        # equality set precisely because that set does not compare them
+        if ("$($e.cap9c1_package_sha256)" -notmatch '^[0-9a-f]{64}$') {
+            $failures.Add("CAP-9C1 BAD-PACKAGE-SHA: target=$t cap9c1_package_sha256='$($e.cap9c1_package_sha256)'")
+        }
+        if ("$($e.cap9c1_registry_sha256)" -notmatch '^[0-9a-f]{64}$') {
+            $failures.Add("CAP-9C1 BAD-REGISTRY-SHA: target=$t cap9c1_registry_sha256='$($e.cap9c1_registry_sha256)'")
+        }
+        $pb = 0
+        if (-not [int]::TryParse("$($e.cap9c1_package_bytes)", [ref]$pb)) {
+            $failures.Add("CAP-9C1 NON-NUMERIC: target=$t cap9c1_package_bytes='$($e.cap9c1_package_bytes)'")
+        } elseif ($pb -le 0) {
+            $failures.Add("CAP-9C1 EMPTY-PACKAGE: target=$t cap9c1_package_bytes=$pb -- a verified package cannot be empty")
+        }
+    }
 }
 
 # --- cross-target equality ---------------------------------------------------
@@ -391,6 +446,8 @@ $matrix = [ordered]@{
         quickjs_corpus_digest          = $first.quickjs_corpus_digest
         quickjs_package_digest         = $first.quickjs_package_digest
         quickjs_lifecycle_digest       = $first.quickjs_lifecycle_digest
+        quickjs_release_digest         = $first.quickjs_release_digest
+        cap9c1_inventory_digest        = $first.cap9c1_inventory_digest
         logical_inventory_sha256_react = $first.logical_inventory_sha256_react
         logical_inventory_sha256_pas2js = $evidence['linux-x86_64'].logical_inventory_sha256_pas2js
     }
@@ -411,6 +468,10 @@ foreach ($t in $evidence.Keys) {
         quickjs_corpus     = $e.quickjs_corpus
         quickjs_package_corpus = $e.quickjs_package_corpus
         quickjs_lifecycle_corpus = $e.quickjs_lifecycle_corpus
+        quickjs_release_corpus = $e.quickjs_release_corpus
+        cap9c1_package_sha256 = $e.cap9c1_package_sha256
+        cap9c1_package_bytes = $e.cap9c1_package_bytes
+        cap9c1_registry_sha256 = $e.cap9c1_registry_sha256
         release_layout     = $e.release_layout
         no_listener        = $e.no_listener
         runtime_provenance = $e.runtime_provenance
@@ -426,11 +487,11 @@ $json = $matrix | ConvertTo-Json -Depth 5
 $summary = @()
 $summary += '### CAP-7F aggregate: PASS - four targets, field-by-field agreement'
 $summary += ''
-$summary += '| target | engine | host_args | cap_policy | nav_security | sec_corpus | qjs_corpus | qjs_pkg | qjs_life | layout | no_listener | rtti extras |'
-$summary += '|---|---|---|---|---|---|---|---|---|---|---|---|'
+$summary += '| target | engine | host_args | cap_policy | nav_security | sec_corpus | qjs_corpus | qjs_pkg | qjs_life | qjs_rel | layout | no_listener | rtti extras |'
+$summary += '|---|---|---|---|---|---|---|---|---|---|---|---|---|'
 foreach ($t in $evidence.Keys) {
     $e = $evidence[$t]
-    $summary += "| $t | $($e.engine) | $($e.host_args) | $($e.capability_policy) | $($e.navigation_security) | $($e.security_corpus) | $($e.quickjs_corpus) | $($e.quickjs_package_corpus) | $($e.quickjs_lifecycle_corpus) | $($e.release_layout) | $($e.no_listener) | $($e.extra_exports_rtti) |"
+    $summary += "| $t | $($e.engine) | $($e.host_args) | $($e.capability_policy) | $($e.navigation_security) | $($e.security_corpus) | $($e.quickjs_corpus) | $($e.quickjs_package_corpus) | $($e.quickjs_lifecycle_corpus) | $($e.quickjs_release_corpus) | $($e.release_layout) | $($e.no_listener) | $($e.extra_exports_rtti) |"
 }
 $summary += ''
 $summary += "- webview pin ``$($first.webview_pin)``, surface ``$($first.webview_surface)``, origin ``$($first.origin)`` (secure=$($first.secure)), RPC Add(20,22)=$($first.rpc_add_20_22)"
@@ -440,6 +501,12 @@ $summary += "- CAP-8C security_corpus_digest ``$($first.security_corpus_digest)`
 $summary += "- CAP-9A quickjs_corpus_digest ``$($first.quickjs_corpus_digest)`` equal on all four targets"
 $summary += "- CAP-9B1 quickjs_package_digest ``$($first.quickjs_package_digest)`` equal on all four targets"
 $summary += "- CAP-9B2 quickjs_lifecycle_digest ``$($first.quickjs_lifecycle_digest)`` equal on all four targets"
+$summary += "- CAP-9C1 quickjs_release_digest ``$($first.quickjs_release_digest)`` equal on all four targets"
+$summary += "- CAP-9C1 cap9c1_inventory_digest ``$($first.cap9c1_inventory_digest)`` equal on all four targets (the archive's MEANING; its BYTES are per-toolchain and reported below, not compared)"
+foreach ($t in $evidence.Keys) {
+    $e = $evidence[$t]
+    $summary += "  - $t plugins.zip sha256 ``$($e.cap9c1_package_sha256)`` ($($e.cap9c1_package_bytes) bytes), registry ``$($e.cap9c1_registry_sha256)``"
+}
 $summary += "- react logical_inventory_sha256 ``$($first.logical_inventory_sha256_react)`` equal on all four targets"
 $summary += "- pas2js logical_inventory_sha256 ``$($matrix.agreement.logical_inventory_sha256_pas2js)`` equal on linux/macos-x64/macos-arm64"
 $summaryText = $summary -join "`n"

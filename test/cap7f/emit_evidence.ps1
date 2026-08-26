@@ -550,6 +550,87 @@ if ($quickjsLifecycleCorpus -ceq 'PASS') {
 Write-Host "[CAP-7F] quickjs_lifecycle_digest: $quickjsLifecycleDigest"
 Write-Host "[CAP-7F] quickjs_lifecycle_corpus: $quickjsLifecycleCorpus (two_active=$cap9b2TwoActive stale=$cap9b2Stale reload_lost_old=$cap9b2ReloadLostOld quarantine=$cap9b2QuarantineInjected/$cap9b2QuarantineUnexpected)"
 
+# --- CAP-9C1 QuickJS release-package corpus + one canonical digest ----------
+# Same honesty shape as the three blocks above, with ONE deliberate
+# difference that is worth stating rather than hiding: the archive's
+# SHA-256, its byte length and the generated registry's digest are
+# recorded but are NOT four-way compared. CAP-6/CAP-7L already MEASURED
+# that the mORMot static DEFLATE object emits different bytes for
+# x86_64-win64 and x86_64-linux (pweb.test.bundle.pas pins app.pwb's
+# golden hash per toolchain for exactly that reason), so requiring
+# archive equality across targets would be requiring something untrue.
+# What IS compared is the SEMANTIC corpus and the inventory digest -
+# canonical names, uncompressed lengths and content digests - which are
+# toolchain-independent and must be identical everywhere.
+$qrFile = Join-Path $repoRoot 'build/cap9c1/quickjsrelease-windows-x86_64.json'
+if (-not (Test-Path $qrFile)) {
+    throw '[CAP-7F] quickjsrelease-windows-x86_64.json missing -- the CAP-9C1 gate has not run in this workspace'
+}
+$qr = Get-Content $qrFile -Raw | ConvertFrom-Json
+if ($qr.schema -ne 1) { throw '[CAP-7F] quickjsrelease json schema mismatch' }
+$quickjsReleaseCorpus = "$($qr.overall)"
+if ($quickjsReleaseCorpus -notin @('PASS', 'FAIL')) {
+    throw "[CAP-7F] quickjsrelease json carries an unexpected verdict: $quickjsReleaseCorpus"
+}
+# the five invariants the AGGREGATE re-refuses on its own
+$cap9c1BrowserArrivals = Read-MpCounter $qr 'browser_store_arrivals'
+$cap9c1DeniedBridge = Read-MpCounter $qr 'denied_bridge_add'
+$cap9c1OpenerReached = Read-MpCounter $qr 'opener_reached'
+$cap9c1TamperStarted = Read-MpCounter $qr 'tamper_started'
+$cap9c1CwdDependency = Read-MpCounter $qr 'cwd_dependency'
+# reported per target, never compared across them
+$cap9c1PackageSha = "$($qr.package_sha256)"
+$cap9c1PackageBytes = Read-MpCounter $qr 'package_bytes'
+$cap9c1RegistrySha = "$($qr.registry_sha256)"
+# compared across targets: this is the archive's MEANING, not its bytes
+$cap9c1InventoryDigest = "$($qr.inventory_digest)"
+if ($quickjsReleaseCorpus -ceq 'PASS' -and
+    $cap9c1InventoryDigest -notmatch '^[0-9a-f]{64}$') {
+    throw "[CAP-7F] quickjsrelease json carries a malformed inventory digest: $cap9c1InventoryDigest"
+}
+if ($quickjsReleaseCorpus -ceq 'PASS' -and
+    $cap9c1PackageSha -notmatch '^[0-9a-f]{64}$') {
+    throw "[CAP-7F] quickjsrelease json carries a malformed package digest: $cap9c1PackageSha"
+}
+
+$qrCorpusFile = Join-Path $repoRoot 'build/cap9c1/quickjs-release-corpus.txt'
+if ($quickjsReleaseCorpus -ceq 'PASS') {
+    if (-not (Test-Path $qrCorpusFile)) {
+        throw '[CAP-7F] quickjs-release-corpus.txt missing while the harness records PASS'
+    }
+    $qrRows = @(Get-Content $qrCorpusFile)
+    if ($qrRows.Count -lt 2) {
+        throw "[CAP-7F] quickjs-release-corpus.txt is empty or truncated ($($qrRows.Count) line(s))"
+    }
+    if ($qrRows[0] -cne 'schema=1') {
+        throw '[CAP-7F] quickjs-release-corpus.txt carries no schema=1 header'
+    }
+    if ($qrRows[-1] -cne 'verdict=PASS') {
+        throw '[CAP-7F] quickjs-release-corpus.txt does not end in verdict=PASS while the harness records PASS'
+    }
+    # the staged release payload must exist beside the evidence: a green
+    # corpus with no artifacts would be a gate that proved nothing shipped
+    foreach ($staged in 'plugins.zip', 'pweb.quickjs.registry.inc',
+                        'LICENSE.quickjs', 'package-inventory.txt',
+                        'package-build-info.txt') {
+        if (-not (Test-Path (Join-Path $repoRoot "build/quickjs-release/$staged"))) {
+            throw "[CAP-7F] the CAP-9C1 release staging is missing $staged while the harness records PASS"
+        }
+    }
+    $quickjsReleaseDigest = (Get-FileHash $qrCorpusFile -Algorithm SHA256).Hash.ToLowerInvariant()
+} elseif (Test-Path $qrCorpusFile) {
+    $qrRows = @(Get-Content $qrCorpusFile)
+    if ($qrRows.Count -gt 0 -and $qrRows[-1] -ceq 'verdict=PASS') {
+        throw '[CAP-7F] quickjs-release-corpus.txt ends in verdict=PASS while the harness records FAIL'
+    }
+    $quickjsReleaseDigest = (Get-FileHash $qrCorpusFile -Algorithm SHA256).Hash.ToLowerInvariant()
+} else {
+    $quickjsReleaseDigest = 'ABSENT'
+}
+Write-Host "[CAP-7F] quickjs_release_digest: $quickjsReleaseDigest"
+Write-Host "[CAP-7F] quickjs_release_corpus: $quickjsReleaseCorpus (browser_store=$cap9c1BrowserArrivals denied_bridge=$cap9c1DeniedBridge tamper_started=$cap9c1TamperStarted cwd=$cap9c1CwdDependency)"
+Write-Host "[CAP-7F] cap9c1 package sha256=$cap9c1PackageSha bytes=$cap9c1PackageBytes (per-target, reported not compared)"
+
 # --- run identity -----------------------------------------------------------
 $sha = $env:GITHUB_SHA
 if (-not $sha) { $sha = (& git rev-parse HEAD).Trim() }
@@ -605,6 +686,17 @@ $evidence = [ordered]@{
     cap9b2_quarantine_unexpected    = $cap9b2QuarantineUnexpected
     cap9b2_denied_bridge            = $cap9b2DeniedBridge
     cap9b2_opener_reached           = $cap9b2OpenerReached
+    quickjs_release_corpus          = $quickjsReleaseCorpus
+    quickjs_release_digest          = $quickjsReleaseDigest
+    cap9c1_inventory_digest         = $cap9c1InventoryDigest
+    cap9c1_browser_store_arrivals   = $cap9c1BrowserArrivals
+    cap9c1_denied_bridge            = $cap9c1DeniedBridge
+    cap9c1_opener_reached           = $cap9c1OpenerReached
+    cap9c1_tamper_started           = $cap9c1TamperStarted
+    cap9c1_cwd_dependency           = $cap9c1CwdDependency
+    cap9c1_package_sha256           = $cap9c1PackageSha
+    cap9c1_package_bytes            = $cap9c1PackageBytes
+    cap9c1_registry_sha256          = $cap9c1RegistrySha
     release_layout                  = $releaseLayout
     no_listener                     = $noListener
     no_listener_provenance          = 'source-sweep re-executed (check_cap6_nonetwork.ps1); CAP-5/CAP-6 job gates precede this emitter'
