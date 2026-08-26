@@ -53,6 +53,17 @@ const
 // property, not a syntax property
 function PWebAssetPathValid(const Path: RawUtf8): Boolean;
 
+/// strict shortest-form UTF-8 validation over the whole byte string
+// - the ONE UTF-8 truth in PWeb: PWebAssetPathValid uses it, and so do
+// the CAP-9B1 plugin-manifest scanner and module-source preparer, so a
+// byte sequence a path would refuse can never enter through a module
+// - rejects overlong (non-shortest-form) encodings, lone continuation
+// and invalid lead bytes, truncated sequences, UTF-16 surrogate halves,
+// anything above U+10FFFF, and the C1 control block U+0080..U+009F
+// - NUL and the C0 controls are legal UTF-8 and pass here: callers that
+// must refuse them (paths, manifests, module source) do so explicitly
+function PWebStrictUtf8(const s: RawUtf8): Boolean;
+
 /// deterministic MIME resolution from the logical path's extension
 // - fixed table, ASCII case-insensitive on the extension, never the
 // Windows registry; unknown/absent extension yields
@@ -105,7 +116,10 @@ end;
 
 // strict shortest-form UTF-8 over Bytes[1..Len]; rejects overlong
 // encodings, UTF-16 surrogates and anything above U+10FFFF
-function StrictUtf8(const s: RawUtf8): Boolean;
+// - published as PWebStrictUtf8 (interface) since CAP-9B1: the plugin
+// manifest scanner and module-source preparer share this one validator
+// rather than growing a second, subtly different, copy
+function PWebStrictUtf8(const s: RawUtf8): Boolean;
 var
   i, len, extra, j: PtrInt;
   b: Byte;
@@ -239,13 +253,13 @@ begin
     // NUL and every other control byte including DEL; backslash;
     // drive/UNC/ADS colon; '%' per the single-decode policy;
     // Windows-reserved punctuation that can never name a portable
-    // asset (C1 controls are rejected by StrictUtf8 below)
+    // asset (C1 controls are rejected by PWebStrictUtf8 below)
     if (c < #$20) or
        (c = #$7F) or
        (c in ['\', ':', '%', '<', '>', '"', '|', '?', '*']) then
       exit;
   end;
-  if not StrictUtf8(Path) then
+  if not PWebStrictUtf8(Path) then
     exit;
   start := 1;
   for i := 1 to len + 1 do

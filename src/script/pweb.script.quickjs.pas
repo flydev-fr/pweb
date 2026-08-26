@@ -79,11 +79,24 @@ uses
   mormot.lib.quickjs,
   mormot.script.core,
   mormot.script.quickjs,
+  pweb.assets.intf,
+  pweb.script.package,
   pweb.rpc.intf,
   pweb.rpc.support;
 
 type
   EPWebQuickJSPlugin = class(Exception);
+
+  { CAP-9B1 package load state. Loading is the window in which the
+    module graph is compiled and evaluated; it is also the window in
+    which pweb.invoke is REFUSED (see the Loading gate in InvokeJson):
+    top-level module code must not produce backend side effects before
+    the package has been accepted. }
+  TPWebQuickJSLoadState = (
+    qlsIdle,      // no package configured (the CAP-9A shape)
+    qlsLoading,
+    qlsRunning,
+    qlsFailed);
 
   { Per-engine resource bounds, applied on the plugin thread right after
     engine creation. Zero disables the corresponding limit. }
@@ -92,6 +105,25 @@ type
     MemoryLimitBytes: PtrUInt;  // JS_SetMemoryLimit on the runtime
     StackLimitBytes: PtrUInt;   // runtime-typed JS_SetMaxStackSize
     InvokeWaitMs: Integer;      // defensive cap of the bounded native wait
+  end;
+
+  { The NATIVE authoritative plugin descriptor - the only place plugin
+    identity and rights come from. It is a private record, not a public
+    interface: CAP-9B1 adds no kernel interface.
+
+    PrincipalKind is not a field because it is not a choice: a QuickJS
+    plugin is always pkQuickJS. Neither plugin.json nor any JavaScript
+    can influence any field here, and no field is ever derived from the
+    current working directory. }
+  TPWebQuickJSPackageDescriptor = record
+    PrincipalId: Utf8String;         // native; '' is refused
+    PluginId: Utf8String;            // native; '' is refused
+    PackageStore: IAssetStore;       // ONE store per package, already scoped
+    ExpectedPackageId: Utf8String;   // plugin.json "id" must match exactly
+    ExpectedEntryPoint: Utf8String;  // plugin.json "entry" must match exactly
+    Capabilities: TPWebCapabilities; // CAP-8 native/trusted configuration
+    Engine: TPWebQuickJSLimits;      // CAP-9A per-engine bounds
+    Package: TPWebPackageLimits;     // CAP-9B1 package/graph bounds
   end;
 
   { Host-supplied per-invocation capabilities snapshot (the CAP-8
@@ -136,10 +168,33 @@ type
     FLastSink: TObject;                    // the last sink (TPluginCompletion)
     FLastSinkRef: IInvocationCompletion;   // keeps that sink alive/readable
     FEngineDestroyedOnOwnThread: LongInt;  // 1 once freed on this thread
+    // ---- CAP-9B1 package / module loader (owning thread only) ----
+    FHasPackage: Boolean;
+    FPackage: TPWebQuickJSPackageDescriptor;
+    FPackageLimits: TPWebPackageLimits;
+    FManifest: TPWebPackageManifest;
+    FGraph: TPWebModuleGraph;
+    FLoadState: LongInt;                   // TPWebQuickJSLoadState ordinal
+    FPackageCode: TPWebPackageLoadCode;    // FIRST failure wins
+    FPackageDetail: RawUtf8;               // native-only, sanitized
+    FPackageError: RawUtf8;                // QuickJS diagnostic, bounded
+    FNormalizeCalls: LongInt;
+    FLoaderCalls: LongInt;
+    FLoaderWrongThread: LongInt;           // MUST stay 0
+    FLoadTimeInvokes: LongInt;             // pweb.invoke refused while Loading
     function InvokeJson(const This: variant;
       const Args: array of variant): variant;
     procedure ApplyLimits;
     function BuildContext: TInvocationContext;
+    procedure InitCommon(const ASource: IInvocationSource;
+      const AContext: TInvocationContext; const ALimits: TPWebQuickJSLimits;
+      const AOnSnapshot: TPWebQuickJSSnapshotEvent);
+    procedure RecordPackageFailure(ACode: TPWebPackageLoadCode;
+      const ADetail: RawUtf8);
+    function NormalizeModule(ctx: JSContext;
+      const ABase, ASpecifier: PAnsiChar): PAnsiChar;
+    function LoadModule(ctx: JSContext; AName: PAnsiChar): JSModuleDef;
+    procedure LoadPackageOnOwnThread;
   protected
     procedure Execute; override;
   public
@@ -147,6 +202,15 @@ type
       WindowId = ''. It is deep-copied (PWebCopyContext). }
     constructor Create(const ASource: IInvocationSource;
       const AContext: TInvocationContext; const ALimits: TPWebQuickJSLimits;
+      const AOnSnapshot: TPWebQuickJSSnapshotEvent);
+    { CAP-9B1: the same thread/engine/source shape, plus a package loaded
+      from ADescriptor.PackageStore on the owning thread before the
+      plugin is ever reported ready. The invocation context is built
+      NATIVELY here from the descriptor - pkQuickJS, WindowId = '' -
+      so no package content can reach identity.
+      Prefer PWebLoadQuickJSPackage: it gives atomic load semantics. }
+    constructor CreatePackage(const ASource: IInvocationSource;
+      const ADescriptor: TPWebQuickJSPackageDescriptor;
       const AOnSnapshot: TPWebQuickJSSnapshotEvent);
     destructor Destroy; override;
 
@@ -186,6 +250,30 @@ type
       that reached it - the CAP-9A lifecycle matrix asserts it stays 1.
       Read only after the owning script completed (WaitScript). }
     function LastSinkDeliveries: LongInt;
+
+    { ---- CAP-9B1 package surface (read after WaitReady) ---- }
+    function LoadState: TPWebQuickJSLoadState;
+    { The projected manifest. Descriptive only - it never carried any
+      authority, and by the time it is readable it has already been
+      checked against the native ExpectedPackageId/ExpectedEntryPoint. }
+    property Manifest: TPWebPackageManifest read FManifest;
+    { The module graph of the last load attempt (nil when no package was
+      configured). Owned by the plugin; valid until it is destroyed. }
+    property ModuleGraph: TPWebModuleGraph read FGraph;
+    { Why the package failed. plcNone when it did not. }
+    property PackageCode: TPWebPackageLoadCode read FPackageCode;
+    { Short sanitized NATIVE detail - a module name, a manifest key.
+      Never handed to script and never an absolute host path. }
+    property PackageDetail: RawUtf8 read FPackageDetail;
+    { The QuickJS diagnostic for a compile/evaluate failure: carries the
+      package-relative module name and line/column, bounded in length.
+      Never contains a host path, CWD or a native address. }
+    property PackageError: RawUtf8 read FPackageError;
+    { measured, for the CAP-9B1 harness }
+    function NormalizeCalls: LongInt;
+    function LoaderCalls: LongInt;
+    function LoaderWrongThreadCalls: LongInt;
+    function LoadTimeInvokes: LongInt;
   end;
 
 { The ONE shared app-lifetime engine manager: mints caller-owned engines
@@ -193,6 +281,22 @@ type
   is the wrong ownership shape for plugin threads (measured: pooled
   TThreadSafeManager.Destroy raises on unreleased engines). }
 function PWebQuickJSManager: TThreadSafeManager;
+
+{ ATOMIC package load - the entry point hosts should use.
+  On True: APlugin is a Running plugin owned by the caller.
+  On False: APlugin is nil, the engine has been destroyed on its owning
+  thread, ASource has been Quiesced and Closed, no invocation is
+  pending and nothing ever became visible as Running. ACode/ADetail say
+  why (see also the freed plugin's PackageError for the QuickJS text,
+  which is copied into ADetail when there is no more specific reason). }
+function PWebLoadQuickJSPackage(
+  const ADescriptor: TPWebQuickJSPackageDescriptor;
+  const ASource: IInvocationSource;
+  const AOnSnapshot: TPWebQuickJSSnapshotEvent;
+  AReadyWaitMs: Integer;
+  out APlugin: TPWebQuickJSPlugin;
+  out ACode: TPWebPackageLoadCode;
+  out ADetail: RawUtf8): Boolean;
 
 const
   { Defaults chosen for plugin isolation; hosts override per plugin. }
@@ -470,7 +574,7 @@ const
 
 { ---------------- TPWebQuickJSPlugin ---------------- }
 
-constructor TPWebQuickJSPlugin.Create(const ASource: IInvocationSource;
+procedure TPWebQuickJSPlugin.InitCommon(const ASource: IInvocationSource;
   const AContext: TInvocationContext; const ALimits: TPWebQuickJSLimits;
   const AOnSnapshot: TPWebQuickJSSnapshotEvent);
 begin
@@ -494,6 +598,55 @@ begin
   FWork := RTLEventCreate;
   FDone := RTLEventCreate;
   FReady := RTLEventCreate;
+end;
+
+constructor TPWebQuickJSPlugin.Create(const ASource: IInvocationSource;
+  const AContext: TInvocationContext; const ALimits: TPWebQuickJSLimits;
+  const AOnSnapshot: TPWebQuickJSSnapshotEvent);
+begin
+  InitCommon(ASource, AContext, ALimits, AOnSnapshot);
+  // no package: qlsIdle, and Execute keeps the exact CAP-9A shape
+  inherited Create({suspended=}False);
+end;
+
+constructor TPWebQuickJSPlugin.CreatePackage(const ASource: IInvocationSource;
+  const ADescriptor: TPWebQuickJSPackageDescriptor;
+  const AOnSnapshot: TPWebQuickJSSnapshotEvent);
+var
+  ctx: TInvocationContext;
+begin
+  // the descriptor is validated BEFORE the thread exists, so a bad one
+  // never gets as far as an engine
+  if ADescriptor.PackageStore = nil then
+    raise EPWebQuickJSPlugin.Create('plugin descriptor requires a store');
+  if ADescriptor.PrincipalId = '' then
+    raise EPWebQuickJSPlugin.Create(
+      'plugin descriptor requires a native PrincipalId');
+  if ADescriptor.PluginId = '' then
+    raise EPWebQuickJSPlugin.Create(
+      'plugin descriptor requires a native PluginId');
+  if not PWebPackageIdValid(ADescriptor.ExpectedPackageId) then
+    raise EPWebQuickJSPlugin.Create(
+      'plugin descriptor requires a valid ExpectedPackageId');
+  if not PWebPackageEntryValid(ADescriptor.ExpectedEntryPoint) then
+    raise EPWebQuickJSPlugin.Create(
+      'plugin descriptor requires a canonical ExpectedEntryPoint');
+  // the context is built HERE, natively, from the descriptor alone -
+  // pkQuickJS is not a choice, and WindowId is always empty for a
+  // plugin principal (security-model.md)
+  ctx := Default(TInvocationContext);
+  ctx.PrincipalKind := pkQuickJS;
+  ctx.PrincipalId := ADescriptor.PrincipalId;
+  ctx.PluginId := ADescriptor.PluginId;
+  ctx.WindowId := '';
+  ctx.Capabilities := ADescriptor.Capabilities;
+  ctx.TrustedContent := False;
+  InitCommon(ASource, ctx, ADescriptor.Engine, AOnSnapshot);
+  FPackage := ADescriptor;
+  FHasPackage := True;
+  FPackageLimits := PWebClampPackageLimits(ADescriptor.Package);
+  FGraph := TPWebModuleGraph.Create(FPackageLimits);
+  InterlockedExchange(FLoadState, Ord(qlsLoading));
   inherited Create({suspended=}False);
 end;
 
@@ -507,6 +660,7 @@ begin
     RTLEventDestroy(FDone);
   if FReady <> nil then
     RTLEventDestroy(FReady);
+  FreeAndNil(FGraph);
 end;
 
 procedure TPWebQuickJSPlugin.ApplyLimits;
@@ -551,7 +705,18 @@ begin
   // function POINTER, not a call (measured red on the hosted linux job)
   if GetCurrentThreadId() <> ThreadID then
     InterlockedIncrement(FCallbackWrongThread);
-  if (Length(Args) <> 2) or
+  if InterlockedCompareExchange(FLoadState, 0, 0) = Ord(qlsLoading) then
+  begin
+    // RATIFIED (CAP-9B1): no invocation of any kind - pweb.handshake
+    // included, since it is an ordinary bridge-routed method - leaves a
+    // package that has not yet been accepted. Top-level module
+    // evaluation must not produce backend side effects, so a failed
+    // load can never leave partial service operations behind. This is
+    // the ONE gate; the frozen scheduler/policy path is untouched.
+    InterlockedIncrement(FLoadTimeInvokes);
+    envelope := ErrorEnvelopeOf(pecRuntimeClosed);
+  end
+  else if (Length(Args) <> 2) or
      (not VarIsStr(Args[0])) or (not VarIsStr(Args[1])) then
     envelope := ErrorEnvelopeOf(pecInvalidRequest)
   else
@@ -578,6 +743,339 @@ begin
   RawUtf8ToVariant(envelope, Result);
 end;
 
+{ ---------------- CAP-9B1 module loader ---------------- }
+
+const
+  { Script-visible throw texts. FIXED LITERALS, never interpolated: the
+    pinned JS_ThrowReferenceError is `int JS_ThrowReferenceError(ctx,
+    const char *fmt, ...)` in C but is declared `(ctx; fmt: PAnsiChar)`
+    in mormot.lib.quickjs, so a '%' reaching it would consume a vararg
+    that was never pushed. The precise reason goes to the NATIVE
+    PackageCode/PackageDetail instead - which is where a host wants it
+    anyway, and which script can never read. }
+  PWEB_THROW_SPECIFIER: PAnsiChar = 'pweb: invalid module specifier';
+  PWEB_THROW_MISSING: PAnsiChar   = 'pweb: module not found';
+  PWEB_THROW_SOURCE: PAnsiChar    = 'pweb: invalid module source';
+  PWEB_THROW_LIMIT: PAnsiChar     = 'pweb: module graph limit exceeded';
+  PWEB_THROW_CLOSED: PAnsiChar    = 'pweb: module loading is closed';
+  PWEB_THROW_INTERNAL: PAnsiChar  = 'pweb: module loader error';
+
+  { An empty module is legal, but JS_Eval needs a zero-terminated
+    buffer and pointer('') is nil in FPC - so an empty source compiles
+    from this one static NUL instead of a null pointer. }
+  PWEB_EMPTY_SOURCE: AnsiChar = #0;
+
+  PWEB_PACKAGE_DETAIL_MAX = 120;
+  PWEB_PACKAGE_ERROR_MAX = 2048;
+
+{ Reduce attacker-influenced text to printable ASCII and bound it, so a
+  module name or specifier recorded natively can never carry control
+  bytes into a log, and never grows without limit. }
+function SafeDetail(const AText: RawUtf8): RawUtf8;
+var
+  i, n: PtrInt;
+  c: AnsiChar;
+begin
+  n := Length(AText);
+  if n > PWEB_PACKAGE_DETAIL_MAX then
+    n := PWEB_PACKAGE_DETAIL_MAX;
+  SetLength(Result, n);
+  for i := 1 to n do
+  begin
+    c := AText[i];
+    if (c < #$20) or (c >= #$7F) then
+      Result[i] := '?'
+    else
+      Result[i] := c;
+  end;
+end;
+
+{ The two cdecl trampolines registered with JS_SetModuleLoaderFunc. The
+  plugin arrives through the loader opaque, so no global lookup and no
+  shared state is involved. Both are exception barriers: a Pascal
+  exception must never cross a C callback (threading-model.md). }
+function PWebQuickJSNormalize(ctx: JSContext; const module_base_name,
+  module_name: PAnsiChar; opaque: pointer): PAnsiChar; cdecl;
+begin
+  try
+    Result := TPWebQuickJSPlugin(opaque).NormalizeModule(
+      ctx, module_base_name, module_name);
+  except
+    Result := nil;
+    JS_ThrowReferenceError(ctx, PWEB_THROW_INTERNAL);
+  end;
+end;
+
+function PWebQuickJSLoad(ctx: JSContext; module_name: PAnsiChar;
+  opaque: pointer): JSModuleDef; cdecl;
+begin
+  try
+    Result := TPWebQuickJSPlugin(opaque).LoadModule(ctx, module_name);
+  except
+    Result := nil;
+    JS_ThrowReferenceError(ctx, PWEB_THROW_INTERNAL);
+  end;
+end;
+
+procedure TPWebQuickJSPlugin.RecordPackageFailure(
+  ACode: TPWebPackageLoadCode; const ADetail: RawUtf8);
+begin
+  // FIRST failure wins: later cascading failures (the entry's evaluate
+  // failing because one import could not be resolved) must not bury the
+  // root cause
+  if FPackageCode <> plcNone then
+    exit;
+  FPackageCode := ACode;
+  FPackageDetail := SafeDetail(ADetail);
+end;
+
+function TPWebQuickJSPlugin.NormalizeModule(ctx: JSContext;
+  const ABase, ASpecifier: PAnsiChar): PAnsiChar;
+var
+  base, spec, canonical: RawUtf8;
+  code: TPWebPackageLoadCode;
+  p: PAnsiChar;
+begin
+  Result := nil;
+  InterlockedIncrement(FNormalizeCalls);
+  // engine-thread affinity, asserted rather than assumed: no scheduler
+  // worker may ever resolve, read or compile a module
+  if GetCurrentThreadId() <> ThreadID then
+  begin
+    InterlockedIncrement(FLoaderWrongThread);
+    RecordPackageFailure(plcThread, 'normalize');
+    JS_ThrowReferenceError(ctx, PWEB_THROW_INTERNAL);
+    exit;
+  end;
+  if InterlockedCompareExchange(FLoadState, 0, 0) <> Ord(qlsLoading) then
+  begin
+    // the graph is sealed once the package is accepted: nothing may add
+    // a module after load (and a dynamic import, were a job pump ever
+    // added, would land here rather than in the store)
+    JS_ThrowReferenceError(ctx, PWEB_THROW_CLOSED);
+    exit;
+  end;
+  base := RawUtf8(ABase);
+  spec := RawUtf8(ASpecifier);
+  // ALL resolution happens here: QuickJS joins nothing and hands the
+  // specifier through verbatim
+  if not PWebResolveModuleSpecifier(base, spec,
+      FPackageLimits.MaxSpecifierBytes, canonical) then
+  begin
+    RecordPackageFailure(plcSpecifier, base + ' -> ' + spec);
+    JS_ThrowReferenceError(ctx, PWEB_THROW_SPECIFIER);
+    exit;
+  end;
+  if not FGraph.AddEdge(base, canonical, code) then
+  begin
+    RecordPackageFailure(code, canonical);
+    JS_ThrowReferenceError(ctx, PWEB_THROW_LIMIT);
+    exit;
+  end;
+  // QuickJS takes ownership of this buffer and js_free()s it
+  p := js_malloc(ctx, Length(canonical) + 1);
+  if p = nil then
+  begin
+    RecordPackageFailure(plcEngine, 'js_malloc');
+    exit; // QuickJS already threw its own out-of-memory
+  end;
+  if Length(canonical) > 0 then
+    Move(canonical[1], p^, Length(canonical));
+  p[Length(canonical)] := #0;
+  Result := p;
+end;
+
+function TPWebQuickJSPlugin.LoadModule(ctx: JSContext;
+  AName: PAnsiChar): JSModuleDef;
+var
+  name, src: RawUtf8;
+  asset: TAssetResponse;
+  code: TPWebPackageLoadCode;
+  v: JSValue;
+  p: PAnsiChar;
+begin
+  Result := nil;
+  InterlockedIncrement(FLoaderCalls);
+  if GetCurrentThreadId() <> ThreadID then
+  begin
+    InterlockedIncrement(FLoaderWrongThread);
+    RecordPackageFailure(plcThread, 'load');
+    JS_ThrowReferenceError(ctx, PWEB_THROW_INTERNAL);
+    exit;
+  end;
+  if InterlockedCompareExchange(FLoadState, 0, 0) <> Ord(qlsLoading) then
+  begin
+    JS_ThrowReferenceError(ctx, PWEB_THROW_CLOSED);
+    exit;
+  end;
+  name := RawUtf8(AName);
+  // defence in depth: NormalizeModule produced this name, but a module
+  // name reaching a store read unvalidated is precisely the hole this
+  // layer exists to close
+  if not PWebPackageEntryValid(name) then
+  begin
+    RecordPackageFailure(plcSpecifier, name);
+    JS_ThrowReferenceError(ctx, PWEB_THROW_SPECIFIER);
+    exit;
+  end;
+  // the ONE store call, with the ONE canonical logical path
+  if not FPackage.PackageStore.TryRead(name, asset) then
+  begin
+    RecordPackageFailure(plcModuleMissing, name);
+    JS_ThrowReferenceError(ctx, PWEB_THROW_MISSING);
+    exit;
+  end;
+  if not PWebPrepareModuleSource(asset.Content, src, code) then
+  begin
+    RecordPackageFailure(code, name);
+    JS_ThrowReferenceError(ctx, PWEB_THROW_SOURCE);
+    exit;
+  end;
+  // charged BEFORE compiling: the graph is bounded while it is still
+  // bytes, not after the engine has allocated it
+  if not FGraph.Charge(name, Length(src), code) then
+  begin
+    RecordPackageFailure(code, name);
+    JS_ThrowReferenceError(ctx, PWEB_THROW_LIMIT);
+    exit;
+  end;
+  if src = '' then
+    p := @PWEB_EMPTY_SOURCE
+  else
+    p := pointer(src);
+  v := JSValue(JS_Eval(ctx, p, Length(src), pointer(name),
+    JS_EVAL_TYPE_MODULE or JS_EVAL_FLAG_COMPILE_ONLY));
+  // QuickJS COPIES the source here (measured), so src may die with this
+  // frame; nothing keeps the store buffer alive past the compile
+  if v.IsException then
+  begin
+    RecordPackageFailure(plcCompile, name);
+    // deliberately leave QuickJS's own SyntaxError pending: it already
+    // carries the package-relative module name and line/column, and the
+    // caller reads it once at the top of the load
+    exit;
+  end;
+  Result := v.Ptr;
+  ctx^.Free(v); // the module is already referenced by the context
+  // NOTE: js_module_set_import_meta is deliberately NOT called - it is
+  // unnecessary and its use_realpath branch touches the filesystem
+end;
+
+procedure TPWebQuickJSPlugin.LoadPackageOnOwnThread;
+var
+  asset: TAssetResponse;
+  detail, src: RawUtf8;
+  code: TPWebPackageLoadCode;
+  v, r: JSValue;
+
+  procedure Fail(ACode: TPWebPackageLoadCode; const ADetail: RawUtf8);
+  begin
+    RecordPackageFailure(ACode, ADetail);
+    InterlockedExchange(FLoadState, Ord(qlsFailed));
+    FInitError := 'package ' + PWEB_PACKAGE_LOAD_TEXT[FPackageCode];
+    if FPackageDetail <> '' then
+      FInitError := FInitError + ' (' + FPackageDetail + ')';
+  end;
+
+  procedure CaptureEngineError;
+  begin
+    FEngine.cx^.ErrorMessage({stacktrace=}True, FPackageError);
+    if Length(FPackageError) > PWEB_PACKAGE_ERROR_MAX then
+      SetLength(FPackageError, PWEB_PACKAGE_ERROR_MAX);
+  end;
+
+begin
+  // 1. the manifest, from the package root of the plugin's own store
+  if not FPackage.PackageStore.TryRead(PWEB_PACKAGE_MANIFEST, asset) then
+  begin
+    Fail(plcManifestMissing, PWEB_PACKAGE_MANIFEST);
+    exit;
+  end;
+  // 2. strict parse
+  if not PWebParsePluginManifest(asset.Content, FPackageLimits,
+      FManifest, code, detail) then
+  begin
+    Fail(code, detail);
+    exit;
+  end;
+  // 3. the manifest must AGREE with native registration - agreement is a
+  // consistency check, never a transfer of authority
+  if FManifest.Id <> FPackage.ExpectedPackageId then
+  begin
+    Fail(plcManifestId, FManifest.Id);
+    exit;
+  end;
+  if FManifest.Entry <> FPackage.ExpectedEntryPoint then
+  begin
+    Fail(plcEntryMismatch, FManifest.Entry);
+    exit;
+  end;
+  // 4. the entry module itself
+  if not FGraph.AddEntry(FManifest.Entry, code) then
+  begin
+    Fail(code, FManifest.Entry);
+    exit;
+  end;
+  if not FPackage.PackageStore.TryRead(FManifest.Entry, asset) then
+  begin
+    Fail(plcEntryMissing, FManifest.Entry);
+    exit;
+  end;
+  if not PWebPrepareModuleSource(asset.Content, src, code) then
+  begin
+    Fail(code, FManifest.Entry);
+    exit;
+  end;
+  if not FGraph.Charge(FManifest.Entry, Length(src), code) then
+  begin
+    Fail(code, FManifest.Entry);
+    exit;
+  end;
+  // 5. install the private loader on THIS runtime, for this plugin only
+  // the casts are the ObjFPC spelling of "these ARE the pinned callback
+  // types": JSModuleDef is an untyped pointer alias, so FPC will not
+  // silently accept the raw address in mode ObjFPC the way mode Delphi
+  // does. The signatures above match mormot.lib.quickjs:733-740 exactly.
+  JS_SetModuleLoaderFunc(FEngine.rt,
+    PJSModuleNormalizeFunc(@PWebQuickJSNormalize),
+    PJSModuleLoaderFunc(@PWebQuickJSLoad), self);
+  // 6. arm the CPU bound. TQuickJSEngine.Evaluate is the only public API
+  // that sets the interrupt's start tick (fTimeoutStartTickSec is
+  // protected and starts at 0), so without this one trivial global eval
+  // the very first module opcode aborts with 'interrupted' - measured.
+  // One armed window then covers the entry AND its whole graph.
+  FEngine.Evaluate('0', 'pweb-arm.js');
+  // 7. compile the entry as a module, then evaluate it: the loader
+  // callbacks run inside step 8, on this thread, inside this window
+  if Length(src) = 0 then
+    v := JSValue(JS_Eval(FEngine.cx, @PWEB_EMPTY_SOURCE, 0,
+      pointer(FManifest.Entry),
+      JS_EVAL_TYPE_MODULE or JS_EVAL_FLAG_COMPILE_ONLY))
+  else
+    v := JSValue(JS_Eval(FEngine.cx, pointer(src), Length(src),
+      pointer(FManifest.Entry),
+      JS_EVAL_TYPE_MODULE or JS_EVAL_FLAG_COMPILE_ONLY));
+  if v.IsException then
+  begin
+    CaptureEngineError;
+    Fail(plcCompile, FManifest.Entry);
+    exit;
+  end;
+  // 8. evaluate: resolves and evaluates the whole static graph
+  r := JSValue(JS_EvalFunction(FEngine.cx, JSValueRaw(v)));
+  if r.IsException then
+  begin
+    CaptureEngineError;
+    // the loader may already have recorded a precise reason; Fail keeps
+    // the first one and only falls back to plcEvaluate
+    Fail(plcEvaluate, FManifest.Entry);
+    exit;
+  end;
+  FEngine.cx^.Free(r);
+  // 9. accepted: the graph is sealed and pweb.invoke opens
+  InterlockedExchange(FLoadState, Ord(qlsRunning));
+end;
+
 procedure TPWebQuickJSPlugin.Execute;
 var
   v: variant;
@@ -590,9 +1088,22 @@ begin
           @InvokeJson, 2) then
         raise EPWebQuickJSPlugin.Create('unable to register __pweb_invoke_json');
       FEngine.Evaluate(PWEB_QUICKJS_BOOTSTRAP, 'pweb-bootstrap.js');
+      // CAP-9B1: the package is loaded HERE - on the owning thread,
+      // after the CAP-9A sandbox/shim bootstrap and before the plugin
+      // is ever reported ready. With no descriptor this is skipped and
+      // the CAP-9A shape is byte-for-byte what it was.
+      if FHasPackage then
+        LoadPackageOnOwnThread;
     except
       on E: Exception do
+      begin
         FInitError := RawUtf8(E.ClassName) + ': ' + RawUtf8(E.Message);
+        if FHasPackage then
+        begin
+          RecordPackageFailure(plcEngine, RawUtf8(E.ClassName));
+          InterlockedExchange(FLoadState, Ord(qlsFailed));
+        end;
+      end;
     end;
     RTLEventSetEvent(FReady);
     if FInitError <> '' then
@@ -735,6 +1246,90 @@ begin
     Result := 0
   else
     Result := TPluginCompletion(FLastSink).CompleteCalls;
+end;
+
+function TPWebQuickJSPlugin.LoadState: TPWebQuickJSLoadState;
+begin
+  Result := TPWebQuickJSLoadState(
+    InterlockedCompareExchange(FLoadState, 0, 0));
+end;
+
+function TPWebQuickJSPlugin.NormalizeCalls: LongInt;
+begin
+  Result := InterlockedCompareExchange(FNormalizeCalls, 0, 0);
+end;
+
+function TPWebQuickJSPlugin.LoaderCalls: LongInt;
+begin
+  Result := InterlockedCompareExchange(FLoaderCalls, 0, 0);
+end;
+
+function TPWebQuickJSPlugin.LoaderWrongThreadCalls: LongInt;
+begin
+  Result := InterlockedCompareExchange(FLoaderWrongThread, 0, 0);
+end;
+
+function TPWebQuickJSPlugin.LoadTimeInvokes: LongInt;
+begin
+  Result := InterlockedCompareExchange(FLoadTimeInvokes, 0, 0);
+end;
+
+{ ---------------- atomic package load ---------------- }
+
+function PWebLoadQuickJSPackage(
+  const ADescriptor: TPWebQuickJSPackageDescriptor;
+  const ASource: IInvocationSource;
+  const AOnSnapshot: TPWebQuickJSSnapshotEvent;
+  AReadyWaitMs: Integer;
+  out APlugin: TPWebQuickJSPlugin;
+  out ACode: TPWebPackageLoadCode;
+  out ADetail: RawUtf8): Boolean;
+var
+  plugin: TPWebQuickJSPlugin;
+begin
+  APlugin := nil;
+  ACode := plcNone;
+  ADetail := '';
+  Result := False;
+  if AReadyWaitMs <= 0 then
+    AReadyWaitMs := 15000;
+  try
+    plugin := TPWebQuickJSPlugin.CreatePackage(
+      ASource, ADescriptor, AOnSnapshot);
+  except
+    on E: Exception do
+    begin
+      // the thread never started and no engine ever existed; still close
+      // the source so a rejected descriptor leaves nothing open
+      ACode := plcDescriptor;
+      ADetail := SafeDetail(RawUtf8(E.Message));
+      if ASource <> nil then
+        try
+          ASource.Quiesce;
+          ASource.Close;
+        except
+          // a closed/shutdown source must never abort teardown
+        end;
+      exit;
+    end;
+  end;
+  plugin.WaitReady(AReadyWaitMs);
+  if plugin.LoadState = qlsRunning then
+  begin
+    APlugin := plugin;
+    exit(True);
+  end;
+  ACode := plugin.PackageCode;
+  if ACode = plcNone then
+    ACode := plcEngine; // ready timed out, or the engine never came up
+  ADetail := plugin.PackageDetail;
+  if ADetail = '' then
+    ADetail := SafeDetail(plugin.PackageError);
+  // ATOMIC FAILURE: Quiesce -> Close -> join, with the engine destroyed
+  // on its owning thread in Execute's epilogue. Nothing stays Running,
+  // no invocation stays pending, and APlugin stays nil.
+  plugin.Unload;
+  plugin.Free;
 end;
 
 initialization
