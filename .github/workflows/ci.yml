@@ -1642,6 +1642,39 @@ jobs:
             build/cap9b2/quickjslifecycle-win.log
             build/cap9b2-quickjslifecycle.log
 
+      # CAP-9C1: the deterministic QuickJS PRODUCTION package and its trusted
+      # release loader. The gate builds the private packager, stages the
+      # release payload TWICE and requires byte-identical output on this
+      # toolchain, compiles the C1-C30 harness WITH the generated native
+      # registry include (so "the registry compiles on every target" is
+      # proven rather than asserted), stages plugins.zip beside the harness
+      # executable to exercise the production executable-relative rule, and
+      # runs the matrix from an unrelated working directory. It writes
+      # build/cap9c1/quickjs-release-corpus.txt (the cross-target digest
+      # source) and quickjsrelease-windows-x86_64.json, which the CAP-7F
+      # emitter reads into quickjs_release_corpus (must-PASS; never SKIPs).
+      - name: CAP-9C1 QuickJS release package and trusted loader harness
+        shell: pwsh
+        timeout-minutes: 30
+        run: |
+          pwsh -NoProfile -File test/cap9c1/run_quickjsrelease.ps1 2>&1 |
+            Tee-Object -FilePath build/cap9c1-quickjsrelease.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-9C1 quickjsrelease gate FAILED' }
+
+      - name: CAP-9C1 upload the Windows release record and payload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap9c1-release-windows
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap9c1/quickjsrelease-windows-x86_64.json
+            build/cap9c1/quickjs-release-corpus.txt
+            build/cap9c1/quickjsrelease-win.log
+            build/cap9c1/pwebqjspack-win.log
+            build/cap9c1-quickjsrelease.log
+            build/quickjs-release/
+
       - name: CAP-7F emit the Windows evidence artifact
         shell: pwsh
         timeout-minutes: 10
@@ -1680,6 +1713,9 @@ jobs:
             build/cap9b1-quickjspackage.log
             build/cap9b2/
             build/cap9b2-quickjslifecycle.log
+            build/cap9c1/
+            build/cap9c1-quickjsrelease.log
+            build/quickjs-release/
 
       # same deliberate deviation as CAP-6b2/6b3: no ~200-276 MB setup
       # binary is uploaded - the logs and the release index identify any
@@ -2104,6 +2140,31 @@ jobs:
             build/cap9b2/quickjs-lifecycle-corpus.txt
             build/cap9b2/quickjslifecycle-posix.log
 
+      # CAP-9C1: the deterministic QuickJS production package and its trusted
+      # release loader. Same shape as the Windows sibling - stage twice and
+      # require byte equality ON THIS TOOLCHAIN, compile the harness WITH the
+      # generated registry include, stage plugins.zip beside the executable,
+      # run the C1-C30 matrix from an unrelated CWD. The cross-target gate
+      # compares the SEMANTIC corpus, not the archive bytes: CAP-6/CAP-7L
+      # measured that the mORMot static DEFLATE object differs per toolchain.
+      - name: CAP-9C1 QuickJS release package and trusted loader harness
+        shell: bash
+        timeout-minutes: 30
+        run: test/cap9c1/run_quickjsrelease.sh
+
+      - name: CAP-9C1 upload the Linux release record and payload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap9c1-release-linux
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap9c1/quickjsrelease-linux-x86_64.json
+            build/cap9c1/quickjs-release-corpus.txt
+            build/cap9c1/quickjsrelease-posix.log
+            build/cap9c1/pwebqjspack-posix.log
+            build/quickjs-release/
+
       - name: CAP-7F emit the Linux evidence artifact
         shell: bash
         timeout-minutes: 10
@@ -2133,6 +2194,8 @@ jobs:
             build/cap9a/
             build/cap9b1/
             build/cap9b2/
+            build/cap9c1/
+            build/quickjs-release/
 
       - name: CAP-7L diagnostics on failure
         if: failure()
@@ -2608,6 +2671,26 @@ jobs:
             build/cap9b2/quickjs-lifecycle-corpus.txt
             build/cap9b2/quickjslifecycle-posix.log
 
+      # CAP-9C1: see the x64 Linux sibling. The packager and the harness both
+      # link the CI-built pinned QuickJS object the CAP-9A step produced.
+      - name: CAP-9C1 QuickJS release package and trusted loader harness
+        shell: bash
+        timeout-minutes: 30
+        run: test/cap9c1/run_quickjsrelease.sh
+
+      - name: CAP-9C1 upload the macOS x64 release record and payload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap9c1-release-macos-x64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap9c1/quickjsrelease-macos-x86_64.json
+            build/cap9c1/quickjs-release-corpus.txt
+            build/cap9c1/quickjsrelease-posix.log
+            build/cap9c1/pwebqjspack-posix.log
+            build/quickjs-release/
+
       # CAP-7F: additive, after every gate it summarizes. macOS runs no new
       # gate - the CAP-7M2 release suite above already executed the host
       # arguments (LaunchServices --pweb-verdict, argv-beats-env, refusal
@@ -2640,6 +2723,8 @@ jobs:
             build/cap9a/
             build/cap9b1/
             build/cap9b2/
+            build/cap9c1/
+            build/quickjs-release/
 
       - name: CAP-7M0 per-arch headline facts to the run summary
         if: always()
@@ -3050,6 +3135,26 @@ jobs:
             build/cap9b2/quickjs-lifecycle-corpus.txt
             build/cap9b2/quickjslifecycle-posix.log
 
+      # CAP-9C1: see the x64 sibling - the same staged-twice determinism
+      # check, the same generated-registry compile, the same C1-C30 matrix.
+      - name: CAP-9C1 QuickJS release package and trusted loader harness
+        shell: bash
+        timeout-minutes: 30
+        run: test/cap9c1/run_quickjsrelease.sh
+
+      - name: CAP-9C1 upload the macOS arm64 release record and payload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap9c1-release-macos-arm64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap9c1/quickjsrelease-macos-arm64.json
+            build/cap9c1/quickjs-release-corpus.txt
+            build/cap9c1/quickjsrelease-posix.log
+            build/cap9c1/pwebqjspack-posix.log
+            build/quickjs-release/
+
       # CAP-7F: see the x64 sibling - the emitter summarizes gates that
       # already ran above in this job and re-enumerates the export trie.
       - name: CAP-7F emit the macOS arm64 evidence artifact
@@ -3078,6 +3183,8 @@ jobs:
             build/cap9a/
             build/cap9b1/
             build/cap9b2/
+            build/cap9c1/
+            build/quickjs-release/
 
       - name: CAP-7M0 per-arch headline facts to the run summary
         if: always()
