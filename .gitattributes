@@ -52,3 +52,22 @@ examples/05-pas2js/frontend/src/**/*.css text eol=lf
 examples/05-pas2js/frontend/src/**/*.js text eol=lf
 examples/05-pas2js/frontend/src/**/*.json text eol=lf
 examples/05-pas2js/frontend/src/**/*.svg text eol=lf
+
+# CAP-9C1: the QuickJS plugin sources that ship VERBATIM inside
+# plugins.zip, and the trusted build-time list that names them. The
+# packager hashes these exact bytes into the semantic inventory, the
+# per-plugin module-graph digest and the generated native registry, all
+# three of which the four-target evidence compares for equality. A CRLF
+# checkout - Git for Windows defaults to core.autocrlf=true, on the
+# hosted windows runner as on the dev host - would make the Windows
+# inventory diverge from the Linux/macOS one by exactly the carriage
+# returns, which is the same divergence the CAP-7F block above closes
+# for the frontend corpus (MEASURED there, and the same mechanism here).
+#
+# Pinned as a CLASS by text extension, like the two blocks above: the
+# next .js or .json added under a plugin root would otherwise inherit
+# nothing and reopen the divergence. Deliberately extension-scoped - a
+# potential binary must never be declared text.
+examples/07-quickjs/plugins/**/*.js text eol=lf
+examples/07-quickjs/plugins/**/*.json text eol=lf
+examples/07-quickjs/plugins.trusted text eol=lf

@@ -1,0 +1,34 @@
+# CAP-9C1 trusted build-time QuickJS plugin list.
+#
+# BUILD-TIME ONLY. This file is never shipped, never read at runtime and
+# never reachable from script. It names which already-written plugin
+# source trees the private packaging tool turns into plugins.zip plus a
+# generated native registry, and nothing else:
+#
+#   - it carries NO capability. Capabilities come from the CAP-8 policy
+#     keyed by PrincipalId, so the packaging path cannot grant a right;
+#   - it carries NO resource bound. The generator emits the ratified
+#     defaults, so a tampered copy of this file cannot raise a memory
+#     cap or switch a CPU bound off;
+#   - it cannot register a plugin at runtime. The runtime trusts only
+#     the COMPILED registry generated from it.
+#
+# Grammar: the repository's `key = value` lock-file shape. '#' starts a
+# comment, blank lines are ignored, ASCII only, no escape sequences, and
+# each `plugin` line opens a block that must carry exactly one
+# principal, one root and one entry. The eight security-authority key
+# names are refused loudly rather than ignored.
+#
+# The manifest "id" inside each root must equal its plugin id: the
+# archive sub-tree, the native PluginId and the descriptive manifest id
+# are ONE name.
+
+plugin    = quickjs.calculator
+principal = plugin:calculator
+root      = examples/07-quickjs/plugins/quickjs.calculator
+entry     = main.js
+
+plugin    = quickjs.reporting
+principal = plugin:reporting
+root      = examples/07-quickjs/plugins/quickjs.reporting
+entry     = main.js
