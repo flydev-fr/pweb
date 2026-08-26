@@ -143,3 +143,37 @@ distribution); they apply to all RTL material embedded in the compiled
 TypeScript, esbuild and @types/* packages are build-time toolchain
 dependencies only (pinned in the respective `package-lock.json` files);
 no part of them is redistributed in built PWeb artifacts.
+
+## QuickJS (MIT)
+
+A plugin-enabled PWeb application statically links the QuickJS engine
+from the pinned mORMot2 subtree (`QUICKJS_VERSION 2021-03-27`, mORMot pin
+recorded in `mormot.lock`), so the engine's MIT terms travel with every
+such binary. The notice file that ships beside it is **generated, never
+hand-written**: `tools/quickjs/pwebqjspack` assembles `LICENSE.quickjs`
+from the leading notice block of all seventeen pinned sources that
+participate in the static build - the `compile-all.sh` amalgamation
+inputs plus every pinned header they include - each labelled with its
+path and the SHA-256 of its LF-normalized bytes, under a factual
+provenance header naming the version and the mORMot pin. Nothing in it is
+composed or paraphrased.
+
+One canonicalization is applied and the artifact says so about itself:
+line terminators become LF, because the pinned sources check out CRLF on
+Windows and LF elsewhere and this file must be byte-identical on all four
+targets. It is:
+
+```
+sha256 = 8310e7a6c52cd3b45a0aedb5620ef79408c8c155594f37259ba801f6a2fbe2fc
+```
+
+That digest is verified against the pinned sources themselves by the
+CAP-9C1 gate (independently of the generator that produced it), pinned as
+an absolute value by the CAP-7F aggregator, and asserted present exactly
+once in every plugin-enabled release layout by the CAP-9C2 gate. It is
+deliberately NOT embedded inside `app.pwb` or `plugins.zip`: a licence
+notice belongs beside the binary it covers, not inside content the
+application serves.
+
+Applications built WITHOUT plugins link no QuickJS object and ship no
+`LICENSE.quickjs` - the CAP-6/CAP-7 release layouts are unchanged by this.
