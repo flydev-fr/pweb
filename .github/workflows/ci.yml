@@ -1610,6 +1610,38 @@ jobs:
             build/cap9b1/quickjspackage-win.log
             build/cap9b1-quickjspackage.log
 
+      # CAP-9B2: the QuickJS plugin LIFECYCLE + transactional reload harness.
+      # Same headless, fixture-free-on-disk discipline as CAP-9B1: it
+      # generates every package in-process and runs the L1-L40 matrix through
+      # the UNCHANGED production scheduler + CAP-8A policy + real mORMot SOA
+      # bridge, driving plugin HOSTS over CAP-9B1 package generations. It
+      # writes build/cap9b2/quickjs-lifecycle-corpus.txt (the cross-target
+      # digest source) and quickjslifecycle-windows-x86_64.json, which the
+      # CAP-7F emitter reads into quickjs_lifecycle_corpus (must-PASS; never
+      # SKIPs). A longer timeout than the CAP-9B1 gate by design: several
+      # rows are bounded by REAL resource limits (a CPU bound fired three
+      # times, plus a quarantine row that waits for a deliberately leaked
+      # thread to end on its own bound).
+      - name: CAP-9B2 QuickJS plugin lifecycle and reload harness
+        shell: pwsh
+        timeout-minutes: 30
+        run: |
+          pwsh -NoProfile -File test/cap9b2/run_quickjslifecycle.ps1 2>&1 |
+            Tee-Object -FilePath build/cap9b2-quickjslifecycle.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-9B2 quickjslifecycle gate FAILED' }
+
+      - name: CAP-9B2 upload the Windows lifecycle record
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap9b2-lifecycle-windows
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap9b2/quickjslifecycle-windows-x86_64.json
+            build/cap9b2/quickjs-lifecycle-corpus.txt
+            build/cap9b2/quickjslifecycle-win.log
+            build/cap9b2-quickjslifecycle.log
+
       - name: CAP-7F emit the Windows evidence artifact
         shell: pwsh
         timeout-minutes: 10
@@ -1646,6 +1678,8 @@ jobs:
             build/cap9a-quickjsfoundation.log
             build/cap9b1/
             build/cap9b1-quickjspackage.log
+            build/cap9b2/
+            build/cap9b2-quickjslifecycle.log
 
       # same deliberate deviation as CAP-6b2/6b3: no ~200-276 MB setup
       # binary is uploaded - the logs and the release index identify any
@@ -2047,6 +2081,29 @@ jobs:
             build/cap9b1/quickjs-package-corpus.txt
             build/cap9b1/quickjspackage-posix.log
 
+      # CAP-9B2: the QuickJS plugin lifecycle + transactional reload harness.
+      # Same headless, fixture-free-on-disk discipline, so it runs identically
+      # here and on Windows. Runs BEFORE the CAP-7F emitter, which reads its
+      # verdict into quickjs_lifecycle_corpus (must-PASS) and hashes the
+      # corpus into quickjs_lifecycle_digest. Longer timeout by design: some
+      # rows are bounded by real CPU limits and by a deliberately leaked
+      # thread ending on its own bound.
+      - name: CAP-9B2 QuickJS plugin lifecycle and reload harness
+        shell: bash
+        timeout-minutes: 30
+        run: test/cap9b2/run_quickjslifecycle.sh
+
+      - name: CAP-9B2 upload the Linux lifecycle record
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap9b2-lifecycle-linux
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap9b2/quickjslifecycle-linux-x86_64.json
+            build/cap9b2/quickjs-lifecycle-corpus.txt
+            build/cap9b2/quickjslifecycle-posix.log
+
       - name: CAP-7F emit the Linux evidence artifact
         shell: bash
         timeout-minutes: 10
@@ -2075,6 +2132,7 @@ jobs:
             build/cap7f/
             build/cap9a/
             build/cap9b1/
+            build/cap9b2/
 
       - name: CAP-7L diagnostics on failure
         if: failure()
@@ -2528,6 +2586,28 @@ jobs:
             build/cap9b1/quickjs-package-corpus.txt
             build/cap9b1/quickjspackage-posix.log
 
+      # CAP-9B2: the QuickJS plugin lifecycle + transactional reload matrix,
+      # over the same CI-built pinned QuickJS object. Fully headless, so its
+      # L1-L40 decisions and corpus digest are identical to the other three
+      # targets. Runs BEFORE the CAP-7F emitter, which reads its verdict into
+      # quickjs_lifecycle_corpus (must-PASS) and hashes
+      # quickjs_lifecycle_digest.
+      - name: CAP-9B2 QuickJS plugin lifecycle and reload harness
+        shell: bash
+        timeout-minutes: 30
+        run: test/cap9b2/run_quickjslifecycle.sh
+
+      - name: CAP-9B2 upload the macOS x64 lifecycle record
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap9b2-lifecycle-macos-x64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap9b2/quickjslifecycle-macos-x86_64.json
+            build/cap9b2/quickjs-lifecycle-corpus.txt
+            build/cap9b2/quickjslifecycle-posix.log
+
       # CAP-7F: additive, after every gate it summarizes. macOS runs no new
       # gate - the CAP-7M2 release suite above already executed the host
       # arguments (LaunchServices --pweb-verdict, argv-beats-env, refusal
@@ -2559,6 +2639,7 @@ jobs:
             build/cap7f/
             build/cap9a/
             build/cap9b1/
+            build/cap9b2/
 
       - name: CAP-7M0 per-arch headline facts to the run summary
         if: always()
@@ -2949,6 +3030,26 @@ jobs:
             build/cap9b1/quickjs-package-corpus.txt
             build/cap9b1/quickjspackage-posix.log
 
+      # CAP-9B2: see the x64 sibling - the same headless L1-L40 lifecycle and
+      # reload matrix over the CI-built pinned QuickJS object, producing the
+      # fourth quickjs_lifecycle_digest the aggregate requires to be equal.
+      # Runs BEFORE the CAP-7F emitter.
+      - name: CAP-9B2 QuickJS plugin lifecycle and reload harness
+        shell: bash
+        timeout-minutes: 30
+        run: test/cap9b2/run_quickjslifecycle.sh
+
+      - name: CAP-9B2 upload the macOS arm64 lifecycle record
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap9b2-lifecycle-macos-arm64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap9b2/quickjslifecycle-macos-arm64.json
+            build/cap9b2/quickjs-lifecycle-corpus.txt
+            build/cap9b2/quickjslifecycle-posix.log
+
       # CAP-7F: see the x64 sibling - the emitter summarizes gates that
       # already ran above in this job and re-enumerates the export trie.
       - name: CAP-7F emit the macOS arm64 evidence artifact
@@ -2976,6 +3077,7 @@ jobs:
             build/cap7f/
             build/cap9a/
             build/cap9b1/
+            build/cap9b2/
 
       - name: CAP-7M0 per-arch headline facts to the run summary
         if: always()
