@@ -57,6 +57,9 @@ $required = @(
     'cap8c_denied_soa', 'cap8c_opener_nonmain', 'cap8c_secure_origin',
     'quickjs_corpus', 'quickjs_corpus_digest',
     'cap9a_denied_bridge', 'cap9a_opener_reached',
+    'quickjs_package_corpus', 'quickjs_package_digest',
+    'cap9b1_loadtime_bridge', 'cap9b1_loader_wrong_thread',
+    'cap9b1_store_wrong_thread', 'cap9b1_denied_bridge',
     'release_layout', 'no_listener', 'app_pwb_react_sha256',
     'logical_inventory_sha256_react', 'github_sha', 'github_run_id', 'waivers'
 )
@@ -71,7 +74,8 @@ $absolutePins = @{
 }
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
 $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
-    'navigation_security', 'security_corpus', 'quickjs_corpus')
+    'navigation_security', 'security_corpus', 'quickjs_corpus',
+    'quickjs_package_corpus')
 # fields that must agree, value-for-value, across all four targets
 # (capability_policy_digest is the CAP-8A structured policy-decision corpus and
 # navigation_policy_digest the CAP-8B one: four targets, one byte-identical
@@ -80,7 +84,8 @@ $equalityFields = @(
     'fpc', 'webview_pin', 'webview_surface', 'origin', 'secure',
     'bundle_protocol', 'rpc_add_20_22', 'logical_inventory_sha256_react',
     'capability_policy_digest', 'navigation_policy_digest',
-    'security_corpus_digest', 'quickjs_corpus_digest', 'github_sha'
+    'security_corpus_digest', 'quickjs_corpus_digest',
+    'quickjs_package_digest', 'github_sha'
 )
 # targets that additionally carry a pas2js logical inventory
 $pas2jsTargets = @('linux-x86_64', 'macos-x86_64', 'macos-arm64')
@@ -187,6 +192,30 @@ foreach ($t in $evidence.Keys) {
             $failures.Add("CAP-9A NON-NUMERIC: target=$t cap9a_opener_reached='$($e.cap9a_opener_reached)'")
         } elseif ($qjsOpener -ne 0) {
             $failures.Add("CAP-9A OPENER REACHED: target=$t cap9a_opener_reached=$qjsOpener -- a QuickJS plugin reached the openExternal bridge arm without external.open")
+        }
+    }
+    # CAP-9B1 defense in depth, only meaningful where the package corpus is
+    # PASS: top-level module evaluation must never have reached the bridge
+    # (the ratified load-time rule), the module loader and every package
+    # store read must have stayed on the owning plugin thread, and a denied
+    # plugin principal must never have reached the bridge Add arm. Guarded
+    # numeric casts, exactly as the CAP-9A block above.
+    if ("$($e.quickjs_package_corpus)" -ceq 'PASS') {
+        foreach ($pair in @(
+            @{ field = 'cap9b1_loadtime_bridge'
+               why   = 'a package reached the bridge during top-level module evaluation' },
+            @{ field = 'cap9b1_loader_wrong_thread'
+               why   = 'the QuickJS module loader ran off its owning plugin thread' },
+            @{ field = 'cap9b1_store_wrong_thread'
+               why   = 'the plugin package store was read off its owning plugin thread' },
+            @{ field = 'cap9b1_denied_bridge'
+               why   = 'a forbidden plugin principal reached the bridge' })) {
+            $v = 0
+            if (-not [int]::TryParse("$($e.($pair.field))", [ref]$v)) {
+                $failures.Add("CAP-9B1 NON-NUMERIC: target=$t $($pair.field)='$($e.($pair.field))'")
+            } elseif ($v -ne 0) {
+                $failures.Add("CAP-9B1 $($pair.field.ToUpperInvariant())>0: target=$t $($pair.field)=$v -- $($pair.why)")
+            }
         }
     }
 }
@@ -312,6 +341,7 @@ $matrix = [ordered]@{
         navigation_policy_digest       = $first.navigation_policy_digest
         security_corpus_digest         = $first.security_corpus_digest
         quickjs_corpus_digest          = $first.quickjs_corpus_digest
+        quickjs_package_digest         = $first.quickjs_package_digest
         logical_inventory_sha256_react = $first.logical_inventory_sha256_react
         logical_inventory_sha256_pas2js = $evidence['linux-x86_64'].logical_inventory_sha256_pas2js
     }
@@ -330,6 +360,7 @@ foreach ($t in $evidence.Keys) {
         navigation_security = $e.navigation_security
         security_corpus    = $e.security_corpus
         quickjs_corpus     = $e.quickjs_corpus
+        quickjs_package_corpus = $e.quickjs_package_corpus
         release_layout     = $e.release_layout
         no_listener        = $e.no_listener
         runtime_provenance = $e.runtime_provenance
@@ -345,11 +376,11 @@ $json = $matrix | ConvertTo-Json -Depth 5
 $summary = @()
 $summary += '### CAP-7F aggregate: PASS - four targets, field-by-field agreement'
 $summary += ''
-$summary += '| target | engine | host_args | cap_policy | nav_security | sec_corpus | qjs_corpus | layout | no_listener | rtti extras |'
-$summary += '|---|---|---|---|---|---|---|---|---|---|'
+$summary += '| target | engine | host_args | cap_policy | nav_security | sec_corpus | qjs_corpus | qjs_pkg | layout | no_listener | rtti extras |'
+$summary += '|---|---|---|---|---|---|---|---|---|---|---|'
 foreach ($t in $evidence.Keys) {
     $e = $evidence[$t]
-    $summary += "| $t | $($e.engine) | $($e.host_args) | $($e.capability_policy) | $($e.navigation_security) | $($e.security_corpus) | $($e.quickjs_corpus) | $($e.release_layout) | $($e.no_listener) | $($e.extra_exports_rtti) |"
+    $summary += "| $t | $($e.engine) | $($e.host_args) | $($e.capability_policy) | $($e.navigation_security) | $($e.security_corpus) | $($e.quickjs_corpus) | $($e.quickjs_package_corpus) | $($e.release_layout) | $($e.no_listener) | $($e.extra_exports_rtti) |"
 }
 $summary += ''
 $summary += "- webview pin ``$($first.webview_pin)``, surface ``$($first.webview_surface)``, origin ``$($first.origin)`` (secure=$($first.secure)), RPC Add(20,22)=$($first.rpc_add_20_22)"
@@ -357,6 +388,7 @@ $summary += "- CAP-8A capability_policy_digest ``$($first.capability_policy_dige
 $summary += "- CAP-8B navigation_policy_digest ``$($first.navigation_policy_digest)`` equal on all four targets"
 $summary += "- CAP-8C security_corpus_digest ``$($first.security_corpus_digest)`` equal on all four targets"
 $summary += "- CAP-9A quickjs_corpus_digest ``$($first.quickjs_corpus_digest)`` equal on all four targets"
+$summary += "- CAP-9B1 quickjs_package_digest ``$($first.quickjs_package_digest)`` equal on all four targets"
 $summary += "- react logical_inventory_sha256 ``$($first.logical_inventory_sha256_react)`` equal on all four targets"
 $summary += "- pas2js logical_inventory_sha256 ``$($matrix.agreement.logical_inventory_sha256_pas2js)`` equal on linux/macos-x64/macos-arm64"
 $summaryText = $summary -join "`n"

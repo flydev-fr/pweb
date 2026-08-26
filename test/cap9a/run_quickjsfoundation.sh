@@ -114,7 +114,7 @@ Linux)
 
     step 'compile quickjsfoundation (production runtime + pinned QuickJS statics)'
     fpc -MObjFPC -Sh -B -FU"${unitdir}" -FE"${outdir}" \
-        -Fusrc/script -Fusrc/rpc -Fusrc/security \
+        -Fusrc/script -Fusrc/rpc -Fusrc/security -Fusrc/assets \
         "${mormot_units[@]}" \
         -Fldeps/mormot2/static/x86_64-linux \
         test/cap9a/quickjsfoundation.pas ||
@@ -143,7 +143,7 @@ Darwin)
     step 'compile quickjsfoundation (production runtime + CI-built QuickJS object)'
     fpc -MObjFPC -Sh -B -FU"${unitdir}" -FE"${outdir}" \
         -dLIBQUICKJSSTATIC \
-        -Fusrc/script -Fusrc/rpc -Fusrc/security \
+        -Fusrc/script -Fusrc/rpc -Fusrc/security -Fusrc/assets \
         "${mormot_units[@]}" \
         -Fo"${qjs_obj_dir}" \
         "${PWEB_MACOS_FPC_FLAGS[@]}" "${PWEB_MACOS_FPC_LINK_MORMOT[@]}" \

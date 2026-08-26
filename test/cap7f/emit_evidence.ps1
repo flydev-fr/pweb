@@ -427,6 +427,52 @@ if ($quickjsCorpus -ceq 'PASS') {
 Write-Host "[CAP-7F] quickjs_corpus_digest: $quickjsCorpusDigest"
 Write-Host "[CAP-7F] quickjs_corpus: $quickjsCorpus (denied_bridge=$cap9aDeniedBridge opener_reached=$cap9aOpenerReached)"
 
+# --- CAP-9B1 QuickJS package/module-loader corpus + one canonical digest ----
+# Identical honesty shape to the CAP-9A block above: the harness is fully
+# headless and never SKIPs, the counters are REQUIRED (an absent property
+# throws rather than coercing to a fail-open 0), and the digest is the
+# sha256 of build/cap9b1/quickjs-package-corpus.txt, which is identical on
+# all four targets by construction (every fixture is generated in-process
+# from byte constants, so no checkout can change what is hashed).
+$qpFile = Join-Path $repoRoot 'build/cap9b1/quickjspackage-windows-x86_64.json'
+if (-not (Test-Path $qpFile)) {
+    throw '[CAP-7F] quickjspackage-windows-x86_64.json missing -- the CAP-9B1 gate has not run in this workspace'
+}
+$qp = Get-Content $qpFile -Raw | ConvertFrom-Json
+if ($qp.schema -ne 1) { throw '[CAP-7F] quickjspackage json schema mismatch' }
+$quickjsPackageCorpus = "$($qp.overall)"
+if ($quickjsPackageCorpus -notin @('PASS', 'FAIL')) {
+    throw "[CAP-7F] quickjspackage json carries an unexpected verdict: $quickjsPackageCorpus"
+}
+$cap9b1LoadTimeBridge = Read-MpCounter $qp 'loadtime_bridge'
+$cap9b1LoaderWrongThread = Read-MpCounter $qp 'loader_wrong_thread'
+$cap9b1StoreWrongThread = Read-MpCounter $qp 'store_wrong_thread'
+$cap9b1DeniedBridge = Read-MpCounter $qp 'denied_bridge_add'
+
+$qpCorpusFile = Join-Path $repoRoot 'build/cap9b1/quickjs-package-corpus.txt'
+if ($quickjsPackageCorpus -ceq 'PASS') {
+    if (-not (Test-Path $qpCorpusFile)) {
+        throw '[CAP-7F] quickjs-package-corpus.txt missing while the harness records PASS'
+    }
+    $qpRows = @(Get-Content $qpCorpusFile)
+    if ($qpRows.Count -lt 2) {
+        throw "[CAP-7F] quickjs-package-corpus.txt is empty or truncated ($($qpRows.Count) line(s))"
+    }
+    if ($qpRows[0] -cne 'schema=1') {
+        throw '[CAP-7F] quickjs-package-corpus.txt carries no schema=1 header'
+    }
+    if ($qpRows[-1] -cne 'verdict=PASS') {
+        throw '[CAP-7F] quickjs-package-corpus.txt does not end in verdict=PASS while the harness records PASS'
+    }
+    $quickjsPackageDigest = (Get-FileHash $qpCorpusFile -Algorithm SHA256).Hash.ToLowerInvariant()
+} elseif (Test-Path $qpCorpusFile) {
+    $quickjsPackageDigest = (Get-FileHash $qpCorpusFile -Algorithm SHA256).Hash.ToLowerInvariant()
+} else {
+    $quickjsPackageDigest = 'ABSENT'
+}
+Write-Host "[CAP-7F] quickjs_package_digest: $quickjsPackageDigest"
+Write-Host "[CAP-7F] quickjs_package_corpus: $quickjsPackageCorpus (loadtime_bridge=$cap9b1LoadTimeBridge loader_wrong_thread=$cap9b1LoaderWrongThread store_wrong_thread=$cap9b1StoreWrongThread)"
+
 # --- run identity -----------------------------------------------------------
 $sha = $env:GITHUB_SHA
 if (-not $sha) { $sha = (& git rev-parse HEAD).Trim() }
@@ -464,6 +510,12 @@ $evidence = [ordered]@{
     quickjs_corpus_digest           = $quickjsCorpusDigest
     cap9a_denied_bridge             = $cap9aDeniedBridge
     cap9a_opener_reached            = $cap9aOpenerReached
+    quickjs_package_corpus          = $quickjsPackageCorpus
+    quickjs_package_digest          = $quickjsPackageDigest
+    cap9b1_loadtime_bridge          = $cap9b1LoadTimeBridge
+    cap9b1_loader_wrong_thread      = $cap9b1LoaderWrongThread
+    cap9b1_store_wrong_thread       = $cap9b1StoreWrongThread
+    cap9b1_denied_bridge            = $cap9b1DeniedBridge
     release_layout                  = $releaseLayout
     no_listener                     = $noListener
     no_listener_provenance          = 'source-sweep re-executed (check_cap6_nonetwork.ps1); CAP-5/CAP-6 job gates precede this emitter'

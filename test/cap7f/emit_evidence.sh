@@ -520,6 +520,54 @@ printf '[CAP-7F] quickjs_corpus_digest: %s\n' "${quickjs_corpus_digest}"
 printf '[CAP-7F] quickjs_corpus: %s (denied_bridge=%s opener_reached=%s)\n' \
     "${quickjs_corpus}" "${cap9a_denied_bridge}" "${cap9a_opener_reached}"
 
+# --- CAP-9B1 QuickJS package/module-loader corpus + one canonical digest ----
+# Identical honesty shape to the CAP-9A block above: verdict recorded
+# VERBATIM (the harness is headless and never SKIPs), required counters
+# that DIE rather than default to 0, and the digest as the sha256 of
+# build/cap9b1/quickjs-package-corpus.txt - identical on all four targets
+# by construction, because every fixture is generated in-process from byte
+# constants and no checkout can change what is hashed.
+qp_file="${repo_root}/build/cap9b1/quickjspackage-${target}.json"
+[ -f "${qp_file}" ] ||
+    die "quickjspackage-${target}.json missing -- the CAP-9B1 gate has not run in this workspace"
+quickjs_package_corpus="$(sed -n 's/.*"overall"[[:space:]]*:[[:space:]]*"\([A-Z]*\)".*/\1/p' \
+    "${qp_file}" | head -n 1)"
+case "${quickjs_package_corpus}" in
+    PASS | FAIL) ;;
+    *) die "quickjspackage-${target}.json carries an unexpected verdict: ${quickjs_package_corpus}" ;;
+esac
+qp_num() {
+    local v
+    v="$(sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p" \
+        "${qp_file}" | head -n 1)"
+    [ -n "${v}" ] ||
+        die "quickjspackage record carries no '$1' counter -- refusing to default it to 0"
+    printf '%s' "${v}"
+}
+cap9b1_loadtime_bridge="$(qp_num loadtime_bridge)"
+cap9b1_loader_wrong_thread="$(qp_num loader_wrong_thread)"
+cap9b1_store_wrong_thread="$(qp_num store_wrong_thread)"
+cap9b1_denied_bridge="$(qp_num denied_bridge_add)"
+
+qp_corpus_file="${repo_root}/build/cap9b1/quickjs-package-corpus.txt"
+if [ "${quickjs_package_corpus}" = 'PASS' ]; then
+    [ -f "${qp_corpus_file}" ] ||
+        die 'quickjs-package-corpus.txt missing while the harness records PASS'
+    head -n 1 "${qp_corpus_file}" | grep -qx 'schema=1' ||
+        die 'quickjs-package-corpus.txt carries no schema=1 header'
+    tail -n 1 "${qp_corpus_file}" | grep -qx 'verdict=PASS' ||
+        die 'quickjs-package-corpus.txt does not end in verdict=PASS while the harness records PASS'
+    quickjs_package_digest="$(file_sha "${qp_corpus_file}")"
+elif [ -f "${qp_corpus_file}" ]; then
+    quickjs_package_digest="$(file_sha "${qp_corpus_file}")"
+else
+    quickjs_package_digest='ABSENT'
+fi
+printf '[CAP-7F] quickjs_package_digest: %s\n' "${quickjs_package_digest}"
+printf '[CAP-7F] quickjs_package_corpus: %s (loadtime_bridge=%s loader_wrong_thread=%s store_wrong_thread=%s)\n' \
+    "${quickjs_package_corpus}" "${cap9b1_loadtime_bridge}" \
+    "${cap9b1_loader_wrong_thread}" "${cap9b1_store_wrong_thread}"
+
 # ---------------------------- write the evidence -----------------------------
 # every interpolated free-text value goes through json_escape: the toolchain
 # banner lines especially are nobody's to promise quote-free
@@ -562,6 +610,12 @@ cat > "${work}/evidence.json" <<EOF
   "quickjs_corpus_digest": "${quickjs_corpus_digest}",
   "cap9a_denied_bridge": ${cap9a_denied_bridge},
   "cap9a_opener_reached": ${cap9a_opener_reached},
+  "quickjs_package_corpus": "${quickjs_package_corpus}",
+  "quickjs_package_digest": "${quickjs_package_digest}",
+  "cap9b1_loadtime_bridge": ${cap9b1_loadtime_bridge},
+  "cap9b1_loader_wrong_thread": ${cap9b1_loader_wrong_thread},
+  "cap9b1_store_wrong_thread": ${cap9b1_store_wrong_thread},
+  "cap9b1_denied_bridge": ${cap9b1_denied_bridge},
   "release_layout": "${release_layout}",
   "no_listener": "${no_listener}",
   "no_listener_provenance": "${no_listener_prov}",

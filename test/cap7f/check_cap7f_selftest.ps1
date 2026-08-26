@@ -19,7 +19,11 @@
 #   (c12) quickjs_corpus_digest diverging on one target -> same refusal
 #   (c13) cap9a_denied_bridge=1 with a PASS corpus -> defense-in-depth refusal
 #   (c14) cap9a_opener_reached=1 with a PASS corpus -> same refusal
-#   (c8-c14 additionally assert the refusal came through the EXPECTED branch
+#   (c15) quickjs_package_corpus (CAP-9B1) rewritten to FAIL -> mustPass refusal
+#   (c16) quickjs_package_digest diverging on one target -> same refusal
+#   (c17) cap9b1_loadtime_bridge=1 with a PASS corpus -> defense-in-depth refusal
+#   (c18) cap9b1_loader_wrong_thread=1 with a PASS corpus -> same refusal
+#   (c8-c18 additionally assert the refusal came through the EXPECTED branch
 #    where one is named)
 #   (e) a count-preserving directive swap in an allowlisted file
 #                                          -> divergence sweep refuses via the
@@ -294,6 +298,70 @@ $e.cap9a_opener_reached = 1
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap9a-opener-reached' 'CAP-9A OPENER REACHED'
 
+# --- (c15) CAP-9B1: quickjs_package_corpus rewritten to FAIL -----------------
+# the CAP-9B1 mustPass field gets its own refusal proof: a package/module
+# loader verdict downgraded to FAIL must never aggregate as if deterministic
+# package loading were proven ('FAIL', not 'SKIP': the harness is fully
+# headless and never SKIPs).
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['quickjs_package_corpus']) {
+    throw 'selftest quickjs-package-fail: the evidence carries no quickjs_package_corpus field - the emitters did not record it'
+}
+$e.quickjs_package_corpus = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'quickjs-package-fail' 'REQUIRED-PASS'
+
+# --- (c16) CAP-9B1: quickjs_package_digest diverging on ONE target -----------
+# cross-target digest EQUALITY of the package/module corpus gets its own
+# refusal proof: a divergence means one target resolved a different module
+# graph, hashed different module bytes, or reached a different folder/ZIP
+# decision - exactly the dev/prod and platform drift this shard exists to
+# make impossible.
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['quickjs_package_digest']) {
+    throw 'selftest quickjs-package-divergence: the evidence carries no quickjs_package_digest field - the emitters did not record it'
+}
+$e.quickjs_package_digest = '0' * 64
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'quickjs-package-divergence'
+
+# --- (c17) CAP-9B1: a package that reached the bridge while Loading ----------
+# loadtime_bridge>0 with a PASS corpus is the shape of top-level module code
+# producing backend side effects before the package was accepted; the refusal
+# must come through the dedicated CAP-9B1 defense-in-depth branch.
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['cap9b1_loadtime_bridge']) {
+    throw 'selftest cap9b1-loadtime-bridge: the evidence carries no cap9b1_loadtime_bridge field - the emitters did not record it'
+}
+$e.cap9b1_loadtime_bridge = 1
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9b1-loadtime-bridge' 'CAP9B1_LOADTIME_BRIDGE'
+
+# --- (c18) CAP-9B1: the module loader running off its owning thread ----------
+# loader_wrong_thread>0 with a PASS corpus means a scheduler worker resolved,
+# read or compiled plugin source - the one thing the engine-thread affinity
+# rule exists to forbid.
+# c17 and c18 deliberately cover TWO of the four CAP-9B1 counters: unlike the
+# CAP-9A pair, all four share ONE loop body in the aggregator, so two legs
+# exercise both the non-numeric and the >0 arms of that single branch. The
+# harness itself gates on all four (and on source_open_after_failure) before
+# any of them can ever reach the evidence.
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['cap9b1_loader_wrong_thread']) {
+    throw 'selftest cap9b1-loader-thread: the evidence carries no cap9b1_loader_wrong_thread field - the emitters did not record it'
+}
+$e.cap9b1_loader_wrong_thread = 1
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap9b1-loader-thread' 'CAP9B1_LOADER_WRONG_THREAD'
+
 # --- (d) divergence sweep must refuse an off-allowlist conditional -----------
 $fixturePas = 'src/zz_cap7f_selftest_fixture.pas'
 Remove-Item -Force -ErrorAction SilentlyContinue $fixturePas
@@ -349,4 +417,4 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Remove-Item -Force -ErrorAction SilentlyContinue $matrix
-Write-Host '[CAP-7F] selftest PASS - 16 aggregator refusals + 2 divergence refusals, all on copies or byte-restored'
+Write-Host '[CAP-7F] selftest PASS - 20 aggregator refusals + 2 divergence refusals, all on copies or byte-restored'
