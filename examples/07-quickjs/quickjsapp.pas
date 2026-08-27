@@ -168,7 +168,17 @@ const
     containment leg would time out instead of being contained }
   EXPORT_WAIT_MS = 45000;
   UI_ROUND_WAIT_MS = 30000;
-  BARRIER_WAIT_MS = 20000;
+  { How long ONE barrier arrival waits for its peer.
+    It must stay comfortably BELOW the bounded wait a plugin's
+    pweb.invoke performs (PWEB_QUICKJS_DEFAULT_LIMITS.InvokeWaitMs,
+    15000), because the plugin sits inside that wait for the whole
+    rendezvous PLUS the service call and the completion delivery that
+    follow it. Whichever bound expires first decides what the failure is
+    CALLED, and only this one names the real condition - a peer that did
+    not arrive - so it must be the one that fires. RunGate refuses to
+    start if that ordering is ever inverted; see the guard there for the
+    hosted run that measured the inverted case. }
+  BARRIER_WAIT_MS = 8000;
   READY_WAIT_MS = 20000;
   UNLOAD_JOIN_MS = 20000;
 
@@ -1132,6 +1142,34 @@ var
 begin
   calcHost := nil;
   reportHost := nil;
+  { THE BOUND ORDERING, enforced rather than remembered.
+
+    G7 parks a plugin invocation inside the barrier until its peer
+    arrives, and a plugin's pweb.invoke is itself bounded by
+    InvokeWaitMs. If the barrier may wait LONGER than that, a slow
+    rendezvous trips the plugin's defensive completion cap first and the
+    gate reports a runtime internal error for what was really "the peer
+    was late" - a diagnosis that sends the next reader into the wrong
+    half of the system.
+
+    MEASURED exactly that way on hosted run 33099868501 (windows,
+    attempt 1) with the two inverted at 20000 vs 15000:
+
+        plugin_result_isolated code=threw detail=PWebError: Internal error
+
+    Attempt 2 on the same commit was green with the frozen digest, so
+    nothing behavioural had changed - only the order in which two
+    timeouts could fire. This raise is deliberately NOT a gate row: it
+    is a precondition on the harness itself, it must fail before a
+    window is opened rather than be recorded as a verdict, and adding a
+    row here would re-baseline the frozen CAP-9C2 corpus digest for a
+    fact about this file. }
+  if BARRIER_WAIT_MS >= PWEB_QUICKJS_DEFAULT_LIMITS.InvokeWaitMs then
+    raise Exception.CreateFmt(
+      'CAP-9C2 harness bound inversion: BARRIER_WAIT_MS=%d must be ' +
+      'well below the plugin invoke wait of %dms, or a late peer ' +
+      'surfaces as an internal error instead of as concurrent_overlap',
+      [BARRIER_WAIT_MS, PWEB_QUICKJS_DEFAULT_LIMITS.InvokeWaitMs]);
   try
     { ---- G-1: the document actually rendered, and the eval transport
       is warm. This row is a required CAP-9 success signal in its own
