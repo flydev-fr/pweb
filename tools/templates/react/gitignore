@@ -1,0 +1,19 @@
+# Build output. Everything here is produced from the sources beside it, and
+# nothing here should ever be committed.
+/dist/
+/frontend/dist/
+*.o
+*.ppu
+*.compiled
+*.pwb
+
+# Frontend dependencies, restored from the committed lockfile, and the
+# staging directory a PWeb build materialises the TypeScript SDK into. The
+# SDK is never vendored into this project: it is placed here at build time
+# from the PWeb installation that owns it, so it must not be committed.
+node_modules/
+/frontend/.pweb/
+
+# Local editor and operating-system noise.
+.DS_Store
+Thumbs.db

@@ -88,3 +88,102 @@ template = fixture
     out = tools/check.sh
     content = text
     mode = executable
+
+# ---------------------------------------------------------------------------
+# react - the PUBLIC template `pweb create NAME --ui react` produces.
+#
+# It is a complete, buildable application and not a demonstration of one: a
+# real mORMot service, the production CAP-8 capability policy, a real React
+# 18 frontend built by Vite, and the exact lockfile that pins it. What it
+# deliberately does NOT contain is any part of PWeb itself - no runtime, no
+# mORMot, no webview binding, no platform adapter and no TypeScript SDK -
+# because a generated project holds application sources and resolves the
+# framework from the SDK installation that created it.
+#
+# The frontend's @pweb/runtime dependency is a project-relative `file:`
+# specifier pointing at .pweb/sdk/typescript, which a build materialises
+# from the trusted SDK root into its staging area. That is why the path is
+# relative, why it is in the generated .gitignore, and why `npm ci` in a
+# freshly created project is not a supported step on its own.
+#
+# EVERY file here is text: strict UTF-8, LF only, exactly one final newline,
+# and no doubled opening brace except the placeholder tokens themselves.
+# ---------------------------------------------------------------------------
+
+template = react
+  visibility = public
+  ui = react
+  native-dir = src
+  native-ext = lpr
+  frontend-root = frontend
+  output-dir = dist
+
+  file = README.md
+    out = README.md
+    content = text
+    mode = normal
+
+  file = gitignore
+    out = .gitignore
+    content = text
+    mode = normal
+
+  file = gitattributes
+    out = .gitattributes
+    content = text
+    mode = normal
+
+  file = src/program.lpr
+    out = src/{{PASCAL_PROGRAM}}.lpr
+    content = text
+    mode = normal
+
+  file = src/app.services.pas
+    out = src/app.services.pas
+    content = text
+    mode = normal
+
+  file = frontend/index.html
+    out = frontend/index.html
+    content = text
+    mode = normal
+
+  file = frontend/package.json
+    out = frontend/package.json
+    content = text
+    mode = normal
+
+  file = frontend/package-lock.json
+    out = frontend/package-lock.json
+    content = text
+    mode = normal
+
+  file = frontend/tsconfig.json
+    out = frontend/tsconfig.json
+    content = text
+    mode = normal
+
+  file = frontend/vite.config.ts
+    out = frontend/vite.config.ts
+    content = text
+    mode = normal
+
+  file = frontend/src/main.tsx
+    out = frontend/src/main.tsx
+    content = text
+    mode = normal
+
+  file = frontend/src/App.tsx
+    out = frontend/src/App.tsx
+    content = text
+    mode = normal
+
+  file = frontend/src/app.css
+    out = frontend/src/app.css
+    content = text
+    mode = normal
+
+  file = frontend/src/vite-env.d.ts
+    out = frontend/src/vite-env.d.ts
+    content = text
+    mode = normal

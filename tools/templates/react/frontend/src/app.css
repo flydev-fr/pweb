@@ -1,0 +1,97 @@
+/* The application stylesheet.
+ *
+ * It is served from app.pwb over pweb://app as an ordinary external
+ * stylesheet. The native Content-Security-Policy allows style-src 'self',
+ * so a linked sheet like this one is exactly what the runtime expects.
+ *
+ * --pweb-styled is read back by App.tsx: a custom property returns the
+ * token it was declared with, which is the cheapest honest proof that this
+ * file was fetched, parsed and applied rather than merely requested.
+ */
+
+:root {
+  color-scheme: light dark;
+  --pweb-ink: #16181d;
+  --pweb-paper: #f7f7f9;
+  --pweb-accent: #1f6f4a;
+  --pweb-muted: #5d6470;
+  --pweb-line: #d9dce3;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --pweb-ink: #eceef2;
+    --pweb-paper: #16181d;
+    --pweb-accent: #6fd39b;
+    --pweb-muted: #99a1af;
+    --pweb-line: #2c313a;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--pweb-paper);
+  color: var(--pweb-ink);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.pweb-shell {
+  --pweb-styled: yes;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem;
+  max-width: 40rem;
+}
+
+.pweb-title {
+  margin: 0 0 0.25rem;
+  font-size: 1.6rem;
+  letter-spacing: -0.01em;
+}
+
+.pweb-subtitle {
+  margin: 0 0 2rem;
+  color: var(--pweb-muted);
+}
+
+.pweb-card {
+  border: 1px solid var(--pweb-line);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.pweb-card-label {
+  margin: 0 0 0.35rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--pweb-muted);
+}
+
+.pweb-sum {
+  margin: 0;
+  font-size: 2.25rem;
+  font-weight: 600;
+  color: var(--pweb-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.pweb-code {
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
+  font-size: 0.9rem;
+}
+
+.pweb-note {
+  margin: 0;
+  color: var(--pweb-muted);
+  font-size: 0.9rem;
+}
+
+.pweb-error {
+  border-color: #b3261e;
+  color: #b3261e;
+}
