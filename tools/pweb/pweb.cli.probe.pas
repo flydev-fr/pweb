@@ -317,7 +317,13 @@ begin
       Result.Truncated, moved);
     DrainPipe(p.Stderr, Result.ErrorText, PWEB_CLI_PROBE_MAX_BYTES,
       Result.Truncated, moved);
-    Result.ExitCode := p.ExitStatus;
+    // ExitCode, NEVER ExitStatus. On POSIX ExitStatus is the RAW wait(2)
+    // status - exit 3 reads as 768 - and ExitCode is the one that applies
+    // wexitstatus; on Windows the two are the same property. MEASURED: the
+    // ExitStatus form passed on Windows and reported 768 for exit 3 on
+    // Linux, which is precisely the shape of a cross-platform defect that a
+    // single-platform test would have shipped.
+    Result.ExitCode := p.ExitCode;
     Result.Outcome := ppoCompleted;
   finally
     p.Free;

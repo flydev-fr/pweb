@@ -920,9 +920,15 @@ begin
     Result[i - 1] := RawUtf8(ParamStr(i));
 end;
 
+// the POSIX question itself, asked of libc. FPC's RTL spells this
+// differently across units and versions, and mORMot's StdOutIsTTY
+// deliberately conflates "is a terminal" with "supports colour" by also
+// consulting TERM - which is the NEXT question here, not this one.
+function isatty(fd: cint): cint; cdecl; external 'c' name 'isatty';
+
 function PWebCliStdOutIsTerminal: Boolean;
 begin
-  Result := IsATTY(StdOutputHandle) <> 0;
+  Result := isatty(StdOutputHandle) = 1;
 end;
 
 procedure PWebCliPrepareConsole;

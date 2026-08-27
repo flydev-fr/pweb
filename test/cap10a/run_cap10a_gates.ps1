@@ -88,7 +88,11 @@ function TreeDigest([string]$Root) {
 $suiteLog = Join-Path $work 'clitests.log'
 Remove-Item -Force -ErrorAction SilentlyContinue `
     (Join-Path $work 'cli-corpus.txt')
-$out = & $suite /noenter 2>&1 | Out-String
+# /noenter is the WINDOWS switch that skips mormot.core.test's interactive
+# ENTER wait; the POSIX runner has no such wait and REFUSES the option, which
+# is why the existing CAP-7L gate runs the suite with no arguments at all
+if ($IsWindows) { $out = & $suite /noenter 2>&1 | Out-String }
+else { $out = & $suite 2>&1 | Out-String }
 $suiteCode = $LASTEXITCODE
 [System.IO.File]::WriteAllText($suiteLog, $out)
 Write-Host $out
@@ -143,8 +147,16 @@ WriteLf (Join-Path $fixture 'frontend/package-lock.json') '{"lockfileVersion":3}
 function RunCli([string[]]$CliArgs) {
     $so = Join-Path $work 'cli-stdout.txt'
     $se = Join-Path $work 'cli-stderr.txt'
-    $p = Start-Process -FilePath $pweb -ArgumentList $CliArgs -Wait -PassThru `
-        -NoNewWindow -RedirectStandardOutput $so -RedirectStandardError $se
+    # -ArgumentList refuses an EMPTY array, and the bare invocation is one of
+    # the rows this gate exists to check, so the no-argument case is its own
+    # call rather than an empty list
+    if ($CliArgs.Count -eq 0) {
+        $p = Start-Process -FilePath $pweb -Wait -PassThru `
+            -NoNewWindow -RedirectStandardOutput $so -RedirectStandardError $se
+    } else {
+        $p = Start-Process -FilePath $pweb -ArgumentList $CliArgs -Wait -PassThru `
+            -NoNewWindow -RedirectStandardOutput $so -RedirectStandardError $se
+    }
     return [pscustomobject]@{
         Code = $p.ExitCode
         Out = [System.IO.File]::ReadAllText($so)
