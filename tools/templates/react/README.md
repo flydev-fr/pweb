@@ -48,12 +48,17 @@ Creating this project wrote source files and nothing else. It ran no package
 manager, started no compiler, opened no network connection, and initialised
 no repository. Those are separate, deliberate steps.
 
-In particular the frontend's dependencies are **not** installed, and
-`npm ci` here will not work on its own yet: `@pweb/runtime` is declared as
-`file:.pweb/sdk/typescript`, and that directory is materialised from your
-PWeb installation when the project is built. Installing it by hand would
-vendor a copy of the SDK into this tree, which is the one thing the
-dependency model exists to prevent.
+In particular the frontend's dependencies are **not** installed yet.
+
+`@pweb/runtime` is declared as `file:.pweb/sdk/typescript`, and that
+directory is materialised from your PWeb installation when the project is
+built. So `npm ci` on its own will install everything else and then LINK
+`@pweb/runtime` at that path — which does not exist until a PWeb build puts
+it there, so the link dangles and the first typecheck says
+`Cannot find module '@pweb/runtime'`. That is the dependency model working:
+the runtime is never fetched from a package registry, and copying it into
+this tree by hand would vendor the SDK, which is the one thing the model
+exists to prevent.
 
 ## The PWeb runtime
 

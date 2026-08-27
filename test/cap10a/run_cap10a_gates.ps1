@@ -173,7 +173,11 @@ Row 'cli_version_line' $version.Out.Trim()
 $help = RunCli @('--help')
 Require ($help.Code -eq 0) '--help did not exit 0'
 Require ($help.Out.Contains('doctor')) '--help does not list doctor'
-foreach ($absent in 'pweb create', 'pweb dev ', 'pweb run ', 'pweb build') {
+# CAP-10B1 moved `create` from this list into the one above it: the rule is
+# unchanged - help advertises exactly the commands the binary implements -
+# and only the membership changed. `dev`, `run` and `build` stay here.
+Require ($help.Out.Contains('pweb create ')) '--help does not list create'
+foreach ($absent in 'pweb dev ', 'pweb run ', 'pweb build') {
     Require (-not $help.Out.Contains($absent)) `
         "--help advertises an unimplemented command: $absent"
 }

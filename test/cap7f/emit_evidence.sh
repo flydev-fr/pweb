@@ -1015,6 +1015,7 @@ frontend_typecheck="$(pf_str frontend_typecheck)"
 frontend_build="$(pf_str frontend_build)"
 frontend_no_dev_code="$(pf_str frontend_no_dev_code)"
 frontend_transport_clean="$(pf_str frontend_transport_clean)"
+runtime_from_sdk_root="$(pf_str runtime_from_sdk_root)"
 native_build="$(pf_str native_build)"
 secure_origin="$(pf_str secure_origin)"
 rpc_result="$(pf_num rpc_result)"; [ -n "${rpc_result}" ] || rpc_result=0
@@ -1174,6 +1175,7 @@ cat > "${work}/evidence.json" <<EOF
   "frontend_build": "${frontend_build}",
   "frontend_no_dev_code": "${frontend_no_dev_code}",
   "frontend_transport_clean": "${frontend_transport_clean}",
+  "runtime_from_sdk_root": "${runtime_from_sdk_root}",
   "native_build": "${native_build}",
   "secure_origin": "${secure_origin}",
   "rpc_result": "${rpc_result}",

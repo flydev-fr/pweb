@@ -95,7 +95,8 @@ $required = @(
     'generated_no_host_path', 'doctor_result',
     'proof_corpus', 'generated_tree_digest', 'generated_tree_unchanged',
     'frontend_typecheck', 'frontend_build', 'frontend_no_dev_code',
-    'frontend_transport_clean', 'native_build', 'secure_origin',
+    'frontend_transport_clean', 'runtime_from_sdk_root', 'native_build',
+    'secure_origin',
     'rpc_result', 'error_mapping', 'listener_count', 'raw_primitive_used',
     'loose_assets_used',
     'release_layout', 'no_listener', 'app_pwb_react_sha256',
@@ -151,7 +152,7 @@ $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
     'public_pack_deterministic',
     'proof_corpus', 'generated_tree_unchanged', 'frontend_typecheck',
     'frontend_build', 'frontend_no_dev_code', 'frontend_transport_clean',
-    'native_build', 'secure_origin', 'error_mapping')
+    'runtime_from_sdk_root', 'native_build', 'secure_origin', 'error_mapping')
 # fields that must agree, value-for-value, across all four targets
 # (capability_policy_digest is the CAP-8A structured policy-decision corpus and
 # navigation_policy_digest the CAP-8B one: four targets, one byte-identical
@@ -753,6 +754,7 @@ foreach ($t in $evidence.Keys) {
         frontend_build     = $e.frontend_build
         frontend_no_dev_code = $e.frontend_no_dev_code
         frontend_transport_clean = $e.frontend_transport_clean
+        runtime_from_sdk_root = $e.runtime_from_sdk_root
         native_build       = $e.native_build
         secure_origin      = $e.secure_origin
         error_mapping      = $e.error_mapping

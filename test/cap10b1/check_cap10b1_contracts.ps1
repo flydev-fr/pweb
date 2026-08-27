@@ -295,6 +295,107 @@ foreach ($f in "$templateRoot/src/program.lpr", "$templateRoot/src/app.services.
     }
 }
 
+# --- 6b. what the generated application may and may not be ---------------
+#
+# Three properties of the generated Pascal that a runtime gate can only
+# observe by running, and that a source rule can refuse before anything is
+# built. Each of them is an adversarial question this shard was asked:
+#
+#   can generated code use an allow-all policy?   it must name an explicit
+#                                                 AppMaximum and must not
+#                                                 name the allow-all class;
+#   can it open a listener?                       it must name no HTTP
+#                                                 server unit and no
+#                                                 listening API;
+#   can it enable QuickJS by default?             it must name no script
+#                                                 unit at all.
+$appServices = [System.IO.File]::ReadAllText("$templateRoot/src/app.services.pas")
+$appProgram = [System.IO.File]::ReadAllText("$templateRoot/src/program.lpr")
+$generatedPascal = $appServices + "`n" + $appProgram
+if ($appServices -notmatch 'SetAppMaximum\(\[') {
+    Violation ('the generated policy does not set an explicit AppMaximum -- ' +
+        'no AppMaximum means no capabilities, and an implicit one would ' +
+        'mean nobody stated the ceiling')
+}
+foreach ($banned in 'TAllowAllCapabilityPolicy', 'AllowAll') {
+    if ($generatedPascal -match [regex]::Escape($banned)) {
+        Violation "the generated application names $banned"
+    }
+}
+foreach ($banned in 'mormot.rest.http', 'TRestHttpServer', 'mormot.net.',
+                    'TCrtSocket', 'bind(', 'listen(') {
+    if ($generatedPascal -match [regex]::Escape($banned)) {
+        Violation ("the generated application names a listening transport: " +
+            $banned)
+    }
+}
+foreach ($banned in 'pweb.script.', 'quickjs', 'QuickJS') {
+    if ($generatedPascal -match [regex]::Escape($banned)) {
+        Violation "the generated application enables a script runtime: $banned"
+    }
+}
+# and the runtime-command layer IS installed, while the capability that
+# would authorize it is NOT granted - which is the whole of "defence in
+# depth" stated as two rules rather than one comment
+if ($appProgram -notmatch 'PWebHostRuntimeBridge') {
+    Violation ('the generated application does not install the reusable ' +
+        'runtime-command layer')
+}
+if ($appServices -match 'external\.open') {
+    Violation ('the generated policy grants external.open -- the sample ' +
+        'application opens no link, so nothing should authorize it to')
+}
+
+# --- 6c. the lockfile's install scripts are the reviewed ones ------------
+#
+# npm runs a package's install script with the developer's privileges, so
+# the SET of packages that have one is part of this template's contract.
+# `fsevents` is the only member: it is macOS-only, optional, and reached
+# through the watcher Vite ships. It is named here so that a NEW one cannot
+# arrive unnoticed with a routine pin bump.
+# -AsHashtable: a lockfile's package map is keyed by path and the ROOT
+# package's key is the empty string, which ConvertFrom-Json cannot express
+# as a property name
+$lockDoc = Get-Content -Raw "$templateRoot/frontend/package-lock.json" |
+    ConvertFrom-Json -AsHashtable
+$installScripts = @()
+foreach ($k in $lockDoc.packages.Keys) {
+    if ($lockDoc.packages[$k].hasInstallScript -eq $true) {
+        $installScripts += ($k -replace '^node_modules/', '')
+    }
+}
+$installScripts = @($installScripts | Sort-Object)
+$reviewedInstallScripts = @('fsevents')
+if ((($installScripts -join '|')) -cne (($reviewedInstallScripts -join '|'))) {
+    Violation ("the template lockfile's install-script set is " +
+        "'$($installScripts -join ', ')', reviewed: " +
+        "'$($reviewedInstallScripts -join ', ')'")
+}
+# and no PWeb-owned lifecycle script: the generated package.json declares
+# exactly two scripts, neither of which npm runs on its own
+$scriptNames = @($pkg.scripts.PSObject.Properties.Name) | Sort-Object
+$expectedScripts = @('build', 'typecheck') | Sort-Object
+if ((($scriptNames -join '|')) -cne (($expectedScripts -join '|'))) {
+    Violation ("the generated package.json declares scripts " +
+        "'$($scriptNames -join ', ')', expected 'build, typecheck' -- a " +
+        'lifecycle script would run without anyone asking for it')
+}
+# @pweb/runtime is LINKED, never fetched: the lock must mark it so, and its
+# target must be relative
+$runtimeEntry = $lockDoc.packages['node_modules/@pweb/runtime']
+if ($null -eq $runtimeEntry) {
+    Violation 'the template lockfile has no node_modules/@pweb/runtime entry'
+} else {
+    if ($runtimeEntry.link -ne $true) {
+        Violation ('the lockfile does not mark @pweb/runtime as a link -- ' +
+            'anything else means a registry could answer for that name')
+    }
+    if ("$($runtimeEntry.resolved)" -cne '.pweb/sdk/typescript') {
+        Violation ("@pweb/runtime resolves to '$($runtimeEntry.resolved)', " +
+            'expected the project-relative .pweb/sdk/typescript')
+    }
+}
+
 # --- 7. the documented surface is the compiled surface -------------------
 $cliDoc = [System.IO.File]::ReadAllText('docs/cli-contract.md')
 foreach ($phrase in 'pweb create NAME --ui react --bundle-id',

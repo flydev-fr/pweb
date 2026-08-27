@@ -116,6 +116,42 @@ foreach ($f in 'index.html', 'assets/app.js', 'assets/index.css') {
         "the production build did not emit $f"
 }
 
+# WHERE @pweb/runtime ACTUALLY CAME FROM, resolved through the link npm
+# created rather than read out of the manifest that asked for it.
+#
+# MEASURED, and worth stating because it is the security property: the
+# lockfile marks this dependency `link: true` with a project-relative
+# target, so npm LINKS it and never fetches it. Point the target at nothing
+# and `npm ci` still succeeds - it makes a dangling link - and the failure
+# arrives at the first typecheck as `Cannot find module '@pweb/runtime'`.
+# There is no path on which a package registry answers for this name.
+$linked = Join-Path $frontend 'node_modules/@pweb/runtime'
+Require (Test-Path -LiteralPath $linked) 'npm did not provide @pweb/runtime'
+function CanonicalDir([string]$Path) {
+    return [System.IO.Path]::GetFullPath($Path).TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar)
+}
+$expectedTarget = CanonicalDir (Join-Path $frontend '.pweb/sdk/typescript')
+$actualTarget = ''
+if (Test-Path -LiteralPath $linked) {
+    # npm makes a JUNCTION on Windows and a symlink on POSIX, and
+    # Resolve-Path does not follow a junction - it hands back the link's own
+    # path, which would compare unequal for a reason that has nothing to do
+    # with where the package came from. The reparse target is what this
+    # question is actually about.
+    $item = Get-Item -LiteralPath $linked -Force
+    if ($item.ResolvedTarget) { $actualTarget = CanonicalDir $item.ResolvedTarget }
+    elseif ($item.Target) { $actualTarget = CanonicalDir $item.Target }
+    else { $actualTarget = CanonicalDir $linked }
+}
+Require ($actualTarget -ceq $expectedTarget) `
+    ("@pweb/runtime resolved to '$actualTarget', expected the staged SDK at " +
+     "'$expectedTarget' -- anything else means it came from somewhere this " +
+     'project does not control')
+Row 'runtime_from_sdk_root' $(
+    if ($actualTarget -ceq $expectedTarget) { 'PASS' } else { 'FAIL' })
+
 # --- 4. the frontend security sweeps ---------------------------------------
 # over the generated SOURCE, which is what a developer reads and edits. The
 # BUNDLE necessarily contains the SDK's own use of the native primitive -

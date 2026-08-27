@@ -120,7 +120,9 @@
 #         rewrites its own input has no reproducible output)
 #   (c83) create_no_partial=FAIL -> mustPass refusal (a refusal left a
 #         partial destination behind)
-#   (c8-c83 additionally assert the refusal came through the EXPECTED branch
+#   (c84) runtime_from_sdk_root=FAIL -> mustPass refusal (@pweb/runtime
+#         came from somewhere the SDK root did not supply)
+#   (c8-c84 additionally assert the refusal came through the EXPECTED branch
 #    where one is named)
 #   (e) a count-preserving directive swap in an allowlisted file
 #                                          -> divergence sweep refuses via the
@@ -1196,6 +1198,18 @@ $e = Get-Content $f -Raw | ConvertFrom-Json
 $e.create_no_partial = 'FAIL'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap10b1-partial-destination' 'create_no_partial'
+
+# --- (c84) CAP-10B1: @pweb/runtime came from somewhere else -------------
+# the SDK-root dependency model in one field: the package the generated
+# frontend imported must be the one the trusted SDK root supplied, resolved
+# THROUGH the link npm made rather than read out of the manifest that asked
+# for it
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.runtime_from_sdk_root = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b1-runtime-provenance' 'runtime_from_sdk_root'
 
 # --- (d) divergence sweep must refuse an off-allowlist conditional -----------
 $fixturePas = 'src/zz_cap7f_selftest_fixture.pas'

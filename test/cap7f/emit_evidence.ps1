@@ -1037,6 +1037,7 @@ $evidence = [ordered]@{
     frontend_build                  = "$($b1p.frontend_build)"
     frontend_no_dev_code            = "$($b1p.frontend_no_dev_code)"
     frontend_transport_clean        = "$($b1p.frontend_transport_clean)"
+    runtime_from_sdk_root           = "$($b1p.runtime_from_sdk_root)"
     native_build                    = "$($b1p.native_build)"
     secure_origin                   = "$($b1p.secure_origin)"
     rpc_result                      = "$($b1p.rpc_result)"

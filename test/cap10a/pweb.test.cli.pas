@@ -313,10 +313,14 @@ procedure TTestPWebCliArgs.UnknownAndDuplicate;
 var
   a: TPWebCliArgs;
 begin
-  // C3
+  // C3. CAP-10B1 exposes `create`, so the case it makes here changed from
+  // "unknown command" to "a command that needs its operand": a bare
+  // `pweb create` is now a MISSING OPERAND, which is still a usage refusal
+  // and still never a silent no-op. The three that follow are unchanged,
+  // and they are the reason this case still exists.
   a := PWebCliParseArgs(Argv(['create']));
-  Check(a.Usage = pcuUnknownCommand,
-    'C3: an unimplemented command is UNKNOWN, never a silent no-op');
+  Check(a.Usage = pcuMissingOperand,
+    'C3: create needs its NAME, and says so rather than doing nothing');
   Record_('args|create|' + PWebCliUsageText(a.Usage));
   a := PWebCliParseArgs(Argv(['build']));
   Check(a.Usage = pcuUnknownCommand, 'C3: build is not in this build');

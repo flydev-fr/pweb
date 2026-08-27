@@ -190,6 +190,29 @@ for f in index.html assets/app.js assets/index.css; do
     [ -f "${dist_dir}/${f}" ] || require 1 "the production build did not emit ${f}"
 done
 
+# WHERE @pweb/runtime ACTUALLY CAME FROM, resolved through the link npm
+# created rather than read out of the manifest that asked for it.
+#
+# MEASURED, and worth stating because it is the security property: the
+# lockfile marks this dependency `link: true` with a project-relative
+# target, so npm LINKS it and never fetches it. Point the target at nothing
+# and `npm ci` still succeeds - it makes a dangling link - and the failure
+# arrives at the first typecheck. No package registry ever answers for this
+# name.
+expected_target="$(cd -- "${frontend}/.pweb/sdk/typescript" && pwd -P)"
+if [ -e "${frontend}/node_modules/@pweb/runtime" ]; then
+    actual_target="$(cd -- "${frontend}/node_modules/@pweb/runtime" && pwd -P)"
+else
+    actual_target=''
+    require 1 'npm did not provide @pweb/runtime'
+fi
+if [ "${actual_target}" = "${expected_target}" ]; then
+    row runtime_from_sdk_root 'PASS'
+else
+    row runtime_from_sdk_root 'FAIL'
+    require 1 "@pweb/runtime resolved to '${actual_target}', expected the staged SDK at '${expected_target}'"
+fi
+
 # --- 4. the frontend security sweeps ---------------------------------------
 # ONLY A STRING LITERAL COUNTS, the discipline CAP-10A's dev-trust gate
 # established: the generated App.tsx opens by SAYING it uses no fetch, no
