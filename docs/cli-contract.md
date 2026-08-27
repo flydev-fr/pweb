@@ -24,6 +24,14 @@ listed in `--help`. A command that parses is a promise, and a lifecycle CLI
 that promises a scaffold it cannot produce is worse than one that has not got
 there yet.
 
+CAP-10B0 has since built the private engine `create` will use — the template
+carrier, the identity mapping, the placeholder model and the atomic creation
+transaction, all frozen in `docs/template-contract.md`. It changes nothing
+here: the engine is **not linked into this executable at all**, which
+`test/cap10b0/check_cap10b0_contracts.ps1` measures against the CLI's own
+compiled unit set on every CI leg, and `pweb create` remains exactly as
+unknown as `pweb frobnicate`. CAP-10B1 is the shard that exposes it.
+
 **Long options only.** There are no short forms in v1: every alias is a second
 spelling of a contract that is about to be frozen. A value may be written
 `--project X` or `--project=X`; an empty value is an error, never a default.
