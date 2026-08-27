@@ -19,6 +19,16 @@ The CAP-10A digests are unchanged on the same run: `cli_digest`
 `dc068531…4114b` and `doctor_schema_digest` `2dda57ba…c8fa7aa`, with
 `pweb 0.1.0 (protocol 1)` on all four targets.
 
+**Re-ratified on run 33113867439** (commit
+`1dd45ecd98d83384216d225345da7d26cd0ef092`), all six jobs green, after one
+further fix carried under this shard — see *A CAP-9C2 harness defect, found
+by a docs commit* below. Two things that run confirms and that matter more
+than its colour: `quickjs_gui_digest` is still
+`67e08c692f2290e16721ba9c866162f3b5ac0f17338236977917d8a25a967b36`, the
+frozen CAP-9C2 closure value, so the harness fix changed no recorded
+verdict; and every CAP-10B0 field is byte-identical to the 33097621494 run,
+so the scaffold engine's surface is untouched by it.
+
 CAP-10B0 gives PWeb everything `pweb create` needs and deliberately withholds
 the command itself. It adds one trusted template carrier, one generated
 trust anchor, one placeholder model, one creation plan and one atomic
@@ -279,6 +289,52 @@ this toolchain, so the first draft of the suite read `out` parameters before
 the callee had set them and indexed a code-text array with stack garbage. It
 faulted rather than reporting a wrong verdict, which was luck. Every such
 assertion now binds the call to a local first.
+
+## A CAP-9C2 harness defect, found by a docs commit
+
+The Markdown-only commit that recorded this closure ran red on Windows at
+the CAP-9C2 real-GUI gate:
+
+```
+plugin_result_isolated code=threw result= detail=PWebError: Internal error
+```
+
+A re-run of the identical commit was green and produced the frozen
+`quickjs_gui_digest 67e08c69…a967b36`, so nothing behavioural had changed —
+which is exactly what makes the first failure worth chasing rather than
+retrying.
+
+G7 parks a plugin invocation inside a service barrier until its UI peer
+arrives, and a plugin's `pweb.invoke` is itself bounded by `InvokeWaitMs`.
+The two bounds were **inverted**: `BARRIER_WAIT_MS = 20000` against
+`InvokeWaitMs = 15000`. A slow rendezvous therefore tripped the plugin's
+defensive completion cap *first*, and the harness reported a runtime
+internal error for what was really *the peer was late*.
+
+The cap's own comment says it is "unreachable in a correct runtime". That is
+true of the runtime. It is not true of a harness that deliberately parks a
+completion behind a peer — the one condition the cap was never meant to
+meet.
+
+`BARRIER_WAIT_MS` is now 8000, comfortably inside the plugin's 15000, so a
+late peer always fails as `concurrent_overlap` — the row that names the
+actual condition. And `RunGate` now **refuses to start** if the ordering is
+ever inverted again, as a raise rather than a gate row, so the frozen
+CAP-9C2 corpus digest is not re-baselined for a fact about a harness file.
+
+The general lesson is ledgered: two timeouts that can both cover the same
+wait are one timeout and one misleading error message. It is the same family
+as the already-recorded CAP-9C2 render-wait lesson — and it shows that
+bounding by the clock is not enough on its own. The bounds also have to be
+**ordered**, and the ordering has to be enforced rather than remembered.
+
+Stated precisely, because one green run is not a proof about an intermittent
+failure: what this change removes is the *mechanism* by which a late peer
+was reported as a runtime internal error, and the possibility of the
+ordering being inverted again. Whether a rendezvous on a heavily contended
+runner can still exceed 8 s is not settled by this run — but if it ever
+does, the gate now fails as `concurrent_overlap` with `peak_in_service=1`,
+which points at the harness instead of at the runtime.
 
 ## Freeze result
 
