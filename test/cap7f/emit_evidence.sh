@@ -905,6 +905,8 @@ case "${template_corpus}" in
 esac
 template_digest="$(tpl_str template_digest)"
 template_pack_digest="$(tpl_str template_pack_digest)"
+template_pack_bytes="$(tpl_num template_pack_bytes)"
+[ -n "${template_pack_bytes}" ] || template_pack_bytes=0
 template_pack_schema="$(tpl_str template_pack_schema)"
 template_semantic_digest="$(tpl_str template_semantic_digest)"
 template_registry_digest="$(tpl_str template_registry_digest)"
@@ -1034,6 +1036,7 @@ cat > "${work}/evidence.json" <<EOF
   "template_corpus": "${template_corpus}",
   "template_digest": "${template_digest}",
   "template_pack_digest": "${template_pack_digest}",
+  "template_pack_bytes": "${template_pack_bytes}",
   "template_pack_schema": "${template_pack_schema}",
   "template_semantic_digest": "${template_semantic_digest}",
   "template_registry_digest": "${template_registry_digest}",

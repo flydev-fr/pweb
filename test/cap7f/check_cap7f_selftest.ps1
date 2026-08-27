@@ -80,15 +80,17 @@
 #   (c57) template_corpus (CAP-10B0) ABSENT -> required-field refusal
 #   (c58) template_corpus rewritten to SKIP -> mustPass refusal
 #   (c59) template_digest diverging on one target -> equality refusal
-#   (c60) template_pack_digest diverging -> equality refusal. This one is
-#         new in kind: CAP-9C1 could NOT compare plugins.zip's bytes because
-#         the deflate object is per-toolchain by measurement. The template
-#         pack stores every entry, so a byte divergence is a real defect
+#   (c60) an EMPTY template_semantic_digest on EVERY target -> BAD-DIGEST
+#         refusal. The c52 hole, aimed at the field that carries the whole
+#         cross-target weight now that the archive BYTES are per-OS-family
+#         (mORMot stamps the creating OS into `version made by`; MEASURED
+#         on run 33093385300 as one hash for windows+linux and another for
+#         the two macOS targets, same length and same inventory)
 #   (c61) template_semantic_digest diverging -> equality refusal (the
-#         archive's MEANING, which must agree even if its bytes one day
-#         cannot)
-#   (c62) an EMPTY template_pack_digest on EVERY target with a PASS corpus
-#         -> BAD-DIGEST refusal (the c52 hole, in the new fields)
+#         archive's MEANING, which must agree even though its bytes do not)
+#   (c62) an EMPTY template_pack_digest on EVERY target -> BAD-DIGEST
+#         refusal by SHAPE (it is not compared across targets, but it is
+#         still the exact archive each target's registry pins)
 #   (c63) template_deterministic=FAIL -> mustPass refusal
 #   (c64) template_source_gate=FAIL -> mustPass refusal (the builder stopped
 #         refusing deliberately broken template sources)
@@ -926,17 +928,21 @@ $e.template_digest = ('2' * 64)
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap10b0-digest' 'FIELD DISAGREES: template_digest'
 
-# --- (c60) CAP-10B0: the ARCHIVE BYTES diverging on one target --------------
-# this is the leg CAP-9C1 could not have: plugins.zip is deflated and its
-# bytes are per-toolchain by MEASUREMENT, so equality there would be an
-# untrue requirement. The template pack stores every entry, so a divergence
-# here is a real defect and must be refused rather than pinned around
+# --- (c60) CAP-10B0: an EMPTY semantic digest on EVERY target ---------------
+# the c52 hole aimed at the field that now carries the whole cross-target
+# weight. template_pack_digest is deliberately NOT compared across targets
+# (mORMot stamps the creating OS into `version made by`, MEASURED on run
+# 33093385300 as one hash for windows+linux and another for the two macOS
+# targets, same length and same inventory), so the semantic digest is what
+# must never be allowed to go quietly empty
 Reset-Fixture
-$f = Join-Path $fx 'ev/macos-x64/evidence.json'
-$e = Get-Content $f -Raw | ConvertFrom-Json
-$e.template_pack_digest = ('3' * 64)
-$e | ConvertTo-Json -Depth 4 | Set-Content $f
-Invoke-AggExpectFail 'cap10b0-pack-digest' 'FIELD DISAGREES: template_pack_digest'
+foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$t/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.template_semantic_digest = ''
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10b0-empty-semantic' 'CAP-10B0 BAD-DIGEST'
 
 # --- (c61) CAP-10B0: the SEMANTIC inventory diverging on one target ---------
 # the archive's meaning, as opposed to its weight. If the bytes ever have to
@@ -948,9 +954,10 @@ $e.template_semantic_digest = ('4' * 64)
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap10b0-semantic-digest' 'FIELD DISAGREES: template_semantic_digest'
 
-# --- (c62) CAP-10B0: an EMPTY digest with a PASS corpus --------------------
-# the subtle one, again: an empty digest compares EQUAL to another empty
-# digest on four targets
+# --- (c62) CAP-10B0: an EMPTY per-target pack digest -----------------------
+# the pack hash is not COMPARED across targets, but it is still the exact
+# archive each target's registry pins - so an empty one is a gate that
+# stopped emitting, and is refused by shape rather than by equality
 Reset-Fixture
 foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
     $f = Join-Path $fx "ev/$t/evidence.json"

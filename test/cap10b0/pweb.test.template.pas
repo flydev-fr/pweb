@@ -573,9 +573,11 @@ begin
   Check(ok, Utf8ToString(PWebTplCodeText(code) + ': ' + detail));
   Check(PWebTplEmitRegistry(reg, 'pwebtemplates', t2, code, detail));
   CheckEqual(t1, t2, 'two emissions of one registry differed');
+  // the emitted LENGTH, not its digest. See the note in RealPack: the
+  // registry text embeds the pack SHA-256, which is per-OS-family, so its
+  // digest is not a cross-target comparable and its length is
   Record_('T3 registry emit deterministic bytes=' +
     RawUtf8(IntToStr(Length(t1))));
-  Record_('T3 registry digest ' + PWebTplRegistryDigest(reg));
 
   // T4: a registry whose inventory digest does not describe its inventory.
   // Every mutation below takes an explicit COPY of the arrays: a record
@@ -758,8 +760,18 @@ begin
   Check(store <> nil);
   Record_('T1 real pack verified files=' +
     RawUtf8(IntToStr(Length(reg.Inventory))));
+  // THE SEMANTIC INVENTORY, and deliberately not the pack or registry
+  // digest. MEASURED on hosted run 33093385300: mORMot stamps the CREATING
+  // OS into the ZIP `version made by` field - ZIP_OS is 19 on Darwin and 3
+  // elsewhere - so the archive bytes are identical within an OS family
+  // (macos-x86_64 and macos-arm64 agreed exactly, on two different CPUs)
+  // and differ by that one byte per entry between families. Same length,
+  // same content, different bytes.
+  //
+  // So this corpus carries what the archive MEANS. Its bytes are pinned per
+  // target in the evidence, and determinism is proved where it is real: the
+  // gate rebuilds the pack on each target and requires byte equality there.
   Record_('T1 real pack inventory ' + reg.InventoryDigest);
-  Record_('T1 real pack registry ' + PWebTplRegistryDigest(reg));
 
   // T4: the same bytes against a registry that expects a different digest
   // the REAL bytes and their REAL digest, against a registry that expects a

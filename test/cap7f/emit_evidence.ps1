@@ -814,6 +814,7 @@ if ($templateCorpus -notin @('PASS', 'FAIL')) {
 }
 $templateDigest = "$($tpl.template_digest)"
 $templatePackDigest = "$($tpl.template_pack_digest)"
+$templatePackBytes = "$($tpl.template_pack_bytes)"
 $templateSemanticDigest = "$($tpl.template_semantic_digest)"
 $templateRegistryDigest = "$($tpl.template_registry_digest)"
 $templatePackSchema = "$($tpl.template_pack_schema)"
@@ -935,6 +936,7 @@ $evidence = [ordered]@{
     template_corpus                 = $templateCorpus
     template_digest                 = $templateDigest
     template_pack_digest            = $templatePackDigest
+    template_pack_bytes             = $templatePackBytes
     template_pack_schema            = $templatePackSchema
     template_semantic_digest        = $templateSemanticDigest
     template_registry_digest        = $templateRegistryDigest

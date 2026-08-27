@@ -46,19 +46,33 @@
   per target.
 
   This pack takes the other road: every entry is STORED, so no compressor is
-  reached at all. What remains in the file is then a pure function of the
-  entry names, their bytes, their CRC-32s and a fixed timestamp - TZipWrite
-  zeroes the whole entry record before filling it, the version fields are
-  compile-time constants, and no extra field is written. MEASURED on the dev
-  host: the same logical input built through the i386-win32 and the
-  x86_64-win64 toolchains produced the identical archive, byte for byte. The
-  four-target CI compares the pack SHA-256 itself, so this is a claim the
-  matrix either keeps proving or breaks loudly.
+  reached at all. What remains in the file is a function of the entry names,
+  their bytes, their CRC-32s, a fixed timestamp - TZipWrite zeroes the whole
+  entry record before filling it and writes no extra field - and ONE BYTE
+  PER ENTRY that records the operating system which created the archive.
 
-  A useful consequence falls out of it. Because the external attributes are
-  zero, the archive is STRUCTURALLY incapable of carrying a POSIX mode. The
-  file-mode question therefore has exactly one answer - the registry - and
-  there is no second one for it to disagree with.
+  That last byte is worth stating plainly, because the first version of this
+  header claimed it did not exist. mORMot writes the creating OS into the
+  ZIP `version made by` field: ZIP_OS is 19 on Darwin and 3 everywhere else.
+  A dev-host measurement across the i386-win32 and x86_64-win64 toolchains
+  produced byte-identical archives and was read as proving OS-independence -
+  it could not, because both are Windows. The four-target matrix measured
+  the truth on hosted run 33093385300: one hash for windows + linux, another
+  for the two macOS targets, with the SAME length and the SAME semantic
+  inventory, and with macos-x86_64 and macos-arm64 agreeing exactly.
+
+  So the archive is deterministic PER OS FAMILY, and the evidence splits
+  accordingly: the semantic inventory is compared across all four targets,
+  the pack SHA-256 is pinned per target, and the gate rebuilds the pack on
+  each target and requires byte equality there. That is the same split
+  CAP-9C1 applies to plugins.zip, reached by measurement rather than
+  inherited by assumption.
+
+  The consequence for file modes is unchanged, and is the useful half:
+  because the external attributes are zero, the archive is STRUCTURALLY
+  incapable of carrying a POSIX mode whatever OS wrote it. The file-mode
+  question therefore has exactly one answer - the registry - and there is no
+  second one for it to disagree with.
 
   ---------------------------------------------------------------------------
   THE ORDER THE VERIFIER RUNS IN, AND WHY IT IS THAT ORDER
@@ -218,7 +232,9 @@ type
 
   { ONE semantic inventory row. The inventory is what the archive MEANS -
     logical name, exact uncompressed length, exact content digest. Unlike
-    the archive bytes it is toolchain-independent by construction. }
+    the archive bytes it is toolchain- AND OS-independent by construction,
+    which is why it and not the pack hash is the four-target equality
+    field (see the DETERMINISM note in the unit header). }
   TPWebTplInventoryEntry = record
     Name: RawUtf8;
     Bytes: Int64;
@@ -366,8 +382,8 @@ function PWebTplTextValid(const Data: RawByteString;
 /// the canonical semantic-inventory projection: one LF-terminated
 // 'name bytes sha' line per entry, in the inventory's own order
 function PWebTplInventoryText(const Inv: TPWebTplInventory): RawUtf8;
-/// SHA-256 of PWebTplInventoryText - the toolchain-independent identity of
-// what the pack MEANS, as opposed to what it weighs
+/// SHA-256 of PWebTplInventoryText - the toolchain- and OS-independent
+// identity of what the pack MEANS, as opposed to what it weighs
 function PWebTplInventoryDigest(const Inv: TPWebTplInventory): RawUtf8;
 
 /// the canonical projection of the WHOLE registry: schema, pack identity,

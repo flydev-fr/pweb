@@ -156,15 +156,45 @@ different bytes for `x86_64-win64` and `x86_64-linux`. That is why
 generates its registry per target.
 
 This pack takes the other road: **every entry is stored**, so no compressor
-is reached. What remains is a pure function of the entry names, their bytes,
-their CRC-32s and a fixed timestamp — `TZipWrite` zeroes the whole entry
-record before filling it, the version fields are compile-time constants, and
-no extra field is written. Measured on the dev host: the same logical input
-built through the `i386-win32` and `x86_64-win64` toolchains produced the
-identical archive, byte for byte.
+is reached. What remains is a function of the entry names, their bytes,
+their CRC-32s, a fixed timestamp — `TZipWrite` zeroes the whole entry record
+before filling it and writes no extra field — and **one byte per entry that
+records the operating system that created the archive.**
 
-So `template_pack_digest` is a **four-target equality field**, not a
-per-target constant. The matrix either keeps proving that or breaks loudly.
+That last byte is the part worth stating plainly, because the first draft of
+this contract got it wrong. mORMot writes the creating OS into the ZIP
+`version made by` field:
+
+```pascal
+ZIP_OS = ( {$ifdef OSDARWIN} 19 {$else} 3 {$endif} ) shl 8;
+ZIP_VERSION = (20 + ZIP_OS, 45 + ZIP_OS);
+```
+
+A dev-host measurement across two FPC toolchains (`i386-win32` and
+`x86_64-win64`) produced byte-identical archives and was read as proving
+OS-independence. It could not: both are Windows. The four-target matrix
+measured the truth on run **33093385300** — one archive hash for
+windows + linux, another for the two macOS targets, with the **same length
+(6177 bytes)** and the **same semantic inventory**. `macos-x86_64` and
+`macos-arm64` agreed exactly, which is what shows this is an OS-family
+property rather than a per-machine one.
+
+So the contract is:
+
+- **`template_semantic_digest` is a four-target equality field** — the
+  archive's meaning: every name, length and content digest;
+- **`template_pack_digest` is pinned per target** — the exact bytes that
+  target's registry will verify, recorded in the matrix and reported side by
+  side rather than compared;
+- **determinism is proved where it is real**: the gate rebuilds the pack on
+  each target and requires byte equality *there*, as a must-PASS field.
+
+That is the same split CAP-9C1 already applies to `plugins.zip`, reached by
+measurement rather than inherited by assumption.
+
+The consequence for file modes is unchanged and is the useful half: the ZIP
+external attributes are zero, so the archive is structurally incapable of
+carrying a POSIX mode whatever OS wrote it.
 
 Writer discipline, reused from CAP-6 verbatim: global bytewise sort of the
 canonical names, fixed DOS timestamp, no extra fields, zip64 refused, the

@@ -78,6 +78,7 @@ $required = @(
     'doctor_schema_digest', 'doctor_checks', 'doctor_no_mutation',
     'doctor_json_deterministic',
     'template_corpus', 'template_digest', 'template_pack_digest',
+    'template_pack_bytes',
     'template_pack_schema', 'template_semantic_digest',
     'template_registry_digest', 'template_deterministic',
     'template_source_gate', 'template_offline', 'template_refusals',
@@ -145,23 +146,31 @@ $equalityFields = @(
     # runners to agree on them would be requiring four identical machines.
     'cli_digest', 'doctor_schema_digest', 'cli_version_line',
     'doctor_checks', 'github_sha',
-    # CAP-10B0: five digests, and the ARCHIVE BYTES are among them.
+    # CAP-10B0: the SEMANTIC inventory and the decision corpus, exactly as
+    # CAP-9C1 compares quickjs_release_digest and cap9c1_inventory_digest
+    # and deliberately does not compare cap9c1_package_sha256.
     #
-    # That is the one place this shard is stricter than CAP-9C1, and it is
-    # earned rather than assumed: plugins.zip is deflated, and CAP-6/CAP-7L
-    # MEASURED that mORMot's static DEFLATE object emits different bytes per
-    # toolchain, so requiring archive equality there would have been an
-    # untrue requirement. This pack STORES every entry, so no compressor is
-    # reached and the file is a pure function of names, bytes, CRC-32s and a
-    # fixed timestamp. If a target ever disproves that, the right answer is
-    # to find out why - not to quietly move template_pack_digest out of this
-    # list, which is what a per-target pin would amount to.
+    # template_pack_digest and template_registry_digest are ABSENT, and the
+    # reason is a MEASUREMENT rather than a precaution. Hosted run
+    # 33093385300 built the identical logical input on four targets and
+    # produced two archive hashes: one for windows+linux and one for the two
+    # macOS targets, with the SAME length (6177 bytes) and the SAME semantic
+    # inventory. mORMot stamps the creating OS into the ZIP `version made
+    # by` field - `ZIP_OS` is 19 on Darwin and 3 elsewhere - so one byte per
+    # entry differs by design, and mORMot's own reader explicitly ignores
+    # it. macos-x86_64 and macos-arm64 agreed exactly, which is what shows
+    # this is an OS-family property and not a per-machine one.
     #
-    # template_modes_applicable is deliberately ABSENT: POSIX has file modes
-    # and Windows does not. It is recorded per target and never compared,
-    # exactly like the doctor observations.
-    'template_digest', 'template_pack_digest', 'template_pack_schema',
-    'template_semantic_digest', 'template_registry_digest',
+    # Determinism is therefore proved where it is REAL: the gate rebuilds
+    # the pack on each target and requires byte equality there
+    # (template_deterministic, must-PASS), and the registry pins the exact
+    # bytes of the archive that target will actually verify.
+    #
+    # template_modes_applicable is absent for a different reason: POSIX has
+    # file modes and Windows does not. It is recorded per target and never
+    # compared, exactly like the doctor observations.
+    'template_digest', 'template_pack_schema',
+    'template_semantic_digest',
     'template_refusals', 'template_file_count',
     'network_calls', 'package_manager_calls'
 )
@@ -627,9 +636,7 @@ $matrix = [ordered]@{
         doctor_schema_digest           = $first.doctor_schema_digest
         cli_version_line               = $first.cli_version_line
         template_digest                = $first.template_digest
-        template_pack_digest           = $first.template_pack_digest
         template_semantic_digest       = $first.template_semantic_digest
-        template_registry_digest       = $first.template_registry_digest
         template_pack_schema           = $first.template_pack_schema
         logical_inventory_sha256_react = $first.logical_inventory_sha256_react
         logical_inventory_sha256_pas2js = $evidence['linux-x86_64'].logical_inventory_sha256_pas2js
@@ -662,6 +669,13 @@ foreach ($t in $evidence.Keys) {
         template_offline   = $e.template_offline
         create_absent      = $e.create_absent
         template_modes_applicable = $e.template_modes_applicable
+        # the archive's BYTES, per target: identical within an OS family and
+        # differing by mORMot's ZIP_OS stamp between them (see the equality
+        # list). Recorded so the two values are readable side by side rather
+        # than discovered by a failing comparison
+        template_pack_digest = $e.template_pack_digest
+        template_pack_bytes = $e.template_pack_bytes
+        template_registry_digest = $e.template_registry_digest
         cap9c1_package_sha256 = $e.cap9c1_package_sha256
         cap9c1_package_bytes = $e.cap9c1_package_bytes
         cap9c1_registry_sha256 = $e.cap9c1_registry_sha256
@@ -703,8 +717,10 @@ foreach ($t in $evidence.Keys) {
 $summary += "- CAP-9C2 quickjs_gui_digest ``$($first.quickjs_gui_digest)`` equal on all four targets (the plugin-enabled GUI corpus: UI + QuickJS over one scheduler/policy/bridge/server)"
 $summary += "- CAP-9C2 LICENSE.quickjs ``$($first.cap9c2_license_sha256)`` byte-identical on all four targets; listeners=0 everywhere"
 $summary += "- CAP-10A cli_digest ``$($first.cli_digest)`` and doctor_schema_digest ``$($first.doctor_schema_digest)`` equal on all four targets; ``$($first.cli_version_line)`` everywhere (per-host doctor OBSERVATIONS are recorded per target and deliberately not compared)"
-$summary += "- CAP-10B0 template_digest ``$($first.template_digest)``, template_semantic_digest ``$($first.template_semantic_digest)`` and template_registry_digest ``$($first.template_registry_digest)`` equal on all four targets"
-$summary += "- CAP-10B0 template_pack_digest ``$($first.template_pack_digest)`` equal on all four targets - the archive BYTES, not merely its meaning: every entry is STORED, so no compressor is reached and the file is a pure function of its inputs (per-host file MODES are recorded per target and deliberately not compared)"
+$summary += "- CAP-10B0 template_digest ``$($first.template_digest)`` and template_semantic_digest ``$($first.template_semantic_digest)`` equal on all four targets (the archive's MEANING; its BYTES are per-OS-family and reported below, not compared - mORMot stamps the creating OS into `version made by`, ZIP_OS=19 on Darwin and 3 elsewhere)"
+foreach ($t in $evidence.Keys) {
+    $summary += "  - $t template_pack_digest ``$($evidence[$t].template_pack_digest)`` ($($evidence[$t].template_pack_bytes) bytes, rebuilt-and-compared on target: $($evidence[$t].template_deterministic))"
+}
 $summary += "- CAP-10B0 ``pweb create`` remains absent on every target: create_absent=$($first.create_absent), and the scaffold engine is not linked into the CLI at all (network_calls=$($first.network_calls), package_manager_calls=$($first.package_manager_calls))"
 $summary += "- react logical_inventory_sha256 ``$($first.logical_inventory_sha256_react)`` equal on all four targets"
 $summary += "- pas2js logical_inventory_sha256 ``$($matrix.agreement.logical_inventory_sha256_pas2js)`` equal on linux/macos-x64/macos-arm64"
