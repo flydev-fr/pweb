@@ -1,8 +1,9 @@
-# The `pweb` CLI contract (CAP-10A)
+# The `pweb` CLI contract (CAP-10A, CAP-10B1)
 
-The public surface frozen by CAP-10A: what the executable accepts, what
-`pweb.json` means, what `pweb doctor --json` emits, what each exit code
-promises, and the development-trust decision CAP-10C will implement.
+The public surface frozen by CAP-10A and extended by CAP-10B1: what the
+executable accepts, what `pweb.json` means, what `pweb doctor --json` emits,
+what each exit code promises, and the development-trust decision CAP-10C
+will implement.
 
 Everything here is a **contract**. The human report may be reworded freely;
 the command grammar, the descriptor schema, the JSON document, the status
@@ -15,22 +16,74 @@ vocabulary and the exit codes may not, except by a version bump.
 ```
 pweb --help
 pweb --version
+pweb create NAME --ui react --bundle-id <reverse.dns>
+pweb create --help
 pweb doctor [--json] [--with-paths] [--project <path>] [--no-color] [--verbose]
 ```
 
-That is the whole of it in this build. `create`, `dev`, `run` and `build` are
-**unknown commands** — not stubs, not "not implemented" placeholders, and not
-listed in `--help`. A command that parses is a promise, and a lifecycle CLI
-that promises a scaffold it cannot produce is worse than one that has not got
-there yet.
+That is the whole of it in this build. `dev`, `run` and `build` are **unknown
+commands** — not stubs, not "not implemented" placeholders, and not listed in
+`--help`. A command that parses is a promise, and a lifecycle CLI that
+promises a build it cannot perform is worse than one that has not got there
+yet.
 
-CAP-10B0 has since built the private engine `create` will use — the template
-carrier, the identity mapping, the placeholder model and the atomic creation
-transaction, all frozen in `docs/template-contract.md`. It changes nothing
-here: the engine is **not linked into this executable at all**, which
-`test/cap10b0/check_cap10b0_contracts.ps1` measures against the CLI's own
-compiled unit set on every CI leg, and `pweb create` remains exactly as
-unknown as `pweb frobnicate`. CAP-10B1 is the shard that exposes it.
+CAP-10B0 built the private engine — the template carrier, the identity
+mapping, the placeholder model and the atomic creation transaction, all
+frozen in `docs/template-contract.md` — and deliberately did not expose it.
+**CAP-10B1 exposes it.** The engine is now linked into this executable, which
+`test/cap10b0/check_cap10b0_contracts.ps1` still measures against the CLI's
+own compiled unit set on every CI leg — the same measurement as before,
+required to come out the other way.
+
+### `pweb create`
+
+```
+pweb create NAME --ui react --bundle-id <reverse.dns>
+```
+
+- `NAME` is one positional operand, and it is the whole of the project's
+  identity: the directory, `pweb.json`'s `name`, the Pascal program
+  identifier and the executable base name are one stated value. Its grammar
+  is `^[a-z][a-z0-9]*$`, 1..64 bytes — a strict subset of the schema-1
+  `name` grammar, and `pweb create my-app` is refused rather than
+  transformed. `docs/template-contract.md` §6 records why.
+- **`--ui` is required**, and the only value this build accepts is `react`.
+  `--ui pas2js` is a **usage** failure until CAP-10B2 ships that template:
+  the accepted set is a compiled allowlist in the parser, not a lookup in
+  whatever archive happens to be installed.
+- **`--bundle-id` is required and never defaulted.** Inventing an
+  organisation from a project name is the silent derivation this contract
+  refuses, and a default would give every developer who scaffolds `notes`
+  the same `CFBundleIdentifier` and the same Windows `AppId`.
+- The destination is **`NAME` inside the working directory**, which is read
+  once at startup and never again. There is no `--output` in this build.
+- The destination **must not exist** — not as a file, not as a non-empty
+  directory, not as an empty one, not as a symlink or junction, and not as a
+  case-colliding sibling.
+- **No `--force`, no `--install`, no `--template-path`, no merge, no
+  overwrite**, and `--project`, `--json`, `--with-paths`, `--verbose` and
+  `--no-color` are all refused on a create line as options this command does
+  not have.
+- **Creation is offline and inert.** It writes source files. It does not run
+  npm, pnpm, yarn, pas2js or FPC, download anything, initialise a repository
+  or open a browser, and it starts no child process of any kind.
+- **Creation is atomic.** Every failure leaves the destination absent; the
+  transaction is `docs/template-contract.md` §10, unchanged.
+
+On success it prints five deterministic lines and no ANSI on any stream:
+
+```
+pweb: created demo
+  ui           react
+  bundle id    com.example.demo
+  directory    demo
+  files        15
+```
+
+The directory is named **relative to the working directory**, which is both
+the whole truth — the destination is always `NAME` there — and the one form
+that is byte-identical on every machine. No SDK path, no home directory and
+no registry digest is ever printed.
 
 **Long options only.** There are no short forms in v1: every alias is a second
 spelling of a contract that is about to be frozen. A value may be written
@@ -308,14 +361,29 @@ never with `--no-color`, and never in JSON.
 |---|---|
 | 0 | success (warnings do not change it) |
 | 2 | usage error — the command line was refused |
-| 3 | project error — no usable `pweb.json` |
-| 4 | environment error — a required check failed |
+| 3 | project error — no usable `pweb.json`, or a destination that cannot become one |
+| 4 | environment error — a required check failed, or the SDK's own trusted resources are missing or untrusted |
 | 5 | probe error — a required probe could not be run or bounded |
 | 6 | internal error |
 
 Precedence is 6 > 5 > 4 > 3 > 2 > 0. Human diagnostic text never changes the
 category, and there is no stack trace by default: an internal failure is a
 category, and the CLI is not a debugger.
+
+**CAP-10B1 added no category.** `create`'s refusals map onto the six that
+already existed, and the mapping is exact:
+
+| exit | `create` causes |
+|---|---|
+| 0 | the destination now exists and holds the plan |
+| 2 | invalid `NAME`, invalid `--bundle-id`, a missing, duplicated or unknown option, a missing operand, an extra positional, an unsupported `--ui`, an unknown or non-public template id |
+| 3 | the destination's parent is missing, not a directory, a link or not writable; the destination exists or case-collides; the staging sibling is taken or cannot be created; a write, a verification, a file mode or the committing rename failed |
+| 4 | the SDK root could not be resolved from the running image, or the template pack is missing, the wrong size, the wrong digest, not a readable archive, or does not match the registry compiled into this executable |
+| 6 | any planning failure, and a generated descriptor the frozen reader refuses — each reachable only if a pack that passed its own digest disagreed with its own compiled registry, which is an invariant failure and not a user error |
+
+**`create` can never produce a 5.** It starts no child process, so there is
+no probe for one to come from. That is a property of the code path and the
+contract check measures it.
 
 ---
 

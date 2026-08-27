@@ -99,6 +99,63 @@ function RunCli([string]$Exe, [string]$WorkDir, [string[]]$CliArgs) {
     }
 }
 
+# --- 0. the PUBLIC pack, and its determinism on THIS target ---------------
+#
+# The pack the shipped CLI carries is not the pack the CAP-10B0 engine suite
+# uses: that one is built `--include all` and carries the private fixture,
+# this one is built `--include public` and carries the react template alone.
+# Both digests travel, and they are compared differently for the reason
+# CAP-10B0 measured on run 33093385300: mORMot stamps the CREATING OS into
+# the ZIP `version made by` field, so archive BYTES are an OS-family
+# property while the semantic inventory is not.
+#
+# So determinism is proved where it is real - the pack is rebuilt into a
+# second path on THIS target and the bytes must be identical there - and the
+# semantic digest is what the four-target aggregate compares.
+$builder = Join-Path $repoRoot "build/cap10b0/bin/pwebtemplates$exeSuffix"
+Require (Test-Path -LiteralPath $builder) `
+    'the CAP-10B0 pack builder is absent -- run test/cap10b0/build_cap10b0 first'
+if (Test-Path -LiteralPath $builder) {
+    $rebuild = Join-Path $work 'public-rebuild'
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $rebuild
+    New-Item -ItemType Directory -Force $rebuild | Out-Null
+    $pack2 = Join-Path $rebuild 'pweb-templates.zip'
+    $reg2 = Join-Path $rebuild 'pweb.templates.registry.inc'
+    $summary = & $builder --source tools/templates --pack $pack2 `
+        --registry $reg2 --include public 2>&1 | Out-String
+    Require ($LASTEXITCODE -eq 0) 'the public pack rebuild FAILED to run'
+    $packSha = Sha256File $pack
+    $packSha2 = Sha256File $pack2
+    Require ($packSha -ceq $packSha2) `
+        "the public pack is not deterministic: $packSha vs $packSha2"
+    $regSha = Sha256Text ([System.IO.File]::ReadAllText(
+        (Join-Path $work 'gen/pweb.templates.registry.inc')).Replace("`r`n", "`n"))
+    $regSha2 = Sha256Text ([System.IO.File]::ReadAllText($reg2).Replace("`r`n", "`n"))
+    Require ($regSha -ceq $regSha2) `
+        'the public registry is not deterministic'
+    Row 'public_pack_digest' $packSha
+    Row 'public_pack_bytes' ((Get-Item -LiteralPath $pack).Length)
+    Row 'public_registry_digest' $regSha
+    Row 'public_pack_deterministic' $(
+        if (($packSha -ceq $packSha2) -and ($regSha -ceq $regSha2)) { 'PASS' }
+        else { 'FAIL' })
+    # the semantic fields the BUILDER reported, parsed back rather than
+    # recomputed here: the evidence carries what the builder said
+    foreach ($line in ($summary -split "`n")) {
+        $parts = $line.Trim() -split ' ', 2
+        if ($parts.Count -eq 2) {
+            switch ($parts[0]) {
+                'inventory_digest' { Row 'public_semantic_digest' $parts[1].Trim() }
+                'templates'        { Row 'public_template_count' $parts[1].Trim() }
+                'files'            { Row 'public_file_count' $parts[1].Trim() }
+            }
+        }
+    }
+    Require ("$($rows['public_template_count'])" -ceq '1') `
+        ("the public pack carries $($rows['public_template_count']) " +
+         'templates, expected exactly 1 (react)')
+}
+
 # --- 1. the advertised surface --------------------------------------------
 $help = RunCli $pweb $repoRoot @('--help')
 Require ($help.Code -eq 0) '--help did not exit 0'

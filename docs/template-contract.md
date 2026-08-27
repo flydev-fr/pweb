@@ -1,20 +1,23 @@
-# The PWeb template contract (CAP-10B0)
+# The PWeb template contract (CAP-10B0, CAP-10B1)
 
-The private scaffolding engine frozen by CAP-10B0: where templates come
-from, what is allowed to be trusted about them, how a project's identity is
-decided, and what `pweb create` will do when CAP-10B1 exposes it.
+The scaffolding engine frozen by CAP-10B0 and the first template CAP-10B1
+ships through it: where templates come from, what is allowed to be trusted
+about them, how a project's identity is decided, and what `pweb create`
+does.
 
 Everything here is a **contract**. The wording may be improved freely; the
 carrier, the trust anchor, the identity mapping, the placeholder set, the
 line-ending rule, the bounds and the transaction may not, except by a
 version bump.
 
-**`pweb create` does not exist in this build.** It is not a stub, it is not
-listed in `--help`, and it is not merely undispatched: the scaffold engine
-is **not linked into the `pweb` executable at all**, and
-`test/cap10b0/check_cap10b0_contracts.ps1` measures that against the CLI's
-compiled unit set on every CI leg. CAP-10B0 freezes an engine; CAP-10B1 and
-CAP-10B2 give it a template worth shipping and a command to reach it.
+**`pweb create` exists in this build**, and §12 describes the one template
+it can produce. CAP-10B0 froze an engine and deliberately exposed no
+command: the scaffold engine was not linked into the `pweb` executable at
+all, and `test/cap10b0/check_cap10b0_contracts.ps1` measured that against
+the CLI's compiled unit set on every CI leg. CAP-10B1 **inverts that same
+measurement** rather than deleting it — the engine must now be linked — and
+`dev`, `run` and `build` remain unknown commands. CAP-10B2 adds the Pas2JS
+template.
 
 ---
 
@@ -242,13 +245,12 @@ written.
 
 ---
 
-## 5. The future `create` command
+## 5. The `create` command
 
-Designed here, exposed by CAP-10B1:
+Designed here by CAP-10B0, **exposed by CAP-10B1**:
 
 ```
-pweb create NAME --ui react   --bundle-id <reverse.dns> [--output <dir>]
-pweb create NAME --ui pas2js  --bundle-id <reverse.dns> [--output <dir>]
+pweb create NAME --ui react --bundle-id <reverse.dns>
 ```
 
 - **`--bundle-id` is required and never defaulted.** CAP-10A already wrote
@@ -257,12 +259,21 @@ pweb create NAME --ui pas2js  --bundle-id <reverse.dns> [--output <dir>]
   developer who scaffolds `notes` the same `CFBundleIdentifier` and the same
   Windows `AppId` — a collision in the one field whose entire job is to be
   unique.
-- **`--output` names the PARENT**; the destination is always
-  `<output>/NAME`. If it named the target, `--output /tmp/x` would produce a
-  project whose directory is `x` and whose `name` is `notes` — a second,
-  silent identity. The parent must already exist; `create` never creates an
-  intermediate chain, because that is an unbounded mutation on a path the
-  commit cannot undo.
+- **`--output` is designed and NOT exposed.** CAP-10B0 designed it to name
+  the PARENT — the destination would always be `<output>/NAME`, because if
+  it named the target then `--output /tmp/x` would produce a project whose
+  directory is `x` and whose `name` is `notes`, a second silent identity —
+  but CAP-10B0 ratified no default for it and no gate over it. CAP-10B1
+  therefore ships **one** destination rule: `NAME` inside the captured
+  working directory, read once through the single CAP-10A CWD seam and
+  never re-read. Shipping one rule is smaller than shipping two, and the
+  option stays designed for the shard that needs it.
+- **`--ui pas2js` is a usage failure in this build.** The accepted set is a
+  compiled allowlist in the parser, not a lookup in whatever archive happens
+  to be installed: a CLI whose refusal depends on the contents of an archive
+  is a CLI that would advertise a frontend the moment somebody added one.
+  CAP-10B2 widens the allowlist in the same commit as the template that
+  makes the claim true.
 - **The destination must not exist** — not as a file, not as a non-empty
   directory, not as an empty one, not as a symlink or junction, and not as a
   case-colliding sibling. Refusing the empty directory too is deliberate:
@@ -520,3 +531,157 @@ Dot-files are decided by an **allowlist** — exactly `.gitignore`,
 interesting mistakes in this class are precisely the ones nobody thought to
 forbid. The sweep runs over the trusted source at build time **and** over
 every rendered path and byte at plan time.
+
+---
+
+## 12. The React template (CAP-10B1)
+
+The first public template, and the first thing `pweb create` can produce.
+
+### The generated project
+
+Fifteen files. Fourteen come from the template; `pweb.json` comes from the
+serializer.
+
+```
+demo/
+  pweb.json                 generated, not templated
+  .gitattributes  .gitignore  README.md
+  src/
+    demo.lpr                the native entry point
+    app.services.pas        the service, the capability policy, the bridge
+  frontend/
+    index.html  package.json  package-lock.json  tsconfig.json  vite.config.ts
+    src/
+      main.tsx  App.tsx  app.css  vite-env.d.ts
+```
+
+The set is asserted **exactly**, in both directions: a project that grew a
+file and a project that lost one are both failures, and neither shows up in
+a count.
+
+### The pins
+
+Every version is exact. No caret, no tilde, no range, no `latest`.
+
+| package | version |
+|---|---|
+| `react` | `18.3.1` |
+| `react-dom` | `18.3.1` |
+| `@types/react` | `18.3.12` |
+| `@types/react-dom` | `18.3.1` |
+| `typescript` | `7.0.2` |
+| `vite` | `8.2.2` |
+
+Six of these are the CAP-5 pins, unchanged. **`vite` is the one additive
+frontend pin CAP-10B1 asks for**, and it is the bundler because `SPEC.md`
+names React/Vite as the validated v1 frontend and `phase-plan.md` has
+`pweb dev` running Vite HMR: the template CAP-10C must extend is a Vite
+template. Measured before the choice: Vite 8 installs 70 lock entries with
+one install script, against Vite 7's 94 with two — the older major is the
+*larger* dependency tree, which is what removed the conservative option.
+
+`@vitejs/plugin-react` is deliberately **absent**. Vite compiles `.tsx`
+through the tsconfig's `jsx: "react-jsx"` with no plugin; the plugin exists
+for Fast Refresh, which this build must not implement. CAP-10C adds it with
+HMR.
+
+### The build output, and why it is shaped like CAP-5's
+
+`vite.config.ts` pins fixed asset names and no content hashes, so the
+production tree is exactly what the frozen CAP-6 bundler consumes:
+
+```
+frontend/dist/index.html
+frontend/dist/assets/app.js
+frontend/dist/assets/index.css
+```
+
+There is no HTTP cache behind `pweb://app`, so a content hash buys nothing
+and costs a name that changes with every edit. The script and the stylesheet
+are **external**: the native CSP carries `script-src 'self'` with no
+`unsafe-inline` and no `unsafe-eval`, and CAP-10B1 does not weaken it.
+
+### `@pweb/runtime`, and the seam that keeps a project portable
+
+The generated `frontend/package.json` declares
+
+```json
+"@pweb/runtime": "file:.pweb/sdk/typescript"
+```
+
+— a **project-relative** specifier. Never an absolute path, never a public
+registry, never a published package. A PWeb build materialises the pinned,
+pre-built SDK from `<sdk-root>/share/pweb/sdk/typescript/` into
+`<build-stage>/frontend/.pweb/sdk/typescript/`, and the generated project
+directory itself is never mutated — which the build proof measures by
+digesting the project before and after.
+
+The staged package is a canonical minimal distribution: `package.json`
+carrying name, version, license, type, main, types and exports and nothing
+else, plus `dist/src/**`. The development manifest's `devDependencies` are
+deliberately dropped, because npm records a linked local package's manifest
+in the lockfile and shipping the development one would make every generated
+lockfile depend on the SDK's own toolchain pins.
+
+**The consequence is stated rather than smoothed over: a freshly created
+project cannot `npm ci` on its own.** That is the SDK-root model working as
+designed — installing the SDK by hand would vendor a copy of the framework
+into a tree whose whole point is not to contain one — and the generated
+README says so.
+
+### The generated application
+
+`src/demo.lpr` is a composition and nothing else: it registers one mORMot
+service, builds the bridge chain (application → runtime commands → mORMot),
+builds the capability policy, and calls `PWebHostRun`. It carries **no
+platform conditional** except `{$apptype console}`, because locating the
+bundle, checking the platform runtime, attaching the `pweb://app` handler,
+installing the navigation guard and tearing all of it down in the exact
+reverse order belong to `src/webview/pweb.webview.host.pas` — the reusable
+host composition CAP-10B1 adds so that a scaffolded project does not carry a
+copy of the platform seam.
+
+The capability policy in `src/app.services.pas` is the production CAP-8A
+shape, and it is deliberately small:
+
+```
+AppMaximum                 ['calculator.add']
+window 'main'              ['calculator.add']
+principal 'window:main'    ['calculator.add']
+MapMethod                  CalculatorService.Add -> ['calculator.add']
+RegisterZeroCapMethod      pweb.handshake
+RegisterZeroCapMethod      app.ready
+```
+
+No allow-all. No filesystem, process or network capability. No QuickJS.
+`TPWebRuntimeCommandBridge` **is** installed with the platform opener,
+because one runtime-command path is the frozen architecture — but
+`pweb.openExternal` is left **unmapped**, so the policy answers
+`forbidden`/403 before the decorator is reached and the opener count is zero
+because nothing ran.
+
+`No.SuchMethod` is deliberately not registered either. Under a production
+policy an unmapped method is `forbidden` — `forbidden` outranks
+`method_not_found` by ratified design — so the starter's error demo shows
+403, which is the honest production answer rather than the 404 the allow-all
+example hosts produce.
+
+### Two packs, from one trusted source
+
+| pack | `--include` | consumer | contains |
+|---|---|---|---|
+| test pack | `all` | the CAP-10B0 engine suite | `fixture` + `react` |
+| SDK pack | `public` | the shipped `pweb` CLI | `react` only |
+
+The public CLI compiles against the **public** registry, so it is
+structurally incapable of describing the private fixture at all. The
+`RequirePublic` refusal in `PWebTplFind` is the second lock behind that
+first one.
+
+Adding a public template intentionally changed the corpus, and CAP-10B1
+records the previous and new values side by side in its artifact rather than
+claiming any digest stayed the same. The CAP-9C1 split is unchanged:
+`template_semantic_digest` is compared across all four targets,
+`template_pack_digest` is pinned per target, and the `ZIP_OS` made-by
+divergence remains accepted.

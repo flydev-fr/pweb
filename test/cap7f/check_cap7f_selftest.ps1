@@ -97,11 +97,30 @@
 #   (c65) template_refusals drifted from 7 -> REFUSALS refusal
 #   (c66) template_offline=FAIL -> mustPass refusal
 #   (c67) package_manager_calls=1 -> NOT-OFFLINE refusal
-#   (c68) create_absent=FAIL -> mustPass refusal (`pweb create` became
-#         reachable, which CAP-10B0 exists to prevent)
+#   (c68) create_present=FAIL -> mustPass refusal (the scaffold engine
+#         stopped being linked into the CLI that offers `pweb create`)
 #   (c69) template_pack_schema=2 -> BAD-SCHEMA refusal (an absolute pin, not
 #         merely an agreement)
-#   (c8-c69 additionally assert the refusal came through the EXPECTED branch
+#   (c70) create_corpus=FAIL -> mustPass refusal
+#   (c71) advertised_ui=pas2js on EVERY target -> ABSOLUTE PIN refusal (a
+#         template nobody shipped, advertised in unison)
+#   (c72) generated_inventory_digest diverging -> equality refusal (the
+#         whole claim of CAP-10B1 in one field)
+#   (c73) generated_pweb_json_digest diverging -> equality refusal
+#   (c74) doctor_result=FAIL -> mustPass refusal (the CAP-10B0
+#         `frontend.lockfile` limitation this template exists to close)
+#   (c75) frontend_build=FAIL -> mustPass refusal
+#   (c76) native_build=FAIL -> mustPass refusal
+#   (c77) secure_origin=FAIL -> mustPass refusal
+#   (c78) rpc_result=41 on EVERY target -> ABSOLUTE PIN refusal
+#   (c79) listener_count=1 on EVERY target -> ABSOLUTE PIN refusal
+#   (c80) raw_primitive_used=true on EVERY target -> ABSOLUTE PIN refusal
+#   (c81) loose_assets_used=true on EVERY target -> ABSOLUTE PIN refusal
+#   (c82) generated_tree_unchanged=FAIL -> mustPass refusal (a build that
+#         rewrites its own input has no reproducible output)
+#   (c83) create_no_partial=FAIL -> mustPass refusal (a refusal left a
+#         partial destination behind)
+#   (c8-c83 additionally assert the refusal came through the EXPECTED branch
 #    where one is named)
 #   (e) a count-preserving directive swap in an allowlisted file
 #                                          -> divergence sweep refuses via the
@@ -1030,9 +1049,9 @@ Invoke-AggExpectFail 'cap10b0-package-manager' 'CAP-10B0 NOT-OFFLINE'
 Reset-Fixture
 $f = Join-Path $fx 'ev/macos-x64/evidence.json'
 $e = Get-Content $f -Raw | ConvertFrom-Json
-$e.create_absent = 'FAIL'
+$e.create_present = 'FAIL'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
-Invoke-AggExpectFail 'cap10b0-create-present' 'create_absent'
+Invoke-AggExpectFail 'cap10b0-create-present' 'create_present'
 
 # --- (c69) CAP-10B0: the template-pack schema drifted ----------------------
 # an ABSOLUTE pin, not merely an agreement: four targets that all moved to
@@ -1045,6 +1064,138 @@ foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
     $e | ConvertTo-Json -Depth 4 | Set-Content $f
 }
 Invoke-AggExpectFail 'cap10b0-pack-schema' 'CAP-10B0 BAD-SCHEMA'
+
+# --- (c70) CAP-10B1: the create verdict itself ----------------------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.create_corpus = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b1-create-corpus' 'create_corpus'
+
+# --- (c71) CAP-10B1: Pas2JS falsely advertised ----------------------------
+# an ABSOLUTE pin, not merely an agreement: four targets that all grew a
+# pas2js claim would agree perfectly and be wrong together, and a CLI that
+# advertises a template nobody shipped is precisely what CAP-10A refused to
+# do with `create` itself
+Reset-Fixture
+foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$t/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.advertised_ui = 'pas2js'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10b1-pas2js-advertised' 'ABSOLUTE PIN VIOLATED'
+
+# --- (c72) CAP-10B1: the generated project diverged between targets -------
+# the whole claim of this shard in one field: `pweb create` is a function of
+# its inputs, and four targets must produce the same bytes
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.generated_inventory_digest = 'deadbeef' + $e.generated_inventory_digest.Substring(8)
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b1-generated-divergence' 'generated_inventory_digest'
+
+# --- (c73) CAP-10B1: the descriptor diverged ------------------------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.generated_pweb_json_digest = 'deadbeef' + $e.generated_pweb_json_digest.Substring(8)
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b1-descriptor-divergence' 'generated_pweb_json_digest'
+
+# --- (c74) CAP-10B1: doctor rejected the scaffold -------------------------
+# the CAP-10B0 `frontend.lockfile` limitation this template exists to close
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.doctor_result = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b1-doctor' 'doctor_result'
+
+# --- (c75) CAP-10B1: the frontend stopped building ------------------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.frontend_build = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b1-frontend-build' 'frontend_build'
+
+# --- (c76) CAP-10B1: the generated native app stopped compiling -----------
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.native_build = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b1-native-build' 'native_build'
+
+# --- (c77) CAP-10B1: the origin stopped being secure ----------------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.secure_origin = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b1-secure-origin' 'secure_origin'
+
+# --- (c78) CAP-10B1: the scaffold's own arithmetic ------------------------
+# an ABSOLUTE pin. Four targets agreeing on 41 is four targets being wrong
+Reset-Fixture
+foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$t/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.rpc_result = '41'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10b1-rpc-result' 'ABSOLUTE PIN VIOLATED'
+
+# --- (c79) CAP-10B1: a generated application opened a listener -----------
+Reset-Fixture
+foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$t/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.listener_count = '1'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10b1-listener' 'ABSOLUTE PIN VIOLATED'
+
+# --- (c80) CAP-10B1: the generated frontend reached the raw primitive ----
+Reset-Fixture
+foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$t/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.raw_primitive_used = 'true'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10b1-raw-primitive' 'ABSOLUTE PIN VIOLATED'
+
+# --- (c81) CAP-10B1: the release grew a loose asset ----------------------
+Reset-Fixture
+foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$t/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.loose_assets_used = 'true'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10b1-loose-assets' 'ABSOLUTE PIN VIOLATED'
+
+# --- (c82) CAP-10B1: the build mutated the project it was given ----------
+# the SDK-root dependency model exists so that it does not have to, and a
+# build that rewrites its own input has no reproducible output
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.generated_tree_unchanged = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b1-tree-mutated' 'generated_tree_unchanged'
+
+# --- (c83) CAP-10B1: a refusal left a partial destination ---------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.create_no_partial = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b1-partial-destination' 'create_no_partial'
 
 # --- (d) divergence sweep must refuse an off-allowlist conditional -----------
 $fixturePas = 'src/zz_cap7f_selftest_fixture.pas'

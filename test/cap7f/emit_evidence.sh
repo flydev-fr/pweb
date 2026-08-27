@@ -913,7 +913,7 @@ template_registry_digest="$(tpl_str template_registry_digest)"
 template_deterministic="$(tpl_str template_deterministic)"
 template_source_gate="$(tpl_str template_source_gate)"
 template_offline="$(tpl_str template_offline)"
-template_create_absent="$(tpl_str create_absent)"
+template_create_present="$(tpl_str create_present)"
 template_modes="$(tpl_str template_modes_applicable)"
 template_file_count="$(tpl_str template_file_count)"
 template_refusals="$(tpl_num template_refusals)"
@@ -942,10 +942,107 @@ if [ "${template_corpus}" = 'PASS' ]; then
 fi
 printf '[CAP-7F] template_digest: %s\n' "${template_digest}"
 printf '[CAP-7F] template_pack_digest: %s\n' "${template_pack_digest}"
-printf '[CAP-7F] template_corpus: %s (deterministic=%s source_gate=%s offline=%s create_absent=%s refusals=%s files=%s)\n' \
+printf '[CAP-7F] template_corpus: %s (deterministic=%s source_gate=%s offline=%s create_present=%s refusals=%s files=%s)\n' \
     "${template_corpus}" "${template_deterministic}" \
     "${template_source_gate}" "${template_offline}" \
-    "${template_create_absent}" "${template_refusals}" "${template_file_count}"
+    "${template_create_present}" "${template_refusals}" "${template_file_count}"
+
+# --- CAP-10B1: the public create command and the React scaffold --------------
+#
+# TWO records, because they are two different kinds of claim and only one of
+# them needs a toolchain: cli-<target>.json is headless (the advertised
+# surface, the refusal matrix, the public pack, and a project created three
+# times from three different working directories and required to be
+# byte-identical), and proof-<target>.json is the build proof (npm, FPC, a
+# real window, and the page's own report of what it observed).
+#
+# The COMPARED fields are the ones that are a function of the inputs alone.
+# The pack BYTES travel per target and are reported side by side rather than
+# compared, for the ZIP_OS reason CAP-10B0 measured.
+b1_file="${repo_root}/build/cap10b1/cli-${target}.json"
+proof_file="${repo_root}/build/cap10b1/proof-${target}.json"
+[ -f "${b1_file}" ] ||
+    die "cli-${target}.json missing -- the CAP-10B1 gates have not run in this workspace"
+[ -f "${proof_file}" ] ||
+    die "proof-${target}.json missing -- the CAP-10B1 build proof has not run in this workspace"
+b1_str() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+        "${b1_file}" | head -n 1
+}
+b1_num() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p" \
+        "${b1_file}" | head -n 1
+}
+pf_str() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+        "${proof_file}" | head -n 1
+}
+pf_num() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p" \
+        "${proof_file}" | head -n 1
+}
+create_corpus="$(b1_str create_corpus)"
+proof_corpus="$(pf_str proof_corpus)"
+for v in "${create_corpus}" "${proof_corpus}"; do
+    case "${v}" in
+        PASS | FAIL) ;;
+        *) die "the CAP-10B1 records carry an unexpected verdict: ${v}" ;;
+    esac
+done
+advertised_ui="$(b1_str advertised_ui)"
+create_help_digest="$(b1_str create_help_digest)"
+create_stdout_digest="$(b1_str create_stdout_digest)"
+create_refusals="$(b1_num create_refusals)"; [ -n "${create_refusals}" ] || create_refusals=0
+create_no_partial="$(b1_str create_no_partial)"
+create_deterministic="$(b1_str create_deterministic)"
+public_pack_digest="$(b1_str public_pack_digest)"
+public_pack_bytes="$(b1_num public_pack_bytes)"; [ -n "${public_pack_bytes}" ] || public_pack_bytes=0
+public_semantic_digest="$(b1_str public_semantic_digest)"
+public_registry_digest="$(b1_str public_registry_digest)"
+public_pack_deterministic="$(b1_str public_pack_deterministic)"
+public_file_count="$(b1_str public_file_count)"
+generated_inventory_digest="$(b1_str generated_inventory_digest)"
+generated_inventory_exact="$(b1_str generated_inventory_exact)"
+generated_pweb_json_digest="$(b1_str generated_pweb_json_digest)"
+generated_package_lock_digest="$(b1_str generated_package_lock_digest)"
+generated_file_count="$(b1_num generated_file_count)"; [ -n "${generated_file_count}" ] || generated_file_count=0
+generated_total_bytes="$(b1_num generated_total_bytes)"; [ -n "${generated_total_bytes}" ] || generated_total_bytes=0
+generated_no_host_path="$(b1_str generated_no_host_path)"
+doctor_result="$(b1_str doctor_result)"
+generated_tree_digest="$(pf_str generated_tree_digest)"
+generated_tree_unchanged="$(pf_str generated_tree_unchanged)"
+frontend_typecheck="$(pf_str frontend_typecheck)"
+frontend_build="$(pf_str frontend_build)"
+frontend_no_dev_code="$(pf_str frontend_no_dev_code)"
+frontend_transport_clean="$(pf_str frontend_transport_clean)"
+native_build="$(pf_str native_build)"
+secure_origin="$(pf_str secure_origin)"
+rpc_result="$(pf_num rpc_result)"; [ -n "${rpc_result}" ] || rpc_result=0
+error_mapping="$(pf_str error_mapping)"
+listener_count="$(pf_num listener_count)"; [ -n "${listener_count}" ] || listener_count=0
+raw_primitive_used="$(pf_str raw_primitive_used)"
+loose_assets_used="$(pf_str loose_assets_used)"
+if [ "${create_corpus}" = 'PASS' ] && [ "${proof_corpus}" = 'PASS' ]; then
+    # a green verdict with an empty digest is a proof of nothing, and an
+    # empty string compares equal to another empty string on four targets
+    for pair in "public_semantic_digest=${public_semantic_digest}" \
+                "generated_inventory_digest=${generated_inventory_digest}" \
+                "generated_pweb_json_digest=${generated_pweb_json_digest}" \
+                "generated_package_lock_digest=${generated_package_lock_digest}" \
+                "advertised_ui=${advertised_ui}"; do
+        case "${pair}" in
+            *=) die "the CAP-10B1 record records PASS with an empty ${pair%%=*}" ;;
+        esac
+    done
+    [ "${rpc_result}" = '42' ] ||
+        die "the CAP-10B1 build proof records PASS with rpc_result=${rpc_result}"
+    [ "${listener_count}" = '0' ] ||
+        die 'the CAP-10B1 build proof records a listening socket'
+fi
+printf '[CAP-10B1] create_corpus: %s (ui=%s refusals=%s files=%s doctor=%s) proof_corpus: %s (rpc=%s listeners=%s)\n' \
+    "${create_corpus}" "${advertised_ui}" "${create_refusals}" \
+    "${generated_file_count}" "${doctor_result}" "${proof_corpus}" \
+    "${rpc_result}" "${listener_count}"
 
 # ---------------------------- write the evidence -----------------------------
 # every interpolated free-text value goes through json_escape: the toolchain
@@ -1045,10 +1142,45 @@ cat > "${work}/evidence.json" <<EOF
   "template_offline": "${template_offline}",
   "template_refusals": "${template_refusals}",
   "template_file_count": "${template_file_count}",
-  "create_absent": "${template_create_absent}",
+  "create_present": "${template_create_present}",
   "network_calls": "${network_calls}",
   "package_manager_calls": "${package_manager_calls}",
   "template_modes_applicable": "${template_modes}",
+  "create_corpus": "${create_corpus}",
+  "advertised_ui": "${advertised_ui}",
+  "create_help_digest": "${create_help_digest}",
+  "create_stdout_digest": "${create_stdout_digest}",
+  "create_refusals": "${create_refusals}",
+  "create_no_partial": "${create_no_partial}",
+  "create_deterministic": "${create_deterministic}",
+  "public_pack_digest": "${public_pack_digest}",
+  "public_pack_bytes": "${public_pack_bytes}",
+  "public_semantic_digest": "${public_semantic_digest}",
+  "public_registry_digest": "${public_registry_digest}",
+  "public_pack_deterministic": "${public_pack_deterministic}",
+  "public_file_count": "${public_file_count}",
+  "generated_inventory_digest": "${generated_inventory_digest}",
+  "generated_inventory_exact": "${generated_inventory_exact}",
+  "generated_pweb_json_digest": "${generated_pweb_json_digest}",
+  "generated_package_lock_digest": "${generated_package_lock_digest}",
+  "generated_file_count": "${generated_file_count}",
+  "generated_total_bytes": "${generated_total_bytes}",
+  "generated_no_host_path": "${generated_no_host_path}",
+  "doctor_result": "${doctor_result}",
+  "proof_corpus": "${proof_corpus}",
+  "generated_tree_digest": "${generated_tree_digest}",
+  "generated_tree_unchanged": "${generated_tree_unchanged}",
+  "frontend_typecheck": "${frontend_typecheck}",
+  "frontend_build": "${frontend_build}",
+  "frontend_no_dev_code": "${frontend_no_dev_code}",
+  "frontend_transport_clean": "${frontend_transport_clean}",
+  "native_build": "${native_build}",
+  "secure_origin": "${secure_origin}",
+  "rpc_result": "${rpc_result}",
+  "error_mapping": "${error_mapping}",
+  "listener_count": "${listener_count}",
+  "raw_primitive_used": "${raw_primitive_used}",
+  "loose_assets_used": "${loose_assets_used}",
   "release_layout": "${release_layout}",
   "no_listener": "${no_listener}",
   "no_listener_provenance": "${no_listener_prov}",

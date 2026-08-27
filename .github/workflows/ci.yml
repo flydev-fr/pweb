@@ -1749,7 +1749,28 @@ jobs:
       # target, and the gate MEASURES that `pweb doctor` mutated nothing:
       # the fixture tree and every lock file are hashed before and after.
       # ----------------------------------------------------------------
-      - name: CAP-10A build the pweb CLI, its suite and the probe fixture
+      # BUILD ORDER, and the reason it changed in CAP-10B1: the `pweb`
+      # executable now compiles the GENERATED template registry in with -Fi,
+      # so it cannot be built before the pack that registry describes
+      # exists. The pack builder comes from CAP-10B0 and the public pack
+      # from CAP-10B1, so those two builds run first and CAP-10A's build
+      # takes the one CLI they produced. Two `pweb` binaries that could
+      # disagree is exactly what the one-runtime rule refuses.
+      - name: CAP-10B0 build the scaffold engine, the pack and the suite
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap10b0/build_cap10b0.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B0 build FAILED' }
+
+      - name: CAP-10B1 build the public pack, the CLI and the SDK root
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap10b1/build_cap10b1.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B1 build FAILED' }
+
+      - name: CAP-10A build the suite and the probe fixture
         shell: pwsh
         timeout-minutes: 15
         run: |
@@ -1792,27 +1813,20 @@ jobs:
             build/cap10a-gates.log
 
       # ----------------------------------------------------------------
-      # CAP-10B0: the private scaffold engine. Build (also the LAYERING
-      # proof), the checkout-plus-build contract gates, then the headless
-      # matrices, the deterministic-rebuild comparison and the seven
-      # deliberately broken template sources.
+      # CAP-10B0: the scaffold engine (built above, with CAP-10B1's pack).
+      # The checkout-plus-build contract gates, then the headless matrices,
+      # the deterministic-rebuild comparison and the seven deliberately
+      # broken template sources.
       #
-      # `pweb create` DOES NOT EXIST in this build, and the gates measure
-      # that rather than asserting it: the engine is not linked into the
-      # CLI at all, which the contract check proves against the CLI's own
-      # compiled unit set, and the real executable is run to confirm
-      # `create` is still an unknown command.
+      # `pweb create` NOW EXISTS, and the gates measure that rather than
+      # asserting it: the CAP-10B0 linkage rule is INVERTED - the engine
+      # must be in the CLI's own compiled unit set - and the real
+      # executable is run to confirm that create is advertised while dev,
+      # run and build are still unknown commands.
       #
       # Nothing here needs a window, a display or a network on any target.
       # ----------------------------------------------------------------
-      - name: CAP-10B0 build the scaffold engine, the pack and the suite
-        shell: pwsh
-        timeout-minutes: 15
-        run: |
-          pwsh -NoProfile -File test/cap10b0/build_cap10b0.ps1
-          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B0 build FAILED' }
-
-      - name: CAP-10B0 contract cross-checks (create absent, offline, limits)
+      - name: CAP-10B0 contract cross-checks (create linked, offline, limits)
         shell: pwsh
         run: |
           pwsh -NoProfile -File test/cap10b0/check_cap10b0_contracts.ps1
@@ -1839,6 +1853,60 @@ jobs:
             build/cap10b0/gen/pweb.templates.registry.inc
             build/cap10b0/tpltests.log
             build/cap10b0-gates.log
+
+      # ----------------------------------------------------------------
+      # CAP-10B1: the public `pweb create` command and the React scaffold.
+      #
+      # Three layers, and only the last needs a machine that can open a
+      # window: the checkout-plus-build contract sweep, the headless
+      # create matrix (the advertised surface, fifteen refusals, a project
+      # created three times from three different working directories and
+      # required to be byte-identical, and the real `pweb doctor` over the
+      # result), and then the private build proof - npm, FPC, app.pwb and a
+      # real GUI run of the generated application from an unrelated CWD.
+      #
+      # The build proof is a TEST HARNESS and not `pweb build`: this shard
+      # exposes no build command, and nothing in the CLI's command table
+      # knows any of these steps exist.
+      # ----------------------------------------------------------------
+      - name: CAP-10B1 contract cross-checks (one UI, exact pins, no exec)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10b1/check_cap10b1_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B1 contract cross-checks FAILED' }
+
+      - name: CAP-10B1 create gates + evidence
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap10b1/run_cap10b1_gates.ps1 2>&1 |
+            Tee-Object -FilePath build/cap10b1-gates.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B1 create gates FAILED' }
+
+      - name: CAP-10B1 private build proof and real GUI run
+        shell: pwsh
+        timeout-minutes: 30
+        run: |
+          pwsh -NoProfile -File test/cap10b1/prove_cap10b1.ps1 2>&1 |
+            Tee-Object -FilePath build/cap10b1-proof.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B1 build proof FAILED' }
+
+      - name: CAP-10B1 upload the create corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10b1-create-windows
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10b1/cli-windows-x86_64.json
+            build/cap10b1/proof-windows-x86_64.json
+            build/cap10b1/contracts.json
+            build/cap10b1/generated-inventory.txt
+            build/cap10b1/gen/pweb.templates.registry.inc
+            build/cap10b1/proof.log
+            build/cap10b1-gates.log
+            build/cap10b1-proof.log
 
       - name: CAP-7F emit the Windows evidence artifact
         shell: pwsh
@@ -2377,7 +2445,22 @@ jobs:
       # and every gate after it is the same pwsh verifier the other three
       # targets run, which is what makes "identical semantics on four
       # targets" a comparison rather than four implementations.
-      - name: CAP-10A build the pweb CLI, its suite and the probe fixture
+      # BUILD ORDER (see the windows job): `pweb` compiles the GENERATED
+      # template registry in with -Fi, so it cannot be built before the pack
+      # that registry describes exists. The pack builder comes from CAP-10B0
+      # and the public pack from CAP-10B1, so those run first and CAP-10A's
+      # build takes the one CLI they produced.
+      - name: CAP-10B0 build the scaffold engine, the pack and the suite
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap10b0/build_cap10b0.sh
+
+      - name: CAP-10B1 build the public pack, the CLI and the SDK root
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap10b1/build_cap10b1.sh
+
+      - name: CAP-10A build the suite and the probe fixture
         shell: bash
         timeout-minutes: 15
         run: test/cap10a/build_cap10a.sh
@@ -2415,16 +2498,11 @@ jobs:
             build/cap10a/dev-trust.txt
             build/cap10a/clitests.log
 
-      # CAP-10B0: the private scaffold engine (see the windows job for the
-      # rationale). The build is the POSIX twin; every gate after it is the
-      # same pwsh script on all four targets, because a second
-      # implementation of a verifier is what this repository avoids.
-      - name: CAP-10B0 build the scaffold engine, the pack and the suite
-        shell: bash
-        timeout-minutes: 15
-        run: test/cap10b0/build_cap10b0.sh
-
-      - name: CAP-10B0 contract cross-checks (create absent, offline, limits)
+      # CAP-10B0: the scaffold engine, built above with CAP-10B1's pack (see
+      # the windows job for the rationale). Every gate here is the same pwsh
+      # script on all four targets, because a second implementation of a
+      # verifier is what this repository avoids.
+      - name: CAP-10B0 contract cross-checks (create linked, offline, limits)
         shell: pwsh
         run: |
           pwsh -NoProfile -File test/cap10b0/check_cap10b0_contracts.ps1
@@ -2449,6 +2527,43 @@ jobs:
             build/cap10b0/contracts.json
             build/cap10b0/gen/pweb.templates.registry.inc
             build/cap10b0/tpltests.log
+
+      # CAP-10B1: the public create command and the React scaffold (see the
+      # windows job for the layering). The build proof opens a REAL
+      # WebKitGTK window under Xvfb and drives the generated application to
+      # 42 - it is a test harness, not `pweb build`.
+      - name: CAP-10B1 contract cross-checks (one UI, exact pins, no exec)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10b1/check_cap10b1_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B1 contract cross-checks FAILED' }
+
+      - name: CAP-10B1 create gates + evidence
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap10b1/run_cap10b1_gates.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B1 create gates FAILED' }
+
+      - name: CAP-10B1 private build proof and real GUI run
+        shell: bash
+        timeout-minutes: 30
+        run: xvfb-run -a test/cap10b1/prove_cap10b1.sh
+
+      - name: CAP-10B1 upload the create corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10b1-create-linux
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10b1/cli-linux-x86_64.json
+            build/cap10b1/proof-linux-x86_64.json
+            build/cap10b1/contracts.json
+            build/cap10b1/generated-inventory.txt
+            build/cap10b1/gen/pweb.templates.registry.inc
+            build/cap10b1/proof.log
 
       - name: CAP-7F emit the Linux evidence artifact
         shell: bash
@@ -3022,7 +3137,22 @@ jobs:
       # manifests/inventories and the run logs, and re-enumerates the
       # export trie from the built dylib.
       # CAP-10A: the public pweb CLI (see the windows job for the rationale)
-      - name: CAP-10A build the pweb CLI, its suite and the probe fixture
+      # BUILD ORDER (see the windows job): `pweb` compiles the GENERATED
+      # template registry in with -Fi, so it cannot be built before the pack
+      # that registry describes exists. The pack builder comes from CAP-10B0
+      # and the public pack from CAP-10B1, so those run first and CAP-10A's
+      # build takes the one CLI they produced.
+      - name: CAP-10B0 build the scaffold engine, the pack and the suite
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap10b0/build_cap10b0.sh
+
+      - name: CAP-10B1 build the public pack, the CLI and the SDK root
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap10b1/build_cap10b1.sh
+
+      - name: CAP-10A build the suite and the probe fixture
         shell: bash
         timeout-minutes: 15
         run: test/cap10a/build_cap10a.sh
@@ -3060,14 +3190,9 @@ jobs:
             build/cap10a/dev-trust.txt
             build/cap10a/clitests.log
 
-      # CAP-10B0: the private scaffold engine (see the windows job for the
-      # rationale).
-      - name: CAP-10B0 build the scaffold engine, the pack and the suite
-        shell: bash
-        timeout-minutes: 15
-        run: test/cap10b0/build_cap10b0.sh
-
-      - name: CAP-10B0 contract cross-checks (create absent, offline, limits)
+      # CAP-10B0: the scaffold engine, built above with CAP-10B1's pack (see
+      # the windows job for the rationale).
+      - name: CAP-10B0 contract cross-checks (create linked, offline, limits)
         shell: pwsh
         run: |
           pwsh -NoProfile -File test/cap10b0/check_cap10b0_contracts.ps1
@@ -3092,6 +3217,44 @@ jobs:
             build/cap10b0/contracts.json
             build/cap10b0/gen/pweb.templates.registry.inc
             build/cap10b0/tpltests.log
+
+      # CAP-10B1: the public create command and the React scaffold (see the
+      # windows job for the layering). The build proof assembles the
+      # generated executable into a .app - WKWebView keys persistent state
+      # by bundle identifier, and the identity comes from the GENERATED
+      # descriptor - and drives a real WKWebView to 42.
+      - name: CAP-10B1 contract cross-checks (one UI, exact pins, no exec)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10b1/check_cap10b1_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B1 contract cross-checks FAILED' }
+
+      - name: CAP-10B1 create gates + evidence
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap10b1/run_cap10b1_gates.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B1 create gates FAILED' }
+
+      - name: CAP-10B1 private build proof and real GUI run
+        shell: bash
+        timeout-minutes: 30
+        run: test/cap10b1/prove_cap10b1.sh
+
+      - name: CAP-10B1 upload the create corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10b1-create-macos-x64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10b1/cli-macos-x86_64.json
+            build/cap10b1/proof-macos-x86_64.json
+            build/cap10b1/contracts.json
+            build/cap10b1/generated-inventory.txt
+            build/cap10b1/gen/pweb.templates.registry.inc
+            build/cap10b1/proof.log
 
       - name: CAP-7F emit the macOS x64 evidence artifact
         shell: bash
@@ -3593,7 +3756,22 @@ jobs:
       # CAP-7F: see the x64 sibling - the emitter summarizes gates that
       # already ran above in this job and re-enumerates the export trie.
       # CAP-10A: the public pweb CLI (see the windows job for the rationale)
-      - name: CAP-10A build the pweb CLI, its suite and the probe fixture
+      # BUILD ORDER (see the windows job): `pweb` compiles the GENERATED
+      # template registry in with -Fi, so it cannot be built before the pack
+      # that registry describes exists. The pack builder comes from CAP-10B0
+      # and the public pack from CAP-10B1, so those run first and CAP-10A's
+      # build takes the one CLI they produced.
+      - name: CAP-10B0 build the scaffold engine, the pack and the suite
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap10b0/build_cap10b0.sh
+
+      - name: CAP-10B1 build the public pack, the CLI and the SDK root
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap10b1/build_cap10b1.sh
+
+      - name: CAP-10A build the suite and the probe fixture
         shell: bash
         timeout-minutes: 15
         run: test/cap10a/build_cap10a.sh
@@ -3631,14 +3809,9 @@ jobs:
             build/cap10a/dev-trust.txt
             build/cap10a/clitests.log
 
-      # CAP-10B0: the private scaffold engine (see the windows job for the
-      # rationale).
-      - name: CAP-10B0 build the scaffold engine, the pack and the suite
-        shell: bash
-        timeout-minutes: 15
-        run: test/cap10b0/build_cap10b0.sh
-
-      - name: CAP-10B0 contract cross-checks (create absent, offline, limits)
+      # CAP-10B0: the scaffold engine, built above with CAP-10B1's pack (see
+      # the windows job for the rationale).
+      - name: CAP-10B0 contract cross-checks (create linked, offline, limits)
         shell: pwsh
         run: |
           pwsh -NoProfile -File test/cap10b0/check_cap10b0_contracts.ps1
@@ -3663,6 +3836,43 @@ jobs:
             build/cap10b0/contracts.json
             build/cap10b0/gen/pweb.templates.registry.inc
             build/cap10b0/tpltests.log
+
+      # CAP-10B1: the public create command and the React scaffold (see the
+      # windows job for the layering, and the macos-x64 job for the .app
+      # assembly). Two different CPUs, and the GENERATED project must be
+      # byte-identical on both of them.
+      - name: CAP-10B1 contract cross-checks (one UI, exact pins, no exec)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10b1/check_cap10b1_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B1 contract cross-checks FAILED' }
+
+      - name: CAP-10B1 create gates + evidence
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap10b1/run_cap10b1_gates.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B1 create gates FAILED' }
+
+      - name: CAP-10B1 private build proof and real GUI run
+        shell: bash
+        timeout-minutes: 30
+        run: test/cap10b1/prove_cap10b1.sh
+
+      - name: CAP-10B1 upload the create corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10b1-create-macos-arm64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10b1/cli-macos-arm64.json
+            build/cap10b1/proof-macos-arm64.json
+            build/cap10b1/contracts.json
+            build/cap10b1/generated-inventory.txt
+            build/cap10b1/gen/pweb.templates.registry.inc
+            build/cap10b1/proof.log
 
       - name: CAP-7F emit the macOS arm64 evidence artifact
         shell: bash

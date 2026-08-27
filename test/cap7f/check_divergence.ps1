@@ -78,6 +78,17 @@ $allow = @{
         fingerprint = '4be277b371a7f178e182ca9743a73d25202083775f017b12997da06b5e538c00' }
     'src/lib/pweb.lib.webview.pas'       = @{ directives = 4;   # LIB_WEBVIEW selection block
         fingerprint = 'cec476fd99b6cc8603a8fe330d52982a4c660ae3ffb0af4ec5658e356bce4496' }
+    # CAP-10B1: the reusable release-host composition, and the ONLY unit in
+    # src/webview with any divergence at all. It carries what an APPLICATION
+    # must not have to carry - the handler/guard alias block, the three
+    # pre-create checks, the Cocoa two-phase seam, the .app-relative bundle
+    # path, the platform opener and the Windows-only atomic-replace window -
+    # so that a generated project has ZERO conditionals, which
+    # test/cap10b1/check_cap10b1_contracts.ps1 measures on the template
+    # source. Every {$ifdef} here selects a NAME or a whole platform body;
+    # none of them decides anything.
+    'src/webview/pweb.webview.host.pas'  = @{ directives = 30;
+        fingerprint = 'd2532d995c765ec48458495e3f765f7e3d5aee8bcd6556ad57ebb7538069a623' }
     'src/assets/pweb.assets.folder.pas'  = @{ directives = 10;  # Darwin F_GETPATH / Windows wide-API split
         fingerprint = '145ed55144e2e7c509bfda6cc19fadc863a58f41f31747f8835c26ec2e5c48c9' }
     'src/assets/pweb.assets.bundle.pas'  = @{ directives = 6;   # I/O mechanism only (ratified)

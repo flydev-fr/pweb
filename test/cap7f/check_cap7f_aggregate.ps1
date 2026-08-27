@@ -82,8 +82,22 @@ $required = @(
     'template_pack_schema', 'template_semantic_digest',
     'template_registry_digest', 'template_deterministic',
     'template_source_gate', 'template_offline', 'template_refusals',
-    'template_file_count', 'create_absent', 'network_calls',
+    'template_file_count', 'create_present', 'network_calls',
     'package_manager_calls', 'template_modes_applicable',
+    'create_corpus', 'advertised_ui', 'create_help_digest',
+    'create_stdout_digest', 'create_refusals', 'create_no_partial',
+    'create_deterministic', 'public_pack_digest', 'public_pack_bytes',
+    'public_semantic_digest', 'public_registry_digest',
+    'public_pack_deterministic', 'public_file_count',
+    'generated_inventory_digest', 'generated_inventory_exact',
+    'generated_pweb_json_digest', 'generated_package_lock_digest',
+    'generated_file_count', 'generated_total_bytes',
+    'generated_no_host_path', 'doctor_result',
+    'proof_corpus', 'generated_tree_digest', 'generated_tree_unchanged',
+    'frontend_typecheck', 'frontend_build', 'frontend_no_dev_code',
+    'frontend_transport_clean', 'native_build', 'secure_origin',
+    'rpc_result', 'error_mapping', 'listener_count', 'raw_primitive_used',
+    'loose_assets_used',
     'release_layout', 'no_listener', 'app_pwb_react_sha256',
     'logical_inventory_sha256_react', 'github_sha', 'github_run_id', 'waivers'
 )
@@ -95,6 +109,15 @@ $absolutePins = @{
     origin          = 'pweb://app'
     secure          = 'true'
     rpc_add_20_22   = '42'
+    # CAP-10B1: the five facts that four targets could agree on and still be
+    # wrong about. `react` is the only frontend this build has a template
+    # for; the scaffold's own arithmetic is 42; and a generated application
+    # opens no listener, uses no raw primitive and ships no loose asset.
+    advertised_ui      = 'react'
+    rpc_result         = '42'
+    listener_count     = '0'
+    raw_primitive_used = 'false'
+    loose_assets_used  = 'false'
 }
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
 $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
@@ -113,7 +136,22 @@ $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
     # refusing broken sources', 'the engine grew a process API' and 'create
     # became reachable' are four different defects with four different fixes
     'template_corpus', 'template_deterministic', 'template_source_gate',
-    'template_offline', 'create_absent')
+    'template_offline', 'create_present',
+    # CAP-10B1: the two verdicts, and the sub-claims a green pair is made
+    # of. Named individually for the same reason again - 'create stopped
+    # being deterministic', 'the exact generated set changed', 'doctor
+    # rejected the scaffold', 'the frontend stopped building', 'the
+    # generated program stopped compiling', 'the origin stopped being
+    # secure', 'the typed error mapping broke' and 'the build mutated the
+    # project it was given' are eight different defects with eight
+    # different fixes, and an aggregate that only said "CAP-10B1 FAILED"
+    # would send every one of them to the same wrong place.
+    'create_corpus', 'create_deterministic', 'create_no_partial',
+    'generated_inventory_exact', 'generated_no_host_path', 'doctor_result',
+    'public_pack_deterministic',
+    'proof_corpus', 'generated_tree_unchanged', 'frontend_typecheck',
+    'frontend_build', 'frontend_no_dev_code', 'frontend_transport_clean',
+    'native_build', 'secure_origin', 'error_mapping')
 # fields that must agree, value-for-value, across all four targets
 # (capability_policy_digest is the CAP-8A structured policy-decision corpus and
 # navigation_policy_digest the CAP-8B one: four targets, one byte-identical
@@ -172,7 +210,34 @@ $equalityFields = @(
     'template_digest', 'template_pack_schema',
     'template_semantic_digest',
     'template_refusals', 'template_file_count',
-    'network_calls', 'package_manager_calls'
+    'network_calls', 'package_manager_calls',
+    # CAP-10B1: what `pweb create` produces, which is a pure function of
+    # NAME, bundleId, the UI and the template pack. Four targets must
+    # produce the same project down to the byte - that is the whole claim -
+    # so the generated inventory, the descriptor and the lockfile are
+    # compared, as is the public pack's SEMANTIC inventory.
+    #
+    # public_pack_digest and public_registry_digest are ABSENT for exactly
+    # the reason template_pack_digest is: the ZIP `version made by` byte is
+    # an OS-family property, measured on run 33093385300. Determinism is
+    # proved where it is real by public_pack_deterministic, which rebuilds
+    # the pack on each target and requires byte equality there.
+    #
+    # The advertised UI and the help text are compared because a build that
+    # advertised a different frontend on one target would be a different
+    # product there. The generated file count and total bytes are compared
+    # because they are the cheapest way for a divergence to become legible
+    # before anyone reads a digest.
+    'advertised_ui', 'create_help_digest', 'create_stdout_digest',
+    'create_refusals', 'public_semantic_digest', 'public_file_count',
+    'generated_inventory_digest', 'generated_pweb_json_digest',
+    'generated_package_lock_digest', 'generated_file_count',
+    'generated_total_bytes', 'generated_tree_digest',
+    # the runtime verdict itself: 42 on every target, no listener anywhere,
+    # no raw primitive and no loose asset. These are the CAP-10B1
+    # acceptance criteria stated as compared fields rather than as prose.
+    'rpc_result', 'listener_count', 'raw_primitive_used',
+    'loose_assets_used'
 )
 # the CAP-9C2 semantic gate names, carried in ONE place across the two
 # emitters and this aggregator (see test/cap7f/emit_evidence.ps1)
@@ -638,6 +703,13 @@ $matrix = [ordered]@{
         template_digest                = $first.template_digest
         template_semantic_digest       = $first.template_semantic_digest
         template_pack_schema           = $first.template_pack_schema
+        advertised_ui                  = $first.advertised_ui
+        public_semantic_digest         = $first.public_semantic_digest
+        generated_inventory_digest     = $first.generated_inventory_digest
+        generated_pweb_json_digest     = $first.generated_pweb_json_digest
+        generated_package_lock_digest  = $first.generated_package_lock_digest
+        generated_tree_digest          = $first.generated_tree_digest
+        rpc_result                     = $first.rpc_result
         logical_inventory_sha256_react = $first.logical_inventory_sha256_react
         logical_inventory_sha256_pas2js = $evidence['linux-x86_64'].logical_inventory_sha256_pas2js
     }
@@ -667,8 +739,30 @@ foreach ($t in $evidence.Keys) {
         template_deterministic = $e.template_deterministic
         template_source_gate = $e.template_source_gate
         template_offline   = $e.template_offline
-        create_absent      = $e.create_absent
+        create_present      = $e.create_present
         template_modes_applicable = $e.template_modes_applicable
+        create_corpus      = $e.create_corpus
+        create_deterministic = $e.create_deterministic
+        create_no_partial  = $e.create_no_partial
+        generated_inventory_exact = $e.generated_inventory_exact
+        generated_no_host_path = $e.generated_no_host_path
+        doctor_result      = $e.doctor_result
+        proof_corpus       = $e.proof_corpus
+        generated_tree_unchanged = $e.generated_tree_unchanged
+        frontend_typecheck = $e.frontend_typecheck
+        frontend_build     = $e.frontend_build
+        frontend_no_dev_code = $e.frontend_no_dev_code
+        frontend_transport_clean = $e.frontend_transport_clean
+        native_build       = $e.native_build
+        secure_origin      = $e.secure_origin
+        error_mapping      = $e.error_mapping
+        # the PUBLIC pack's bytes, per target and for the same ZIP_OS reason
+        # the CAP-10B0 pack's are: identical within an OS family, one byte
+        # per entry apart between them
+        public_pack_digest = $e.public_pack_digest
+        public_pack_bytes  = $e.public_pack_bytes
+        public_registry_digest = $e.public_registry_digest
+        public_pack_deterministic = $e.public_pack_deterministic
         # the archive's BYTES, per target: identical within an OS family and
         # differing by mORMot's ZIP_OS stamp between them (see the equality
         # list). Recorded so the two values are readable side by side rather
@@ -721,7 +815,13 @@ $summary += "- CAP-10B0 template_digest ``$($first.template_digest)`` and templa
 foreach ($t in $evidence.Keys) {
     $summary += "  - $t template_pack_digest ``$($evidence[$t].template_pack_digest)`` ($($evidence[$t].template_pack_bytes) bytes, rebuilt-and-compared on target: $($evidence[$t].template_deterministic))"
 }
-$summary += "- CAP-10B0 ``pweb create`` remains absent on every target: create_absent=$($first.create_absent), and the scaffold engine is not linked into the CLI at all (network_calls=$($first.network_calls), package_manager_calls=$($first.package_manager_calls))"
+$summary += "- CAP-10B0 the scaffold engine is now LINKED into the CLI on every target: create_present=$($first.create_present), and creation still runs nothing (network_calls=$($first.network_calls), package_manager_calls=$($first.package_manager_calls))"
+$summary += "- CAP-10B1 ``pweb create NAME --ui $($first.advertised_ui) --bundle-id <id>`` produces a byte-identical project on all four targets: generated_inventory_digest ``$($first.generated_inventory_digest)``, $($first.generated_file_count) files, $($first.generated_total_bytes) bytes, pweb.json ``$($first.generated_pweb_json_digest)``, package-lock ``$($first.generated_package_lock_digest)`` ($($first.create_refusals) refusals proven, no partial destination: $($first.create_no_partial))"
+$summary += "- CAP-10B1 public_semantic_digest ``$($first.public_semantic_digest)`` equal on all four targets ($($first.public_file_count) template files; the pack's BYTES are per-OS-family and reported below, not compared)"
+foreach ($t in $evidence.Keys) {
+    $summary += "  - $t public_pack_digest ``$($evidence[$t].public_pack_digest)`` ($($evidence[$t].public_pack_bytes) bytes, rebuilt-and-compared on target: $($evidence[$t].public_pack_deterministic))"
+}
+$summary += "- CAP-10B1 the generated project builds and runs on every target: doctor=$($first.doctor_result), typecheck=$($first.frontend_typecheck), frontend=$($first.frontend_build), native=$($first.native_build), secure=$($first.secure_origin), CalculatorService.Add(20,22)=$($first.rpc_result), errmap=$($first.error_mapping), listeners=$($first.listener_count), raw_primitive=$($first.raw_primitive_used), loose_assets=$($first.loose_assets_used), and the build left the project unchanged ($($first.generated_tree_unchanged))"
 $summary += "- react logical_inventory_sha256 ``$($first.logical_inventory_sha256_react)`` equal on all four targets"
 $summary += "- pas2js logical_inventory_sha256 ``$($matrix.agreement.logical_inventory_sha256_pas2js)`` equal on linux/macos-x64/macos-arm64"
 $summaryText = $summary -join "`n"

@@ -821,7 +821,7 @@ $templatePackSchema = "$($tpl.template_pack_schema)"
 $templateDeterministic = "$($tpl.template_deterministic)"
 $templateSourceGate = "$($tpl.template_source_gate)"
 $templateOffline = "$($tpl.template_offline)"
-$templateCreateAbsent = "$($tpl.create_absent)"
+$templateCreatePresent = "$($tpl.create_present)"
 $templateRefusals = "$($tpl.template_refusals)"
 $templateFileCount = "$($tpl.template_file_count)"
 $templateModes = "$($tpl.template_modes_applicable)"
@@ -850,8 +850,68 @@ Write-Host "[CAP-7F] template_digest: $templateDigest"
 Write-Host "[CAP-7F] template_pack_digest: $templatePackDigest"
 Write-Host ("[CAP-7F] template_corpus: $templateCorpus (" +
     "deterministic=$templateDeterministic source_gate=$templateSourceGate " +
-    "offline=$templateOffline create_absent=$templateCreateAbsent " +
+    "offline=$templateOffline create_present=$templateCreatePresent " +
     "refusals=$templateRefusals files=$templateFileCount)")
+
+# --- CAP-10B1: the public create command and the React scaffold --------------
+#
+# TWO records, because they are two different kinds of claim and only one of
+# them needs a toolchain:
+#
+#   cli-<target>.json    headless. The advertised surface, the refusal
+#                        matrix, the public pack, and a project created
+#                        three times from three different working
+#                        directories and required to be byte-identical;
+#   proof-<target>.json  the build proof. npm, FPC, a real window, and the
+#                        page's own report of what it observed.
+#
+# The COMPARED fields are the ones that are a function of the inputs alone:
+# the public pack's semantic inventory, the generated project's inventory,
+# its descriptor and its lockfile. The pack BYTES travel per target and are
+# reported side by side rather than compared, for the ZIP_OS reason CAP-10B0
+# measured. The build proof's verdicts are compared as verdicts - every
+# target must reach 42 - while nothing about how it got there is.
+$cliB1File = Join-Path $repoRoot 'build/cap10b1/cli-windows-x86_64.json'
+$proofFile = Join-Path $repoRoot 'build/cap10b1/proof-windows-x86_64.json'
+foreach ($f in $cliB1File, $proofFile) {
+    if (-not (Test-Path $f)) {
+        throw "[CAP-7F] $(Split-Path -Leaf $f) missing -- the CAP-10B1 gates have not run in this workspace"
+    }
+}
+$b1 = Get-Content $cliB1File -Raw | ConvertFrom-Json
+$b1p = Get-Content $proofFile -Raw | ConvertFrom-Json
+$createCorpus = "$($b1.create_corpus)"
+$proofCorpus = "$($b1p.proof_corpus)"
+foreach ($pair in @(@('create_corpus', $createCorpus),
+                    @('proof_corpus', $proofCorpus))) {
+    if ($pair[1] -notin @('PASS', 'FAIL')) {
+        throw "[CAP-7F] the CAP-10B1 record carries an unexpected $($pair[0]): $($pair[1])"
+    }
+}
+if (($createCorpus -ceq 'PASS') -and ($proofCorpus -ceq 'PASS')) {
+    # a green verdict with an empty digest is a proof of nothing, and an
+    # empty string compares equal to another empty string on four targets
+    foreach ($pair in @(@('public_semantic_digest', "$($b1.public_semantic_digest)"),
+                        @('generated_inventory_digest', "$($b1.generated_inventory_digest)"),
+                        @('generated_pweb_json_digest', "$($b1.generated_pweb_json_digest)"),
+                        @('generated_package_lock_digest', "$($b1.generated_package_lock_digest)"),
+                        @('advertised_ui', "$($b1.advertised_ui)"))) {
+        if ($pair[1] -eq '') {
+            throw "[CAP-7F] the CAP-10B1 record records PASS with an empty $($pair[0])"
+        }
+    }
+    if ("$($b1p.rpc_result)" -ne '42') {
+        throw "[CAP-7F] the CAP-10B1 build proof records PASS with rpc_result=$($b1p.rpc_result)"
+    }
+    if ("$($b1p.listener_count)" -ne '0') {
+        throw "[CAP-7F] the CAP-10B1 build proof records a listening socket"
+    }
+}
+Write-Host "[CAP-10B1] generated_inventory_digest: $($b1.generated_inventory_digest)"
+Write-Host ("[CAP-10B1] create_corpus: $createCorpus (ui=$($b1.advertised_ui) " +
+    "refusals=$($b1.create_refusals) files=$($b1.generated_file_count) " +
+    "doctor=$($b1.doctor_result)) proof_corpus: $proofCorpus " +
+    "(rpc=$($b1p.rpc_result) listeners=$($b1p.listener_count))")
 
 # --- run identity -----------------------------------------------------------
 $sha = $env:GITHUB_SHA
@@ -945,10 +1005,45 @@ $evidence = [ordered]@{
     template_offline                = $templateOffline
     template_refusals               = $templateRefusals
     template_file_count             = $templateFileCount
-    create_absent                   = $templateCreateAbsent
+    create_present                   = $templateCreatePresent
     network_calls                   = "$($tpl.network_calls)"
     package_manager_calls           = "$($tpl.package_manager_calls)"
     template_modes_applicable       = $templateModes
+    create_corpus                   = $createCorpus
+    advertised_ui                   = "$($b1.advertised_ui)"
+    create_help_digest              = "$($b1.create_help_digest)"
+    create_stdout_digest            = "$($b1.create_stdout_digest)"
+    create_refusals                 = "$($b1.create_refusals)"
+    create_no_partial               = "$($b1.create_no_partial)"
+    create_deterministic            = "$($b1.create_deterministic)"
+    public_pack_digest              = "$($b1.public_pack_digest)"
+    public_pack_bytes               = "$($b1.public_pack_bytes)"
+    public_semantic_digest          = "$($b1.public_semantic_digest)"
+    public_registry_digest          = "$($b1.public_registry_digest)"
+    public_pack_deterministic       = "$($b1.public_pack_deterministic)"
+    public_file_count               = "$($b1.public_file_count)"
+    generated_inventory_digest      = "$($b1.generated_inventory_digest)"
+    generated_inventory_exact       = "$($b1.generated_inventory_exact)"
+    generated_pweb_json_digest      = "$($b1.generated_pweb_json_digest)"
+    generated_package_lock_digest   = "$($b1.generated_package_lock_digest)"
+    generated_file_count            = "$($b1.generated_file_count)"
+    generated_total_bytes           = "$($b1.generated_total_bytes)"
+    generated_no_host_path          = "$($b1.generated_no_host_path)"
+    doctor_result                   = "$($b1.doctor_result)"
+    proof_corpus                    = $proofCorpus
+    generated_tree_digest           = "$($b1p.generated_tree_digest)"
+    generated_tree_unchanged        = "$($b1p.generated_tree_unchanged)"
+    frontend_typecheck              = "$($b1p.frontend_typecheck)"
+    frontend_build                  = "$($b1p.frontend_build)"
+    frontend_no_dev_code            = "$($b1p.frontend_no_dev_code)"
+    frontend_transport_clean        = "$($b1p.frontend_transport_clean)"
+    native_build                    = "$($b1p.native_build)"
+    secure_origin                   = "$($b1p.secure_origin)"
+    rpc_result                      = "$($b1p.rpc_result)"
+    error_mapping                   = "$($b1p.error_mapping)"
+    listener_count                  = "$($b1p.listener_count)"
+    raw_primitive_used              = "$($b1p.raw_primitive_used)"
+    loose_assets_used               = "$($b1p.loose_assets_used)"
     release_layout                  = $releaseLayout
     no_listener                     = $noListener
     no_listener_provenance          = 'source-sweep re-executed (check_cap6_nonetwork.ps1); CAP-5/CAP-6 job gates precede this emitter'
