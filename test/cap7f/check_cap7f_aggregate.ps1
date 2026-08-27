@@ -717,7 +717,7 @@ foreach ($t in $evidence.Keys) {
 $summary += "- CAP-9C2 quickjs_gui_digest ``$($first.quickjs_gui_digest)`` equal on all four targets (the plugin-enabled GUI corpus: UI + QuickJS over one scheduler/policy/bridge/server)"
 $summary += "- CAP-9C2 LICENSE.quickjs ``$($first.cap9c2_license_sha256)`` byte-identical on all four targets; listeners=0 everywhere"
 $summary += "- CAP-10A cli_digest ``$($first.cli_digest)`` and doctor_schema_digest ``$($first.doctor_schema_digest)`` equal on all four targets; ``$($first.cli_version_line)`` everywhere (per-host doctor OBSERVATIONS are recorded per target and deliberately not compared)"
-$summary += "- CAP-10B0 template_digest ``$($first.template_digest)`` and template_semantic_digest ``$($first.template_semantic_digest)`` equal on all four targets (the archive's MEANING; its BYTES are per-OS-family and reported below, not compared - mORMot stamps the creating OS into `version made by`, ZIP_OS=19 on Darwin and 3 elsewhere)"
+$summary += "- CAP-10B0 template_digest ``$($first.template_digest)`` and template_semantic_digest ``$($first.template_semantic_digest)`` equal on all four targets (the archive's MEANING; its BYTES are per-OS-family and reported below, not compared - mORMot stamps the creating OS into the ZIP made-by field, ZIP_OS=19 on Darwin and 3 elsewhere)"
 foreach ($t in $evidence.Keys) {
     $summary += "  - $t template_pack_digest ``$($evidence[$t].template_pack_digest)`` ($($evidence[$t].template_pack_bytes) bytes, rebuilt-and-compared on target: $($evidence[$t].template_deterministic))"
 }

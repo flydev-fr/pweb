@@ -151,6 +151,14 @@ function Reset-Fixture {
     Copy-Item $invSrc (Join-Path $fx 'inv') -Recurse
 }
 
+# Every refusal this file proves is COUNTED rather than tallied by hand.
+# The summary line used to carry a literal, and a literal is exactly what
+# this repository keeps refusing elsewhere: CAP-10B0 added thirteen legs and
+# the line still said sixty, which is a number nobody cross-checked. It is
+# now the count of refusals that actually fired.
+$script:AggRefusals = 0
+$script:SweepRefusals = 0
+
 function Invoke-AggExpectFail([string]$Label, [string]$ExpectPattern = '') {
     Remove-Item -Force -ErrorAction SilentlyContinue $matrix
     & pwsh -NoProfile -File $agg -EvidenceRoot (Join-Path $fx 'ev') `
@@ -172,6 +180,7 @@ function Invoke-AggExpectFail([string]$Label, [string]$ExpectPattern = '') {
             throw "selftest ${Label}: the aggregator refused, but not through the expected '$ExpectPattern' branch"
         }
     }
+    $script:AggRefusals++
     Write-Host "[CAP-7F] selftest ${Label}: aggregator refused as required (nonzero exit, no matrix)"
 }
 
@@ -1047,6 +1056,7 @@ try {
     if ($LASTEXITCODE -eq 0) {
         throw 'selftest divergence-negative: the sweep exited 0 with an off-allowlist conditional present'
     }
+    $script:SweepRefusals++
     Write-Host '[CAP-7F] selftest divergence-negative: sweep refused as required'
 } finally {
     Remove-Item -Force -ErrorAction SilentlyContinue $fixturePas
@@ -1077,6 +1087,7 @@ try {
         Get-Content (Join-Path $fx 'fingerprint-swap.log') | Write-Host
         throw 'selftest fingerprint-swap: the sweep refused, but not through the ALLOWLIST FINGERPRINT CHANGED branch'
     }
+    $script:SweepRefusals++
     Write-Host '[CAP-7F] selftest fingerprint-swap: sweep refused as required (fingerprint branch)'
 } finally {
     [System.IO.File]::WriteAllBytes((Resolve-Path $allowFile), $allowOrig)
@@ -1092,4 +1103,17 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Remove-Item -Force -ErrorAction SilentlyContinue $matrix
-Write-Host '[CAP-7F] selftest PASS - 60 aggregator refusals + 2 divergence refusals, all on copies or byte-restored'
+# a floor, so a leg that silently stops running is caught. It is deliberately
+# NOT an equality: adding a refusal branch is normal and should not require
+# editing this line, while LOSING one is the failure worth naming
+if ($script:AggRefusals -lt 73) {
+    throw ("selftest: only $($script:AggRefusals) aggregator refusals fired, " +
+        'expected at least 73 -- a negative leg stopped running')
+}
+if ($script:SweepRefusals -lt 2) {
+    throw ("selftest: only $($script:SweepRefusals) divergence refusals fired, " +
+        'expected at least 2')
+}
+Write-Host ("[CAP-7F] selftest PASS - $($script:AggRefusals) aggregator " +
+    "refusals + $($script:SweepRefusals) divergence refusals, all on copies " +
+    'or byte-restored')
