@@ -46,7 +46,8 @@ uses
   pweb.rpc.intf,
   pweb.cli.platform,
   pweb.cli.project,
-  pweb.cli.doctor;
+  pweb.cli.doctor,
+  pweb.cli.args; // the supported-UI allowlist, so help cannot contradict it
 
 type
   /// how a report should be rendered
@@ -77,6 +78,13 @@ function PWebCliRenderJson(const Report: TPWebCliReport;
 /// the usage text - the only place the command surface is spelled
 function PWebCliUsageBanner: RawUtf8;
 
+/// the `pweb create --help` text
+// - it advertises exactly the frontend kinds this build can scaffold, and
+// the gate compares it against the parser's own allowlist: a help text and
+// a parser that disagree is how a CLI ends up promising a template nobody
+// shipped
+function PWebCliCreateHelp: RawUtf8;
+
 /// the --version line
 function PWebCliVersionLine: RawUtf8;
 
@@ -98,23 +106,35 @@ end;
 
 function PWebCliUsageBanner: RawUtf8;
 begin
-  // create/dev/run/build are absent ON PURPOSE. This build does not
-  // implement them, and a command listed in help that answers "not
-  // implemented" is a contract nobody can rely on either way.
+  // dev/run/build are absent ON PURPOSE. This build does not implement
+  // them, and a command listed in help that answers "not implemented" is a
+  // contract nobody can rely on either way. `create` appears here for the
+  // first time in CAP-10B1 because it is now a command that does the whole
+  // of what its name says.
   Result :=
     'pweb - the PWeb application lifecycle CLI' + CRLF_NONE +
     CRLF_NONE +
     'usage:' + CRLF_NONE +
     '  pweb --help' + CRLF_NONE +
     '  pweb --version' + CRLF_NONE +
+    '  pweb create NAME --ui ' + PWEB_CLI_UI_REACT +
+      ' --bundle-id <reverse.dns>' + CRLF_NONE +
     '  pweb doctor [--json] [--with-paths] [--project <path>]' + CRLF_NONE +
     '              [--no-color] [--verbose]' + CRLF_NONE +
     CRLF_NONE +
     'commands:' + CRLF_NONE +
+    '  create         create a new PWeb project (pweb create --help)' +
+      CRLF_NONE +
     '  doctor         diagnose this machine against the current project' +
       CRLF_NONE +
     CRLF_NONE +
     'options:' + CRLF_NONE +
+    '  --ui <kind>    the frontend kind to scaffold (create only)' +
+      CRLF_NONE +
+    '  --bundle-id <id>' + CRLF_NONE +
+    '                 the application identity, e.g. com.example.demo' +
+      CRLF_NONE +
+    '                 (create only, required, never defaulted)' + CRLF_NONE +
     '  --project <p>  use this pweb.json, or the project rooted at this' +
       CRLF_NONE +
     '                 directory, instead of searching upward from the' +
@@ -134,6 +154,52 @@ begin
     '  0 success   2 usage   3 project   4 environment   5 probe' +
       CRLF_NONE +
     '  6 internal' + CRLF_NONE;
+end;
+
+function PWebCliCreateHelp: RawUtf8;
+begin
+  // the supported kind is INTERPOLATED from the parser's own allowlist, so
+  // this text cannot advertise a frontend the parser refuses
+  Result :=
+    'pweb create - create a new PWeb project' + CRLF_NONE +
+    CRLF_NONE +
+    'usage:' + CRLF_NONE +
+    '  pweb create NAME --ui ' + PWEB_CLI_UI_REACT +
+      ' --bundle-id <reverse.dns>' + CRLF_NONE +
+    CRLF_NONE +
+    'arguments:' + CRLF_NONE +
+    '  NAME           the project name: lowercase letters and digits,' +
+      CRLF_NONE +
+    '                 starting with a letter. It is also the directory,' +
+      CRLF_NONE +
+    '                 the Pascal program identifier and the executable' +
+      CRLF_NONE +
+    '                 base name, so it is stated once and never derived' +
+      CRLF_NONE +
+    CRLF_NONE +
+    'options:' + CRLF_NONE +
+    '  --ui <kind>    the frontend kind. This build supports: ' +
+      PWEB_CLI_UI_REACT + CRLF_NONE +
+    '  --bundle-id <id>' + CRLF_NONE +
+    '                 the application identity, e.g. com.example.demo.' +
+      CRLF_NONE +
+    '                 Required and never defaulted: it becomes the macOS' +
+      CRLF_NONE +
+    '                 bundle identifier and the Windows setup identity' +
+      CRLF_NONE +
+    '  --help         show this text' + CRLF_NONE +
+    CRLF_NONE +
+    'the destination is NAME inside the current directory, and it must not' +
+      CRLF_NONE +
+    'exist. Creation is offline: it writes source files and does not run a' +
+      CRLF_NONE +
+    'package manager, start a compiler, initialise a repository or open a' +
+      CRLF_NONE +
+    'network connection.' + CRLF_NONE +
+    CRLF_NONE +
+    'exit codes:' + CRLF_NONE +
+    '  0 success   2 usage   3 project   4 environment   6 internal' +
+      CRLF_NONE;
 end;
 
 { ---------------------------------------------------------------------------

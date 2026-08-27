@@ -20,6 +20,8 @@
 
     pweb --help
     pweb --version
+    pweb create NAME --ui react --bundle-id <reverse.dns>
+    pweb create --help
     pweb doctor [--json] [--with-paths] [--project <path>] [--no-color]
                 [--verbose]
 
@@ -30,8 +32,22 @@
 
   REFUSED, each with its own cause: an unknown command, an unknown option, a
   repeated option, a missing value, an empty value, an option that does not
-  belong to the command, more than one positional, a token that is not valid
-  UTF-8, and a token carrying an embedded NUL.
+  belong to the command, more than one positional, a missing operand, a
+  missing required option, an unsupported frontend kind, a token that is not
+  valid UTF-8, and a token carrying an embedded NUL.
+
+  CAP-10B1 ADDS EXACTLY ONE COMMAND, and the shape of the addition matters
+  more than the command: `create` takes a SECOND positional, which is
+  accepted only after `create` itself, so `pweb doctor extra` is still the
+  extra-positional refusal it always was. `--ui` and `--bundle-id` are
+  create-only and `--project` is refused ON a create line, so an option can
+  never be silently ignored by the command it was not meant for.
+
+  THE SUPPORTED FRONTEND KIND LIVES HERE, in a compiled allowlist, and not
+  in a template lookup. `pweb create demo --ui pas2js` is a USAGE failure
+  in this build rather than "no such template", because a CLI whose refusal
+  depends on what happens to be in an archive is a CLI that would advertise
+  a frontend the moment somebody added one.
 
   DELIBERATELY NOT IMPLEMENTED: response files (`@file` is an ordinary
   positional and is never expanded), `--` as an argument terminator (it is
@@ -53,12 +69,18 @@ uses
   mormot.core.base,
   pweb.assets.support;
 
+const
+  /// the ONE frontend kind this build can scaffold. CAP-10B2 adds 'pas2js'
+  // beside it, in this allowlist, in the same commit as the template that
+  // makes the claim true
+  PWEB_CLI_UI_REACT = 'react';
+
 type
   /// the commands this build exposes
-  // - create/dev/run/build are NOT here: an unimplemented command that
-  // parses is a promise the binary cannot keep, so they are unknown
-  // commands and are refused like any other
-  TPWebCliCommand = (pccNone, pccDoctor);
+  // - dev/run/build are NOT here: an unimplemented command that parses is a
+  // promise the binary cannot keep, so they are unknown commands and are
+  // refused like any other
+  TPWebCliCommand = (pccNone, pccCreate, pccDoctor);
 
   /// why a command line was refused - ordinal 0 is the accepted state
   TPWebCliUsage = (
@@ -74,6 +96,12 @@ type
     pcuOptionNotForCommand,
     /// more than one positional argument
     pcuExtraPositional,
+    /// the command needs a positional operand that was not given
+    pcuMissingOperand,
+    /// the command needs an option that was not given
+    pcuMissingOption,
+    /// --ui named a frontend kind this build cannot scaffold
+    pcuUnsupportedUi,
     /// invalid UTF-8 or an embedded NUL in an argument
     pcuEncoding);
 
@@ -90,6 +118,13 @@ type
     Verbose: Boolean;
     WithPaths: Boolean;
     ProjectPath: RawUtf8;
+    /// create: the project NAME, verbatim. Its grammar is checked by the
+    // scaffold engine, not here - one grammar, one owner
+    Name: RawUtf8;
+    /// create: the --ui value, already known to be a supported kind
+    Ui: RawUtf8;
+    /// create: the --bundle-id value, verbatim
+    BundleId: RawUtf8;
   end;
 
 /// stable text for a usage refusal
@@ -112,6 +147,9 @@ begin
     pcuEmptyValue:          Result := 'empty_value';
     pcuOptionNotForCommand: Result := 'option_not_for_command';
     pcuExtraPositional:     Result := 'extra_positional';
+    pcuMissingOperand:      Result := 'missing_operand';
+    pcuMissingOption:       Result := 'missing_option';
+    pcuUnsupportedUi:       Result := 'unsupported_ui';
     pcuEncoding:            Result := 'argument_encoding';
   else
     Result := 'usage_error';
@@ -141,11 +179,15 @@ function PWebCliParseArgs(const Argv: TRawUtf8DynArray): TPWebCliArgs;
 var
   i, eq: PtrInt;
   token, name, value: RawUtf8;
-  hasValue, seenProject, seenPositional: Boolean;
+  hasValue, seenProject, seenUi, seenBundleId: Boolean;
+  seenPositional, seenName: Boolean;
 begin
   Result := Default(TPWebCliArgs);
   seenProject := False;
+  seenUi := False;
+  seenBundleId := False;
   seenPositional := False;
+  seenName := False;
   i := 0;
   while i <= High(Argv) do
   begin
@@ -272,6 +314,72 @@ begin
         Result.ProjectPath := value;
         seenProject := True;
       end
+      else if name = '--ui' then
+      begin
+        // the same value discipline as --project, spelled out rather than
+        // factored: this file's whole job is that one grammar is visible
+        if seenUi then
+        begin
+          Refuse(Result, pcuDuplicateOption, name);
+          exit;
+        end;
+        if not hasValue then
+        begin
+          if (i >= High(Argv)) or
+             (Copy(Argv[i + 1], 1, 1) = '-') then
+          begin
+            Refuse(Result, pcuMissingValue, name);
+            exit;
+          end;
+          Inc(i);
+          value := Argv[i];
+          if (Pos(#0, value) > 0) or
+             not PWebStrictUtf8(value) then
+          begin
+            Refuse(Result, pcuEncoding, '');
+            exit;
+          end;
+        end;
+        if value = '' then
+        begin
+          Refuse(Result, pcuEmptyValue, name);
+          exit;
+        end;
+        Result.Ui := value;
+        seenUi := True;
+      end
+      else if name = '--bundle-id' then
+      begin
+        if seenBundleId then
+        begin
+          Refuse(Result, pcuDuplicateOption, name);
+          exit;
+        end;
+        if not hasValue then
+        begin
+          if (i >= High(Argv)) or
+             (Copy(Argv[i + 1], 1, 1) = '-') then
+          begin
+            Refuse(Result, pcuMissingValue, name);
+            exit;
+          end;
+          Inc(i);
+          value := Argv[i];
+          if (Pos(#0, value) > 0) or
+             not PWebStrictUtf8(value) then
+          begin
+            Refuse(Result, pcuEncoding, '');
+            exit;
+          end;
+        end;
+        if value = '' then
+        begin
+          Refuse(Result, pcuEmptyValue, name);
+          exit;
+        end;
+        Result.BundleId := value;
+        seenBundleId := True;
+      end
       else
       begin
         Refuse(Result, pcuUnknownOption, name);
@@ -282,18 +390,36 @@ begin
     begin
       // a positional. '@file' and '/foo' arrive here on EVERY platform: a
       // response file is never expanded and a slash is never an option.
-      if seenPositional then
+      if seenName then
       begin
         Refuse(Result, pcuExtraPositional, token);
         exit;
       end;
-      seenPositional := True;
-      if token = 'doctor' then
-        Result.Command := pccDoctor
+      if seenPositional then
+      begin
+        // the SECOND positional belongs to `create` and to nothing else,
+        // so `pweb doctor extra` is the extra-positional refusal it has
+        // always been
+        if Result.Command <> pccCreate then
+        begin
+          Refuse(Result, pcuExtraPositional, token);
+          exit;
+        end;
+        seenName := True;
+        Result.Name := token;
+      end
       else
       begin
-        Refuse(Result, pcuUnknownCommand, token);
-        exit;
+        seenPositional := True;
+        if token = 'create' then
+          Result.Command := pccCreate
+        else if token = 'doctor' then
+          Result.Command := pccDoctor
+        else
+        begin
+          Refuse(Result, pcuUnknownCommand, token);
+          exit;
+        end;
       end;
     end;
     Inc(i);
@@ -310,12 +436,70 @@ begin
       Refuse(Result, pcuOptionNotForCommand, '--with-paths');
     exit;
   end;
+  if (Result.Command <> pccCreate) and
+     (seenUi or seenBundleId) then
+  begin
+    if seenUi then
+      Refuse(Result, pcuOptionNotForCommand, '--ui')
+    else
+      Refuse(Result, pcuOptionNotForCommand, '--bundle-id');
+    exit;
+  end;
+  // create has no project to point at, and it emits no colour and no
+  // verbose diagnostics at all - so each of these is an option this
+  // command does not have, rather than one it quietly ignores
+  if Result.Command = pccCreate then
+  begin
+    if seenProject then
+    begin
+      Refuse(Result, pcuOptionNotForCommand, '--project');
+      exit;
+    end;
+    if Result.Verbose then
+    begin
+      Refuse(Result, pcuOptionNotForCommand, '--verbose');
+      exit;
+    end;
+    if Result.NoColor then
+    begin
+      Refuse(Result, pcuOptionNotForCommand, '--no-color');
+      exit;
+    end;
+  end;
   if Result.Help or Result.Version then
     exit; // both are complete requests on their own
   if not seenPositional then
   begin
     Refuse(Result, pcuNoCommand, '');
     exit;
+  end;
+  if Result.Command = pccCreate then
+  begin
+    // the operand and the two required options, named one at a time: a
+    // diagnostic that says "usage error" and nothing else is a diagnostic
+    // the reader has to guess at
+    if not seenName then
+    begin
+      Refuse(Result, pcuMissingOperand, 'NAME');
+      exit;
+    end;
+    if not seenUi then
+    begin
+      Refuse(Result, pcuMissingOption, '--ui');
+      exit;
+    end;
+    if not seenBundleId then
+    begin
+      Refuse(Result, pcuMissingOption, '--bundle-id');
+      exit;
+    end;
+    // the compiled allowlist, and the reason `--ui pas2js` is a usage
+    // failure in this build rather than a missing template
+    if Result.Ui <> PWEB_CLI_UI_REACT then
+    begin
+      Refuse(Result, pcuUnsupportedUi, Result.Ui);
+      exit;
+    end;
   end;
 end;
 
