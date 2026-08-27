@@ -734,7 +734,7 @@ end;
 procedure TTestPWebTplPack.RealPack;
 var
   reg, bad: TPWebTemplateRegistry;
-  sdk, pack, sha, detail: RawUtf8;
+  sdk, pack, sha, detail, extra: RawUtf8;
   data: RawByteString;
   refusal: TPWebSdkRefusal;
   store: IAssetStore;
@@ -817,18 +817,27 @@ begin
     bad.Inventory[i] := reg.Inventory[i];
     bad.Files[i] := reg.Files[i];
   end;
-  bad.Inventory[High(bad.Inventory)].Name := 'fixture/zz-extra';
+  // The extra row is attributed to the LAST template and named under that
+  // template's own root, both derived rather than written out. CAP-10B1
+  // added a second template to this pack and the first draft of this case
+  // did neither: it kept ONE template and grew its file count, which left
+  // the other template's rows covered by nobody - so the registry's own
+  // self-consistency check refused first and this case measured `registry`
+  // instead of the entry-count mismatch it exists for. A refusal that fires
+  // one step too early is a passing test that has stopped testing.
+  extra := reg.Templates[High(reg.Templates)].Id + '/zz-extra';
+  bad.Inventory[High(bad.Inventory)].Name := extra;
   bad.Inventory[High(bad.Inventory)].Bytes := 2;
   bad.Inventory[High(bad.Inventory)].Sha256 := PWebTplSha256Hex('x' + #10);
   bad.Files[High(bad.Files)] := bad.Files[High(bad.Files) - 1];
-  bad.Files[High(bad.Files)].Archive := 'fixture/zz-extra';
+  bad.Files[High(bad.Files)].Archive := extra;
   bad.Files[High(bad.Files)].OutPath := 'zz-extra';
   bad.Files[High(bad.Files)].Bytes := 2;
   bad.Files[High(bad.Files)].Sha256 := PWebTplSha256Hex('x' + #10);
   bad.InventoryDigest := PWebTplInventoryDigest(bad.Inventory);
-  SetLength(bad.Templates, 1);
-  bad.Templates[0] := reg.Templates[0];
-  bad.Templates[0].FileCount := reg.Templates[0].FileCount + 1;
+  bad.Templates := Copy(reg.Templates);
+  bad.Templates[High(bad.Templates)].FileCount :=
+    reg.Templates[High(reg.Templates)].FileCount + 1;
   Check(not PWebTplVerifyPack(bad, data, sha, store, code, detail));
   CheckEqual(PWebTplCodeText(code), 'inventory_count');
   Record_('T4 pack entry-count mismatch ' + PWebTplCodeText(code));
@@ -1213,7 +1222,7 @@ end;
 function RealPlan(out Reg: TPWebTemplateRegistry;
   out Tpl: TPWebTplTemplate; out Plan: TPWebCreationPlan): Boolean;
 var
-  sdk, pack, sha, detail: RawUtf8;
+  sdk, pack, sha, detail, extra: RawUtf8;
   data: RawByteString;
   refusal: TPWebSdkRefusal;
   store: IAssetStore;

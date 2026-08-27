@@ -20,9 +20,13 @@
 #     filter that selects nothing - and each must fail with its own
 #     diagnostic. A refusal nobody has watched fire is a comment;
 #
-#   - `pweb create` IS STILL ABSENT. The real CAP-10A executable is run and
-#     its help and its exit codes are re-asserted, so this shard cannot
-#     quietly grow a command;
+#   - THE ENGINE IS REACHABLE, AND NOTHING ELSE IS. CAP-10B0 asserted here
+#     that `pweb create` did not exist; CAP-10B1 exposes it, so the leg is
+#     INVERTED rather than removed - create must be advertised and must
+#     refuse a missing NAME as a usage error, while `dev`, `run` and `build`
+#     must still be absent from the help. The full create matrix belongs to
+#     CAP-10B1; what stays here is that the engine this shard froze is
+#     reachable at all, and that nothing else became reachable with it;
 #
 #   - THE ENGINE IS OFFLINE. The counts come from
 #     check_cap10b0_contracts.ps1, which measures them over the compiled
@@ -241,9 +245,20 @@ WriteLf (Join-Path $src 'fixture/README.md') `
     ("# {{PROJECT_NAME}}`n`nthe sdk lives in C:\Users\somebody\pweb`n")
 MustRefuse 'hostpath' $src 'entry_host_path'
 
-# B7: a visibility filter that selects nothing. CAP-10B0 ships ONE private
-# fixture, so --include public must refuse rather than emit an empty pack
+# B7: a visibility filter that selects nothing. An empty pack must be a
+# REFUSAL rather than a zero-entry archive somebody later has to explain.
+#
+# CAP-10B1 CHANGED HOW THIS LEG IS STAGED, and the change is worth naming.
+# CAP-10B0 shipped one PRIVATE fixture, so `--include public` selected
+# nothing on the unmodified source and the leg needed no mutation at all.
+# The react template is public, so the empty selection now has to be
+# CONSTRUCTED - by making every template private in the staged copy - which
+# is what the other six legs already do. The rule under test is unchanged;
+# only the shape of the source that reaches it is.
 $src = StageSource 'visibility'
+$list = [System.IO.File]::ReadAllText((Join-Path $src 'templates.list'))
+WriteLf (Join-Path $src 'templates.list') `
+    ($list.Replace('  visibility = public', '  visibility = private'))
 MustRefuse 'visibility' $src 'selected no template' 'public'
 
 Row 'template_refusals' $refusals
@@ -251,7 +266,14 @@ Row 'template_source_gate' $(if ($refusals -eq 7) { 'PASS' } else { 'FAIL' })
 Require ($refusals -eq 7) `
     "expected 7 builder refusals, observed $refusals"
 
-# --- 4. `pweb create` is still absent, measured on the REAL executable -----
+# --- 4. the ENGINE's own command, measured on the REAL executable ----------
+#
+# CAP-10B0 asserted here that `pweb create` was an unknown command. CAP-10B1
+# exposes it, so the leg is INVERTED rather than removed: create is now
+# required to exist, and `dev`, `run` and `build` are still required not to.
+# The full create matrix is CAP-10B1's (test/cap10b1/run_cap10b1_gates.ps1);
+# what stays here is the one thing this shard owns - that the engine it
+# froze is reachable at all, and that nothing ELSE became reachable with it.
 $pweb = Join-Path $repoRoot "build/cap10a/bin/pweb$exeSuffix"
 if (Test-Path -LiteralPath $pweb) {
     $so = Join-Path $work 'cli-stdout.txt'
@@ -260,20 +282,27 @@ if (Test-Path -LiteralPath $pweb) {
         -NoNewWindow -RedirectStandardOutput $so -RedirectStandardError $se
     $help = [System.IO.File]::ReadAllText($so)
     Require ($p.ExitCode -eq 0) '--help did not exit 0'
-    foreach ($absent in 'create', 'dev ', 'run ', 'build') {
+    Require ($help.Contains('pweb create ')) `
+        '--help does not advertise create'
+    foreach ($absent in 'dev ', 'run ', 'build') {
         Require (-not $help.Contains("pweb $absent")) `
             "--help advertises an unimplemented command: $absent"
     }
-    $p = Start-Process -FilePath $pweb -ArgumentList 'create', 'demo' -Wait `
+    # a bare `pweb create` is a USAGE refusal (no NAME), never an unknown
+    # command any more
+    $p = Start-Process -FilePath $pweb -ArgumentList 'create' -Wait `
         -PassThru -NoNewWindow -RedirectStandardOutput $so `
         -RedirectStandardError $se
+    $err = [System.IO.File]::ReadAllText($se)
     Require ($p.ExitCode -eq 2) `
-        "'pweb create' must be an UNKNOWN COMMAND (exit 2), got $($p.ExitCode)"
-    Row 'create_absent' 'PASS'
+        "'pweb create' with no NAME must be a usage error, got $($p.ExitCode)"
+    Require ($err.Contains('missing_operand')) `
+        "'pweb create' did not refuse as missing_operand: $($err.Trim())"
+    Row 'create_present' 'PASS'
 } else {
-    Require $false ("build/cap10a/bin/pweb is absent -- the create-absence " +
+    Require $false ("build/cap10a/bin/pweb is absent -- the create-linkage " +
         'gate measures the REAL executable and cannot run without it')
-    Row 'create_absent' 'FAIL'
+    Row 'create_present' 'FAIL'
 }
 
 # --- 5. the offline proof, from the contracts check ------------------------
@@ -282,8 +311,8 @@ Require (Test-Path -LiteralPath $contractsPath) `
     'contracts.json is absent -- run check_cap10b0_contracts.ps1 first'
 if (Test-Path -LiteralPath $contractsPath) {
     $c = Get-Content -Raw -LiteralPath $contractsPath | ConvertFrom-Json
-    Require ("$($c.create_linked)" -ceq 'absent') `
-        "the scaffold engine is linked into the CLI: $($c.create_linked)"
+    Require ("$($c.create_linked)" -ceq 'linked') `
+        "the scaffold engine is NOT linked into the CLI: $($c.create_linked)"
     Require ([int]$c.network_units -eq 0) 'the builder links a network unit'
     Require ([int]$c.process_apis -eq 0) 'the engine names a process API'
     Require ([int]$c.environment_reads -eq 0) 'the engine reads the environment'

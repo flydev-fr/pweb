@@ -4,13 +4,14 @@
 # SIX THINGS ARE CHECKED, and each of them is a claim CAP-10B0 makes that
 # would otherwise be a comment:
 #
-#   1. `pweb create` IS ABSENT BY LINKAGE, not merely by dispatch. The CLI's
-#      compiled unit set - build/cap10a/cli-units, which contains exactly
-#      what pweb links - may not contain a single scaffold-engine unit, and
-#      tools/pweb/pweb.pas may not name one in its uses clause. "The command
-#      is not implemented yet" is then a measurement rather than a promise,
-#      and CAP-10A's own no-network unit-set evidence stays literally
-#      unchanged because the CLI it describes is literally unchanged.
+#   1. `pweb create` IS PRESENT BY LINKAGE, not merely by dispatch - the
+#      CAP-10B0 rule, INVERTED by CAP-10B1 rather than deleted. The CLI's
+#      compiled unit set - build/cap10b1/cli-units, which contains exactly
+#      what pweb links - must now contain every scaffold-engine unit, and
+#      tools/pweb/pweb.pas must name them in its uses clause. `dev`, `run`
+#      and `build` are still absent from the parser. A rule that is removed
+#      the moment it stops holding was never load-bearing; the same
+#      measurement simply has to come out the other way.
 #
 #   2. THE ENGINE IS OFFLINE AND STARTS NOTHING. Its sources may not name a
 #      transport, a process API, a shell, a package manager or a compiler,
@@ -103,41 +104,56 @@ foreach ($src in $engineSources) {
     if (-not (Test-Path $src)) { throw "missing engine source: $src" }
 }
 
-# --- 1. `pweb create` is absent by LINKAGE --------------------------------
-$cliUnits = 'build/cap10a/cli-units'
+# --- 1. `pweb create` is present by LINKAGE -------------------------------
+#
+# INVERTED BY CAP-10B1, deliberately rather than deleted. CAP-10B0's claim
+# was that the scaffold engine was not linked into the public CLI at all,
+# and it was measured against the CLI's own compiled unit set. CAP-10B1
+# exposes the command, so the SAME measurement now has to come out the other
+# way - because a rule that is removed when it stops holding is a rule that
+# was never load-bearing. What is checked is unchanged: what the binary
+# actually links, not what the help text says.
+#
+# The unit set moved with the executable. CAP-10B1 builds the one `pweb`,
+# because the CLI compiles a generated template registry in with -Fi and
+# cannot exist before the pack that registry describes.
+$cliUnits = 'build/cap10b1/cli-units'
 $engineUnits = @('pweb.cli.template', 'pweb.cli.scaffold', 'pweb.cli.write',
     'pweb.cli.sdk')
 $createLinked = 'unmeasured'
 if (Test-Path $cliUnits) {
-    $createLinked = 'absent'
+    $createLinked = 'linked'
     foreach ($u in $engineUnits) {
         $hit = @(Get-ChildItem $cliUnits -File |
             Where-Object { $_.BaseName -ieq $u })
-        if ($hit.Count -gt 0) {
-            $createLinked = 'LINKED'
-            Violation ("the scaffold engine is LINKED INTO the public CLI: " +
-                "$($hit[0].Name) is in $cliUnits -- CAP-10B0 ships no " +
-                "create command, and 'not implemented' must be a fact " +
-                'about the binary and not a note in the help text')
+        if ($hit.Count -eq 0) {
+            $createLinked = 'ABSENT'
+            Violation ("the scaffold engine unit $u is NOT in $cliUnits -- " +
+                'CAP-10B1 exposes `pweb create`, so the engine has to be in ' +
+                'the executable that offers it')
         }
     }
 } else {
-    Violation ("$cliUnits is absent -- run test/cap10a/build_cap10a.ps1 " +
-        'first; the create-absence claim is a MEASUREMENT over the CLI ' +
-        'unit set and cannot be made without it')
+    Violation ("$cliUnits is absent -- run test/cap10b1/build_cap10b1.ps1 " +
+        'first; the linkage claim is a MEASUREMENT over the CLI unit set ' +
+        'and cannot be made without it')
 }
 
 # the program's own uses clause, independently of what got compiled
 $programUses = (Get-CodeLines 'tools/pweb/pweb.pas' |
     ForEach-Object { $_.Text }) -join ' '
 foreach ($u in $engineUnits) {
-    if ($programUses -match [regex]::Escape($u)) {
-        Violation "tools/pweb/pweb.pas names the scaffold unit $u"
+    if ($programUses -notmatch [regex]::Escape($u)) {
+        Violation "tools/pweb/pweb.pas does not name the scaffold unit $u"
     }
 }
-# and the help banner must still advertise nothing new
+# create exists; dev, run and build still do not, and they are still absent
+# from the parser rather than present and refusing
 $argsSource = [System.IO.File]::ReadAllText('tools/pweb/pweb.cli.args.pas')
-foreach ($cmd in 'create', 'dev', 'run', 'build') {
+if ($argsSource -notmatch 'pccCreate\b') {
+    Violation "tools/pweb/pweb.cli.args.pas defines no 'create' command"
+}
+foreach ($cmd in 'dev', 'run', 'build') {
     if ($argsSource -match "pccC?$cmd\b") {
         Violation "tools/pweb/pweb.cli.args.pas defines a '$cmd' command"
     }

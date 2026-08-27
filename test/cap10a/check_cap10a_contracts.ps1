@@ -17,7 +17,7 @@
 #      RunRedirect/RunCommand, whose POSIX body IS popen.
 #
 #   3. THERE IS NO NETWORK AND NO CWD DEPENDENCE. The CLI's compiled unit set
-#      (build/cap10a/cli-units, which contains exactly what it links) may not
+#      (build/cap10b1/cli-units, which contains exactly what it links) may not
 #      contain a networking unit, its sources may not name a transport, and
 #      the working directory is read ONCE - the count is asserted, not hoped
 #      for - and never changed.
@@ -194,11 +194,11 @@ foreach ($src in @($cliSources) + @(Get-Item 'tools/pweb/pweb.pas')) {
     }
 }
 # the compiled unit set is the load-bearing half of the same claim
-if (Test-Path 'build/cap10a/cli-units') {
-    $linked = @(Get-ChildItem 'build/cap10a/cli-units' -File -Filter '*.ppu')
+if (Test-Path 'build/cap10b1/cli-units') {
+    $linked = @(Get-ChildItem 'build/cap10b1/cli-units' -File -Filter '*.ppu')
     if ($linked.Count -lt 5) {
-        Violation ('build/cap10a/cli-units holds no compiled unit set -- ' +
-            'run the build script before this gate')
+        Violation ('build/cap10b1/cli-units holds no compiled unit set -- ' +
+            'run test/cap10b1/build_cap10b1.ps1 before this gate')
     }
     foreach ($u in $linked) {
         if ($u.Name -match '^mormot\.net\.' -or $u.Name -match '^(sockets|ssockets)\.') {
@@ -206,7 +206,7 @@ if (Test-Path 'build/cap10a/cli-units') {
         }
     }
 } else {
-    Violation 'build/cap10a/cli-units is missing -- run the build script first'
+    Violation 'build/cap10b1/cli-units is missing -- run test/cap10b1/build_cap10b1.ps1 first'
 }
 # THE WORKING DIRECTORY IS READ EXACTLY ONCE, at startup, and that is a
 # property of the CALL GRAPH rather than of a grep: the platform seam owns the

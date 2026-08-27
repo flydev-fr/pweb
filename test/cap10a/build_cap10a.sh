@@ -96,17 +96,20 @@ for unit in args toolchain platform paths project probe doctor report; do
         die "pweb.cli.${unit}.pas failed its isolation compile"
 done
 
-step 'the pweb CLI'
-# the CLI gets its OWN unit directory: build/cap10a/cli-units then contains
-# EXACTLY the units it links, which is what makes the no-network proof
-# mechanical instead of a claim (check_cap10a_contracts.ps1 requires none of
-# them to be a networking unit). Sharing a unit directory with the suite -
-# which does pull mormot.net through mormot.core.test - would destroy it.
-# shellcheck disable=SC2086
-fpc -MObjFPC -Sh -B -FUbuild/cap10a/cli-units -FEbuild/cap10a/bin \
-    -Futools/pweb -Fusrc/rpc -Fusrc/security -Fusrc/assets \
-    "${mormot_core[@]}" "-Fl${static_dir}" ${platform_flags} \
-    tools/pweb/pweb.pas || die 'pweb.pas compile FAILED'
+step 'the pweb CLI, taken from where its TRUST ANCHOR is generated'
+# CAP-10B1 CHANGED WHERE THIS EXECUTABLE IS BUILT, and the reason is not
+# organisational. `pweb` now compiles the generated template registry in
+# with -Fi, so it cannot be built before the pack that registry describes
+# exists - and the pack is built by test/cap10b1/build_cap10b1.sh. Building
+# a second `pweb` here to keep the old path would give this repository two
+# executables that could disagree.
+#
+# So there is ONE CLI, built once, and every shard's gates measure it. The
+# compiled unit set check_cap10a_contracts.ps1 reads moved with it, to
+# build/cap10b1/cli-units.
+[ -x 'build/cap10b1/sdk/bin/pweb' ] ||
+    die 'build/cap10b1/sdk/bin/pweb missing -- run test/cap10b1/build_cap10b1.sh first; the CLI carries a generated template registry and is built where that registry is produced'
+cp -f -- build/cap10b1/sdk/bin/pweb build/cap10a/bin/pweb
 
 step 'the CAP-10A suite and its probe fixture'
 # shellcheck disable=SC2086

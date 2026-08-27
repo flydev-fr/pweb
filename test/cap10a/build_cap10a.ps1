@@ -70,18 +70,26 @@ foreach ($unit in 'args', 'toolchain', 'paths', 'project', 'probe',
     }
 }
 
-# --- 3. the CLI itself, into its OWN unit directory ------------------------
-# The separate -FU is what makes the no-network proof mechanical rather than
-# a claim: build/cap10a/cli-units then contains EXACTLY the units the CLI
-# links, and check_cap10a_contracts.ps1 requires none of them to be a
-# networking unit. Sharing a unit directory with the test suite (which does
-# pull mormot.net through mormot.core.test) would destroy that evidence.
-fpc -Px86_64 -Twin64 -MObjFPC -Sh -B `
-    -FUbuild/cap10a/cli-units -FEbuild/cap10a/bin `
-    -Futools/pweb -Fusrc/rpc -Fusrc/security -Fusrc/assets `
-    -Fusrc/platform/windows @mormotCore $statics `
-    tools/pweb/pweb.pas
-if ($LASTEXITCODE -ne 0) { throw 'pweb.pas compile FAILED' }
+# --- 3. the CLI, taken from where its TRUST ANCHOR is generated -----------
+# CAP-10B1 CHANGED WHERE THIS EXECUTABLE IS BUILT, and the reason is not
+# organisational. `pweb` now compiles the generated template registry in
+# with -Fi, so it cannot be built before the pack that registry describes
+# exists - and the pack is built by test/cap10b1/build_cap10b1.ps1. Building
+# a second `pweb` here to keep the old path would give this repository two
+# executables that could disagree, which is exactly what the one-runtime
+# rule exists to prevent.
+#
+# So there is ONE CLI, built once, and every shard's gates measure it: the
+# CAP-10A matrices through build/cap10a/bin, the CAP-10B0 and CAP-10B1 ones
+# through the staged SDK root. The compiled unit set that
+# check_cap10a_contracts.ps1 reads moved with it, to build/cap10b1/cli-units.
+$builtCli = 'build/cap10b1/sdk/bin/pweb.exe'
+if (-not (Test-Path $builtCli)) {
+    throw ("$builtCli missing -- run test/cap10b1/build_cap10b1.ps1 first. " +
+        'The CLI carries a generated template registry and is built where ' +
+        'that registry is produced.')
+}
+Copy-Item -Force $builtCli 'build/cap10a/bin/pweb.exe'
 
 # --- 4. the suite and its fixture -----------------------------------------
 fpc -Px86_64 -Twin64 -Sh -B `
