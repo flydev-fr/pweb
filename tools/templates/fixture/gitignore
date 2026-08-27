@@ -1,0 +1,13 @@
+# Build output. Everything here is produced from the sources beside it and
+# nothing here should ever be committed.
+/dist/
+*.o
+*.ppu
+*.compiled
+
+# Frontend dependencies, restored from the committed lockfile.
+node_modules/
+
+# Local editor and operating-system noise.
+.DS_Store
+Thumbs.db

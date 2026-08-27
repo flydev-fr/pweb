@@ -80,3 +80,36 @@ examples/07-quickjs/frontend/src/**/*.svg text eol=lf
 examples/07-quickjs/plugins/**/*.js text eol=lf
 examples/07-quickjs/plugins/**/*.json text eol=lf
 examples/07-quickjs/plugins.trusted text eol=lf
+
+# CAP-10B0: the trusted template source tree and the list that declares it.
+# These bytes ARE the product: the pack builder hashes every one of them into
+# the semantic inventory, the pack SHA-256 and the generated native registry,
+# and the four-target evidence compares all three for equality. Unlike every
+# earlier block this one also has to survive a SECOND rule - the engine
+# refuses a CR byte anywhere in a text template outright - so a CRLF checkout
+# does not merely diverge here, it fails the build on Windows and passes
+# everywhere else, which is the least useful shape a failure can have.
+#
+# The DEFAULT for the subtree is binary and the text kinds opt back in by
+# extension, matching the test/cap7m fixture block above and for the same
+# reason: assets/bytes.bin exists precisely to prove that every byte value
+# survives the seam, and it is exactly the kind of file someone adds without
+# editing this list. `templates.list` and the two extension-less dot-file
+# sources are named individually because they have no extension to match.
+tools/templates/** -text
+tools/templates/**/*.md text eol=lf
+tools/templates/**/*.txt text eol=lf
+tools/templates/**/*.json text eol=lf
+tools/templates/**/*.js text eol=lf
+tools/templates/**/*.mjs text eol=lf
+tools/templates/**/*.css text eol=lf
+tools/templates/**/*.html text eol=lf
+tools/templates/**/*.svg text eol=lf
+tools/templates/**/*.lpr text eol=lf
+tools/templates/**/*.lpi text eol=lf
+tools/templates/**/*.pas text eol=lf
+tools/templates/**/*.inc text eol=lf
+tools/templates/**/*.sh text eol=lf
+tools/templates/templates.list text eol=lf
+tools/templates/**/gitignore text eol=lf
+tools/templates/**/gitattributes text eol=lf

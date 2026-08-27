@@ -180,6 +180,108 @@ function PWebCliDirWritable(const Dir: RawUtf8): Boolean;
 function PWebCliReadSmallFile(const Path: RawUtf8; MaxBytes: PtrInt;
   out Content: RawByteString; out TooBig: Boolean): Boolean;
 
+/// the canonical directory holding the RUNNING executable
+// - the ONE trusted anchor the SDK-root resolver is allowed to start from.
+// Never the working directory, never a caller-supplied path, never an
+// environment variable - the same rule PWebReleaseDirectory already applies
+// to app.pwb and plugins.zip, re-used rather than re-decided
+function PWebCliExeDir(out Dir: RawUtf8): Boolean;
+
+/// every entry of a canonical directory, in its EXACT on-disk spelling
+// - '.' and '..' are never returned; the order is the filesystem's and is
+// therefore NEVER trusted - every caller sorts
+// - False when the directory cannot be enumerated at all, which is a
+// refusal and never an empty result
+function PWebCliListDir(const Dir: RawUtf8;
+  out Names: TRawUtf8DynArray): Boolean;
+
+/// does this platform carry a POSIX file mode at all
+// - False on Windows, where a caller records 'not applicable' rather than
+// inventing an answer to a question the filesystem does not ask
+function PWebCliHasFileModes: Boolean;
+
+/// True when Path is a regular file carrying the owner execute bit
+// - always False on Windows; see PWebCliHasFileModes
+function PWebCliExecutableBit(const Path: RawUtf8): Boolean;
+
+{ ---------------------------------------------------------------------------
+  THE WRITE PRIMITIVES (CAP-10B0)
+
+  Everything above this line only ever ASKS the filesystem something.
+  Everything below it can change the filesystem, and each one is written so
+  that the exclusivity is the KERNEL'S rather than a check this code performs
+  and then hopes still holds:
+
+    - a directory is created with CreateDirectoryW / mkdir(2), both of which
+      fail when the name is taken - by anything, a link included;
+    - a file is created with CREATE_NEW / O_CREAT|O_EXCL|O_NOFOLLOW, which
+      is an atomic "create or fail" and can never open, truncate, append to
+      or follow something that was already there;
+    - the commit is a rename that must not replace.
+
+  Nothing here is reachable from `pweb doctor`, and in this build nothing is
+  reachable from the `pweb` executable at all: the scaffold engine is not
+  linked into it (test/cap10b0/check_cap10b0_contracts.ps1 measures that).
+  --------------------------------------------------------------------------- }
+
+/// create ONE directory, EXCLUSIVELY
+// - the parent must already exist; nothing is created recursively, because
+// a partially created chain is exactly the state this layer exists to make
+// impossible
+// - False when anything already carries that name, when the parent is
+// missing, or when permission is refused - all one answer to the caller,
+// which never learns enough to probe a directory it may not read
+// - POSIX: the mode is set explicitly AFTER creation, so the result does
+// not depend on the invoking shell's umask
+function PWebCliCreateDir(const Dir: RawUtf8): Boolean;
+
+/// create and write ONE new file, EXCLUSIVELY
+// - never opens, truncates, appends to or follows an existing name
+// - SetExecBit requests the owner/group/other execute bits on POSIX and is
+// silently irrelevant on Windows; the mode is applied with chmod after the
+// write, again so umask cannot make the result host-dependent
+function PWebCliWriteNewFile(const Path: RawUtf8;
+  const Content: RawByteString; SetExecBit: Boolean): Boolean;
+
+/// remove ONE regular file
+// - a directory, a link or anything else is REFUSED rather than removed:
+// the staging cleanup may only undo what this unit itself created
+function PWebCliDeleteFile(const Path: RawUtf8): Boolean;
+
+/// remove ONE empty directory
+function PWebCliRemoveEmptyDir(const Dir: RawUtf8): Boolean;
+
+/// rename a directory onto a name that MUST NOT already exist
+// - THE COMMIT of the whole creation transaction. It never replaces and
+// never merges
+// - Windows: MoveFileExW without MOVEFILE_REPLACE_EXISTING is exclusive in
+// the kernel, so there is no window at all
+// - POSIX: rename(2) has no portable no-replace form, so the destination is
+// lstat'ed immediately before. The residual is bounded and recorded: an
+// EMPTY directory created inside that window would be replaced; anything
+// holding data cannot be, because rename onto a non-empty directory is
+// ENOTEMPTY and onto a file is ENOTDIR
+function PWebCliRenameDir(const FromDir, ToDir: RawUtf8): Boolean;
+
+/// atomically replace ONE file with another in the same directory
+// - the ONLY replacing primitive in this unit, and it exists for exactly
+// one caller: the BUILD-TIME template-pack writer, whose output is a
+// regenerated artifact under build/. Project creation never replaces
+// anything - see PWebCliRenameDir, which deliberately cannot
+// - Windows: MOVEFILE_REPLACE_EXISTING. POSIX: rename(2) over a regular
+// file, which POSIX defines as atomic
+function PWebCliReplaceFile(const FromPath, ToPath: RawUtf8): Boolean;
+
+/// recursively remove a tree this process staged, and ONLY such a tree
+// - Parent must be a canonical directory and Name a single component; the
+// target is re-resolved through PWebCliEntry (exact on-disk spelling) and
+// must be a real directory, never a link
+// - a link, a device or anything unremovable anywhere in the tree ABORTS
+// the walk and returns False with the rest left alone: an unbounded
+// recursive delete that can be aimed is a delete primitive, and this one is
+// deliberately not one
+function PWebCliRemoveStagedTree(const Parent, Name: RawUtf8): Boolean;
+
 /// the PATH search directories, in order
 // - EMPTY entries are dropped and never treated as the working directory,
 // which POSIX would otherwise permit: the CLI must never execute something
@@ -697,6 +799,128 @@ begin
   end;
 end;
 
+function PWebCliListDir(const Dir: RawUtf8;
+  out Names: TRawUtf8DynArray): Boolean;
+var
+  h: THandle;
+  data: TWin32FindDataW;
+  n: PtrInt;
+  name: RawUtf8;
+begin
+  Names := nil;
+  Result := False;
+  if Dir = '' then
+    exit;
+  n := 0;
+  h := FindFirstFileW(PWideChar(W(PWebCliJoin(Dir, '*'))), data{%H-});
+  if h = INVALID_HANDLE_VALUE then
+    exit;
+  try
+    repeat
+      name := U(SynUnicode(WideString(PWideChar(@data.cFileName[0]))));
+      if (name <> '.') and
+         (name <> '..') and
+         (name <> '') then
+      begin
+        SetLength(Names, n + 1);
+        Names[n] := name;
+        Inc(n);
+      end;
+    until not FindNextFileW(h, data);
+    // a mid-enumeration failure must never look like the end of the
+    // directory: the only legitimate exit is "no more files"
+    Result := GetLastError = ERROR_NO_MORE_FILES;
+  finally
+    windows.FindClose(h);
+  end;
+  if not Result then
+    Names := nil;
+end;
+
+function PWebCliHasFileModes: Boolean;
+begin
+  Result := False;
+end;
+
+function PWebCliExecutableBit(const Path: RawUtf8): Boolean;
+begin
+  Result := False; // NTFS carries no such bit; the caller records that
+end;
+
+function PWebCliCreateDir(const Dir: RawUtf8): Boolean;
+begin
+  // CreateDirectoryW fails when the name is taken by ANYTHING - a file, a
+  // directory, a junction - so the exclusivity is the kernel's
+  Result := (Dir <> '') and
+    CreateDirectoryW(PWideChar(W(Dir)), nil);
+end;
+
+function PWebCliWriteNewFile(const Path: RawUtf8;
+  const Content: RawByteString; SetExecBit: Boolean): Boolean;
+var
+  h: THandle;
+  wr: DWORD;
+  done: PtrInt;
+begin
+  Result := False;
+  if Path = '' then
+    exit;
+  // CREATE_NEW is the atomic "create or fail"; no sharing while we write;
+  // FILE_FLAG_OPEN_REPARSE_POINT so a name swapped for a link cannot
+  // resolve somewhere else even in the branch where it already existed
+  h := CreateFileW(PWideChar(W(Path)), GENERIC_WRITE, 0, nil, CREATE_NEW,
+    FILE_ATTRIBUTE_NORMAL or FILE_FLAG_OPEN_REPARSE_POINT, 0);
+  if h = INVALID_HANDLE_VALUE then
+    exit;
+  try
+    done := 0;
+    while done < Length(Content) do
+    begin
+      wr := 0;
+      if not WriteFile(h, PByteArray(Content)^[done],
+           DWORD(Length(Content) - done), wr, nil) or
+         (wr = 0) then
+        exit;
+      Inc(done, wr);
+    end;
+    Result := True;
+  finally
+    CloseHandle(h);
+  end;
+end;
+
+function PWebCliDeleteFile(const Path: RawUtf8): Boolean;
+begin
+  // only a REGULAR file: a directory or a reparse point is refused, so the
+  // cleanup can never follow something out of the staged tree
+  Result := (PWebCliNodeKind(Path) = pcnFile) and
+    DeleteFileW(PWideChar(W(Path)));
+end;
+
+function PWebCliRemoveEmptyDir(const Dir: RawUtf8): Boolean;
+begin
+  Result := (PWebCliNodeKind(Dir) = pcnDirectory) and
+    RemoveDirectoryW(PWideChar(W(Dir)));
+end;
+
+function PWebCliRenameDir(const FromDir, ToDir: RawUtf8): Boolean;
+begin
+  // NO MOVEFILE_REPLACE_EXISTING: an existing destination fails the call in
+  // the kernel, which is exactly the guarantee the transaction needs and
+  // leaves no window between a check and the commit
+  Result := (FromDir <> '') and
+    (ToDir <> '') and
+    MoveFileExW(PWideChar(W(FromDir)), PWideChar(W(ToDir)), 0);
+end;
+
+function PWebCliReplaceFile(const FromPath, ToPath: RawUtf8): Boolean;
+begin
+  Result := (FromPath <> '') and
+    (ToPath <> '') and
+    MoveFileExW(PWideChar(W(FromPath)), PWideChar(W(ToPath)),
+      MOVEFILE_REPLACE_EXISTING);
+end;
+
 function SplitEnvList(const Value: RawUtf8; Sep: AnsiChar): TRawUtf8DynArray;
 var
   i, start, n: PtrInt;
@@ -1206,6 +1430,163 @@ begin
   end;
 end;
 
+function PWebCliListDir(const Dir: RawUtf8;
+  out Names: TRawUtf8DynArray): Boolean;
+var
+  dirp: pDir;
+  entry: pDirent;
+  n, len: PtrInt;
+  name: RawUtf8;
+begin
+  Names := nil;
+  Result := False;
+  if Dir = '' then
+    exit;
+  dirp := FpOpendir(RawByteString(Dir));
+  if dirp = nil then
+    exit;
+  n := 0;
+  try
+    repeat
+      entry := FpReaddir(dirp^);
+      if entry = nil then
+        break;
+      len := 0;
+      while (len < SizeOf(entry^.d_name)) and
+            (entry^.d_name[len] <> #0) do
+        Inc(len);
+      SetString(name, PAnsiChar(@entry^.d_name[0]), len);
+      if (name <> '.') and
+         (name <> '..') and
+         (name <> '') then
+      begin
+        SetLength(Names, n + 1);
+        Names[n] := name;
+        Inc(n);
+      end;
+    until False;
+    Result := True;
+  finally
+    FpClosedir(dirp^);
+  end;
+end;
+
+function PWebCliHasFileModes: Boolean;
+begin
+  Result := True;
+end;
+
+function PWebCliExecutableBit(const Path: RawUtf8): Boolean;
+var
+  info: stat;
+begin
+  Result := False;
+  if (Path = '') or
+     (FpLstat(RawByteString(Path), info{%H-}) <> 0) then
+    exit;
+  if not fpS_ISREG(info.st_mode) then
+    exit;
+  Result := (info.st_mode and S_IXUSR) <> 0;
+end;
+
+function PWebCliCreateDir(const Dir: RawUtf8): Boolean;
+begin
+  Result := False;
+  if Dir = '' then
+    exit;
+  // mkdir(2) fails with EEXIST when the name is taken by anything at all,
+  // a dangling symlink included, so the exclusivity is the kernel's
+  if FpMkdir(RawByteString(Dir), &700) <> 0 then
+    exit;
+  // the mode is set EXPLICITLY afterwards: mkdir's mode argument is masked
+  // by the invoking shell's umask, and a generated tree whose permissions
+  // depend on who ran the command is not deterministic output
+  Result := FpChmod(RawByteString(Dir), &755) = 0;
+end;
+
+function PWebCliWriteNewFile(const Path: RawUtf8;
+  const Content: RawByteString; SetExecBit: Boolean): Boolean;
+var
+  fd: cint;
+  done: Int64;
+  wr: PtrInt;
+  mode: TMode;
+begin
+  Result := False;
+  if Path = '' then
+    exit;
+  // O_CREAT|O_EXCL is the atomic create-or-fail, and by POSIX definition it
+  // fails on a symlink even before O_NOFOLLOW is considered; both are
+  // requested so the intent is readable rather than inferred
+  fd := FpOpen(RawByteString(Path),
+    O_WRONLY or O_CREAT or O_EXCL or O_NOFOLLOW, &600);
+  if fd < 0 then
+    exit;
+  try
+    done := 0;
+    while done < Length(Content) do
+    begin
+      wr := FpWrite(fd, PByteArray(Content)^[done], Length(Content) - done);
+      if wr <= 0 then
+        exit;
+      Inc(done, wr);
+    end;
+  finally
+    FpClose(fd);
+  end;
+  if SetExecBit then
+    mode := &755
+  else
+    mode := &644;
+  // chmod, not the open mode: see PWebCliCreateDir - umask must not reach
+  // the generated corpus
+  Result := FpChmod(RawByteString(Path), mode) = 0;
+end;
+
+function PWebCliDeleteFile(const Path: RawUtf8): Boolean;
+begin
+  // only a REGULAR file: a directory, a symlink or a device is refused, so
+  // the cleanup can never follow something out of the staged tree
+  Result := (PWebCliNodeKind(Path) = pcnFile) and
+    (FpUnlink(RawByteString(Path)) = 0);
+end;
+
+function PWebCliRemoveEmptyDir(const Dir: RawUtf8): Boolean;
+begin
+  Result := (PWebCliNodeKind(Dir) = pcnDirectory) and
+    (FpRmdir(RawByteString(Dir)) = 0);
+end;
+
+function PWebCliRenameDir(const FromDir, ToDir: RawUtf8): Boolean;
+var
+  info: stat;
+begin
+  Result := False;
+  if (FromDir = '') or
+     (ToDir = '') then
+    exit;
+  // rename(2) has no portable no-replace form: renameat2(RENAME_NOREPLACE)
+  // is Linux-only and renamex_np(RENAME_EXCL) is Darwin-only, and neither
+  // can be linked without pinning a libc floor this project has not agreed.
+  // So the destination is lstat'ed immediately before the call. The
+  // residual is bounded and recorded in deferred-work.md: only an EMPTY
+  // directory appearing inside that window could be replaced, because
+  // rename onto a non-empty directory is ENOTEMPTY and onto a file is
+  // ENOTDIR - no user CONTENT can be destroyed by this call.
+  if FpLstat(RawByteString(ToDir), info{%H-}) = 0 then
+    exit;
+  Result := FpRename(RawByteString(FromDir), RawByteString(ToDir)) = 0;
+end;
+
+function PWebCliReplaceFile(const FromPath, ToPath: RawUtf8): Boolean;
+begin
+  // rename(2) over an existing regular file IS the POSIX atomic replace -
+  // no check, no window, no unlink-then-rename gap
+  Result := (FromPath <> '') and
+    (ToPath <> '') and
+    (FpRename(RawByteString(FromPath), RawByteString(ToPath)) = 0);
+end;
+
 function SplitEnvList(const Value: RawUtf8; Sep: AnsiChar): TRawUtf8DynArray;
 var
   i, start, n: PtrInt;
@@ -1319,5 +1700,87 @@ begin
 end;
 
 {$endif WINDOWS}
+
+{ ---------------------------------------------------------------------------
+  SHARED BODIES
+
+  Two things that need NO platform knowledge because they are written over
+  the primitives above. Keeping them here rather than duplicating them into
+  both bodies is not tidiness: every line inside a conditional region is a
+  line that can silently differ between two operating systems, and the
+  CAP-7F sweep counts those regions for exactly that reason.
+  --------------------------------------------------------------------------- }
+
+function PWebCliExeDir(out Dir: RawUtf8): Boolean;
+begin
+  // Executable.ProgramFilePath is absolute and independent of the working
+  // directory - the SAME source of truth PWebReleaseDirectory already uses
+  // to find app.pwb and plugins.zip beside a running application. It is
+  // then canonicalized through the kernel, so what comes back is the real
+  // directory rather than the spelling the loader happened to be given.
+  Result := PWebCliCanonicalDir(
+    StringToUtf8(Executable.ProgramFilePath), Dir);
+end;
+
+const
+  /// how deep PWebCliRemoveStagedTree will walk before refusing
+  // - the staged tree is one this process wrote under its own path limits,
+  // so anything deeper is not ours and the walk stops rather than recursing
+  // as far as some other tree happens to go
+  PWEB_CLI_STAGED_MAX_DEPTH = 32;
+
+function RemoveTreeAt(const Dir: RawUtf8; Depth: Integer): Boolean;
+var
+  names: TRawUtf8DynArray;
+  i: PtrInt;
+  child: RawUtf8;
+begin
+  Result := False;
+  if Depth > PWEB_CLI_STAGED_MAX_DEPTH then
+    exit;
+  if not PWebCliListDir(Dir, names) then
+    exit;
+  for i := 0 to High(names) do
+  begin
+    child := PWebCliJoin(Dir, names[i]);
+    case PWebCliNodeKind(child) of
+      pcnFile:
+        if not PWebCliDeleteFile(child) then
+          exit;
+      pcnDirectory:
+        if not RemoveTreeAt(child, Depth + 1) then
+          exit;
+    else
+      // a link, a device, a socket: we did not create it, so we do not
+      // remove it, and the caller reports the tree it could not reclaim
+      exit;
+    end;
+  end;
+  Result := PWebCliRemoveEmptyDir(Dir);
+end;
+
+function PWebCliRemoveStagedTree(const Parent, Name: RawUtf8): Boolean;
+var
+  i: PtrInt;
+begin
+  Result := False;
+  if (Parent = '') or
+     (Name = '') or
+     (Name = '.') or
+     (Name = '..') then
+    exit;
+  // ONE component, never a path: a cleanup argument that can carry a
+  // separator is a cleanup argument that can be aimed
+  for i := 1 to Length(Name) do
+    if (Name[i] = '/') or
+       (Name[i] = '\') or
+       (Name[i] < ' ') then
+      exit;
+  // and it must really be a directory, resolved by its EXACT on-disk
+  // spelling inside the parent we staged into - never a link
+  if PWebCliEntry(Parent, Name) <> pcnDirectory then
+    exit;
+  Result := RemoveTreeAt(PWebCliJoin(Parent, Name), 0);
+end;
 
 end.
