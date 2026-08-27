@@ -2,7 +2,7 @@
 title: 'CAP-10A — Native pweb CLI foundation, project contract, doctor, and reusable runtime-command composition'
 type: 'feature'
 created: '2026-08-27'
-status: 'in-review'
+status: 'done'
 review_loop_iteration: 0
 baseline_commit: '1b4c81b184929ef4cdc802163e339c7c53654acc'
 context:

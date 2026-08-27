@@ -1,7 +1,17 @@
 # CAP-10A — Final Artifact: the native `pweb` CLI, the project contract, and the reusable runtime-command layer
 
-**Hosted run outstanding.** Everything below is measured on the Windows dev
-host; the four-target aggregation is what the closure record will name.
+CAP-10A closes on hosted run **33071121924** (2026-08-27, commit
+`08a8b6f24137820eec7da66b251dfc63545c40d6`, branch
+`phase/cap-10/a-cli-foundation`, baseline `1b4c81b`): all six jobs green,
+`cap7 aggregate` recording `cli_corpus: PASS` on every target, ONE `cli_digest`
+`dc068531acab62c2698c69f29ace521b0382d38c6489a71847c13ca9b8d4114b` and ONE
+`doctor_schema_digest`
+`2dda57baa324708ebc6d709556fc2a4ae865d820e29069c47a0e0d412fa8c7aa` equal on
+windows-x86_64, linux-x86_64, macos-x86_64 and macos-arm64, and
+`pweb 0.1.0 (protocol 1)` reported by all four. The committed negative
+self-test reported **60 aggregator refusals + 2 divergence refusals** on the
+same run (51+2 before this shard), so all nine new refusal branches are proven
+red on fixtures before the real aggregation is trusted.
 
 CAP-10A gives PWeb a public entry point and takes away its last duplicated
 security decision. It adds one native FPC console executable, one strict
@@ -52,7 +62,8 @@ a nil inner bridge or a nil opener is refused at construction rather than
 becoming a plausible runtime answer.
 
 The proof that this is behaviour-preserving is not the diff. It is the three
-frozen digests, re-measured on the dev host after the migration:
+frozen digests, re-measured on the dev host after the migration and then
+confirmed equal on all four targets by the closure run:
 
 | digest | value | source of the expectation |
 |---|---|---|
@@ -174,10 +185,14 @@ their own artifact and are never compared, because requiring four runners to
 agree on them would be requiring four identical machines.
 
 Nine new negative self-test legs (c48–c56) prove each refusal branch red on
-fixtures before the real aggregation is trusted, including the subtle one:
-an **empty** digest on every target compares equal to every other empty
-digest, so a gate that stopped emitting would look exactly like one that
-passed everywhere.
+fixtures before the real aggregation is trusted — the run reports 60 refusals
+where CAP-9C2 reported 51 — including the subtle one: an **empty** digest on
+every target compares equal to every other empty digest, so a gate that
+stopped emitting would look exactly like one that passed everywhere.
+
+The four-target matrix carries one pre-existing asymmetry, recorded rather
+than smoothed over: macos-x86_64's `extra_exports_rtti` reads 8 where the
+other three read 0. That is the CAP-7M finding, unchanged by this shard.
 
 The divergence sweep now covers `tools/pweb` and holds the CLI at
 `pweb.cli.platform` (24 directives) plus the program's `{$apptype console}`
@@ -215,4 +230,4 @@ POSIX non-UTF-8 path refusal; the FPC `ForceDirectories` fixture hazard; the
 `ci.yml` documentation budget re-assigned to CAP-11; and the CAP-10B handoff.
 The CAP-8C consolidation entry is CLOSED by this shard.
 
-**Verdict pending the hosted four-target run.**
+**CAP-10A PASS — CLI AND PROJECT FOUNDATION FROZEN**
