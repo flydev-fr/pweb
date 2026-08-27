@@ -2,7 +2,7 @@
 title: 'CAP-9C2 — Plugin-enabled GUI host, platform release layouts and CAP-9 closure'
 type: 'feature'
 created: '2026-08-26'
-status: 'ready-for-dev'
+status: 'done'
 review_loop_iteration: 0
 baseline_commit: '61c7a46f96dad0992280ff7c31ded0b4241f7b92'
 context:
