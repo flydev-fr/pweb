@@ -1292,6 +1292,16 @@ begin
     Require('reporting_code',
       (code = peccOk) and JsonHas(json, '"forbidden"'),
       'code=' + PWEB_EXPORT_CALL_TEXT[code] + ' result=' + json);
+    { the informative half of the frozen taxonomy, from the export that
+      reports both: `code` is the sole normative discriminator, but a
+      status that disagreed with it would mean the mapping is only
+      half-applied. Two calls, so the denied deltas below cover both. }
+    code := CallExportOn(reportHost, 'addRefusal', '{"a":20,"b":22}', json,
+      detail);
+    Require('reporting_status',
+      (code = peccOk) and JsonHas(json, '"outcome":"refused"') and
+      JsonHas(json, '"code":"forbidden"') and JsonHas(json, '"status":403'),
+      'code=' + PWEB_EXPORT_CALL_TEXT[code] + ' result=' + json);
     Require('reporting_denied_bridge_delta',
       InterlockedCompareExchange(DeniedBridgeArrivals, 0, 0) = appBefore,
       'delta=' + N(InterlockedCompareExchange(DeniedBridgeArrivals, 0, 0) -

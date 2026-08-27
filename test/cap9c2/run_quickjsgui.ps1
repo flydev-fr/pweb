@@ -452,6 +452,7 @@ $verdict = [ordered]@{
     ui_add                        = (Row-Value 'ui_add')
     quickjs_add                   = (Row-Value 'quickjs_add')
     reporting_code                = (Row-Value 'reporting_code')
+    reporting_status              = (Row-Value 'reporting_status')
     reporting_soa_count           = (Row-Value 'reporting_soa_count')
     reporting_denied_bridge       = (Row-Value 'reporting_denied_bridge_delta')
     opener_reached                = (Row-Value 'opener_reached')

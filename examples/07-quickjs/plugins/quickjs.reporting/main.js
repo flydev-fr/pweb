@@ -16,6 +16,24 @@ pwebExports.add = function (args) {
   }
 };
 
+// CAP-9C2: the SAME refusal, reported with both halves of the frozen
+// taxonomy. `code` is the sole normative discriminator and `status` its
+// informative companion, and a gate that checks only one cannot tell a
+// correct refusal from a half-applied mapping.
+//
+// Deliberately a SECOND export rather than a wider return from `add`:
+// the CAP-9C1 corpus pins that export's answer to the exact string
+// 'forbidden', and moving a frozen shard's expectation to add a field is
+// how a green suite quietly stops testing what it used to.
+pwebExports.addRefusal = function (args) {
+  try {
+    pweb.invoke('CalculatorService.Add', { a: args.a, b: args.b });
+    return { outcome: 'reached' };
+  } catch (e) {
+    return { outcome: 'refused', code: e.code, status: e.status };
+  }
+};
+
 pwebExports.label = function () {
   return label('reporting');
 };

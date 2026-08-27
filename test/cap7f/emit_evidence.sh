@@ -773,7 +773,7 @@ cap9c2_license="$(qg_str license_quickjs_sha256)"
 # aggregator's rule is deliberately trivial: EVERY field must read exactly
 # 'yes' on EVERY target.
 cap9c2_gate_fields='ui_rendered ui_add quickjs_add reporting_code
-reporting_soa_count reporting_denied_bridge opener_reached
+reporting_status reporting_soa_count reporting_denied_bridge opener_reached
 same_scheduler same_policy same_bridge same_server
 browser_plugin_store_arrivals quickjs_app_store_arrivals
 browser_plugin_script_marker raw_channel_source_bytes

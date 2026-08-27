@@ -538,6 +538,7 @@ cat > "${json}" <<JSON
   "ui_add": "$(row_value ui_add)",
   "quickjs_add": "$(row_value quickjs_add)",
   "reporting_code": "$(row_value reporting_code)",
+  "reporting_status": "$(row_value reporting_status)",
   "reporting_soa_count": "$(row_value reporting_soa_count)",
   "reporting_denied_bridge": "$(row_value reporting_denied_bridge_delta)",
   "opener_reached": "$(row_value opener_reached)",

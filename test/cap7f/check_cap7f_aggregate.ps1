@@ -121,7 +121,8 @@ $equalityFields = @(
 # emitters and this aggregator (see test/cap7f/emit_evidence.ps1)
 $CAP9C2_GATE_FIELDS = @(
     'ui_rendered', 'ui_add', 'quickjs_add', 'reporting_code',
-    'reporting_soa_count', 'reporting_denied_bridge', 'opener_reached',
+    'reporting_status', 'reporting_soa_count', 'reporting_denied_bridge',
+    'opener_reached',
     'same_scheduler', 'same_policy', 'same_bridge', 'same_server',
     'browser_plugin_store_arrivals', 'quickjs_app_store_arrivals',
     'browser_plugin_script_marker', 'raw_channel_source_bytes',
