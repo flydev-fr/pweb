@@ -821,6 +821,59 @@ printf '[CAP-7F] quickjs_gui_digest: %s\n' "${quickjs_gui_digest}"
 printf '[CAP-7F] quickjs_gui_corpus: %s (listeners=%s reparse=%s)\n' \
     "${quickjs_gui_corpus}" "${cap9c2_listeners}" "${cap9c2_reparse}"
 
+# ---------------------------- CAP-10A: the CLI foundation --------------------
+#
+# THREE compared fields and one must-PASS verdict. What is compared is
+# deliberately narrow, because most of what a doctor reports is a fact about
+# the MACHINE, and comparing those across four runners would be comparing the
+# runners: cli_digest is the decision corpus of pure logic over injected
+# inputs, doctor_schema_digest is the document SHAPE plus the ordered row set
+# and each row's severity, and cli_version_line is the one line that proves
+# the same CLI ran everywhere. The per-host observations travel in their own
+# field and are never compared.
+cli_file="${repo_root}/build/cap10a/cli-${target}.json"
+[ -f "${cli_file}" ] ||
+    die "cli-${target}.json missing -- the CAP-10A gate has not run in this workspace"
+cli_str() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+        "${cli_file}" | head -n 1
+}
+cli_num() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p" \
+        "${cli_file}" | head -n 1
+}
+cli_corpus="$(cli_str cli_corpus)"
+case "${cli_corpus}" in
+    PASS | FAIL) ;;
+    *) die "cli-${target}.json carries an unexpected verdict: ${cli_corpus}" ;;
+esac
+cli_digest="$(cli_str cli_digest)"
+doctor_schema_digest="$(cli_str doctor_schema_digest)"
+cli_version_line="$(cli_str cli_version_line)"
+cli_exit_taxonomy="$(cli_str cli_exit_taxonomy)"
+doctor_no_mutation="$(cli_str doctor_no_mutation)"
+doctor_json_deterministic="$(cli_str doctor_json_deterministic)"
+doctor_checks="$(cli_num doctor_checks)"
+[ -n "${doctor_checks}" ] || doctor_checks=0
+if [ "${cli_corpus}" = 'PASS' ]; then
+    # a green verdict with an empty digest would prove nothing, and an empty
+    # string compares equal to another empty string on four targets
+    for pair in "cli_digest=${cli_digest}" \
+                "doctor_schema_digest=${doctor_schema_digest}" \
+                "cli_version_line=${cli_version_line}"; do
+        case "${pair}" in
+            *=) die "the CAP-10A record records PASS with an empty ${pair%%=*}" ;;
+        esac
+    done
+    [ "${doctor_checks}" != '0' ] ||
+        die 'the CAP-10A record records PASS with zero doctor rows'
+fi
+printf '[CAP-7F] cli_digest: %s\n' "${cli_digest}"
+printf '[CAP-7F] doctor_schema_digest: %s\n' "${doctor_schema_digest}"
+printf '[CAP-7F] cli_corpus: %s (exit_taxonomy=%s no_mutation=%s deterministic=%s checks=%s)\n' \
+    "${cli_corpus}" "${cli_exit_taxonomy}" "${doctor_no_mutation}" \
+    "${doctor_json_deterministic}" "${doctor_checks}"
+
 # ---------------------------- write the evidence -----------------------------
 # every interpolated free-text value goes through json_escape: the toolchain
 # banner lines especially are nobody's to promise quote-free
@@ -899,6 +952,14 @@ cat > "${work}/evidence.json" <<EOF
   "cap9c2_license_sha256": "${cap9c2_license}",
   "cap9c2_gates": {${cap9c2_gates_json}
   },
+  "cli_corpus": "${cli_corpus}",
+  "cli_digest": "${cli_digest}",
+  "cli_version_line": "${cli_version_line}",
+  "cli_exit_taxonomy": "${cli_exit_taxonomy}",
+  "doctor_schema_digest": "${doctor_schema_digest}",
+  "doctor_checks": ${doctor_checks},
+  "doctor_no_mutation": "${doctor_no_mutation}",
+  "doctor_json_deterministic": "${doctor_json_deterministic}",
   "release_layout": "${release_layout}",
   "no_listener": "${no_listener}",
   "no_listener_provenance": "${no_listener_prov}",

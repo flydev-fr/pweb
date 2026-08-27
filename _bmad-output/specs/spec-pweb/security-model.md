@@ -157,7 +157,11 @@ navigation allowed only to
 pweb://app/...
 ```
 
-`https:` and `mailto:` links open in the system browser. An external page therefore never executes inside a WebView that owns the privileged bridge.
+**A privileged WebView never navigates to external content.** Every external navigation it attempts is cancelled, `https:` and `mailto:` included, and no navigation callback ever reaches an operating-system opener.
+
+Approved `https:` and `mailto:` URIs may be handed to the operating system **only** through an explicit capability-authorized runtime invocation — `pweb.openExternal`, mapped to the capability `external.open` and checked by `ICapabilityPolicy` before the bridge, exactly like any other method. An external page therefore never executes inside a WebView that owns the privileged bridge, and opening one is an authorization decision rather than an inference from a gesture.
+
+**Why not a gesture.** CAP-8B measured, on all four targets, that no engine reports user activation honestly: WebView2's `IsUserInitiated` and WebKitGTK's `is_user_gesture` are both TRUE for a navigation issued in the continuation of a `webview_bind` promise — the ordinary shape of a PWeb page — because the runtime resolves that promise through the engine's script-execution API, and WKWebView publishes no gesture flag at all. Every engine therefore has a different irreducible false positive, so "the user clicked" is not a decidable question and cannot be an authorization input. The classifier carries `UserActivated` for diagnostics only and is forbidden to read it.
 
 **DECIDED — dev-mode trust model (implementation lands with Phase 10).** The privileged origin is `pweb://app` in development and production alike: `pweb dev` proxies/serves the Vite assets **behind `pweb://app`** rather than re-pointing the privileged origin at `127.0.0.1:<ephemeral>`. Vite HMR may use a narrowly scoped, development-only WebSocket connection (`ws://127.0.0.1:<selected-port>`) — a dev-only **transport** exception, never a privileged-**origin** exception. Production builds contain no localhost/WebSocket HMR allowance of any kind. Recorded now, implemented at Phase 10 — a dev mode that quietly relaxes the origin rule is how the rule dies.
 

@@ -1,5 +1,6 @@
 # CAP-7F: platform-divergence sweep over the PRODUCTION surface (src/**,
-# examples/07-quickjs/, examples/08-release/, tools/bundler/, tools/quickjs/)
+# examples/07-quickjs/, examples/08-release/, tools/bundler/, tools/quickjs/,
+# tools/pweb/)
 # against an explicit, ratified allowlist. Checkout-only: no build, no
 # toolchain - it runs in the cap7-aggregate job and on any dev host.
 #
@@ -89,6 +90,17 @@ $allow = @{
         fingerprint = '218a2592aef612d4d6f7fa21de022d015f84a1b1462d7e487520ad9ae5475c19' }
     'tools/quickjs/pwebqjspack.pas'      = @{ directives = 6;   # CAP-9C1: the Windows wide-API source walk (the pwebbundle precedent - the RTL Ansi filesystem layer mistranslates concatenated paths)
         fingerprint = '7e329077ac3048bfe7a25495f63fb060ebc782fce0115613120ca7ae51718842' }
+    # CAP-10A: the CLI's platform seam, and the ONLY CLI file with any
+    # divergence at all. It carries the whole Windows/POSIX split - raw argv,
+    # console mode, canonical paths, exact-case entries, executable
+    # resolution and the host engine probe - so that pweb.cli.args,
+    # .project, .paths, .probe, .doctor, .report and .toolchain stay at
+    # ZERO and this sweep keeps them there.
+    'tools/pweb/pweb.cli.platform.pas'   = @{ directives = 24;
+        fingerprint = '91f95444ba9fff35c95bb243080042f9e13054797072cfb69ee302bff57fb35b' }
+    # CAP-10A: the program, whose only conditional is {$apptype console}
+    'tools/pweb/pweb.pas'                = @{ directives = 2;
+        fingerprint = '0dc7a84a71485678f01dc0e7032093d6858fb389878b52157a2f69671187305d' }
 }
 
 function Get-DirectiveFingerprint([string[]]$Texts) {
@@ -104,6 +116,7 @@ function Get-DirectiveFingerprint([string[]]$Texts) {
 $frozenCore = @(
     'src/rpc/pweb.rpc.scheduler.pas', 'src/rpc/pweb.rpc.intf.pas',
     'src/rpc/pweb.rpc.mormot.pas', 'src/rpc/pweb.rpc.support.pas',
+    'src/rpc/pweb.rpc.command.pas',
     'src/security/pweb.capabilities.pas',
     'src/security/pweb.capabilities.policy.pas',
     'src/webview/pweb.webview.binding.pas', 'src/webview/pweb.webview.intf.pas',
@@ -121,8 +134,14 @@ function Get-RelPath([string]$FullName) {
 # did: a build tool that decides what ships is production surface, and a
 # platform conditional appearing there unremarked is exactly the drift
 # this sweep exists to catch.
+# CAP-10A: tools/pweb joins the swept surface for the reason tools/bundler and
+# tools/quickjs did - the public lifecycle entry point decides what a developer
+# builds, so a platform conditional appearing there unremarked is exactly the
+# drift this sweep exists to catch. The CLI concentrates every one of its
+# conditionals in pweb.cli.platform by design; the allowlist below is what
+# holds that design in place.
 $pascalRoots = @('src', 'examples/07-quickjs', 'examples/08-release',
-    'tools/bundler', 'tools/quickjs')
+    'tools/bundler', 'tools/quickjs', 'tools/pweb')
 $pascalFiles = foreach ($root in $pascalRoots) {
     if (Test-Path $root) {
         Get-ChildItem $root -Recurse -File -Include '*.pas', '*.pp', '*.inc' |
@@ -224,7 +243,7 @@ if (Test-Path 'sdk/pas2js') {
 # --- report + verdict --------------------------------------------------------
 $lines = New-Object System.Collections.Generic.List[string]
 $lines.Add('# CAP-7F platform-divergence sweep')
-$lines.Add("# surface: src/** (minus src/platform/**), examples/08-release/, tools/bundler/, sdk/**")
+$lines.Add("# surface: src/** (minus src/platform/**), examples/07-quickjs/, examples/08-release/, tools/bundler/, tools/quickjs/, tools/pweb/, sdk/**")
 $lines.Add('# every platform-conditional occurrence found:')
 foreach ($r in $report) { $lines.Add($r) }
 $lines.Add('#')

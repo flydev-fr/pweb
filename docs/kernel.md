@@ -35,7 +35,7 @@
 - Capability grammar `[a-z0-9]+(\.[a-z0-9]+)*`, exact match only — no wildcards, regex, or inheritance. Unknown/unmapped method ⇒ deny. Policy runs before routing: `forbidden` outranks `method_not_found`.
 - Authorization never trusts a JS-supplied field; `TInvocationContext` is built natively at the binding. JS sends method + arguments only.
 - `ICapabilityPolicy` is in the path from the first bridge (Phase 2, `TAllowAllCapabilityPolicy`); Phase 8 swaps the policy, never the plumbing.
-- Privileged WebView navigates only `pweb://app/...`; `https:`/`mailto:` open in the system browser. Dev mode serves Vite behind `pweb://app` — the privileged origin never changes; HMR WebSocket is dev-only transport, absent from production.
+- Privileged WebView navigates only `pweb://app/...` and never navigates to external content; approved `https:`/`mailto:` reach the OS only through the capability-authorized `pweb.openExternal` invocation (`external.open`), never a gesture. Dev mode serves Vite behind `pweb://app` — the privileged origin never changes; HMR WebSocket is dev-only transport, absent from production.
 
 ## Assets & packaging — `_bmad-output/specs/spec-pweb/core-interfaces.md`
 - Asset paths fail closed: forward slashes; no empty/`.`/`..` segments; no NUL, backslash, drive/UNC prefix; single percent-decode then validate; Windows device names and ADS forms rejected; exact case-sensitive matching on every platform (dev `TFolderAssetStore` must match ZIP behavior, not the Windows filesystem).

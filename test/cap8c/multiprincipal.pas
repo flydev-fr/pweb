@@ -94,6 +94,7 @@ uses
   pweb.rpc.support,
   pweb.rpc.scheduler,
   pweb.rpc.mormot,
+  pweb.rpc.command, // CAP-10A: the reusable runtime-command decorator
   pweb.capabilities.policy,
   pweb.navigation.policy,
   pweb.webview.intf,
@@ -159,7 +160,7 @@ const
 
   // capabilities (the CAP-8C ceiling)
   CAP_CALC = 'calculator.add';
-  CAP_OPEN = 'external.open';
+  CAP_OPEN = PWEB_CAP_EXTERNAL_OPEN; // CAP-10A: from pweb.rpc.command
   CAP_SETTINGS = 'settings.read';
   CAP_PARKING = 'parking.read';
   CAP_WINDOW = 'window.control';
@@ -169,7 +170,11 @@ const
   M_SETTINGS = 'SettingsService.GetValue';
   M_PARKING = 'ParkingService.List';
   M_WINDOW = 'WindowService.Control';
-  M_OPEN = 'pweb.openExternal';
+  { CAP-10A: M_OPEN is PWEB_METHOD_OPEN_EXTERNAL from pweb.rpc.command -
+    the alias survives so the decision table below reads unchanged, but the
+    spelling now comes from the shipped runtime-command layer instead of a
+    fourth private copy of the same literal. }
+  M_OPEN = PWEB_METHOD_OPEN_EXTERNAL;
   M_REPORT = 'cap8c.report';
   M_NOSUCH = 'No.SuchMethod';   // registered zero-cap, no bridge impl -> 404
   M_FAULT = 'fault.raise';      // registered zero-cap, bridge raises -> 500
@@ -453,34 +458,26 @@ end;
 
 { ---- opener result (release-host copy, verbatim shape) ------------------- }
 
-function OpenExternalResult(const Context: TInvocationContext;
-  const Args: TPWebJson): TPWebInvocationResult;
+{ CAP-10A: the per-principal opener ledger, and nothing else. The decision
+  is the shipped one (pweb.rpc.command), so the opener_main/opener_login/
+  opener_plugin numbers the CAP-7F aggregator refuses on now describe the
+  PRODUCT's command rather than this harness's copy of it. }
+procedure ObserveExternalOpen(const Context: TInvocationContext;
+  Outcome: TPWebOpenOutcome; UriBytes: PtrInt);
 var
-  payload, uri: RawUtf8;
-  opened: Boolean;
   p: Integer;
 begin
   p := PrincipalIndex(Context.PrincipalId);
-  payload := Args;
-  UniqueRawUtf8(payload);
-  uri := JsonDecode(payload, 'url');
-  if not PWebValidExternalUri(uri) then
-  begin
-    if p >= 0 then
-      InterlockedIncrement(CountOpenRefused[p]);
-    exit(PWebDefaultErrorResult(pecInvalidRequest));
+  if p < 0 then
+    exit;
+  case Outcome of
+    pooRefused: InterlockedIncrement(CountOpenRefused[p]);
+    pooOpened:  InterlockedIncrement(CountOpenOk[p]);
+    // an opener FAILURE keeps its CAP-8C shape: counted nowhere, because
+    // the injected spy in this harness never fails and a nonzero here would
+    // have to be explained rather than silently absorbed into open_ok
+    pooFailed: ;
   end;
-  opened := False;
-  try
-    opened := CallPlatformOpener(uri);
-  except
-    opened := False;
-  end;
-  if not opened then
-    exit(PWebDefaultErrorResult(pecInternalError));
-  if p >= 0 then
-    InterlockedIncrement(CountOpenOk[p]);
-  Result := PWebSuccessResult(PWEB_JSON_NULL);
 end;
 
 { ---- the counting bridge ------------------------------------------------- }
@@ -575,8 +572,6 @@ begin
       InterlockedIncrement(CountWindow[p]);
     exit(PWebSuccessResult('{"ok":true}'));
   end;
-  if Method = M_OPEN then
-    exit(OpenExternalResult(Context, Args));
   if Method = PWEB_METHOD_HANDSHAKE then
   begin
     if p >= 0 then
@@ -1399,7 +1394,12 @@ begin
     raise Exception.Create('unable to register CalculatorService');
   gRealBridge := TMormotInvocationBridge.Create(gServer, True);
   gServer := nil; // owned by the bridge now
-  gBridge := TCountingBridge.Create(gRealBridge);
+  // CAP-10A: the SHIPPED runtime-command layer over the counting bridge -
+  // the counting bridge answers method_not_found for anything it does not
+  // implement, so the command layer is the OUTER decorator here.
+  gBridge := TPWebRuntimeCommandBridge.Create(
+    TCountingBridge.Create(gRealBridge), @CallPlatformOpener,
+    @ObserveExternalOpen);
   gPolicy := BuildCap8cPolicy;
   gPolicyRef := gPolicy;
   gScheduler := TInvocationScheduler.Create(gPolicyRef, gBridge, 4);
@@ -1706,7 +1706,9 @@ begin
     raise Exception.Create('unable to register GUI CalculatorService');
   gGuiRealBridge := TMormotInvocationBridge.Create(gGuiServer, True);
   gGuiServer := nil;
-  gGuiBridge := TCountingBridge.Create(gGuiRealBridge);
+  gGuiBridge := TPWebRuntimeCommandBridge.Create(
+    TCountingBridge.Create(gGuiRealBridge), @CallPlatformOpener,
+    @ObserveExternalOpen);
   gGuiPolicy := BuildCap8cPolicy;
   gGuiPolicyRef := gGuiPolicy;
   gGuiScheduler := TInvocationScheduler.Create(gGuiPolicyRef, gGuiBridge, 4);

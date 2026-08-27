@@ -69,7 +69,6 @@ uses
   classes,
   syncobjs,
   mormot.core.base,
-  mormot.core.json,
   mormot.core.os,
   mormot.core.text,
   mormot.core.unicode, // StringReplaceAll, for the UI-round script template
@@ -84,6 +83,7 @@ uses
   pweb.rpc.support,
   pweb.rpc.scheduler,
   pweb.rpc.mormot,
+  pweb.rpc.command, // CAP-10A: the reusable runtime-command decorator
   pweb.capabilities.policy,
   pweb.navigation.policy,
   pweb.webview.intf,
@@ -144,11 +144,14 @@ const
   ARG_CORPUS = '--pweb-corpus=';
   ARG_AUTOCLOSE = '--pweb-autoclose-ms=';
 
-  METHOD_OPEN_EXTERNAL = 'pweb.openExternal';
+  { CAP-10A: the external-open method and its capability are no longer
+    spelled here. They come from pweb.rpc.command as
+    PWEB_METHOD_OPEN_EXTERNAL / PWEB_CAP_EXTERNAL_OPEN, beside the ONE
+    implementation of the command; this host keeps only the platform
+    opener and the counter its own gates read. }
   METHOD_REPORT = 'example.report';
   METHOD_PLUGIN_PROBE = 'example.pluginProbe';
   METHOD_CONCURRENT = 'example.concurrent';
-  CAP_EXTERNAL_OPEN = 'external.open';
   CAP_CALCULATOR_ADD = 'calculator.add';
   CAP_PARKING_READ = 'parking.read';
 
@@ -526,33 +529,24 @@ begin
   {$endif DARWIN}
 end;
 
-function OpenExternalResult(const Args: TPWebJson): TPWebInvocationResult;
-var
-  payload, uri: RawUtf8;
-  opened: Boolean;
+{ CAP-10A: the host's OBSERVATION of an external open. The decision moved
+  to pweb.rpc.command; the redacted log line - byte length and outcome
+  category, never the URI - is unchanged from CAP-8B. OpenerReached is
+  still incremented inside the opener above, so the gate that asserts the
+  denied principals reach the opener ZERO times reads exactly the number it
+  read before. }
+procedure ObserveExternalOpen(const Context: TInvocationContext;
+  Outcome: TPWebOpenOutcome; UriBytes: PtrInt);
 begin
-  payload := Args;
-  UniqueRawUtf8(payload);
-  uri := JsonDecode(payload, 'url');
-  if not PWebValidExternalUri(uri) then
-  begin
-    WriteLn(LOG_PREFIX, ': openExternal REFUSED (uri bytes=', Length(uri), ')');
-    exit(PWebDefaultErrorResult(pecInvalidRequest));
+  case Outcome of
+    pooRefused:
+      WriteLn(LOG_PREFIX, ': openExternal REFUSED (uri bytes=', UriBytes, ')');
+    pooFailed:
+      WriteLn(StdErr, LOG_PREFIX, ': openExternal FAILED (uri bytes=',
+        UriBytes, ')');
+    pooOpened:
+      WriteLn(LOG_PREFIX, ': openExternal OK (uri bytes=', UriBytes, ')');
   end;
-  opened := False;
-  try
-    opened := OpenExternalUri(uri);
-  except
-    opened := False;
-  end;
-  if not opened then
-  begin
-    WriteLn(StdErr, LOG_PREFIX, ': openExternal FAILED (uri bytes=',
-      Length(uri), ')');
-    exit(PWebDefaultErrorResult(pecInternalError));
-  end;
-  WriteLn(LOG_PREFIX, ': openExternal OK (uri bytes=', Length(uri), ')');
-  Result := PWebSuccessResult(PWEB_JSON_NULL);
 end;
 
 { ---------------- gate bridge ---------------- }
@@ -644,9 +638,7 @@ begin
   end;
   before := InterlockedCompareExchange(ServiceAddCalls, 0, 0);
   try
-    if Method = METHOD_OPEN_EXTERNAL then
-      Result := OpenExternalResult(Args)
-    else if Method = METHOD_REPORT then
+    if Method = METHOD_REPORT then
     begin
       LatchPageReport(Args);
       Result := PWebSuccessResult(PWEB_JSON_NULL);
@@ -802,11 +794,11 @@ var
 begin
   b := TPWebCapabilityPolicyBuilder.Create;
   try
-    b.SetAppMaximum([CAP_CALCULATOR_ADD, CAP_EXTERNAL_OPEN, CAP_PARKING_READ]);
+    b.SetAppMaximum([CAP_CALCULATOR_ADD, PWEB_CAP_EXTERNAL_OPEN, CAP_PARKING_READ]);
     // the single production window and its principal
-    b.SetWindowCapabilities('main', [CAP_CALCULATOR_ADD, CAP_EXTERNAL_OPEN]);
+    b.SetWindowCapabilities('main', [CAP_CALCULATOR_ADD, PWEB_CAP_EXTERNAL_OPEN]);
     b.SetPrincipalCapabilities(PRINCIPAL_WINDOW,
-      [CAP_CALCULATOR_ADD, CAP_EXTERNAL_OPEN]);
+      [CAP_CALCULATOR_ADD, PWEB_CAP_EXTERNAL_OPEN]);
     // the two plugin principals. The calculator may add; the reporting
     // plugin holds parking.read, which authorizes nothing this host
     // maps - so its CalculatorService.Add is forbidden BEFORE the
@@ -816,7 +808,7 @@ begin
     // the sole application service
     b.MapMethod('CalculatorService.Add', [CAP_CALCULATOR_ADD]);
     // handing a URI to the OS is an AUTHORIZATION decision, mapped
-    b.MapMethod(METHOD_OPEN_EXTERNAL, [CAP_EXTERNAL_OPEN]);
+    b.MapMethod(PWEB_METHOD_OPEN_EXTERNAL, [PWEB_CAP_EXTERNAL_OPEN]);
     // runtime-owned methods: explicitly capability-free
     b.RegisterZeroCapMethod(PWEB_METHOD_HANDSHAKE);
     b.RegisterZeroCapMethod(PWEB_METHOD_ECHO);
@@ -841,15 +833,15 @@ end;
 function PolicyProjection: RawUtf8;
 begin
   Result :=
-    'appmax=' + CAP_CALCULATOR_ADD + ',' + CAP_EXTERNAL_OPEN + ',' +
+    'appmax=' + CAP_CALCULATOR_ADD + ',' + PWEB_CAP_EXTERNAL_OPEN + ',' +
       CAP_PARKING_READ + ';' +
-    'window:main=' + CAP_CALCULATOR_ADD + ',' + CAP_EXTERNAL_OPEN + ';' +
+    'window:main=' + CAP_CALCULATOR_ADD + ',' + PWEB_CAP_EXTERNAL_OPEN + ';' +
     'principal:' + PRINCIPAL_WINDOW + '=' + CAP_CALCULATOR_ADD + ',' +
-      CAP_EXTERNAL_OPEN + ';' +
+      PWEB_CAP_EXTERNAL_OPEN + ';' +
     'principal:' + PRINCIPAL_CALCULATOR + '=' + CAP_CALCULATOR_ADD + ';' +
     'principal:' + PRINCIPAL_REPORTING + '=' + CAP_PARKING_READ + ';' +
     'map:CalculatorService.Add=' + CAP_CALCULATOR_ADD + ';' +
-    'map:' + METHOD_OPEN_EXTERNAL + '=' + CAP_EXTERNAL_OPEN + ';' +
+    'map:' + PWEB_METHOD_OPEN_EXTERNAL + '=' + PWEB_CAP_EXTERNAL_OPEN + ';' +
     'zero:' + PWEB_METHOD_HANDSHAKE + ',' + PWEB_METHOD_ECHO + ',' +
       METHOD_REPORT + ',' + METHOD_PLUGIN_PROBE + ',' + METHOD_CONCURRENT +
       ',No.SuchMethod';
@@ -1728,7 +1720,15 @@ begin
     policyRef := identityPolicy;
 
     { ---- 9: ONE bridge/decorator chain ---- }
-    bridge := TGateBridge.Create(realBridge);
+    // CAP-10A: the reusable runtime-command layer sits BETWEEN this host's
+    // gate decorator and the real bridge, deliberately - the gate must keep
+    // seeing every arrival, because its per-kind identity, in-flight and
+    // denied-arrival counters are the measurements CAP-9C2 ratified. So
+    // pweb.openExternal is still counted here, then falls through to the
+    // one shared implementation instead of a private copy of it.
+    bridge := TGateBridge.Create(
+      TPWebRuntimeCommandBridge.Create(realBridge, @OpenExternalUri,
+        @ObserveExternalOpen));
 
     { ---- 10: ONE scheduler (plus the decoy the identity gate needs) ---- }
     Scheduler := TInvocationScheduler.Create(policyRef, bridge, 4);

@@ -74,6 +74,9 @@ $required = @(
     'cap9c1_registry_sha256',
     'quickjs_gui_corpus', 'quickjs_gui_digest', 'cap9c2_listeners',
     'cap9c2_negative_reparse', 'cap9c2_license_sha256', 'cap9c2_gates',
+    'cli_corpus', 'cli_digest', 'cli_version_line', 'cli_exit_taxonomy',
+    'doctor_schema_digest', 'doctor_checks', 'doctor_no_mutation',
+    'doctor_json_deterministic',
     'release_layout', 'no_listener', 'app_pwb_react_sha256',
     'logical_inventory_sha256_react', 'github_sha', 'github_run_id', 'waivers'
 )
@@ -90,7 +93,13 @@ $absolutePins = @{
 $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
     'navigation_security', 'security_corpus', 'quickjs_corpus',
     'quickjs_package_corpus', 'quickjs_lifecycle_corpus',
-    'quickjs_release_corpus', 'quickjs_gui_corpus')
+    'quickjs_release_corpus', 'quickjs_gui_corpus',
+    # CAP-10A: the CLI verdict, and the three sub-claims that a green
+    # verdict is made of. They are named individually so the aggregator can
+    # refuse ONE of them by name - 'doctor mutated the project' and 'the
+    # exit taxonomy drifted' are different defects with different fixes.
+    'cli_corpus', 'cli_exit_taxonomy', 'doctor_no_mutation',
+    'doctor_json_deterministic')
 # fields that must agree, value-for-value, across all four targets
 # (capability_policy_digest is the CAP-8A structured policy-decision corpus and
 # navigation_policy_digest the CAP-8B one: four targets, one byte-identical
@@ -115,7 +124,14 @@ $equalityFields = @(
     # so unlike the archive it MUST be identical on all four targets. The
     # licence is byte-pinned for the same reason: it is assembled from
     # pinned sources and LF-normalized precisely so it can be.
-    'quickjs_gui_digest', 'cap9c2_license_sha256', 'github_sha'
+    'quickjs_gui_digest', 'cap9c2_license_sha256',
+    # CAP-10A: the decision corpus and the document SHAPE, both pure logic
+    # over injected inputs, plus the one version line and the row count.
+    # Deliberately NOT here: any observed tool version, any path, any
+    # per-host cause - those are facts about the runner, and requiring four
+    # runners to agree on them would be requiring four identical machines.
+    'cli_digest', 'doctor_schema_digest', 'cli_version_line',
+    'doctor_checks', 'github_sha'
 )
 # the CAP-9C2 semantic gate names, carried in ONE place across the two
 # emitters and this aggregator (see test/cap7f/emit_evidence.ps1)
@@ -387,6 +403,29 @@ foreach ($t in $evidence.Keys) {
             $failures.Add("CAP-9C2 LICENSE SHA: target=$t cap9c2_license_sha256='$($e.cap9c2_license_sha256)'")
         }
     }
+    # CAP-10A defense in depth, only meaningful where the CLI corpus is
+    # PASS: an EMPTY digest compares equal to another empty digest on four
+    # targets, which is precisely how a gate that stopped running would look
+    # identical to one that passed everywhere.
+    if ("$($e.cli_corpus)" -ceq 'PASS') {
+        foreach ($d in 'cli_digest', 'doctor_schema_digest') {
+            if ("$($e.$d)" -notmatch '^[0-9a-f]{64}$') {
+                $failures.Add("CAP-10A BAD-DIGEST: target=$t $d='$($e.$d)'")
+            }
+        }
+        # the version line is the CLI's identity: four targets, one binary
+        # contract, and a shape rather than a hard-coded value so a version
+        # bump is a normal act rather than an aggregator edit
+        if ("$($e.cli_version_line)" -cnotmatch '^pweb \d+\.\d+\.\d+ \(protocol \d+\)$') {
+            $failures.Add("CAP-10A BAD-VERSION-LINE: target=$t cli_version_line='$($e.cli_version_line)'")
+        }
+        $dc = 0
+        if (-not [int]::TryParse("$($e.doctor_checks)", [ref]$dc)) {
+            $failures.Add("CAP-10A NON-NUMERIC: target=$t doctor_checks='$($e.doctor_checks)'")
+        } elseif ($dc -le 0) {
+            $failures.Add("CAP-10A NO-ROWS: target=$t doctor_checks=$dc -- a doctor that produced no row diagnosed nothing")
+        }
+    }
 }
 
 # --- cross-target equality ---------------------------------------------------
@@ -514,6 +553,9 @@ $matrix = [ordered]@{
         quickjs_lifecycle_digest       = $first.quickjs_lifecycle_digest
         quickjs_release_digest         = $first.quickjs_release_digest
         cap9c1_inventory_digest        = $first.cap9c1_inventory_digest
+        cli_digest                     = $first.cli_digest
+        doctor_schema_digest           = $first.doctor_schema_digest
+        cli_version_line               = $first.cli_version_line
         logical_inventory_sha256_react = $first.logical_inventory_sha256_react
         logical_inventory_sha256_pas2js = $evidence['linux-x86_64'].logical_inventory_sha256_pas2js
     }
@@ -536,6 +578,9 @@ foreach ($t in $evidence.Keys) {
         quickjs_lifecycle_corpus = $e.quickjs_lifecycle_corpus
         quickjs_release_corpus = $e.quickjs_release_corpus
         quickjs_gui_corpus = $e.quickjs_gui_corpus
+        cli_corpus         = $e.cli_corpus
+        doctor_checks      = $e.doctor_checks
+        doctor_no_mutation = $e.doctor_no_mutation
         cap9c1_package_sha256 = $e.cap9c1_package_sha256
         cap9c1_package_bytes = $e.cap9c1_package_bytes
         cap9c1_registry_sha256 = $e.cap9c1_registry_sha256
@@ -576,6 +621,7 @@ foreach ($t in $evidence.Keys) {
 }
 $summary += "- CAP-9C2 quickjs_gui_digest ``$($first.quickjs_gui_digest)`` equal on all four targets (the plugin-enabled GUI corpus: UI + QuickJS over one scheduler/policy/bridge/server)"
 $summary += "- CAP-9C2 LICENSE.quickjs ``$($first.cap9c2_license_sha256)`` byte-identical on all four targets; listeners=0 everywhere"
+$summary += "- CAP-10A cli_digest ``$($first.cli_digest)`` and doctor_schema_digest ``$($first.doctor_schema_digest)`` equal on all four targets; ``$($first.cli_version_line)`` everywhere (per-host doctor OBSERVATIONS are recorded per target and deliberately not compared)"
 $summary += "- react logical_inventory_sha256 ``$($first.logical_inventory_sha256_react)`` equal on all four targets"
 $summary += "- pas2js logical_inventory_sha256 ``$($matrix.agreement.logical_inventory_sha256_pas2js)`` equal on linux/macos-x64/macos-arm64"
 $summaryText = $summary -join "`n"

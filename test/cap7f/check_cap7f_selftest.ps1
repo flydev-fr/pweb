@@ -63,7 +63,21 @@
 #   (c45) cap9c2_listeners=1 -> LISTENERS>0 refusal
 #   (c46) cap9c2_negative_reparse='waived' -> a waiver never promotes
 #   (c47) cap9c2_license_sha256 not the frozen digest -> LICENSE SHA refusal
-#   (c8-c47 additionally assert the refusal came through the EXPECTED branch
+#   (c48) cli_corpus (CAP-10A) ABSENT -> required-field refusal
+#   (c49) cli_corpus rewritten to SKIP -> mustPass refusal
+#   (c50) cli_digest diverging on one target -> equality refusal
+#   (c51) doctor_schema_digest diverging on one target -> equality refusal
+#   (c52) an EMPTY cli_digest on EVERY target with a PASS corpus ->
+#         BAD-DIGEST refusal. This leg closes a subtle hole and is why the
+#         branch exists at all: four empty strings agree perfectly, so a gate
+#         that stopped emitting would look exactly like one that passed
+#         everywhere
+#   (c53) doctor_no_mutation=FAIL -> mustPass refusal (`pweb doctor` wrote
+#         something, which is the one thing that command promises never to do)
+#   (c54) cli_exit_taxonomy=FAIL -> mustPass refusal
+#   (c55) cli_version_line not the contract shape -> BAD-VERSION-LINE refusal
+#   (c56) doctor_checks=0 with a PASS corpus -> NO-ROWS refusal
+#   (c8-c56 additionally assert the refusal came through the EXPECTED branch
 #    where one is named)
 #   (e) a count-preserving directive swap in an allowlisted file
 #                                          -> divergence sweep refuses via the
@@ -763,6 +777,102 @@ $e.cap9c2_license_sha256 = ('a' * 64)
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap9c2-license' 'CAP-9C2 LICENSE SHA'
 
+# --- (c48) CAP-10A: the CLI corpus absent -----------------------------------
+# the first thing a shard's evidence loses when a step is quietly dropped
+# from CI is the field itself
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['cli_corpus']) {
+    throw 'selftest cap10a-absent: the evidence carries no cli_corpus field - the emitters did not record it'
+}
+$e.PSObject.Properties.Remove('cli_corpus')
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10a-absent' 'cli_corpus'
+
+# --- (c49) CAP-10A: the CLI corpus reading SKIP -----------------------------
+# the CLI suite is headless on every target: a SKIP is a gate that stopped
+# running, never a machine that could not run it
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.cli_corpus = 'SKIP'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10a-skip' 'SKIP/WAIVED NEVER PROMOTES'
+
+# --- (c50) CAP-10A: the decision corpus diverging on one target -------------
+# every line of that corpus is the verdict of platform-independent logic, so
+# a divergence is a real behavioural difference between two builds of the
+# same parser - never a toolchain artefact
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.cli_digest = ('0' * 64)
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10a-cli-digest' 'FIELD DISAGREES: cli_digest'
+
+# --- (c51) CAP-10A: the doctor JSON SHAPE diverging on one target -----------
+# the shape and the row set are platform-independent by construction; the
+# OBSERVATIONS are not compared at all, which is exactly why this one must be
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.doctor_schema_digest = ('1' * 64)
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10a-schema-digest' 'FIELD DISAGREES: doctor_schema_digest'
+
+# --- (c52) CAP-10A: an EMPTY digest with a PASS corpus ----------------------
+# the failure this closes is subtle and is why the branch exists: an empty
+# digest compares EQUAL to another empty digest on four targets, so a gate
+# that stopped emitting would look exactly like one that passed everywhere
+Reset-Fixture
+foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$t/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.cli_digest = ''
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10a-empty-digest' 'CAP-10A BAD-DIGEST'
+
+# --- (c53) CAP-10A: doctor mutated the project -----------------------------
+# "diagnostic only" is the whole promise of the command; the runner measures
+# it by hashing the tree before and after, and this is the leg that proves a
+# recorded FAIL is refused rather than read past
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.doctor_no_mutation = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10a-mutation' 'doctor_no_mutation'
+
+# --- (c54) CAP-10A: the exit taxonomy drifted ------------------------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.cli_exit_taxonomy = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10a-exit-taxonomy' 'cli_exit_taxonomy'
+
+# --- (c55) CAP-10A: a version line that is not the contract shape ----------
+Reset-Fixture
+foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$t/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.cli_version_line = 'pweb (dev build)'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10a-version-line' 'CAP-10A BAD-VERSION-LINE'
+
+# --- (c56) CAP-10A: a doctor that produced no row --------------------------
+Reset-Fixture
+foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$t/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.doctor_checks = 0
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10a-no-rows' 'CAP-10A NO-ROWS'
+
 # --- (d) divergence sweep must refuse an off-allowlist conditional -----------
 $fixturePas = 'src/zz_cap7f_selftest_fixture.pas'
 Remove-Item -Force -ErrorAction SilentlyContinue $fixturePas
@@ -818,4 +928,4 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Remove-Item -Force -ErrorAction SilentlyContinue $matrix
-Write-Host '[CAP-7F] selftest PASS - 51 aggregator refusals + 2 divergence refusals, all on copies or byte-restored'
+Write-Host '[CAP-7F] selftest PASS - 60 aggregator refusals + 2 divergence refusals, all on copies or byte-restored'

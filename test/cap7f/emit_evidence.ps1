@@ -722,6 +722,64 @@ if ($quickjsGuiCorpus -ceq 'PASS') {
 Write-Host "[CAP-7F] quickjs_gui_digest: $quickjsGuiDigest"
 Write-Host "[CAP-7F] quickjs_gui_corpus: $quickjsGuiCorpus (listeners=$cap9c2Listeners reparse=$cap9c2Reparse)"
 
+# --- CAP-10A: the CLI foundation --------------------------------------------
+#
+# THREE compared fields and one must-PASS verdict. What is compared is
+# deliberately narrow, because most of what a doctor reports is a fact about
+# the MACHINE and comparing those across four runners would be comparing the
+# runners:
+#
+#   cli_digest            the decision corpus of the parser, the descriptor
+#                         reader and the confinement walk - pure logic over
+#                         injected inputs, so byte-equal on four targets by
+#                         construction rather than by luck;
+#   doctor_schema_digest  the SHAPE of the public JSON document plus the
+#                         ordered row set and each row's severity. Versions,
+#                         paths and per-host causes are excluded on purpose;
+#   cli_version_line      one line, identical everywhere, which is what makes
+#                         "the same CLI ran on four targets" checkable.
+#
+# The per-host observations travel as their own field and are explicitly NOT
+# compared - they are recorded so a human can read what each runner saw.
+$cliFile = Join-Path $repoRoot 'build/cap10a/cli-windows-x86_64.json'
+if (-not (Test-Path $cliFile)) {
+    throw '[CAP-7F] cli-windows-x86_64.json missing -- the CAP-10A gate has not run in this workspace'
+}
+$cli = Get-Content $cliFile -Raw | ConvertFrom-Json
+$cliCorpus = "$($cli.cli_corpus)"
+if ($cliCorpus -notin @('PASS', 'FAIL')) {
+    throw "[CAP-7F] the CAP-10A record carries an unexpected verdict: $cliCorpus"
+}
+$cliDigest = "$($cli.cli_digest)"
+$doctorSchemaDigest = "$($cli.doctor_schema_digest)"
+$cliVersionLine = "$($cli.cli_version_line)"
+$cliExitTaxonomy = "$($cli.cli_exit_taxonomy)"
+$cliNoMutation = "$($cli.doctor_no_mutation)"
+$cliJsonDeterministic = "$($cli.doctor_json_deterministic)"
+$cliDoctorChecks = "$($cli.doctor_checks)"
+# the per-host observations stay in build/cap10a/cli-<target>.json, which is
+# uploaded whole: they are evidence for a human, never a compared field, and
+# putting them in the aggregated record would invite someone to compare them
+if ($cliCorpus -ceq 'PASS') {
+    # a green verdict with an empty digest would be a proof of nothing, and
+    # an empty string compares equal to another empty string on four targets
+    foreach ($pair in @(@('cli_digest', $cliDigest),
+                        @('doctor_schema_digest', $doctorSchemaDigest),
+                        @('cli_version_line', $cliVersionLine))) {
+        if ($pair[1] -eq '') {
+            throw "[CAP-7F] the CAP-10A record records PASS with an empty $($pair[0])"
+        }
+    }
+    if ($cliDoctorChecks -eq '0') {
+        throw '[CAP-7F] the CAP-10A record records PASS with zero doctor rows'
+    }
+}
+Write-Host "[CAP-7F] cli_digest: $cliDigest"
+Write-Host "[CAP-7F] doctor_schema_digest: $doctorSchemaDigest"
+Write-Host ("[CAP-7F] cli_corpus: $cliCorpus (" +
+    "exit_taxonomy=$cliExitTaxonomy no_mutation=$cliNoMutation " +
+    "deterministic=$cliJsonDeterministic checks=$cliDoctorChecks)")
+
 # --- run identity -----------------------------------------------------------
 $sha = $env:GITHUB_SHA
 if (-not $sha) { $sha = (& git rev-parse HEAD).Trim() }
@@ -794,6 +852,14 @@ $evidence = [ordered]@{
     cap9c2_negative_reparse         = $cap9c2Reparse
     cap9c2_license_sha256           = $cap9c2License
     cap9c2_gates                    = $cap9c2Gates
+    cli_corpus                      = $cliCorpus
+    cli_digest                      = $cliDigest
+    cli_version_line                = $cliVersionLine
+    cli_exit_taxonomy               = $cliExitTaxonomy
+    doctor_schema_digest            = $doctorSchemaDigest
+    doctor_checks                   = $cliDoctorChecks
+    doctor_no_mutation              = $cliNoMutation
+    doctor_json_deterministic       = $cliJsonDeterministic
     release_layout                  = $releaseLayout
     no_listener                     = $noListener
     no_listener_provenance          = 'source-sweep re-executed (check_cap6_nonetwork.ps1); CAP-5/CAP-6 job gates precede this emitter'

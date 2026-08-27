@@ -35,6 +35,7 @@ uses
   pweb.test.assets,
   pweb.test.bundle,
   pweb.test.capabilities,
+  pweb.test.command,
   pweb.test.navigation
   {$ifdef PWEB_CAP8A_INTEGRATION}
   ,
@@ -71,6 +72,7 @@ type
     procedure BundleSystem;
     procedure CapabilityPolicy;
     procedure NavigationPolicy;
+    procedure RuntimeCommand;
     {$ifdef PWEB_CAP8A_INTEGRATION}
     procedure CapabilityPolicyIntegration;
     {$endif PWEB_CAP8A_INTEGRATION}
@@ -126,6 +128,15 @@ begin
   // decisions, because CAP-8B MEASURED that no engine reports activation
   // honestly and the ratified model makes it diagnostic only.
   AddCase([TTestNavigationPolicy]);
+end;
+
+procedure TPWebTests.RuntimeCommand;
+begin
+  // CAP-10A, headless on every target: the reusable runtime-command
+  // decorator (the ONE pweb.openExternal implementation, its opener-count
+  // measurements and its fail-closed construction) plus the ratified
+  // production trust profile - no window, no webview, no bridge required
+  AddCase([TTestRuntimeCommand]);
 end;
 
 procedure TPWebTests.CapabilityPolicy;

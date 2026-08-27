@@ -115,7 +115,6 @@ uses
   {$I mormot.uses.inc}
   sysutils,
   mormot.core.base,
-  mormot.core.json, // JsonDecode, for the pweb.openExternal argument
   mormot.core.os,
   mormot.core.interfaces,
   mormot.rest.memserver,
@@ -128,6 +127,7 @@ uses
   pweb.rpc.support,
   pweb.rpc.scheduler,
   pweb.rpc.mormot,
+  pweb.rpc.command, // CAP-10A: the reusable runtime-command decorator
   pweb.capabilities.policy,
   pweb.navigation.policy,
   pweb.webview.intf,
@@ -204,15 +204,14 @@ const
   { CAP-7M2 optional arguments (all platforms; see the header comment) }
   ARG_VERDICT = '--pweb-verdict=';
   ARG_AUTOCLOSE = '--pweb-autoclose-ms=';
-  { CAP-8B: the canonical external-open method and the capability that
-    authorizes it, spelled ONCE each. The method lives in the reserved
-    pweb.* namespace because it is runtime-owned, not application
-    surface; the FROZEN bridge answers method_not_found for every pweb.*
-    method it does not implement, which is precisely why this host
-    implements it in its own IInvocationBridge decorator instead of
-    touching the bridge. }
-  METHOD_OPEN_EXTERNAL = 'pweb.openExternal';
-  CAP_EXTERNAL_OPEN = 'external.open';
+  { CAP-10A: the canonical external-open method and the capability that
+    authorizes it are no longer spelled here at all. They live in
+    pweb.rpc.command as PWEB_METHOD_OPEN_EXTERNAL / PWEB_CAP_EXTERNAL_OPEN,
+    together with the ONE implementation of the command, because CAP-8B's
+    host-local placement had produced four private copies of the same
+    decision by the close of CAP-9. What stays host-private is the two
+    things that genuinely are: which platform opener to call
+    (OpenExternalUri below) and what to log about the outcome. }
   CAP_CALCULATOR_ADD = 'calculator.add';
 
 type
@@ -322,11 +321,11 @@ begin
   b := TPWebCapabilityPolicyBuilder.Create;
   try
     // the explicit mandatory ceiling of this application
-    b.SetAppMaximum([CAP_CALCULATOR_ADD, CAP_EXTERNAL_OPEN]);
+    b.SetAppMaximum([CAP_CALCULATOR_ADD, PWEB_CAP_EXTERNAL_OPEN]);
     // the single production window and its principal: the full ceiling
-    b.SetWindowCapabilities('main', [CAP_CALCULATOR_ADD, CAP_EXTERNAL_OPEN]);
+    b.SetWindowCapabilities('main', [CAP_CALCULATOR_ADD, PWEB_CAP_EXTERNAL_OPEN]);
     b.SetPrincipalCapabilities('window:main',
-      [CAP_CALCULATOR_ADD, CAP_EXTERNAL_OPEN]);
+      [CAP_CALCULATOR_ADD, PWEB_CAP_EXTERNAL_OPEN]);
     // the sole application service
     b.MapMethod('CalculatorService.Add', [CAP_CALCULATOR_ADD]);
     // CAP-8B: handing a URI to the operating system is an AUTHORIZATION
@@ -335,7 +334,7 @@ begin
     // BEFORE the bridge, so a principal without 'external.open' is
     // answered forbidden/403 with no opener activity of any kind, and the
     // interception below is never even reached.
-    b.MapMethod(METHOD_OPEN_EXTERNAL, [CAP_EXTERNAL_OPEN]);
+    b.MapMethod(PWEB_METHOD_OPEN_EXTERNAL, [PWEB_CAP_EXTERNAL_OPEN]);
     // runtime-owned methods: explicitly capability-free (context is
     // still validated; distinct from unmapped, which is denied)
     b.RegisterZeroCapMethod(PWEB_METHOD_HANDSHAKE);
@@ -388,80 +387,39 @@ begin
   {$endif DARWIN}
 end;
 
-{ CAP-8B ratification R-A: the ONE place in the product where a URI is
-  handed to the operating system, and it is an ordinary invocation - not
-  a navigation.
+{ CAP-10A: the host's OBSERVATION of an external open, and the whole of
+  what this host still owns about the command.
 
-  WHY HERE. The bridge answers method_not_found for every pweb.* method
-  it does not implement and is FROZEN, so a host-owned runtime method is
-  intercepted in this decorator, exactly as example.report already is.
-  No second RPC path, no eighth interface, no new export.
+  The decision - validate through PWebValidExternalUri, reach the opener at
+  most once, map the three outcomes onto the frozen taxonomy - now lives in
+  ONE place, pweb.rpc.command, because by the close of CAP-9 it existed as
+  four byte-similar private copies that no gate could tell apart. What is
+  genuinely this host's is the platform opener above and the redacted log
+  line below.
 
-  WHY NOT FROM A NAVIGATION HOOK. MEASURED on all four targets: WebView2
-  reports IsUserInitiated TRUE for a navigation issued in the
-  continuation of a webview_bind promise, WebKitGTK's is_user_gesture
-  behaves identically, and WKWebView publishes no gesture flag at all -
-  so "the user clicked" is not a decidable question and cannot be an
-  authorization input. Every raw external navigation is cancelled inside
-  the privileged WebView instead, and opening becomes a capability.
-
-  WHY NO CAPABILITY CHECK BELOW. The CAP-8A policy already ran at the
-  scheduler, before the bridge: an unauthorized caller was answered
-  forbidden/403 and never got here. A second copy of an authorization
-  rule is a second answer to one question.
-
-  REDACTION. The URI is never written to the log - not the query string,
-  not a mailto body, not even the host. Only its byte length and the
-  outcome category. }
-function OpenExternalResult(const Args: TPWebJson): TPWebInvocationResult;
-var
-  payload, uri: RawUtf8;
-  opened: Boolean;
+  REDACTION, unchanged from CAP-8B: the URI is never written to the log -
+  not the query string, not a mailto body, not even the host. Only its byte
+  length and the outcome category. The decorator hands over exactly that. }
+procedure ObserveExternalOpen(const Context: TInvocationContext;
+  Outcome: TPWebOpenOutcome; UriBytes: PtrInt);
 begin
-  // JsonDecode unescapes IN PLACE, so it must never walk the caller's
-  // buffer: Args belongs to the invocation, not to this function
-  payload := Args;
-  UniqueRawUtf8(payload);
-  uri := JsonDecode(payload, 'url');
-  // the shared classifier owns the whole allowlist - parsed scheme
-  // (https/mailto only), bounded length, no control bytes, authority or
-  // recipient present. Anything it refuses is invalid_request and never
-  // reaches an opener; a missing, non-string or malformed argument
-  // collapses to the empty string here and is refused by the same test.
-  if not PWebValidExternalUri(uri) then
-  begin
-    WriteLn(LOG_PREFIX, ': openExternal REFUSED (uri bytes=',
-      Length(uri), ')');
-    exit(PWebDefaultErrorResult(pecInvalidRequest));
+  case Outcome of
+    pooRefused:
+      WriteLn(LOG_PREFIX, ': openExternal REFUSED (uri bytes=',
+        UriBytes, ')');
+    pooFailed:
+      WriteLn(StdErr, LOG_PREFIX, ': openExternal FAILED (uri bytes=',
+        UriBytes, ')');
+    pooOpened:
+      WriteLn(LOG_PREFIX, ': openExternal OK (uri bytes=', UriBytes, ')');
   end;
-  opened := False;
-  try
-    opened := OpenExternalUri(uri);
-  except
-    // an opener that raised is a FAILURE, never a success - and the
-    // exception dies here rather than travelling out of a bridge call
-    opened := False;
-  end;
-  if not opened then
-  begin
-    // the existing safe/redacted contract: a category, never a native
-    // detail. The trusted page is exactly where it was - there is no
-    // internal-navigation fallback anywhere on this path.
-    WriteLn(StdErr, LOG_PREFIX, ': openExternal FAILED (uri bytes=',
-      Length(uri), ')');
-    exit(PWebDefaultErrorResult(pecInternalError));
-  end;
-  WriteLn(LOG_PREFIX, ': openExternal OK (uri bytes=', Length(uri), ')');
-  Result := PWebSuccessResult(PWEB_JSON_NULL);
 end;
 
 function TReportingBridge.Invoke(const Context: TInvocationContext;
   const Method: Utf8String; const Args: TPWebJson;
   const Token: ICancellationToken): TPWebInvocationResult;
 begin
-  if Method = METHOD_OPEN_EXTERNAL then
-    Result := OpenExternalResult(Args)
-  else if Method = 'example.report' then
+  if Method = 'example.report' then
   begin
     WriteLn(LOG_PREFIX, ' report: ', Args); // raw page verdict for the log
     // the page reports handshake/secure/rendered/rpc through the SDK;
@@ -869,7 +827,17 @@ begin
       raise Exception.Create('unable to register CalculatorService');
     realBridge := TMormotInvocationBridge.Create(server, True);
     server := nil;
-    bridge := TReportingBridge.Create(realBridge);
+    // CAP-10A: the reusable runtime-command layer sits between this
+    // host's own decorator and the real bridge, which is the SAME order
+    // every PWeb host uses. The application decorator therefore still
+    // sees every arrival (its accounting is unchanged), example.report is
+    // still answered by it, and everything it does not implement -
+    // pweb.openExternal included - falls through to the shared runtime
+    // command layer and then to the real bridge. The opener and the
+    // redacted log line are all this host still supplies.
+    bridge := TReportingBridge.Create(
+      TPWebRuntimeCommandBridge.Create(realBridge, @OpenExternalUri,
+        @ObserveExternalOpen));
     // CAP-8A: the production contextual policy replaces the Phase-2
     // allow-all at the SAME single call site - the plumbing is untouched
     capPolicy := BuildReleasePolicy;

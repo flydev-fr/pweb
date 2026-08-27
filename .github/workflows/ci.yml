@@ -1739,6 +1739,58 @@ jobs:
             build/cap9c2/run-green.err
             build/cap9c2-quickjsgui.log
 
+      # ----------------------------------------------------------------
+      # CAP-10A: the public pweb CLI. Build (which is also the LAYERING
+      # proof - each isolation compile sees only the unit paths its layer
+      # may), the two checkout-only contract gates, then the headless
+      # matrices and the real executable against its own contract.
+      #
+      # Nothing here needs a window, a display or a network, on any
+      # target, and the gate MEASURES that `pweb doctor` mutated nothing:
+      # the fixture tree and every lock file are hashed before and after.
+      # ----------------------------------------------------------------
+      - name: CAP-10A build the pweb CLI, its suite and the probe fixture
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap10a/build_cap10a.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10A build FAILED' }
+
+      - name: CAP-10A contract cross-checks (pins, no shell, no network)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10a/check_cap10a_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10A contract cross-checks FAILED' }
+
+      - name: CAP-10A development-trust gate
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10a/check_dev_trust.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10A dev-trust gate FAILED' }
+
+      - name: CAP-10A CLI gates + evidence
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap10a/run_cap10a_gates.ps1 2>&1 |
+            Tee-Object -FilePath build/cap10a-gates.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10A gates FAILED' }
+
+      - name: CAP-10A upload the CLI corpus
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10a-cli-windows
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            build/cap10a/cli-windows-x86_64.json
+            build/cap10a/cli-corpus.txt
+            build/cap10a/doctor.json
+            build/cap10a/doctor-human.txt
+            build/cap10a/dev-trust.txt
+            build/cap10a/clitests.log
+            build/cap10a-gates.log
+
       - name: CAP-7F emit the Windows evidence artifact
         shell: pwsh
         timeout-minutes: 10
@@ -2269,6 +2321,50 @@ jobs:
             build/cap9c2/hostile-rows.txt
             build/cap9c2/runner-rows.txt
             build/cap9c2/quickjsgui-posix.log
+
+      # CAP-10A: the public pweb CLI (see the windows job for the rationale).
+      # The BUILD is the one platform-specific step - it sources the ratified
+      # flags where Darwin needs them and picks the mORMot static directory -
+      # and every gate after it is the same pwsh verifier the other three
+      # targets run, which is what makes "identical semantics on four
+      # targets" a comparison rather than four implementations.
+      - name: CAP-10A build the pweb CLI, its suite and the probe fixture
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap10a/build_cap10a.sh
+
+      - name: CAP-10A contract cross-checks (pins, no shell, no network)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10a/check_cap10a_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10A contract cross-checks FAILED' }
+
+      - name: CAP-10A development-trust gate
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10a/check_dev_trust.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10A dev-trust gate FAILED' }
+
+      - name: CAP-10A CLI gates + evidence
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap10a/run_cap10a_gates.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10A gates FAILED' }
+
+      - name: CAP-10A upload the CLI corpus
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10a-cli-linux
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            build/cap10a/cli-linux-x86_64.json
+            build/cap10a/cli-corpus.txt
+            build/cap10a/doctor.json
+            build/cap10a/doctor-human.txt
+            build/cap10a/dev-trust.txt
+            build/cap10a/clitests.log
 
       - name: CAP-7F emit the Linux evidence artifact
         shell: bash
@@ -2841,6 +2937,45 @@ jobs:
       # verdicts) - so the emitter consumes measurements.txt, the release
       # manifests/inventories and the run logs, and re-enumerates the
       # export trie from the built dylib.
+      # CAP-10A: the public pweb CLI (see the windows job for the rationale)
+      - name: CAP-10A build the pweb CLI, its suite and the probe fixture
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap10a/build_cap10a.sh
+
+      - name: CAP-10A contract cross-checks (pins, no shell, no network)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10a/check_cap10a_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10A contract cross-checks FAILED' }
+
+      - name: CAP-10A development-trust gate
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10a/check_dev_trust.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10A dev-trust gate FAILED' }
+
+      - name: CAP-10A CLI gates + evidence
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap10a/run_cap10a_gates.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10A gates FAILED' }
+
+      - name: CAP-10A upload the CLI corpus
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10a-cli-macos-x64
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            build/cap10a/cli-macos-x86_64.json
+            build/cap10a/cli-corpus.txt
+            build/cap10a/doctor.json
+            build/cap10a/doctor-human.txt
+            build/cap10a/dev-trust.txt
+            build/cap10a/clitests.log
+
       - name: CAP-7F emit the macOS x64 evidence artifact
         shell: bash
         timeout-minutes: 10
@@ -3340,6 +3475,45 @@ jobs:
 
       # CAP-7F: see the x64 sibling - the emitter summarizes gates that
       # already ran above in this job and re-enumerates the export trie.
+      # CAP-10A: the public pweb CLI (see the windows job for the rationale)
+      - name: CAP-10A build the pweb CLI, its suite and the probe fixture
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap10a/build_cap10a.sh
+
+      - name: CAP-10A contract cross-checks (pins, no shell, no network)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10a/check_cap10a_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10A contract cross-checks FAILED' }
+
+      - name: CAP-10A development-trust gate
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10a/check_dev_trust.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10A dev-trust gate FAILED' }
+
+      - name: CAP-10A CLI gates + evidence
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap10a/run_cap10a_gates.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10A gates FAILED' }
+
+      - name: CAP-10A upload the CLI corpus
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10a-cli-macos-arm64
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            build/cap10a/cli-macos-arm64.json
+            build/cap10a/cli-corpus.txt
+            build/cap10a/doctor.json
+            build/cap10a/doctor-human.txt
+            build/cap10a/dev-trust.txt
+            build/cap10a/clitests.log
+
       - name: CAP-7F emit the macOS arm64 evidence artifact
         shell: bash
         timeout-minutes: 10

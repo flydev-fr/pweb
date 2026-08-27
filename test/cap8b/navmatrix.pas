@@ -61,7 +61,6 @@ uses
   sysutils,
   classes,
   mormot.core.base,
-  mormot.core.json, // JsonDecode, for the pweb.openExternal argument
   mormot.core.os,
   pweb.lib.webview,
   pweb.lib.webview.types,
@@ -69,6 +68,7 @@ uses
   pweb.rpc.intf,
   pweb.rpc.support,
   pweb.rpc.scheduler,
+  pweb.rpc.command, // CAP-10A: the reusable runtime-command decorator
   pweb.capabilities.policy,
   pweb.navigation.policy,
   pweb.webview.intf,
@@ -125,8 +125,11 @@ const
   DEFAULT_TIMEOUT_MS = 45000;
   MAX_TIMEOUT_MS = 120000;
   CLOSER_WAIT_MARGIN_MS = 10000;
-  METHOD_OPEN_EXTERNAL = 'pweb.openExternal';
-  CAP_EXTERNAL_OPEN = 'external.open';
+  { CAP-10A: the method and its capability come from pweb.rpc.command
+    (PWEB_METHOD_OPEN_EXTERNAL / PWEB_CAP_EXTERNAL_OPEN), like every other
+    host - this harness must exercise the SHIPPED command, not a private
+    twin of it, or its "byte-identical to the release host" claim is a
+    comment rather than a fact. }
   CAP_CALCULATOR_ADD = 'calculator.add';
   { the two URIs the driver asks the runtime to open; the spy compares
     against these exact bytes so "the opener saw what was authorized" is a
@@ -320,34 +323,19 @@ begin
   Result := Result + ']';
 end;
 
-function OpenExternalResult(const Args: TPWebJson): TPWebInvocationResult;
-var
-  payload, uri: RawUtf8;
-  opened: Boolean;
+{ CAP-10A: this harness no longer carries a private twin of the release
+  host's interception - it drives the SHIPPED one (pweb.rpc.command) and
+  contributes only its ledger. That is strictly stronger evidence: the
+  per-method arithmetic below now counts what the product does, not what a
+  copy of the product does. }
+procedure ObserveExternalOpen(const Context: TInvocationContext;
+  Outcome: TPWebOpenOutcome; UriBytes: PtrInt);
 begin
-  // byte-identical logic to the release host's interception: JsonDecode on
-  // a private copy, the shared validator as the ONLY gate, no URI logging
-  payload := Args;
-  UniqueRawUtf8(payload);
-  uri := JsonDecode(payload, 'url');
-  if not PWebValidExternalUri(uri) then
-  begin
-    InterlockedIncrement(CountOpenRefused);
-    exit(PWebDefaultErrorResult(pecInvalidRequest));
+  case Outcome of
+    pooRefused: InterlockedIncrement(CountOpenRefused);
+    pooFailed:  InterlockedIncrement(CountOpenFailed);
+    pooOpened:  InterlockedIncrement(CountOpenOk);
   end;
-  opened := False;
-  try
-    opened := CallPlatformOpener(uri);
-  except
-    opened := False;
-  end;
-  if not opened then
-  begin
-    InterlockedIncrement(CountOpenFailed);
-    exit(PWebDefaultErrorResult(pecInternalError));
-  end;
-  InterlockedIncrement(CountOpenOk);
-  Result := PWebSuccessResult(PWEB_JSON_NULL);
 end;
 
 function TCountingMatrixBridge.Invoke(const Context: TInvocationContext;
@@ -367,8 +355,6 @@ begin
       PWEB_RUNTIME_VERSION + '","capabilities":' +
       Utf8String(EncodeCapabilities(Context.Capabilities)) + '}'));
   end;
-  if Method = METHOD_OPEN_EXTERNAL then
-    exit(OpenExternalResult(Args));
   if Method = 'matrix.add' then
   begin
     InterlockedIncrement(CountAdd);
@@ -426,12 +412,12 @@ begin
   // CAP-8A engine authorizes the open before the bridge ever sees it
   b := TPWebCapabilityPolicyBuilder.Create;
   try
-    b.SetAppMaximum([CAP_CALCULATOR_ADD, CAP_EXTERNAL_OPEN]);
-    b.SetWindowCapabilities('main', [CAP_CALCULATOR_ADD, CAP_EXTERNAL_OPEN]);
+    b.SetAppMaximum([CAP_CALCULATOR_ADD, PWEB_CAP_EXTERNAL_OPEN]);
+    b.SetWindowCapabilities('main', [CAP_CALCULATOR_ADD, PWEB_CAP_EXTERNAL_OPEN]);
     b.SetPrincipalCapabilities('window:main',
-      [CAP_CALCULATOR_ADD, CAP_EXTERNAL_OPEN]);
+      [CAP_CALCULATOR_ADD, PWEB_CAP_EXTERNAL_OPEN]);
     b.MapMethod('matrix.add', [CAP_CALCULATOR_ADD]);
-    b.MapMethod(METHOD_OPEN_EXTERNAL, [CAP_EXTERNAL_OPEN]);
+    b.MapMethod(PWEB_METHOD_OPEN_EXTERNAL, [PWEB_CAP_EXTERNAL_OPEN]);
     b.RegisterZeroCapMethod(PWEB_METHOD_HANDSHAKE);
     b.RegisterZeroCapMethod(PWEB_METHOD_ECHO);
     b.RegisterZeroCapMethod('matrix.report');
@@ -597,7 +583,11 @@ begin
       InstallOpenerSpy;
 
       store := TFolderAssetStore.Create(fixtureDir);
-      bridge := TCountingMatrixBridge.Create;
+      // CAP-10A: the SHIPPED runtime-command layer over the counting
+      // bridge. pweb.openExternal is answered by the product; every other
+      // method still reaches the per-method ledger unchanged.
+      bridge := TPWebRuntimeCommandBridge.Create(TCountingMatrixBridge.Create,
+        @CallPlatformOpener, @ObserveExternalOpen);
       capPolicy := BuildMatrixPolicy;
       capPolicyRef := capPolicy;
       scheduler := TInvocationScheduler.Create(capPolicyRef, bridge, 4);
