@@ -334,10 +334,13 @@ Darwin)
 PLIST
     plutil -lint "${app}/Contents/Info.plist" >> "${log}" 2>&1 ||
         die 'the generated Info.plist does not lint'
-    if command -v codesign >/dev/null 2>&1; then
-        codesign -s - -f "${app}/Contents/MacOS/${dylib}" >> "${log}" 2>&1 || true
-        codesign -s - -f "${app}" >> "${log}" 2>&1 || true
-    fi
+    # DELIBERATELY NOT codesigned. `codesign -s - -f` on a BUNDLE writes
+    # Contents/_CodeSignature/CodeResources, which would add a file to the
+    # layout this step then asserts is minimal - and nothing here needs it:
+    # the executable is launched DIRECTLY, not through LaunchServices, and
+    # the linker already ad-hoc signs a Mach-O on Apple Silicon. CAP-7M2
+    # signs only as a RETRY when LaunchServices leaves no verdict, after its
+    # own layout check has run.
     exe="${app}/Contents/MacOS/demo"
     expected_layout="Info.plist|demo|${dylib}|app.pwb"
     ;;

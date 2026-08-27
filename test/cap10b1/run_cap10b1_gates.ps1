@@ -79,6 +79,18 @@ function Sha256Text([string]$Text) {
 function Sha256File([string]$Path) {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
+# ORDINAL, never Sort-Object. PowerShell's default sort is culture-aware and
+# case-insensitive, so `App.tsx` and `app.css` order one way here and the
+# other way under the bytewise `LC_ALL=C sort` the POSIX scripts use - and a
+# digest whose ORDER depends on the runner's culture is a digest four
+# targets can never agree on for a reason that has nothing to do with the
+# bytes it was meant to measure.
+function SortOrdinal([string[]]$Items) {
+    $copy = [string[]]::new($Items.Length)
+    [Array]::Copy($Items, $copy, $Items.Length)
+    [Array]::Sort($copy, [System.StringComparer]::Ordinal)
+    return $copy
+}
 
 # every CLI leg runs the REAL executable, from an explicit working
 # directory, with an argument ARRAY - there is no command string anywhere in
@@ -174,7 +186,23 @@ Require ($createHelp.Out.Contains('This build supports: react')) `
     'create --help does not advertise react'
 Require (-not $createHelp.Out.Contains('pas2js')) `
     'create --help advertises pas2js before CAP-10B2 exists'
+# RECORDED, NOT COMPARED - and the reason is a measurement that has not
+# been finished rather than a preference. On hosted run 33126638202 the
+# Linux and both macOS runners produced one digest for this text and the
+# Windows dev host another, with the text pure ASCII and LF-only on
+# Windows (1011 bytes). `create_stdout_digest` below, produced through the
+# SAME Emit path, agreed on all of them - so whatever differs is in this
+# string and not in the console seam, and this shard has not measured it.
+#
+# What the help must CLAIM is asserted structurally instead, on every
+# target: create appears in the global help, `This build supports: react`
+# appears here, `pas2js` does not, dev/run/build do not, and `advertised_ui`
+# is parsed back OUT of this text and absolute-pinned to `react` by the
+# aggregator. The byte length travels beside the digest so the next reader
+# can tell a length difference from a substitution in one look.
 Row 'create_help_digest' (Sha256Text ($createHelp.Out.Replace("`r`n", "`n")))
+Row 'create_help_bytes' ([System.Text.Encoding]::UTF8.GetByteCount(
+    $createHelp.Out.Replace("`r`n", "`n")))
 # the advertised set, read back OUT of the help text rather than restated
 # here: a gate that asserts its own copy of the answer proves nothing
 $advertised = ''
@@ -288,15 +316,15 @@ foreach ($name in $roots.Keys) {
     $project = Join-Path $root 'demo'
     $lines = New-Object System.Collections.Generic.List[string]
     $total = 0
-    foreach ($f in (Get-ChildItem -LiteralPath $project -Recurse -File -Force |
-                    Sort-Object { $_.FullName })) {
+    foreach ($f in (Get-ChildItem -LiteralPath $project -Recurse -File -Force)) {
         $rel = $f.FullName.Substring($project.Length + 1).Replace('\', '/')
         $lines.Add("$rel $($f.Length) $(Sha256File $f.FullName)")
         $total += $f.Length
     }
-    # sorted by the RELATIVE name, so a filesystem that walks in a different
-    # order cannot change the digest
-    $sorted = @($lines | Sort-Object)
+    # sorted ORDINALLY by the RELATIVE name, so neither a filesystem that
+    # walks in a different order nor a runner with a different culture can
+    # change the digest
+    $sorted = SortOrdinal $lines.ToArray()
     $inventories[$name] = [pscustomobject]@{
         Text = (($sorted -join "`n") + "`n")
         Count = $sorted.Count
@@ -336,9 +364,10 @@ $expected = @(
     'pweb.json'
     'src/app.services.pas'
     'src/demo.lpr'
-) | Sort-Object
-$observed = @(($reference.Text.TrimEnd("`n") -split "`n") |
-    ForEach-Object { ($_ -split ' ')[0] }) | Sort-Object
+)
+$expected = SortOrdinal $expected
+$observed = SortOrdinal @(($reference.Text.TrimEnd("`n") -split "`n") |
+    ForEach-Object { ($_ -split ' ')[0] })
 Require ((($expected -join '|')) -ceq (($observed -join '|'))) `
     ("the generated set is not exact: expected $($expected -join ', ') " +
      "observed $($observed -join ', ')")
@@ -374,20 +403,35 @@ foreach ($f in (Get-ChildItem -LiteralPath $project -Recurse -File -Force)) {
 Row 'generated_no_host_path' $(if ($hostPathHits -eq 0) { 'PASS' } else { 'FAIL' })
 
 # --- 5. the real doctor, against the project that was just created --------
+#
+# WHAT IS ASSERTED HERE IS THE PROJECT, AND NOTHING ELSE.
+#
+# `pweb doctor` answers two different questions in one report: what does
+# this PROJECT declare, and can THIS MACHINE build it. Only the first is
+# CAP-10B1's to be judged on. MEASURED on hosted run 33126638202: the macOS
+# runners report `platform.webview: fail/framework_absent`, which makes
+# doctor exit 4 for a reason that has nothing to do with the scaffold - and
+# an earlier draft of this gate required exit 0, so a perfectly correct
+# generated project turned the shard red on two targets.
+#
+# So the project-scoped rows must PASS, the identity must project exactly,
+# and the host rows are RECORDED. That is the CAP-10A discipline, which
+# already says the per-host observations travel per target and are never
+# compared: requiring four runners to agree on them would be requiring four
+# identical machines.
+$failuresBeforeDoctor = $failures.Count
 $doctor = RunCli $pweb $roots['plain'] @('doctor', '--project', 'demo', '--json')
-Require ($doctor.Code -eq 0) `
-    "pweb doctor refused the generated project (exit $($doctor.Code))"
 $report = $doctor.Out | ConvertFrom-Json
-$failRows = @($report.checks | Where-Object { $_.status -eq 'fail' })
-Require ($failRows.Count -eq 0) `
-    ("doctor reported $($failRows.Count) failing rows: " +
-     ($failRows | ForEach-Object { $_.id }) -join ', ')
-$lockRow = @($report.checks | Where-Object { $_.id -eq 'frontend.lockfile' })
-Require ($lockRow.Count -eq 1) 'doctor emitted no frontend.lockfile row'
-if ($lockRow.Count -eq 1) {
-    Require ($lockRow[0].status -eq 'pass') `
-        ("frontend.lockfile is $($lockRow[0].status) -- the CAP-10B0 " +
-         'limitation this template exists to close')
+$projectRows = @('project.descriptor', 'project.native_program',
+    'project.frontend_root', 'project.output', 'frontend.lockfile')
+foreach ($id in $projectRows) {
+    $row = @($report.checks | Where-Object { $_.id -eq $id })
+    Require ($row.Count -eq 1) "doctor emitted no $id row"
+    if ($row.Count -eq 1) {
+        Require ($row[0].status -eq 'pass') `
+            ("$id is $($row[0].status)/$($row[0].cause) on the generated " +
+             'project')
+    }
 }
 Require ("$($report.project.refusal)" -ceq 'ok') `
     "doctor reports project.refusal = $($report.project.refusal)"
@@ -395,8 +439,24 @@ Require ("$($report.project.name)" -ceq 'demo') 'doctor reports the wrong name'
 Require ("$($report.project.bundleId)" -ceq $bundle) `
     'doctor reports the wrong bundle identifier'
 Require ("$($report.project.ui)" -ceq 'react') 'doctor reports the wrong ui'
-Row 'doctor_result' $(if ($doctor.Code -eq 0) { 'PASS' } else { 'FAIL' })
+# the frozen reader's own derivation, compared against the identity create
+# planned: this is the step that catches a generator and a reader which are
+# each internally consistent and still disagree
+Require ("$($report.project.programIdent)" -ceq 'demo') `
+    "doctor derived programIdent = $($report.project.programIdent)"
+Row 'doctor_result' $(
+    if ($failures.Count -eq $failuresBeforeDoctor) { 'PASS' } else { 'FAIL' })
+# recorded, never compared and never a verdict: which rows this particular
+# machine could not satisfy, and what doctor therefore exited with
+$hostFails = SortOrdinal @($report.checks |
+    Where-Object { $_.status -eq 'fail' } |
+    ForEach-Object { "$($_.id)/$($_.cause)" })
 Row 'doctor_exit' $doctor.Code
+Row 'doctor_host_failures' ($hostFails -join ',')
+if ($hostFails.Count -gt 0) {
+    Write-Host ("[CAP-10B1] doctor host observations that failed on this " +
+        "runner (recorded, not gated): $($hostFails -join ', ')")
+}
 
 # --- 6. the reference project, left where prove_cap10b1 will find it ------
 $projectRoot = Join-Path $work 'project'

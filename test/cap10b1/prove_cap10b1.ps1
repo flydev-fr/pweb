@@ -65,6 +65,20 @@ function Sha256Text([string]$Text) {
             ForEach-Object { $_.ToString('x2') })
     } finally { $sha.Dispose() }
 }
+# ORDINAL, never Sort-Object. PowerShell's default sort is culture-aware and
+# case-insensitive; `LC_ALL=C sort` in the POSIX twin is bytewise. MEASURED
+# on hosted run 33126638202: the same generated tree digested to
+# 87999e1a... on Windows and 1ca77cbb... on Linux, because `App.tsx` and
+# `app.css` order one way under a culture comparison and the other way under
+# a byte comparison. Two implementations of one projection that disagree
+# make a four-target equality field impossible to satisfy - and the
+# disagreement is in the COMPARER, not in the bytes it was meant to measure.
+function SortOrdinal([string[]]$Items) {
+    $copy = [string[]]::new($Items.Length)
+    [Array]::Copy($Items, $copy, $Items.Length)
+    [Array]::Sort($copy, [System.StringComparer]::Ordinal)
+    return $copy
+}
 function TreeDigest([string]$Root) {
     $lines = New-Object System.Collections.Generic.List[string]
     foreach ($f in (Get-ChildItem -LiteralPath $Root -Recurse -File -Force)) {
@@ -72,7 +86,7 @@ function TreeDigest([string]$Root) {
         $h = (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
         $lines.Add("$rel $($f.Length) $h")
     }
-    return Sha256Text ((@($lines | Sort-Object) -join "`n") + "`n")
+    return Sha256Text (((SortOrdinal $lines.ToArray()) -join "`n") + "`n")
 }
 
 # --- 1. relocate, and digest what must not change --------------------------
@@ -209,9 +223,9 @@ foreach ($f in 'src/App.tsx', 'src/main.tsx') {
         }
     }
 }
-$observedImports = @($imports | Sort-Object -Unique)
-$expectedImports = @('./App', './app.css', '@pweb/runtime', 'react',
-    'react-dom/client') | Sort-Object
+$observedImports = SortOrdinal @($imports | Select-Object -Unique)
+$expectedImports = SortOrdinal @('./App', './app.css', '@pweb/runtime',
+    'react', 'react-dom/client')
 Require ((($observedImports -join '|')) -ceq (($expectedImports -join '|'))) `
     "the generated frontend imports $($observedImports -join ', ')"
 Row 'raw_primitive_used' $(if ($rawPrimitive) { 'true' } else { 'false' })
@@ -298,9 +312,9 @@ Copy-Item -LiteralPath $webviewDll -Destination $release
 # exactly three files: an executable, its bundle and the engine library. A
 # loose frontend file here would mean the release could serve something the
 # bundle does not contain
-$layout = @(Get-ChildItem -LiteralPath $release -Recurse -Force |
-    ForEach-Object { $_.Name }) | Sort-Object
-$expectedLayout = @('app.pwb', 'demo.exe', 'webview.dll')
+$layout = SortOrdinal @(Get-ChildItem -LiteralPath $release -Recurse -Force |
+    ForEach-Object { $_.Name })
+$expectedLayout = SortOrdinal @('app.pwb', 'demo.exe', 'webview.dll')
 Require ((($layout -join '|')) -ceq (($expectedLayout -join '|'))) `
     "the release layout is $($layout -join ', ')"
 Row 'loose_assets_used' $(

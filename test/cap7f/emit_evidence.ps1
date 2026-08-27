@@ -1012,6 +1012,7 @@ $evidence = [ordered]@{
     create_corpus                   = $createCorpus
     advertised_ui                   = "$($b1.advertised_ui)"
     create_help_digest              = "$($b1.create_help_digest)"
+    create_help_bytes               = "$($b1.create_help_bytes)"
     create_stdout_digest            = "$($b1.create_stdout_digest)"
     create_refusals                 = "$($b1.create_refusals)"
     create_no_partial               = "$($b1.create_no_partial)"

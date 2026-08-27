@@ -991,6 +991,8 @@ for v in "${create_corpus}" "${proof_corpus}"; do
 done
 advertised_ui="$(b1_str advertised_ui)"
 create_help_digest="$(b1_str create_help_digest)"
+create_help_bytes="$(b1_num create_help_bytes)"
+[ -n "${create_help_bytes}" ] || create_help_bytes=0
 create_stdout_digest="$(b1_str create_stdout_digest)"
 create_refusals="$(b1_num create_refusals)"; [ -n "${create_refusals}" ] || create_refusals=0
 create_no_partial="$(b1_str create_no_partial)"
@@ -1150,6 +1152,7 @@ cat > "${work}/evidence.json" <<EOF
   "create_corpus": "${create_corpus}",
   "advertised_ui": "${advertised_ui}",
   "create_help_digest": "${create_help_digest}",
+  "create_help_bytes": "${create_help_bytes}",
   "create_stdout_digest": "${create_stdout_digest}",
   "create_refusals": "${create_refusals}",
   "create_no_partial": "${create_no_partial}",
