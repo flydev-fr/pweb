@@ -384,7 +384,14 @@ $rows.Add('negative_inventory_and_registry=cap9c1')
 
 # restore the good archive and prove the layout is green again - a
 # negative matrix that left the layout broken would make every later row
-# vacuous
+# vacuous.
+#
+# The Remove-Item is load-bearing, not tidiness: after the reparse leg
+# $archive is a SYMLINK whose target IS $goldenArchive, so copying the
+# golden file over it resolves to copying a file onto itself and
+# PowerShell refuses with 'Cannot overwrite the item ... with itself'.
+# The POSIX sibling deletes first for the same reason.
+Remove-Item -Force -ErrorAction SilentlyContinue $archive
 Copy-Item -Force $goldenArchive $archive
 $r = Invoke-Host 'restored' @("--pweb-corpus=$hostRows",
     '--pweb-autoclose-ms=240000')
