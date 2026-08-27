@@ -1,10 +1,10 @@
 # CAP-9C2 — Final Artifact: the plugin-enabled desktop application, and the close of CAP-9
 
-CAP-9C2 closes on hosted run **33041381535** (2026-08-27, commit `7a8864b`,
+CAP-9C2 closes on hosted run **33042763634** (2026-08-27, commit `1eda46d`,
 branch `phase/cap-9/c2-gui-release`, baseline `61c7a46`): all six jobs
 green, `cap7 aggregate` recording `quickjs_gui_corpus: PASS` on every
 target and ONE `quickjs_gui_digest`
-`c262c01faf3cb96179948aac9edc5da4c0941ed8751779567e5af18fe85f1e3c`
+`67e08c692f2290e16721ba9c866162f3b5ac0f17338236977917d8a25a967b36`
 equal on windows-x86_64, linux-x86_64, macos-x86_64 and macos-arm64 —
 the same digest independently measured on the Windows dev host. The
 committed negative selftest reported `51 aggregator refusals + 2
@@ -66,6 +66,15 @@ every one of its three platform call sites; the package loader takes the
 PLUGIN store, once.
 
 That is the construction. The measurements are what settle it:
+
+The denied principal is checked with BOTH halves of the frozen taxonomy:
+`reporting_code` reads `forbidden` and `reporting_status` reads `403`,
+and the second comes from an ADDITIVE second export rather than a wider
+return from the first — the CAP-9C1 corpus pins that export's answer to
+the exact string `forbidden`, and moving a frozen shard's expectation to
+add a field is how a green suite quietly stops testing what it used to.
+Both calls are inside the same denied-delta window, so the bridge and
+SOA counters cover both.
 
 | gate | measured |
 |---|---|
@@ -243,10 +252,10 @@ green against the extended corpus; what moved is measurement.
 
 | value | CAP-9C1 (superseded) | CAP-9C2 |
 |---|---|---|
-| `cap9c1_inventory_digest` (four-way) | `203dccbd46f57f8de74928d25f1e06524c30d15754e4f55491f22709a3a6be72` | `12e279ab4b6c6b7fb946f622966893fd2d913cb2d5759b3a937875e30f112ed3` |
-| `quickjs_release_digest` (four-way) | `0f1e9c63b952165bad66681d6cd59675f058152a5da7930693979ab313adeadc` | `715bd605c90676c7851c247611363117f5b5666b5f39bee9d9aa830e0e56bada` |
+| `cap9c1_inventory_digest` (four-way) | `203dccbd46f57f8de74928d25f1e06524c30d15754e4f55491f22709a3a6be72` | `a60b62a427438d27f9e58865f372d6f176deba918e46eb4bccf92355b4b0a1a1` |
+| `quickjs_release_digest` (four-way) | `0f1e9c63b952165bad66681d6cd59675f058152a5da7930693979ab313adeadc` | `04c2db17eebfc48a9486d318b1c12586898a3c81952122c8e354577fcfc769fd` |
 | calculator graph digest | `615e347ff44c9f10668be46d52b62ba18f04850a95f224ead7ccd223ca3a8163` | `9305a37a9b6f6953729d6a7c0e83a2820acdad3fee5d840152a37f90efc90d01` |
-| reporting graph digest | `9758afdb9979fecbdf2569fb06dbb937143e239f069cb51f3b33af2a34ab5dbc` | `e1ecb50fef4f334db4ea3edcd08ef8847c44238b393f5f6d67a2dd8155f4c6b7` |
+| reporting graph digest | `9758afdb9979fecbdf2569fb06dbb937143e239f069cb51f3b33af2a34ab5dbc` | `fa61ba28dedd089f185002c2ef3ff1232a72b4746cc6fde204265b9bc487d7c8` |
 | `LICENSE.quickjs` | `8310e7a6…fbe2fc` | **unchanged** — it derives from the mORMot pin, not the corpus |
 
 The per-target archive bytes moved with them and still show exactly the
@@ -255,10 +264,10 @@ targets, with the two Darwin arches agreeing.
 
 | target | plugins.zip sha256 | bytes | generated registry sha256 |
 |---|---|---|---|
-| windows-x86_64 | `84ee814c9b98eed579595135d018c76bc3df47f134588faa153ba4330895429b` | 4282 | `2acd2a356aaf97062232d04e48f4ea84ff59e0e32f32156d26e1761fabfca767` |
-| linux-x86_64 | `d0bb61cfd7edb1c99271d549eea7ad955d915e1ce73e9072473e2bbeafcab0f3` | 4260 | `43b78899f369d1d729b313380145c6d4497712a77e0afb16bc0f31f41ab05ec2` |
-| macos-x86_64 | `a06e9c17ec841af686bad31367a3d46f603adec87b79710897cac1e1cc1f4d44` | 4282 | `eb10b08a202cd308d8296e5c3917305f28a67920a15e652e82a64f1d6010cfdd` |
-| macos-arm64 | `a06e9c17ec841af686bad31367a3d46f603adec87b79710897cac1e1cc1f4d44` | 4282 | `eb10b08a202cd308d8296e5c3917305f28a67920a15e652e82a64f1d6010cfdd` |
+| windows-x86_64 | `e22ff939dd5fd8e746e0eeda1c731a51ba1e1420c7d78e5540423663e35b1a19` | 4599 | `be492b13c918f4c6962379b61cf82bf36fa0b452e6f5dc436c2b3b608593961d` |
+| linux-x86_64 | `24678008fd72e33e175c1431086ed066e0481b7a9fcdf7c2350a7c8dc05b6994` | 4575 | `8cbd70736f445501254095aee81a3d745f17d42511c62916419dd1e3a8af486d` |
+| macos-x86_64 | `373a4815c13e8731325e16990e45db3d3dbe51bb76d71aab0ec5537b15c184c6` | 4599 | `6b24d0791b3c7e92f46394f547b8a7336c3c9f80b7cb18b0abd881eb17e138cc` |
+| macos-arm64 | `373a4815c13e8731325e16990e45db3d3dbe51bb76d71aab0ec5537b15c184c6` | 4599 | `6b24d0791b3c7e92f46394f547b8a7336c3c9f80b7cb18b0abd881eb17e138cc` |
 
 ## Evidence design
 
