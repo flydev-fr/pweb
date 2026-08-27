@@ -780,6 +780,78 @@ Write-Host ("[CAP-7F] cli_corpus: $cliCorpus (" +
     "exit_taxonomy=$cliExitTaxonomy no_mutation=$cliNoMutation " +
     "deterministic=$cliJsonDeterministic checks=$cliDoctorChecks)")
 
+# --- CAP-10B0: the scaffold engine -------------------------------------------
+#
+# FIVE compared digests and four must-PASS verdicts.
+#
+# Unlike plugins.zip, the template PACK ITSELF is compared. CAP-9C1 could not
+# do that because mORMot's static DEFLATE object emits different bytes per
+# toolchain (MEASURED in CAP-6/CAP-7L); this pack stores every entry instead,
+# so no compressor is reached and the archive is a pure function of names,
+# bytes, CRC-32s and a fixed timestamp. If that ever stops being true the
+# matrix says so here rather than nowhere.
+#
+#   template_digest            the decision corpus of the list parser, the
+#                              renderer, the plan builder and the transaction
+#   template_pack_digest       the archive BYTES
+#   template_semantic_digest   what the archive MEANS - name, length, digest
+#                              per entry - which stays equal even if the
+#                              archive one day cannot
+#   template_registry_digest   the generated native trust anchor
+#   template_pack_schema       the contract version
+#
+# template_modes_applicable is deliberately NOT compared: POSIX has file
+# modes and Windows does not, which is a fact about the platform and travels
+# with the per-target record exactly as the doctor observations do.
+$tplFile = Join-Path $repoRoot 'build/cap10b0/tpl-windows-x86_64.json'
+if (-not (Test-Path $tplFile)) {
+    throw '[CAP-7F] tpl-windows-x86_64.json missing -- the CAP-10B0 gate has not run in this workspace'
+}
+$tpl = Get-Content $tplFile -Raw | ConvertFrom-Json
+$templateCorpus = "$($tpl.template_corpus)"
+if ($templateCorpus -notin @('PASS', 'FAIL')) {
+    throw "[CAP-7F] the CAP-10B0 record carries an unexpected verdict: $templateCorpus"
+}
+$templateDigest = "$($tpl.template_digest)"
+$templatePackDigest = "$($tpl.template_pack_digest)"
+$templateSemanticDigest = "$($tpl.template_semantic_digest)"
+$templateRegistryDigest = "$($tpl.template_registry_digest)"
+$templatePackSchema = "$($tpl.template_pack_schema)"
+$templateDeterministic = "$($tpl.template_deterministic)"
+$templateSourceGate = "$($tpl.template_source_gate)"
+$templateOffline = "$($tpl.template_offline)"
+$templateCreateAbsent = "$($tpl.create_absent)"
+$templateRefusals = "$($tpl.template_refusals)"
+$templateFileCount = "$($tpl.template_file_count)"
+$templateModes = "$($tpl.template_modes_applicable)"
+if ($templateCorpus -ceq 'PASS') {
+    # a green verdict with an empty digest would be a proof of nothing, and
+    # an empty string compares equal to another empty string on four targets
+    foreach ($pair in @(@('template_digest', $templateDigest),
+                        @('template_pack_digest', $templatePackDigest),
+                        @('template_semantic_digest', $templateSemanticDigest),
+                        @('template_registry_digest', $templateRegistryDigest))) {
+        if ($pair[1] -eq '') {
+            throw "[CAP-7F] the CAP-10B0 record records PASS with an empty $($pair[0])"
+        }
+    }
+    if ([int]$templateRefusals -ne 7) {
+        throw "[CAP-7F] the CAP-10B0 record records PASS with $templateRefusals builder refusals, expected 7"
+    }
+    if ("$($tpl.network_calls)" -ne '0') {
+        throw '[CAP-7F] the CAP-10B0 record records a network call'
+    }
+    if ("$($tpl.package_manager_calls)" -ne '0') {
+        throw '[CAP-7F] the CAP-10B0 record records a package-manager call'
+    }
+}
+Write-Host "[CAP-7F] template_digest: $templateDigest"
+Write-Host "[CAP-7F] template_pack_digest: $templatePackDigest"
+Write-Host ("[CAP-7F] template_corpus: $templateCorpus (" +
+    "deterministic=$templateDeterministic source_gate=$templateSourceGate " +
+    "offline=$templateOffline create_absent=$templateCreateAbsent " +
+    "refusals=$templateRefusals files=$templateFileCount)")
+
 # --- run identity -----------------------------------------------------------
 $sha = $env:GITHUB_SHA
 if (-not $sha) { $sha = (& git rev-parse HEAD).Trim() }
@@ -860,6 +932,21 @@ $evidence = [ordered]@{
     doctor_checks                   = $cliDoctorChecks
     doctor_no_mutation              = $cliNoMutation
     doctor_json_deterministic       = $cliJsonDeterministic
+    template_corpus                 = $templateCorpus
+    template_digest                 = $templateDigest
+    template_pack_digest            = $templatePackDigest
+    template_pack_schema            = $templatePackSchema
+    template_semantic_digest        = $templateSemanticDigest
+    template_registry_digest        = $templateRegistryDigest
+    template_deterministic          = $templateDeterministic
+    template_source_gate            = $templateSourceGate
+    template_offline                = $templateOffline
+    template_refusals               = $templateRefusals
+    template_file_count             = $templateFileCount
+    create_absent                   = $templateCreateAbsent
+    network_calls                   = "$($tpl.network_calls)"
+    package_manager_calls           = "$($tpl.package_manager_calls)"
+    template_modes_applicable       = $templateModes
     release_layout                  = $releaseLayout
     no_listener                     = $noListener
     no_listener_provenance          = 'source-sweep re-executed (check_cap6_nonetwork.ps1); CAP-5/CAP-6 job gates precede this emitter'

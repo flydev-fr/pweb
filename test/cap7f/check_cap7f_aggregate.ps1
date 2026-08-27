@@ -77,6 +77,12 @@ $required = @(
     'cli_corpus', 'cli_digest', 'cli_version_line', 'cli_exit_taxonomy',
     'doctor_schema_digest', 'doctor_checks', 'doctor_no_mutation',
     'doctor_json_deterministic',
+    'template_corpus', 'template_digest', 'template_pack_digest',
+    'template_pack_schema', 'template_semantic_digest',
+    'template_registry_digest', 'template_deterministic',
+    'template_source_gate', 'template_offline', 'template_refusals',
+    'template_file_count', 'create_absent', 'network_calls',
+    'package_manager_calls', 'template_modes_applicable',
     'release_layout', 'no_listener', 'app_pwb_react_sha256',
     'logical_inventory_sha256_react', 'github_sha', 'github_run_id', 'waivers'
 )
@@ -99,7 +105,14 @@ $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
     # refuse ONE of them by name - 'doctor mutated the project' and 'the
     # exit taxonomy drifted' are different defects with different fixes.
     'cli_corpus', 'cli_exit_taxonomy', 'doctor_no_mutation',
-    'doctor_json_deterministic')
+    'doctor_json_deterministic',
+    # CAP-10B0: the scaffold-engine verdict and the four sub-claims a green
+    # one is made of. Named individually for the same reason as the CAP-10A
+    # set - 'the pack stopped being deterministic', 'the builder stopped
+    # refusing broken sources', 'the engine grew a process API' and 'create
+    # became reachable' are four different defects with four different fixes
+    'template_corpus', 'template_deterministic', 'template_source_gate',
+    'template_offline', 'create_absent')
 # fields that must agree, value-for-value, across all four targets
 # (capability_policy_digest is the CAP-8A structured policy-decision corpus and
 # navigation_policy_digest the CAP-8B one: four targets, one byte-identical
@@ -131,7 +144,26 @@ $equalityFields = @(
     # per-host cause - those are facts about the runner, and requiring four
     # runners to agree on them would be requiring four identical machines.
     'cli_digest', 'doctor_schema_digest', 'cli_version_line',
-    'doctor_checks', 'github_sha'
+    'doctor_checks', 'github_sha',
+    # CAP-10B0: five digests, and the ARCHIVE BYTES are among them.
+    #
+    # That is the one place this shard is stricter than CAP-9C1, and it is
+    # earned rather than assumed: plugins.zip is deflated, and CAP-6/CAP-7L
+    # MEASURED that mORMot's static DEFLATE object emits different bytes per
+    # toolchain, so requiring archive equality there would have been an
+    # untrue requirement. This pack STORES every entry, so no compressor is
+    # reached and the file is a pure function of names, bytes, CRC-32s and a
+    # fixed timestamp. If a target ever disproves that, the right answer is
+    # to find out why - not to quietly move template_pack_digest out of this
+    # list, which is what a per-target pin would amount to.
+    #
+    # template_modes_applicable is deliberately ABSENT: POSIX has file modes
+    # and Windows does not. It is recorded per target and never compared,
+    # exactly like the doctor observations.
+    'template_digest', 'template_pack_digest', 'template_pack_schema',
+    'template_semantic_digest', 'template_registry_digest',
+    'template_refusals', 'template_file_count',
+    'network_calls', 'package_manager_calls'
 )
 # the CAP-9C2 semantic gate names, carried in ONE place across the two
 # emitters and this aggregator (see test/cap7f/emit_evidence.ps1)
@@ -426,6 +458,44 @@ foreach ($t in $evidence.Keys) {
             $failures.Add("CAP-10A NO-ROWS: target=$t doctor_checks=$dc -- a doctor that produced no row diagnosed nothing")
         }
     }
+    # CAP-10B0: the same shape, for the same reason. An EMPTY digest on
+    # every target compares equal to every other empty digest, so a gate
+    # that stopped emitting would look exactly like one that passed
+    # everywhere.
+    if ("$($e.template_corpus)" -ceq 'PASS') {
+        foreach ($d in 'template_digest', 'template_pack_digest',
+                       'template_semantic_digest', 'template_registry_digest') {
+            if ("$($e.$d)" -notmatch '^[0-9a-f]{64}$') {
+                $failures.Add("CAP-10B0 BAD-DIGEST: target=$t $d='$($e.$d)'")
+            }
+        }
+        # the pack contract version, absolutely pinned rather than merely
+        # agreed: four targets that all drifted to schema 2 would agree
+        # perfectly and be wrong together
+        if ("$($e.template_pack_schema)" -cne '1') {
+            $failures.Add("CAP-10B0 BAD-SCHEMA: target=$t template_pack_schema='$($e.template_pack_schema)' -- schema 1 is the frozen template-pack contract")
+        }
+        $rf = 0
+        if (-not [int]::TryParse("$($e.template_refusals)", [ref]$rf)) {
+            $failures.Add("CAP-10B0 NON-NUMERIC: target=$t template_refusals='$($e.template_refusals)'")
+        } elseif ($rf -ne 7) {
+            $failures.Add("CAP-10B0 REFUSALS: target=$t template_refusals=$rf, expected 7 -- a builder refusal nobody watched fire is a comment")
+        }
+        $fc = 0
+        if (-not [int]::TryParse("$($e.template_file_count)", [ref]$fc)) {
+            $failures.Add("CAP-10B0 NON-NUMERIC: target=$t template_file_count='$($e.template_file_count)'")
+        } elseif ($fc -le 0) {
+            $failures.Add("CAP-10B0 NO-FILES: target=$t template_file_count=$fc -- a pack with no file scaffolds nothing")
+        }
+        # the two counts the acceptance criteria name. They are DERIVED from
+        # the source and unit-set sweeps, so a nonzero value here means one
+        # of those sweeps found something rather than that a counter ticked
+        foreach ($z in 'network_calls', 'package_manager_calls') {
+            if ("$($e.$z)" -cne '0') {
+                $failures.Add("CAP-10B0 NOT-OFFLINE: target=$t $z='$($e.$z)' -- `pweb create` writes files and fetches nothing")
+            }
+        }
+    }
 }
 
 # --- cross-target equality ---------------------------------------------------
@@ -556,6 +626,11 @@ $matrix = [ordered]@{
         cli_digest                     = $first.cli_digest
         doctor_schema_digest           = $first.doctor_schema_digest
         cli_version_line               = $first.cli_version_line
+        template_digest                = $first.template_digest
+        template_pack_digest           = $first.template_pack_digest
+        template_semantic_digest       = $first.template_semantic_digest
+        template_registry_digest       = $first.template_registry_digest
+        template_pack_schema           = $first.template_pack_schema
         logical_inventory_sha256_react = $first.logical_inventory_sha256_react
         logical_inventory_sha256_pas2js = $evidence['linux-x86_64'].logical_inventory_sha256_pas2js
     }
@@ -581,6 +656,12 @@ foreach ($t in $evidence.Keys) {
         cli_corpus         = $e.cli_corpus
         doctor_checks      = $e.doctor_checks
         doctor_no_mutation = $e.doctor_no_mutation
+        template_corpus    = $e.template_corpus
+        template_deterministic = $e.template_deterministic
+        template_source_gate = $e.template_source_gate
+        template_offline   = $e.template_offline
+        create_absent      = $e.create_absent
+        template_modes_applicable = $e.template_modes_applicable
         cap9c1_package_sha256 = $e.cap9c1_package_sha256
         cap9c1_package_bytes = $e.cap9c1_package_bytes
         cap9c1_registry_sha256 = $e.cap9c1_registry_sha256
@@ -622,6 +703,9 @@ foreach ($t in $evidence.Keys) {
 $summary += "- CAP-9C2 quickjs_gui_digest ``$($first.quickjs_gui_digest)`` equal on all four targets (the plugin-enabled GUI corpus: UI + QuickJS over one scheduler/policy/bridge/server)"
 $summary += "- CAP-9C2 LICENSE.quickjs ``$($first.cap9c2_license_sha256)`` byte-identical on all four targets; listeners=0 everywhere"
 $summary += "- CAP-10A cli_digest ``$($first.cli_digest)`` and doctor_schema_digest ``$($first.doctor_schema_digest)`` equal on all four targets; ``$($first.cli_version_line)`` everywhere (per-host doctor OBSERVATIONS are recorded per target and deliberately not compared)"
+$summary += "- CAP-10B0 template_digest ``$($first.template_digest)``, template_semantic_digest ``$($first.template_semantic_digest)`` and template_registry_digest ``$($first.template_registry_digest)`` equal on all four targets"
+$summary += "- CAP-10B0 template_pack_digest ``$($first.template_pack_digest)`` equal on all four targets - the archive BYTES, not merely its meaning: every entry is STORED, so no compressor is reached and the file is a pure function of its inputs (per-host file MODES are recorded per target and deliberately not compared)"
+$summary += "- CAP-10B0 ``pweb create`` remains absent on every target: create_absent=$($first.create_absent), and the scaffold engine is not linked into the CLI at all (network_calls=$($first.network_calls), package_manager_calls=$($first.package_manager_calls))"
 $summary += "- react logical_inventory_sha256 ``$($first.logical_inventory_sha256_react)`` equal on all four targets"
 $summary += "- pas2js logical_inventory_sha256 ``$($matrix.agreement.logical_inventory_sha256_pas2js)`` equal on linux/macos-x64/macos-arm64"
 $summaryText = $summary -join "`n"

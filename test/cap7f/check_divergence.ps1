@@ -101,6 +101,19 @@ $allow = @{
     # CAP-10A: the program, whose only conditional is {$apptype console}
     'tools/pweb/pweb.pas'                = @{ directives = 2;
         fingerprint = '0dc7a84a71485678f01dc0e7032093d6858fb389878b52157a2f69671187305d' }
+    # CAP-10B0: the trusted template-pack builder, likewise. Its fingerprint
+    # equals pweb.pas's because the directive TEXTS are the same two - which
+    # is the fingerprint working as intended, not a collision.
+    #
+    # RE-RATIFIED, and worth naming because a reader will look for it: the
+    # pweb.cli.platform entry above is UNCHANGED at 24. CAP-10B0 added eight
+    # filesystem primitives with two whole platform bodies each, and every
+    # line of them went INSIDE the existing conditional regions - so the
+    # seam grew without the divergence surface growing at all. The four new
+    # engine units (sdk, template, scaffold, write) carry zero and are
+    # therefore deliberately absent from this list.
+    'tools/pweb/pwebtemplates.pas'       = @{ directives = 2;
+        fingerprint = '0dc7a84a71485678f01dc0e7032093d6858fb389878b52157a2f69671187305d' }
 }
 
 function Get-DirectiveFingerprint([string[]]$Texts) {

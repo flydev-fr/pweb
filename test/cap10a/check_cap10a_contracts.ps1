@@ -155,9 +155,19 @@ $shellPatterns = @(
 )
 # the UNITS, without the program: the program is allowed to do exactly one
 # thing the units are not, and the working-directory rule below depends on
-# telling the two apart
+# telling the two apart.
+#
+# pwebtemplates.pas is excluded for the same reason pweb.pas is, and the
+# distinction is worth stating rather than assuming. It is a BUILD TOOL, not
+# part of the CLI: it is never linked into `pweb`, it is not installed, and
+# CAP-10B0's own contract check MEASURES both of those against the CLI's
+# compiled unit set. The working-directory rule exists because a shipped
+# command must not resolve anything from where it happened to be invoked; a
+# build tool that takes an explicit --source argument and makes it absolute
+# is doing the opposite of that, and forbidding it would forbid the argument.
 $cliSources = @(Get-ChildItem tools/pweb -File -Filter '*.pas' |
-    Where-Object { $_.Name -cne 'pweb.pas' })
+    Where-Object { ($_.Name -cne 'pweb.pas') -and
+                   ($_.Name -cne 'pwebtemplates.pas') })
 if ($cliSources.Count -lt 8) {
     Violation "expected the CLI unit set under tools/pweb, found $($cliSources.Count)"
 }

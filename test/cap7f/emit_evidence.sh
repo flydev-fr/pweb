@@ -874,6 +874,77 @@ printf '[CAP-7F] cli_corpus: %s (exit_taxonomy=%s no_mutation=%s deterministic=%
     "${cli_corpus}" "${cli_exit_taxonomy}" "${doctor_no_mutation}" \
     "${doctor_json_deterministic}" "${doctor_checks}"
 
+# ---------------------------- CAP-10B0: the scaffold engine ------------------
+#
+# FIVE compared digests and four must-PASS verdicts. Unlike plugins.zip, the
+# template PACK ITSELF is compared: CAP-9C1 could not do that because
+# mORMot's static DEFLATE object emits different bytes per toolchain
+# (MEASURED in CAP-6/CAP-7L), and this pack stores every entry instead, so
+# no compressor is reached and the archive is a pure function of names,
+# bytes, CRC-32s and a fixed timestamp. If that stops being true the matrix
+# says so here rather than nowhere.
+#
+# template_modes_applicable is deliberately NOT compared: POSIX has file
+# modes and Windows does not, which is a fact about the platform and travels
+# with the per-target record exactly as the doctor observations do.
+tpl_file="${repo_root}/build/cap10b0/tpl-${target}.json"
+[ -f "${tpl_file}" ] ||
+    die "tpl-${target}.json missing -- the CAP-10B0 gate has not run in this workspace"
+tpl_str() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+        "${tpl_file}" | head -n 1
+}
+tpl_num() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p" \
+        "${tpl_file}" | head -n 1
+}
+template_corpus="$(tpl_str template_corpus)"
+case "${template_corpus}" in
+    PASS | FAIL) ;;
+    *) die "tpl-${target}.json carries an unexpected verdict: ${template_corpus}" ;;
+esac
+template_digest="$(tpl_str template_digest)"
+template_pack_digest="$(tpl_str template_pack_digest)"
+template_pack_schema="$(tpl_str template_pack_schema)"
+template_semantic_digest="$(tpl_str template_semantic_digest)"
+template_registry_digest="$(tpl_str template_registry_digest)"
+template_deterministic="$(tpl_str template_deterministic)"
+template_source_gate="$(tpl_str template_source_gate)"
+template_offline="$(tpl_str template_offline)"
+template_create_absent="$(tpl_str create_absent)"
+template_modes="$(tpl_str template_modes_applicable)"
+template_file_count="$(tpl_str template_file_count)"
+template_refusals="$(tpl_num template_refusals)"
+[ -n "${template_refusals}" ] || template_refusals=0
+network_calls="$(tpl_num network_calls)"
+[ -n "${network_calls}" ] || network_calls=0
+package_manager_calls="$(tpl_num package_manager_calls)"
+[ -n "${package_manager_calls}" ] || package_manager_calls=0
+if [ "${template_corpus}" = 'PASS' ]; then
+    # a green verdict with an empty digest would prove nothing, and an empty
+    # string compares equal to another empty string on four targets
+    for pair in "template_digest=${template_digest}" \
+                "template_pack_digest=${template_pack_digest}" \
+                "template_semantic_digest=${template_semantic_digest}" \
+                "template_registry_digest=${template_registry_digest}"; do
+        case "${pair}" in
+            *=) die "the CAP-10B0 record records PASS with an empty ${pair%%=*}" ;;
+        esac
+    done
+    [ "${template_refusals}" = '7' ] ||
+        die "the CAP-10B0 record records PASS with ${template_refusals} builder refusals, expected 7"
+    [ "${network_calls}" = '0' ] ||
+        die 'the CAP-10B0 record records a network call'
+    [ "${package_manager_calls}" = '0' ] ||
+        die 'the CAP-10B0 record records a package-manager call'
+fi
+printf '[CAP-7F] template_digest: %s\n' "${template_digest}"
+printf '[CAP-7F] template_pack_digest: %s\n' "${template_pack_digest}"
+printf '[CAP-7F] template_corpus: %s (deterministic=%s source_gate=%s offline=%s create_absent=%s refusals=%s files=%s)\n' \
+    "${template_corpus}" "${template_deterministic}" \
+    "${template_source_gate}" "${template_offline}" \
+    "${template_create_absent}" "${template_refusals}" "${template_file_count}"
+
 # ---------------------------- write the evidence -----------------------------
 # every interpolated free-text value goes through json_escape: the toolchain
 # banner lines especially are nobody's to promise quote-free
@@ -960,6 +1031,21 @@ cat > "${work}/evidence.json" <<EOF
   "doctor_checks": ${doctor_checks},
   "doctor_no_mutation": "${doctor_no_mutation}",
   "doctor_json_deterministic": "${doctor_json_deterministic}",
+  "template_corpus": "${template_corpus}",
+  "template_digest": "${template_digest}",
+  "template_pack_digest": "${template_pack_digest}",
+  "template_pack_schema": "${template_pack_schema}",
+  "template_semantic_digest": "${template_semantic_digest}",
+  "template_registry_digest": "${template_registry_digest}",
+  "template_deterministic": "${template_deterministic}",
+  "template_source_gate": "${template_source_gate}",
+  "template_offline": "${template_offline}",
+  "template_refusals": "${template_refusals}",
+  "template_file_count": "${template_file_count}",
+  "create_absent": "${template_create_absent}",
+  "network_calls": "${network_calls}",
+  "package_manager_calls": "${package_manager_calls}",
+  "template_modes_applicable": "${template_modes}",
   "release_layout": "${release_layout}",
   "no_listener": "${no_listener}",
   "no_listener_provenance": "${no_listener_prov}",

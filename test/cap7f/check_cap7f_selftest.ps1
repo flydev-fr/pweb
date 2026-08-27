@@ -77,7 +77,29 @@
 #   (c54) cli_exit_taxonomy=FAIL -> mustPass refusal
 #   (c55) cli_version_line not the contract shape -> BAD-VERSION-LINE refusal
 #   (c56) doctor_checks=0 with a PASS corpus -> NO-ROWS refusal
-#   (c8-c56 additionally assert the refusal came through the EXPECTED branch
+#   (c57) template_corpus (CAP-10B0) ABSENT -> required-field refusal
+#   (c58) template_corpus rewritten to SKIP -> mustPass refusal
+#   (c59) template_digest diverging on one target -> equality refusal
+#   (c60) template_pack_digest diverging -> equality refusal. This one is
+#         new in kind: CAP-9C1 could NOT compare plugins.zip's bytes because
+#         the deflate object is per-toolchain by measurement. The template
+#         pack stores every entry, so a byte divergence is a real defect
+#   (c61) template_semantic_digest diverging -> equality refusal (the
+#         archive's MEANING, which must agree even if its bytes one day
+#         cannot)
+#   (c62) an EMPTY template_pack_digest on EVERY target with a PASS corpus
+#         -> BAD-DIGEST refusal (the c52 hole, in the new fields)
+#   (c63) template_deterministic=FAIL -> mustPass refusal
+#   (c64) template_source_gate=FAIL -> mustPass refusal (the builder stopped
+#         refusing deliberately broken template sources)
+#   (c65) template_refusals drifted from 7 -> REFUSALS refusal
+#   (c66) template_offline=FAIL -> mustPass refusal
+#   (c67) package_manager_calls=1 -> NOT-OFFLINE refusal
+#   (c68) create_absent=FAIL -> mustPass refusal (`pweb create` became
+#         reachable, which CAP-10B0 exists to prevent)
+#   (c69) template_pack_schema=2 -> BAD-SCHEMA refusal (an absolute pin, not
+#         merely an agreement)
+#   (c8-c69 additionally assert the refusal came through the EXPECTED branch
 #    where one is named)
 #   (e) a count-preserving directive swap in an allowlisted file
 #                                          -> divergence sweep refuses via the
@@ -872,6 +894,141 @@ foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
     $e | ConvertTo-Json -Depth 4 | Set-Content $f
 }
 Invoke-AggExpectFail 'cap10a-no-rows' 'CAP-10A NO-ROWS'
+
+# --- (c57) CAP-10B0: the scaffold corpus absent -----------------------------
+# same first failure as c48, for the same reason: the field itself is what a
+# quietly dropped CI step loses first
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+if ($null -eq $e.PSObject.Properties['template_corpus']) {
+    throw 'selftest cap10b0-absent: the evidence carries no template_corpus field - the emitters did not record it'
+}
+$e.PSObject.Properties.Remove('template_corpus')
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b0-absent' 'template_corpus'
+
+# --- (c58) CAP-10B0: the scaffold corpus reading SKIP -----------------------
+# the scaffold suite is headless on every target: a SKIP is a gate that
+# stopped running, never a machine that could not run it
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.template_corpus = 'SKIP'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b0-skip' 'SKIP/WAIVED NEVER PROMOTES'
+
+# --- (c59) CAP-10B0: the decision corpus diverging on one target ------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.template_digest = ('2' * 64)
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b0-digest' 'FIELD DISAGREES: template_digest'
+
+# --- (c60) CAP-10B0: the ARCHIVE BYTES diverging on one target --------------
+# this is the leg CAP-9C1 could not have: plugins.zip is deflated and its
+# bytes are per-toolchain by MEASUREMENT, so equality there would be an
+# untrue requirement. The template pack stores every entry, so a divergence
+# here is a real defect and must be refused rather than pinned around
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.template_pack_digest = ('3' * 64)
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b0-pack-digest' 'FIELD DISAGREES: template_pack_digest'
+
+# --- (c61) CAP-10B0: the SEMANTIC inventory diverging on one target ---------
+# the archive's meaning, as opposed to its weight. If the bytes ever have to
+# stop being compared, THIS is the field that still has to agree
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.template_semantic_digest = ('4' * 64)
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b0-semantic-digest' 'FIELD DISAGREES: template_semantic_digest'
+
+# --- (c62) CAP-10B0: an EMPTY digest with a PASS corpus --------------------
+# the subtle one, again: an empty digest compares EQUAL to another empty
+# digest on four targets
+Reset-Fixture
+foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$t/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.template_pack_digest = ''
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10b0-empty-digest' 'CAP-10B0 BAD-DIGEST'
+
+# --- (c63) CAP-10B0: the pack stopped being deterministic ------------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.template_deterministic = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b0-nondeterministic' 'template_deterministic'
+
+# --- (c64) CAP-10B0: the builder stopped refusing broken sources -----------
+# seven deliberately broken template sources are staged on every leg; a
+# refusal nobody has watched fire is a comment
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.template_source_gate = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b0-source-gate' 'template_source_gate'
+
+# --- (c65) CAP-10B0: a refusal count that drifted --------------------------
+Reset-Fixture
+foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$t/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.template_refusals = '6'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10b0-refusals' 'CAP-10B0 REFUSALS'
+
+# --- (c66) CAP-10B0: the engine stopped being offline ----------------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.template_offline = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b0-offline' 'template_offline'
+
+# --- (c67) CAP-10B0: a package-manager call in a creation path -------------
+# the count is DERIVED from the source and unit-set sweeps, so a nonzero
+# value means one of those sweeps found something
+Reset-Fixture
+foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$t/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.package_manager_calls = '1'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10b0-package-manager' 'CAP-10B0 NOT-OFFLINE'
+
+# --- (c68) CAP-10B0: `pweb create` became reachable ------------------------
+# CAP-10B0 ships an ENGINE and no command. This is the leg that keeps the
+# next shard from exposing one by accident
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.create_absent = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b0-create-present' 'create_absent'
+
+# --- (c69) CAP-10B0: the template-pack schema drifted ----------------------
+# an ABSOLUTE pin, not merely an agreement: four targets that all moved to
+# schema 2 would agree perfectly and be wrong together
+Reset-Fixture
+foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$t/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.template_pack_schema = '2'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10b0-pack-schema' 'CAP-10B0 BAD-SCHEMA'
 
 # --- (d) divergence sweep must refuse an off-allowlist conditional -----------
 $fixturePas = 'src/zz_cap7f_selftest_fixture.pas'

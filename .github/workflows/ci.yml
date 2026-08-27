@@ -1791,6 +1791,55 @@ jobs:
             build/cap10a/clitests.log
             build/cap10a-gates.log
 
+      # ----------------------------------------------------------------
+      # CAP-10B0: the private scaffold engine. Build (also the LAYERING
+      # proof), the checkout-plus-build contract gates, then the headless
+      # matrices, the deterministic-rebuild comparison and the seven
+      # deliberately broken template sources.
+      #
+      # `pweb create` DOES NOT EXIST in this build, and the gates measure
+      # that rather than asserting it: the engine is not linked into the
+      # CLI at all, which the contract check proves against the CLI's own
+      # compiled unit set, and the real executable is run to confirm
+      # `create` is still an unknown command.
+      #
+      # Nothing here needs a window, a display or a network on any target.
+      # ----------------------------------------------------------------
+      - name: CAP-10B0 build the scaffold engine, the pack and the suite
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap10b0/build_cap10b0.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B0 build FAILED' }
+
+      - name: CAP-10B0 contract cross-checks (create absent, offline, limits)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10b0/check_cap10b0_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B0 contract cross-checks FAILED' }
+
+      - name: CAP-10B0 scaffold gates + evidence
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap10b0/run_cap10b0_gates.ps1 2>&1 |
+            Tee-Object -FilePath build/cap10b0-gates.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B0 gates FAILED' }
+
+      - name: CAP-10B0 upload the scaffold corpus
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10b0-template-windows
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            build/cap10b0/tpl-windows-x86_64.json
+            build/cap10b0/tpl-corpus.txt
+            build/cap10b0/contracts.json
+            build/cap10b0/gen/pweb.templates.registry.inc
+            build/cap10b0/tpltests.log
+            build/cap10b0-gates.log
+
       - name: CAP-7F emit the Windows evidence artifact
         shell: pwsh
         timeout-minutes: 10
@@ -2365,6 +2414,41 @@ jobs:
             build/cap10a/doctor-human.txt
             build/cap10a/dev-trust.txt
             build/cap10a/clitests.log
+
+      # CAP-10B0: the private scaffold engine (see the windows job for the
+      # rationale). The build is the POSIX twin; every gate after it is the
+      # same pwsh script on all four targets, because a second
+      # implementation of a verifier is what this repository avoids.
+      - name: CAP-10B0 build the scaffold engine, the pack and the suite
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap10b0/build_cap10b0.sh
+
+      - name: CAP-10B0 contract cross-checks (create absent, offline, limits)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10b0/check_cap10b0_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B0 contract cross-checks FAILED' }
+
+      - name: CAP-10B0 scaffold gates + evidence
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap10b0/run_cap10b0_gates.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B0 gates FAILED' }
+
+      - name: CAP-10B0 upload the scaffold corpus
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10b0-template-linux
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            build/cap10b0/tpl-linux-x86_64.json
+            build/cap10b0/tpl-corpus.txt
+            build/cap10b0/contracts.json
+            build/cap10b0/gen/pweb.templates.registry.inc
+            build/cap10b0/tpltests.log
 
       - name: CAP-7F emit the Linux evidence artifact
         shell: bash
@@ -2976,6 +3060,39 @@ jobs:
             build/cap10a/dev-trust.txt
             build/cap10a/clitests.log
 
+      # CAP-10B0: the private scaffold engine (see the windows job for the
+      # rationale).
+      - name: CAP-10B0 build the scaffold engine, the pack and the suite
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap10b0/build_cap10b0.sh
+
+      - name: CAP-10B0 contract cross-checks (create absent, offline, limits)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10b0/check_cap10b0_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B0 contract cross-checks FAILED' }
+
+      - name: CAP-10B0 scaffold gates + evidence
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap10b0/run_cap10b0_gates.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B0 gates FAILED' }
+
+      - name: CAP-10B0 upload the scaffold corpus
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10b0-template-macos-x64
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            build/cap10b0/tpl-macos-x86_64.json
+            build/cap10b0/tpl-corpus.txt
+            build/cap10b0/contracts.json
+            build/cap10b0/gen/pweb.templates.registry.inc
+            build/cap10b0/tpltests.log
+
       - name: CAP-7F emit the macOS x64 evidence artifact
         shell: bash
         timeout-minutes: 10
@@ -3513,6 +3630,39 @@ jobs:
             build/cap10a/doctor-human.txt
             build/cap10a/dev-trust.txt
             build/cap10a/clitests.log
+
+      # CAP-10B0: the private scaffold engine (see the windows job for the
+      # rationale).
+      - name: CAP-10B0 build the scaffold engine, the pack and the suite
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap10b0/build_cap10b0.sh
+
+      - name: CAP-10B0 contract cross-checks (create absent, offline, limits)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10b0/check_cap10b0_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B0 contract cross-checks FAILED' }
+
+      - name: CAP-10B0 scaffold gates + evidence
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap10b0/run_cap10b0_gates.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B0 gates FAILED' }
+
+      - name: CAP-10B0 upload the scaffold corpus
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10b0-template-macos-arm64
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            build/cap10b0/tpl-macos-arm64.json
+            build/cap10b0/tpl-corpus.txt
+            build/cap10b0/contracts.json
+            build/cap10b0/gen/pweb.templates.registry.inc
+            build/cap10b0/tpltests.log
 
       - name: CAP-7F emit the macOS arm64 evidence artifact
         shell: bash
