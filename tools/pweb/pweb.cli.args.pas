@@ -20,7 +20,7 @@
 
     pweb --help
     pweb --version
-    pweb create NAME --ui react --bundle-id <reverse.dns>
+    pweb create NAME --ui react|pas2js --bundle-id <reverse.dns>
     pweb create --help
     pweb doctor [--json] [--with-paths] [--project <path>] [--no-color]
                 [--verbose]
@@ -43,11 +43,14 @@
   create-only and `--project` is refused ON a create line, so an option can
   never be silently ignored by the command it was not meant for.
 
-  THE SUPPORTED FRONTEND KIND LIVES HERE, in a compiled allowlist, and not
-  in a template lookup. `pweb create demo --ui pas2js` is a USAGE failure
-  in this build rather than "no such template", because a CLI whose refusal
-  depends on what happens to be in an archive is a CLI that would advertise
-  a frontend the moment somebody added one.
+  THE SUPPORTED FRONTEND KINDS LIVE HERE, in a compiled allowlist, and not
+  in a template lookup. `pweb create demo --ui svelte` is a USAGE failure
+  rather than "no such template", because a CLI whose refusal depends on
+  what happens to be in an archive is a CLI that would advertise a frontend
+  the moment somebody added one. CAP-10B2 widened the allowlist to `react`
+  and `pas2js` - the two kinds schema 1 has ratified since CAP-10A - in the
+  same commit as the second template, and it added no alias and no case
+  fold: `React` and `PAS2JS` are refused exactly like `svelte`.
 
   DELIBERATELY NOT IMPLEMENTED: response files (`@file` is an ordinary
   positional and is never expanded), `--` as an argument terminator (it is
@@ -70,10 +73,13 @@ uses
   pweb.assets.support;
 
 const
-  /// the ONE frontend kind this build can scaffold. CAP-10B2 adds 'pas2js'
-  // beside it, in this allowlist, in the same commit as the template that
-  // makes the claim true
+  /// the TWO frontend kinds this build can scaffold, each spelled ONCE.
+  // CAP-10B1 shipped the first and CAP-10B2 added the second in the same
+  // commit as the template that makes the claim true - which is the rule
+  // this allowlist exists to enforce: a kind is accepted here only when a
+  // trusted template for it is in the pack this executable compiled in
   PWEB_CLI_UI_REACT = 'react';
+  PWEB_CLI_UI_PAS2JS = 'pas2js';
 
 type
   /// the commands this build exposes
@@ -493,9 +499,13 @@ begin
       Refuse(Result, pcuMissingOption, '--bundle-id');
       exit;
     end;
-    // the compiled allowlist, and the reason `--ui pas2js` is a usage
-    // failure in this build rather than a missing template
-    if Result.Ui <> PWEB_CLI_UI_REACT then
+    // the compiled allowlist. The comparison is BYTE-EXACT on purpose, so
+    // `React` and `PAS2JS` are refused like `svelte` is: schema 1 matches
+    // `ui` case-sensitively, and a CLI that accepted a spelling the
+    // descriptor reader would later refuse would be scaffolding a project
+    // its own doctor rejects
+    if (Result.Ui <> PWEB_CLI_UI_REACT) and
+       (Result.Ui <> PWEB_CLI_UI_PAS2JS) then
     begin
       Refuse(Result, pcuUnsupportedUi, Result.Ui);
       exit;

@@ -79,10 +79,10 @@ function PWebCliRenderJson(const Report: TPWebCliReport;
 function PWebCliUsageBanner: RawUtf8;
 
 /// the `pweb create --help` text
-// - it advertises exactly the frontend kinds this build can scaffold, and
-// the gate compares it against the parser's own allowlist: a help text and
-// a parser that disagree is how a CLI ends up promising a template nobody
-// shipped
+// - it advertises exactly the frontend kinds this build can scaffold, in the
+// parser's own spelling and joined by '|', and the gate parses the set back
+// OUT of this text rather than restating it: a help text and a parser that
+// disagree is how a CLI ends up promising a template nobody shipped
 function PWebCliCreateHelp: RawUtf8;
 
 /// the --version line
@@ -117,8 +117,8 @@ begin
     'usage:' + CRLF_NONE +
     '  pweb --help' + CRLF_NONE +
     '  pweb --version' + CRLF_NONE +
-    '  pweb create NAME --ui ' + PWEB_CLI_UI_REACT +
-      ' --bundle-id <reverse.dns>' + CRLF_NONE +
+    '  pweb create NAME --ui ' + PWEB_CLI_UI_REACT + '|' +
+      PWEB_CLI_UI_PAS2JS + ' --bundle-id <reverse.dns>' + CRLF_NONE +
     '  pweb doctor [--json] [--with-paths] [--project <path>]' + CRLF_NONE +
     '              [--no-color] [--verbose]' + CRLF_NONE +
     CRLF_NONE +
@@ -158,14 +158,14 @@ end;
 
 function PWebCliCreateHelp: RawUtf8;
 begin
-  // the supported kind is INTERPOLATED from the parser's own allowlist, so
+  // the supported kinds are INTERPOLATED from the parser's own allowlist, so
   // this text cannot advertise a frontend the parser refuses
   Result :=
     'pweb create - create a new PWeb project' + CRLF_NONE +
     CRLF_NONE +
     'usage:' + CRLF_NONE +
-    '  pweb create NAME --ui ' + PWEB_CLI_UI_REACT +
-      ' --bundle-id <reverse.dns>' + CRLF_NONE +
+    '  pweb create NAME --ui ' + PWEB_CLI_UI_REACT + '|' +
+      PWEB_CLI_UI_PAS2JS + ' --bundle-id <reverse.dns>' + CRLF_NONE +
     CRLF_NONE +
     'arguments:' + CRLF_NONE +
     '  NAME           the project name: lowercase letters and digits,' +
@@ -179,7 +179,7 @@ begin
     CRLF_NONE +
     'options:' + CRLF_NONE +
     '  --ui <kind>    the frontend kind. This build supports: ' +
-      PWEB_CLI_UI_REACT + CRLF_NONE +
+      PWEB_CLI_UI_REACT + '|' + PWEB_CLI_UI_PAS2JS + CRLF_NONE +
     '  --bundle-id <id>' + CRLF_NONE +
     '                 the application identity, e.g. com.example.demo.' +
       CRLF_NONE +

@@ -111,6 +111,7 @@ tools/templates/**/*.lpr text eol=lf
 tools/templates/**/*.lpi text eol=lf
 tools/templates/**/*.pas text eol=lf
 tools/templates/**/*.inc text eol=lf
+tools/templates/**/*.cfg text eol=lf
 tools/templates/**/*.sh text eol=lf
 tools/templates/templates.list text eol=lf
 tools/templates/**/gitignore text eol=lf

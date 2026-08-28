@@ -64,6 +64,13 @@ fpc/
 *.hpp
 *Resource.rc
 
+# ...except inside the trusted template source, where a .cfg is PRODUCT: the
+# Pas2JS template ships frontend/pas2js.cfg, the pack builder refuses any
+# file the list does not declare, and the CAP-10B0 contract check refuses
+# any template source git does not track. An ignore rule aimed at Delphi's
+# generated files must not be able to hide one of those.
+!tools/templates/**/*.cfg
+
 # Delphi local files (user-specific info)
 *.local
 *.identcache

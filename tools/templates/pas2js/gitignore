@@ -1,0 +1,21 @@
+# Build output. Everything here is produced from the sources beside it, and
+# nothing here should ever be committed.
+/dist/
+/frontend/dist/
+*.o
+*.ppu
+*.compiled
+*.pwb
+
+# Compiled JavaScript. The browser code of this frontend is PRODUCED from the
+# Pascal beside it by the pinned Pas2JS compiler, so a .js file inside
+# frontend/src is a build artifact that happened to land next to its own
+# source. There is no package manager in this project - no lockfile, no
+# node_modules - and the PWeb Pas2JS SDK is never vendored here: it is
+# resolved at build time from the PWeb installation that owns it.
+/frontend/src/*.js
+/frontend/src/*.js.map
+
+# Local editor and operating-system noise.
+.DS_Store
+Thumbs.db

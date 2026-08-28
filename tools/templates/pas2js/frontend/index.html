@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{{PROJECT_NAME}}</title>
+    <link rel="stylesheet" href="/assets/app.css" />
+  </head>
+  <body>
+    <main id="pweb-app" class="pweb-shell">
+      <h1 class="pweb-title">{{PROJECT_NAME}}</h1>
+      <p class="pweb-subtitle">
+        Pas2JS and Free Pascal in one process.
+      </p>
+
+      <div class="pweb-card">
+        <p class="pweb-card-label">CalculatorService.Add(20, 22)</p>
+        <p class="pweb-sum" id="pweb-sum">...</p>
+      </div>
+
+      <div class="pweb-card">
+        <p class="pweb-card-label">runtime</p>
+        <p class="pweb-code" id="pweb-runtime">connecting</p>
+      </div>
+
+      <div class="pweb-card">
+        <p class="pweb-card-label">an unmapped method</p>
+        <p class="pweb-code" id="pweb-refusal">connecting</p>
+        <p class="pweb-note">
+          The capability policy in src/app.services.pas refused it before the
+          bridge was reached.
+        </p>
+      </div>
+    </main>
+    <script src="/assets/app.js"></script>
+    <script src="/assets/boot.js"></script>
+  </body>
+</html>

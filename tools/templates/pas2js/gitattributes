@@ -1,0 +1,30 @@
+# Line endings are a property of this project, not of whoever checks it out.
+#
+# Git for Windows defaults to core.autocrlf=true, so without this file the
+# same commit would produce different bytes on different machines - and the
+# frontend sources here are served to the WebView verbatim, so different
+# bytes means a different application.
+#
+# The default is binary and the text kinds opt back in by extension. That
+# direction is deliberate: the next file somebody adds inherits nothing, and
+# an image or a font declared as text would be corrupted on checkout.
+
+* -text
+
+*.md            text eol=lf
+*.txt           text eol=lf
+*.json          text eol=lf
+*.js            text eol=lf
+*.mjs           text eol=lf
+*.ts            text eol=lf
+*.tsx           text eol=lf
+*.css           text eol=lf
+*.html          text eol=lf
+*.svg           text eol=lf
+*.lpr           text eol=lf
+*.lpi           text eol=lf
+*.pas           text eol=lf
+*.inc           text eol=lf
+*.sh            text eol=lf
+.gitignore      text eol=lf
+.gitattributes  text eol=lf

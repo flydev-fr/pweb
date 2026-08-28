@@ -1,10 +1,10 @@
 program pweb;
 
-{ The PWeb application lifecycle CLI (CAP-10A, CAP-10B1).
+{ The PWeb application lifecycle CLI (CAP-10A, CAP-10B1, CAP-10B2).
 
     pweb --help
     pweb --version
-    pweb create NAME --ui react --bundle-id <reverse.dns>
+    pweb create NAME --ui react|pas2js --bundle-id <reverse.dns>
     pweb create --help
     pweb doctor [--json] [--with-paths] [--project <path>] [--no-color]
                 [--verbose]
@@ -124,15 +124,25 @@ end;
 
 { The template layer's runtime codes, mapped onto the frozen taxonomy.
 
-  Two of them are USAGE and the rest are ENVIRONMENT, and the split is the
-  whole point: "this build has no such frontend" is something the person at
-  the keyboard typed, while "the pack beside the executable does not match
-  the registry compiled into it" is something about the installation. A
-  reader who gets 4 for a typo learns nothing and starts reinstalling. }
+  ONE of them is USAGE and the rest are ENVIRONMENT, and the split is the
+  whole point: "that template is not yours to ask for" is something the
+  person at the keyboard typed, while "the pack beside the executable does
+  not match the registry compiled into it" is something about the
+  installation. A reader who gets 4 for a typo learns nothing and starts
+  reinstalling.
+
+  CAP-10B2 MOVED ptcTemplateUnknown from USAGE to ENVIRONMENT, and the
+  reason is the allowlist rather than a change of mind. `--ui` is checked
+  against a compiled set BEFORE any of this runs, so a typed frontend kind
+  can no longer reach a template lookup at all: reaching it means the pack
+  this installation carries does not describe a template this build
+  advertises, which is the same class of fact as `sdk_share_missing` and
+  `pack_size` and is nothing the user did. test/cap10b2 proves it by
+  compiling a second CLI against a react-only pack rather than by asserting
+  it - a refusal nobody has watched fire is a comment. }
 function ExitForTplCode(Code: TPWebTplCode): Integer;
 begin
   case Code of
-    ptcTemplateUnknown,
     ptcTemplatePrivate:
       Result := PWEB_EXIT_USAGE;
   else
@@ -179,7 +189,7 @@ begin
     Result := Result + ' ';
 end;
 
-{ `pweb create NAME --ui react --bundle-id <id>`.
+{ `pweb create NAME --ui react|pas2js --bundle-id <id>`.
 
   The sequence is the frozen CAP-10B0 one and this function adds nothing to
   it: validate the identity, resolve the SDK from the running image, verify
