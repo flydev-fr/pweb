@@ -1358,6 +1358,18 @@ jobs:
             Tee-Object -FilePath build/cap6b3-build.log
           if ($LASTEXITCODE -ne 0) { throw 'CAP-6b3 fixed setup build FAILED' }
 
+      # The teardown the uninstall gate depends on, proven on injected
+      # process records BEFORE the real gate runs: the selection is scoped
+      # by executable image path to this installation, a sibling directory
+      # sharing the root as a string prefix is not inside it, an unreadable
+      # path never matches, and no global process-name kill exists in either
+      # script. Checkout-only apart from one WMI query.
+      - name: CAP-6b3 Fixed Runtime process-drain tests (path scoping, churn, no global kill)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap6b3/check_wv2procdrain.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-6b3 drain tests FAILED' }
+
       # 75: the gate script's OWN bounded waits can sum past an hour in
       # the worst case (install 20 min + two manifest verifies 10 min
       # each + smoke/control/negative legs + uninstall 10 min + the

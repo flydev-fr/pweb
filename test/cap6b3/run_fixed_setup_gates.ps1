@@ -457,12 +457,45 @@ try {
         'tree selects again)')
 
     # --- 9) silent uninstall leaves no launchable app ------------------------
+    #
+    # TEARDOWN FIRST, AND IT IS NOT AN OPTIMISATION. Gates 7 and 8 ran three
+    # applications that each spawned a browser image INSIDE the bundled tree,
+    # and nothing between them and this point waited for those processes to
+    # exit. Windows cannot delete a mapped image, the Inno uninstaller reports
+    # success anyway, and the filesystem poll below then waits 300 seconds for
+    # a directory that will never empty. MEASURED on hosted run 33163186945,
+    # twice on one commit, leaving 11 files and then a different 8 - the
+    # changing subset is the signature.
+    #
+    # The drain is scoped BY EXECUTABLE IMAGE PATH to this installation. The
+    # runner's unrelated Evergreen processes - which CAP-6b1, CAP-6b2 and
+    # gate 8's own no-fallback proof all depend on - are outside these roots
+    # and are never considered, let alone terminated.
+    #
+    # It REFUSES rather than continues: if the matching set is still non-empty
+    # the uninstaller is not run at all, because what that would test is not
+    # uninstall cleanup.
+    . (Join-Path $PSScriptRoot 'wv2procdrain.ps1')
+    # first the applications this gate launched: each was started bounded and
+    # waited on, so this must already be empty - and if it is not, that is a
+    # defect of its own and not something to uninstall over
+    Assert-PWebProcessDrained -Root $InstallDir -Names @('releaseapp.exe') `
+        -What 'installed test application' -GraceMs 4000 -TimeoutMs 60000 |
+        Out-Null
+    # then the browser tree they spawned, under the Fixed Runtime root
+    Assert-PWebProcessDrained -Root $InstalledRuntime `
+        -Names @('msedgewebview2.exe') -What 'bundled Fixed Runtime browser' `
+        -GraceMs 8000 -TimeoutMs 90000 | Out-Null
+
     $unins = Join-Path $InstallDir 'unins000.exe'
     # the Inno uninstaller respawns a copy of itself and the original
     # process exits early: poll for the result, bounded
     $u = Invoke-Bounded $unins @('/VERYSILENT', '/SUPPRESSMSGBOXES',
         '/NORESTART') 600000 'silent uninstall'
     if ($u.Code -ne 0) { throw "silent uninstall exited $($u.Code)" }
+    # the poll below VERIFIES cleanup. It is no longer the mechanism that
+    # waits for the browser to shut down - that is the drain above - so a
+    # residue here now means the uninstaller genuinely left something.
     $deadline = [DateTime]::UtcNow.AddSeconds(300)
     while ([DateTime]::UtcNow -lt $deadline) {
         if (-not (Test-Path $InstallDir)) { break }
@@ -474,7 +507,24 @@ try {
         $left = @(Get-ChildItem $InstallDir -Recurse -File -ErrorAction SilentlyContinue |
             ForEach-Object Name)
         if ($left) {
-            throw "uninstall left $($left.Count) file(s) behind: $(($left | Select-Object -First 5) -join ', ')"
+            # residue AFTER a proven-empty drain is a different fact from
+            # residue before one, so say which: re-enumerate the scoped
+            # process set and report both halves rather than only the files
+            $still = @(Get-PWebScopedProcess -Names @('msedgewebview2.exe', 'releaseapp.exe') `
+                -Root $InstallDir)
+            $procRows = @($still | ForEach-Object {
+                $sid = 0; $simg = ''
+                try { $sid = [int]$_.ProcessId } catch { $sid = 0 }
+                try { $simg = [string]$_.ExecutablePath } catch { $simg = '' }
+                "pid=$sid image=$simg"
+            })
+            $procNote = if ($procRows.Count -gt 0) {
+                " ; $($procRows.Count) matching process(es) STILL present: $($procRows -join '; ')"
+            } else {
+                ' ; no matching Fixed Runtime process remains, so the residue is the uninstaller''s'
+            }
+            throw ("uninstall left $($left.Count) file(s) behind: " +
+                "$(($left | Select-Object -First 5) -join ', ')$procNote")
         }
     }
     foreach ($gone in 'releaseapp.exe', 'app.pwb', 'webview.dll') {
