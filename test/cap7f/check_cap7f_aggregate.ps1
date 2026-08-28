@@ -116,9 +116,11 @@ $required = @(
     'pas2js_doctor_version',
     'pas2js_proof_corpus', 'pas2js_compiler_version', 'pas2js_compiler_arch',
     'pas2js_compiler_host', 'pas2js_compiler_sha256', 'pas2js_frontend_build',
-    'pas2js_native_build', 'pas2js_sdk_from_sdk_root', 'pas2js_output_sweep',
+    'pas2js_native_build', 'pas2js_sdk_from_sdk_root',
+    'pas2js_native_from_sdk_root', 'pas2js_output_sweep',
     'pas2js_output_normalised',
     'pas2js_static_inventory_digest', 'pas2js_app_pwb_semantic_digest',
+    'pas2js_app_pwb_entries',
     'pas2js_app_pwb_bytes', 'pas2js_secure_origin', 'pas2js_rpc_result',
     'pas2js_error_mapping', 'pas2js_listener_count', 'pas2js_loose_assets',
     'pas2js_app_raw_binding', 'pas2js_sdk_binding_owner',
@@ -209,6 +211,7 @@ $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
     'pas2js_proof_corpus', 'pas2js_tree_unchanged', 'pas2js_build_out_of_tree',
     'pas2js_frontend_build', 'pas2js_native_build', 'pas2js_output_sweep',
     'pas2js_secure_origin', 'pas2js_error_mapping', 'pas2js_sdk_from_sdk_root',
+    'pas2js_native_from_sdk_root',
     'react_pas2js_parity', 'react_regression_runtime')
 # fields that must agree, value-for-value, across all four targets
 # (capability_policy_digest is the CAP-8A structured policy-decision corpus and
@@ -340,7 +343,8 @@ $equalityFields = @(
     'pas2js_generated_total_bytes', 'pas2js_pweb_json_digest',
     'pas2js_frontend_source_digest', 'react_generated_inventory_digest',
     'shared_native_source_digest', 'pas2js_static_inventory_digest',
-    'pas2js_app_pwb_semantic_digest', 'pas2js_tree_digest',
+    'pas2js_app_pwb_semantic_digest', 'pas2js_app_pwb_entries',
+    'pas2js_tree_digest',
     'pas2js_compiler_version', 'pas2js_doctor_version',
     'pas2js_report_fields', 'pas2js_rpc_result', 'pas2js_listener_count',
     'pas2js_app_raw_binding', 'pas2js_loose_assets',
@@ -700,8 +704,8 @@ foreach ($t in $evidence.Keys) {
         $pr = 0
         if (-not [int]::TryParse("$($e.pas2js_create_refusals)", [ref]$pr)) {
             $failures.Add("CAP-10B2 NON-NUMERIC: target=$t pas2js_create_refusals='$($e.pas2js_create_refusals)'")
-        } elseif ($pr -ne 12) {
-            $failures.Add("CAP-10B2 REFUSALS: target=$t pas2js_create_refusals=$pr, expected 12 -- a refusal nobody watched fire is a comment")
+        } elseif ($pr -ne 13) {
+            $failures.Add("CAP-10B2 REFUSALS: target=$t pas2js_create_refusals=$pr, expected 13 -- a refusal nobody watched fire is a comment")
         }
         # THE UI VOCABULARY IS EXACT, and it is checked as a SET rather than
         # as a substring: 'react' alone, 'pas2js' alone and a third kind
@@ -746,6 +750,16 @@ foreach ($t in $evidence.Keys) {
         if ("$($e.pas2js_report_fields)" -cne
             'css,errmap,handshake,html,js,rpc,secure,value') {
             $failures.Add("CAP-10B2 BAD-REPORT-SHAPE: target=$t pas2js_report_fields='$($e.pas2js_report_fields)'")
+        }
+        # the archive really was opened: the four static assets plus the
+        # manifest.json the BUNDLER owns and the dist never contained. A
+        # digest computed over the dist directory instead would have five
+        # entries fewer and this row would say so.
+        $pe = 0
+        if (-not [int]::TryParse("$($e.pas2js_app_pwb_entries)", [ref]$pe)) {
+            $failures.Add("CAP-10B2 NON-NUMERIC: target=$t pas2js_app_pwb_entries='$($e.pas2js_app_pwb_entries)'")
+        } elseif ($pe -ne 5) {
+            $failures.Add("CAP-10B2 BAD-BUNDLE-INVENTORY: target=$t pas2js_app_pwb_entries=$pe, expected 5 (index.html, three assets, manifest.json)")
         }
     }
 }

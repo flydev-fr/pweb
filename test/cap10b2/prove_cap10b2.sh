@@ -95,13 +95,16 @@ Linux)
             "${mormot_units[@]}" "-Fl${static_dir}" "-Fl${dist_lib}" \
             -k'-rpath=$ORIGIN' -k-lgcc_s "${project}/src/demo.lpr"
     }
+    # A SAMPLER THAT NEVER SAMPLED reports a clean zero for any host, and
+    # `pas2js_listener_count = 0` is an ABSOLUTE PIN in the aggregate - so a
+    # missing tool would satisfy the pin by proving nothing. Refuse up front.
+    command -v ss >/dev/null 2>&1 ||
+        die 'ss(8) is required: without it listener_count would be a vacuous 0'
     sample_listeners() {
         local pid="$1" n=0 t=0 u=0
-        if command -v ss >/dev/null 2>&1; then
-            t=$(ss -ltnp 2>/dev/null | grep -c "pid=${pid}," || true)
-            u=$(ss -lunp 2>/dev/null | grep -c "pid=${pid}," || true)
-            n=$(( t + u ))
-        fi
+        t=$(ss -ltnp 2>/dev/null | grep -c "pid=${pid}," || true)
+        u=$(ss -lunp 2>/dev/null | grep -c "pid=${pid}," || true)
+        n=$(( t + u ))
         printf '%s' "${n}"
     }
     ;;
@@ -134,12 +137,14 @@ Darwin)
             "${mormot_units[@]}" "${PWEB_MACOS_FPC_FLAGS[@]}" \
             "${PWEB_MACOS_FPC_LINK_BRIDGE[@]}" "${project}/src/demo.lpr"
     }
+    # see the Linux branch: a sampler that never sampled satisfies an
+    # absolute pin by proving nothing
+    command -v lsof >/dev/null 2>&1 ||
+        die 'lsof(8) is required: without it listener_count would be a vacuous 0'
     sample_listeners() {
         local pid="$1" n=0
-        if command -v lsof >/dev/null 2>&1; then
-            n=$(lsof -nP -p "${pid}" 2>/dev/null |
-                grep -c -E 'TCP .*\(LISTEN\)|UDP ' || true)
-        fi
+        n=$(lsof -nP -p "${pid}" 2>/dev/null |
+            grep -c -E 'TCP .*\(LISTEN\)|UDP ' || true)
         printf '%s' "${n}"
     }
     ;;
@@ -170,6 +175,26 @@ sdk_units=(
     -Fu"${sdk_src}/webview"
     -Fu"${sdk_src}/assets"
 )
+# THE NATIVE HALF OF THE SDK-ROOT CLAIM, asserted rather than assumed. The
+# Pas2JS compile proves its one PWeb unit path names the staged SDK; the same
+# has to be true of the ones the FPC compile is handed, and nothing had ever
+# measured it - which is exactly how the POSIX CAP-10B1 proof kept a
+# repo-relative platform path while its header claimed otherwise.
+native_from_sdk=0
+for u in "${sdk_units[@]}" "-Fu${sdk_src}/platform/linux" \
+         "-Fu${sdk_src}/platform/macos"; do
+    case "${u}" in
+        "-Fu${sdk_src}/"*) ;;
+        *) native_from_sdk=1
+           require 1 "the native compile's PWeb unit path is not staged: ${u}" ;;
+    esac
+    case "${u}" in
+        "-Fu${repo_root}/src/"*)
+            native_from_sdk=1
+            require 1 "the native compile names this repository's src/: ${u}" ;;
+    esac
+done
+row pas2js_native_from_sdk_root "$(bool_row "${native_from_sdk}")"
 
 # --- 1. relocate, and digest what must not change --------------------------
 step 'relocate the created project into an unrelated staging path'
@@ -237,8 +262,16 @@ else
     row pas2js_sdk_from_sdk_root 'FAIL'
     require 1 "the frontend compile's unit path is not the staged SDK"
 fi
-"${compiler}" "${compiler_args[@]}" >> "${log}" 2>&1
-frontend_built=$?
+# `if cmd`, never `cmd` then `$?`. Under `set -euo pipefail` a bare failing
+# command TERMINATES the script, so the row this harness would have written
+# to explain the failure is never written at all - and the reader sees a raw
+# compiler exit status where a diagnosed FAIL belongs. Every step below that
+# is allowed to fail is written in a condition context for that reason.
+if "${compiler}" "${compiler_args[@]}" >> "${log}" 2>&1; then
+    frontend_built=0
+else
+    frontend_built=$?
+fi
 [ -f "${out_js}" ] || frontend_built=1
 require "${frontend_built}" 'the generated Pas2JS frontend does not compile'
 row pas2js_frontend_build "$(bool_row "${frontend_built}")"
@@ -256,22 +289,22 @@ row pas2js_frontend_build "$(bool_row "${frontend_built}")"
 # what makes the four-target field a property of the pipeline instead of a
 # property of the host that happened to run it.
 had_bom=0
-had_crlf=0
+had_cr=0
 if head -c 3 -- "${out_js}" | od -An -tx1 | tr -d ' \n' | grep -q '^efbbbf$'; then
     had_bom=1
 fi
-if LC_ALL=C grep -q -- "$(printf '\r')" "${out_js}"; then had_crlf=1; fi
+if LC_ALL=C grep -q -- "$(printf '\r')" "${out_js}"; then had_cr=1; fi
 # tail -c and tr, not sed or perl: GNU sed understands \xEF and BSD sed does
 # not, and this script runs on both families
 if [ "${had_bom}" = '1' ]; then
     tail -c +4 -- "${out_js}" > "${out_js}.norm"
     mv -f -- "${out_js}.norm" "${out_js}"
 fi
-if [ "${had_crlf}" = '1' ]; then
+if [ "${had_cr}" = '1' ]; then
     tr -d '\r' < "${out_js}" > "${out_js}.norm"
     mv -f -- "${out_js}.norm" "${out_js}"
 fi
-row pas2js_output_normalised "bom=${had_bom} crlf=${had_crlf}"
+row pas2js_output_normalised "bom=${had_bom} cr=${had_cr}"
 
 # the bootstrap, as a bundled classic script, byte-exactly with LF. -Jc
 # concatenates the RTL and declares `rtl` without starting it, so a later
@@ -299,7 +332,8 @@ row pas2js_static_inventory_digest "$( ( cd -- "${dist_dir}" &&
 # any network fallback, any dev watcher and any source map: none of them may
 # survive into something that ships inside app.pwb.
 output_clean=0
-for needle in '/Users/' '/home/' '%USERPROFILE%' '/private/var/folders/' \
+for needle in '/Users/' '/home/' '\Users\' 'C:\' '%USERPROFILE%' \
+              '/private/var/folders/' \
               "${repo_root}" "${sdk_pas2js}" "${stage}" 'localhost' \
               '127.0.0.1' 'file://' 'http://' 'https://' 'ws://' 'wss://' \
               'sourceMappingURL' 'import.meta.hot' '/@vite/client'; do
@@ -318,16 +352,30 @@ row pas2js_output_sweep "$(bool_row "${output_clean}")"
 # body. A second binding emitted by the application breaks the first; a
 # binding emitted outside the SDK breaks the second.
 # OCCURRENCES, not lines: `grep -c` counts matching lines, so two bindings on
-# one line would read as one
-binding_count="$(grep -o '__pweb_invoke' "${out_js}" | wc -l | tr -d ' ')"
+# one line would read as one.
+#
+# `|| true` is load-bearing under `set -euo pipefail`: ZERO occurrences makes
+# grep exit 1, pipefail propagates it, and the script would die instead of
+# reporting "expected exactly 1" - turning the most interesting outcome this
+# check has into a silent abort.
+binding_count="$( { grep -o '__pweb_invoke' "${out_js}" || true; } | wc -l | tr -d ' ')"
 [ "${binding_count}" = '1' ] ||
     require 1 "the compiled frontend names the raw native binding ${binding_count} time(s), expected exactly 1"
-binding_line="$(grep -n '__pweb_invoke' "${out_js}" | head -n 1 | cut -d: -f1)"
+binding_line="$( { grep -n '__pweb_invoke' "${out_js}" || true; } |
+    head -n 1 | cut -d: -f1)"
 binding_owner=''
+binding_next_module=''
 if [ -n "${binding_line}" ]; then
-    binding_owner="$(head -n "${binding_line}" "${out_js}" |
-        grep -oE '^rtl\.module\("[^"]+"' | tail -n 1 |
+    binding_owner="$( { head -n "${binding_line}" "${out_js}" |
+        grep -oE '^rtl\.module\("[^"]+"' || true; } | tail -n 1 |
         sed 's/^rtl\.module("//; s/"$//')"
+    # and the binding must lie INSIDE that module's body, not merely after
+    # its opening line: a binding emitted at top level after the last module
+    # would otherwise inherit the last module's name
+    binding_next_module="$( { tail -n "+$(( binding_line + 1 ))" "${out_js}" |
+        grep -n -m1 -E '^rtl\.module\("' || true; } | cut -d: -f1)"
+    [ -n "${binding_next_module}" ] ||
+        require 1 'the raw native binding is emitted after the last module body'
 fi
 [ "${binding_owner}" = 'pweb.native' ] ||
     require 1 "the raw native binding is emitted inside module '${binding_owner}', expected 'pweb.native'"
@@ -349,18 +397,61 @@ grep -qE '<script[^>]*[[:space:]]src=' "${dist_dir}/index.html" ||
     require 1 'the built index.html has no external script'
 grep -qE '<link[^>]*rel="stylesheet"' "${dist_dir}/index.html" ||
     require 1 'the built index.html does not link the stylesheet'
+# no INLINE script: the ratified script-src 'self' carries no 'unsafe-inline'
+# and CAP-8B measured an inline <script> blocked on all three engines
+if grep -qE '<script(?![^>]*[[:space:]]src=)' "${dist_dir}/index.html" 2>/dev/null ||
+   grep -E '<script[^>]*>' "${dist_dir}/index.html" |
+       grep -qvE '[[:space:]]src='; then
+    require 1 'the built index.html carries an inline script'
+fi
+# and the two scripts load IN ORDER: -Jc declares `rtl` without starting it,
+# so boot.js must come after app.js or nothing runs
+app_js_line="$(grep -n 'assets/app\.js' "${dist_dir}/index.html" | head -n 1 | cut -d: -f1)"
+boot_js_line="$(grep -n 'assets/boot\.js' "${dist_dir}/index.html" | head -n 1 | cut -d: -f1)"
+if [ -n "${app_js_line}" ] && [ -n "${boot_js_line}" ]; then
+    [ "${app_js_line}" -lt "${boot_js_line}" ] ||
+        require 1 'the built index.html loads boot.js before app.js'
+else
+    require 1 'the built index.html does not load both app.js and boot.js'
+fi
 
 # --- 5. app.pwb, through the frozen bundler --------------------------------
 step 'app.pwb, through the frozen CAP-6 bundler'
 app_pwb="${stage}/app.pwb"
-"${bundler}" "${dist_dir}" "${app_pwb}" >> "${log}" 2>&1
-require "$?" 'the app.pwb build FAILED'
+if "${bundler}" "${dist_dir}" "${app_pwb}" >> "${log}" 2>&1; then
+    pwb_built=0
+else
+    pwb_built=$?
+fi
+require "${pwb_built}" 'the app.pwb build FAILED'
 row pas2js_app_pwb_bytes "$(wc -c < "${app_pwb}" | tr -d ' ')"
-# the SEMANTIC inventory, not the archive bytes - the CAP-6/CAP-7L and
-# CAP-10B0 measurements say the container's bytes are a toolchain and an
-# OS-family property, while the logical inventory is a function of the input
-row pas2js_app_pwb_semantic_digest \
-    "$(grep -m1 '^pas2js_static_inventory_digest' "${rows_file}" | cut -f2)"
+# the SEMANTIC inventory OF THE ARCHIVE - opened and projected, not inferred
+# from the directory that went into it. The CAP-6/CAP-7L and CAP-10B0
+# measurements say the container's BYTES are a toolchain and an OS-family
+# property; its meaning is a function of the input, and the meaning is what
+# four targets compare.
+#
+# The projection is CAP-7F's `emit_manifest`, reused verbatim in shape:
+# `entry=<name> size=<n> sha256=<hex>` per entry, bytewise-sorted, one final
+# newline. That also brings manifest.json - which the bundler owns and the
+# dist never contained - inside the measurement, so a bundler that stopped
+# stamping the protocol would be visible here.
+zip_manifest="${stage}/app-pwb-manifest.txt"
+: > "${zip_manifest}"
+zip_entry_bin="${stage}/app-pwb-entry.bin"
+while IFS= read -r zentry; do
+    [ -n "${zentry}" ] || continue
+    case "${zentry}" in */) continue ;; esac
+    zpattern="$(printf '%s' "${zentry}" | sed -e 's/[[*?]/[&]/g')"
+    unzip -p "${app_pwb}" "${zpattern}" > "${zip_entry_bin}"
+    printf 'entry=%s size=%s sha256=%s\n' "${zentry}" \
+        "$(wc -c < "${zip_entry_bin}" | tr -d ' ')" \
+        "$(sha_file "${zip_entry_bin}")" >> "${zip_manifest}"
+done < <(zipinfo -1 "${app_pwb}" | LC_ALL=C sort)
+rm -f -- "${zip_entry_bin}"
+[ -s "${zip_manifest}" ] || die "the app.pwb logical inventory came out empty"
+row pas2js_app_pwb_entries "$(wc -l < "${zip_manifest}" | tr -d ' ')"
+row pas2js_app_pwb_semantic_digest "$(sha_file "${zip_manifest}")"
 
 # --- 6. the generated Pascal program, against the STAGED SDK ---------------
 step 'compile the generated Pascal program against the staged SDK root'
@@ -368,8 +459,11 @@ unit_dir="${work}/app-units"
 bin_dir="${work}/app-bin"
 rm -rf -- "${unit_dir}" "${bin_dir}"
 mkdir -p -- "${unit_dir}" "${bin_dir}"
-compile_generated >> "${log}" 2>&1
-native_built=$?
+if compile_generated >> "${log}" 2>&1; then
+    native_built=0
+else
+    native_built=$?
+fi
 require "${native_built}" 'the generated Pascal program does not compile'
 row pas2js_native_build "$(bool_row "${native_built}")"
 [ -x "${bin_dir}/demo" ] || die 'the generated program produced no executable'
@@ -412,11 +506,12 @@ Darwin)
     # a .app, because WKWebView keys persistent state by bundle identifier
     # and an unbundled executable has none. The identity comes from the
     # GENERATED descriptor, unchanged since the developer stated it.
-    bundle_id="$(grep -o '"bundleId"[^,]*' "${project}/pweb.json" |
+    bundle_id="$( { grep -o '"bundleId"[^,]*' "${project}/pweb.json" || true; } |
         sed 's/.*"bundleId"[^"]*"\([^"]*\)".*/\1/')"
-    app_version="$(grep -o '"version"[^,]*' "${project}/pweb.json" |
+    app_version="$( { grep -o '"version"[^,]*' "${project}/pweb.json" || true; } |
         head -n 1 | sed 's/.*"version"[^"]*"\([^"]*\)".*/\1/')"
     [ -n "${bundle_id}" ] || die 'could not read bundleId from the generated pweb.json'
+    [ -n "${app_version}" ] || die 'could not read version from the generated pweb.json'
     app="${release}/Demo.app"
     mkdir -p -- "${app}/Contents/MacOS" "${app}/Contents/Resources"
     cp -f -- "${bin_dir}/demo" "${app}/Contents/MacOS/"
@@ -484,7 +579,22 @@ for _ in $(seq 1 60); do
     if [ "${n}" -gt "${listener_max}" ]; then listener_max="${n}"; fi
     sleep 0.5
 done
+# BOUNDED, and killed rather than waited on forever. A process that outlives
+# its auto-close window plus a generous margin has hung, and hanging until
+# the 30-minute CI step timeout would produce no evidence at all - which is
+# precisely the "no report received" conflation this harness exists to avoid.
+hung=0
+for _ in $(seq 1 120); do
+    kill -0 "${app_pid}" 2>/dev/null || break
+    sleep 0.5
+done
+if kill -0 "${app_pid}" 2>/dev/null; then
+    hung=1
+    kill -9 "${app_pid}" 2>/dev/null || true
+fi
 wait "${app_pid}" && app_exit=0 || app_exit=$?
+[ "${hung}" = '0' ] ||
+    require 1 "the generated application did not exit within its window and was killed -- a HUNG RUN, which is a timing observation and not a runtime verdict"
 elapsed_ms=$(( ( $(date +%s) - started ) * 1000 ))
 cat -- "${out_file}" || true
 { printf '===== app run (exit %s, %sms) =====\n' "${app_exit}" "${elapsed_ms}"
@@ -510,7 +620,13 @@ fi
 # inside its window is a timing observation and not a runtime defect.
 # deferred-work.md records exactly that shape happening to the CAP-5 Pas2JS
 # smoke, undiagnosed, so this harness refuses to conflate them.
-report="$(grep -o 'demo: ready {.*}' "${out_file}" | tail -n 1 |
+# `|| true` is the whole point of this line. Without it, `set -euo pipefail`
+# turns "the page never reported" into a silent abort - and the branch below,
+# which exists specifically so an intermittent timing failure is NOT reported
+# as a runtime defect, would be unreachable on exactly the run it was written
+# for.
+report_fields=''
+report="$( { grep -o 'demo: ready {.*}' "${out_file}" || true; } | tail -n 1 |
     sed 's/^demo: ready //')"
 if [ -n "${report}" ]; then
     row pas2js_report_received 'true'
@@ -594,6 +710,19 @@ if [ -f "${react_proof}" ]; then
         parity=1
         require 1 'the CAP-10B1 react record reports a loose asset'
     }
+    # THE REPORT SHAPE, compared PAGE TO PAGE rather than each against a
+    # literal. Both starters answer the same eight questions under the same
+    # names; asserting only the Pas2JS set against a constant would have let
+    # the React page grow or lose a field with the parity claim still green.
+    react_fields="$( { grep -o '"report_fields": "[^"]*"' "${react_proof}" || true; } |
+        head -n 1 | sed 's/.*: "//; s/"$//')"
+    if [ -z "${react_fields}" ]; then
+        parity=1
+        require 1 'the CAP-10B1 react record carries no report_fields'
+    elif [ "${react_fields}" != "${report_fields}" ]; then
+        parity=1
+        require 1 "the two pages report different shapes: react '${react_fields}' vs pas2js '${report_fields}'"
+    fi
     row react_pas2js_parity "$(bool_row "${parity}")"
     if grep -q '"rpc_result": 42' "${react_proof}"; then
         row react_regression_runtime 'PASS'

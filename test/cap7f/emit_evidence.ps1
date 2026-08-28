@@ -935,6 +935,14 @@ foreach ($f in $b2File, $b2ProofFile) {
 }
 $b2 = Get-Content $b2File -Raw | ConvertFrom-Json
 $b2p = Get-Content $b2ProofFile -Raw | ConvertFrom-Json
+# TWO GATES PARSE THE SAME HELP TEXT and both emit the set they read out of
+# it. Nothing had required them to agree, so a CAP-10B1 record and a
+# CAP-10B2 record could have carried two different advertised sets into one
+# evidence file, of which only the second travelled.
+if ("$($b1.supported_uis)" -cne "$($b2.supported_uis)") {
+    throw ("[CAP-7F] the CAP-10B1 record advertises '$($b1.supported_uis)' " +
+        "and the CAP-10B2 record '$($b2.supported_uis)'")
+}
 $pas2jsCreateCorpus = "$($b2.pas2js_create_corpus)"
 $pas2jsProofCorpus = "$($b2p.pas2js_proof_corpus)"
 foreach ($pair in @(@('pas2js_create_corpus', $pas2jsCreateCorpus),
@@ -1137,6 +1145,8 @@ $evidence = [ordered]@{
     pas2js_frontend_build           = "$($b2p.pas2js_frontend_build)"
     pas2js_native_build             = "$($b2p.pas2js_native_build)"
     pas2js_sdk_from_sdk_root        = "$($b2p.pas2js_sdk_from_sdk_root)"
+    pas2js_native_from_sdk_root     = "$($b2p.pas2js_native_from_sdk_root)"
+    pas2js_app_pwb_entries          = "$($b2p.pas2js_app_pwb_entries)"
     pas2js_output_sweep             = "$($b2p.pas2js_output_sweep)"
     pas2js_output_normalised        = "$($b2p.pas2js_output_normalised)"
     pas2js_static_inventory_digest  = "$($b2p.pas2js_static_inventory_digest)"

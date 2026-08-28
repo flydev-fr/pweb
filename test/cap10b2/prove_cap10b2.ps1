@@ -104,6 +104,11 @@ $compilerArch = (& $compiler -iSP | Out-String).Trim()
 $compilerOs = (& $compiler -iSO | Out-String).Trim()
 Require ($compilerVersion -ceq '3.0.1') `
     "the pinned Pas2JS reports $compilerVersion, expected 3.0.1"
+# the architecture, asserted here as the POSIX twin asserts it: upstream
+# publishes the Windows artifact as a 32-bit i386 binary, and a build that
+# silently became something else is a different artifact under one pin
+Require ($compilerArch -ceq 'i386') `
+    "the pinned Windows Pas2JS is built for $compilerArch, expected i386"
 Row 'pas2js_compiler_version' $compilerVersion
 Row 'pas2js_compiler_arch' $compilerArch
 Row 'pas2js_compiler_host' "$compilerOs/$compilerArch"
@@ -164,11 +169,17 @@ $hadBom = ($bytes.Length -ge 3) -and ($bytes[0] -eq 0xEF) -and
     ($bytes[1] -eq 0xBB) -and ($bytes[2] -eq 0xBF)
 $text = [System.Text.Encoding]::UTF8.GetString($bytes)
 if ($hadBom) { $text = $text.Substring(1) }
-$hadCrlf = $text.Contains("`r`n")
-$text = $text.Replace("`r`n", "`n")
+$hadCr = $text.Contains("`r")
+# EVERY CR, not only the ones in a CRLF pair, and for one reason: the POSIX
+# twin normalises with `tr -d '\r'`. Two implementations of one projection
+# that treat a lone CR differently is exactly the comparer disagreement
+# CAP-10B1 measured on run 33126638202, in a different disguise.
+$text = $text.Replace("`r", '')
 [System.IO.File]::WriteAllText($outJs, $text,
     [System.Text.UTF8Encoding]::new($false))
-Row 'pas2js_output_normalised' "bom=$hadBom crlf=$hadCrlf"
+# 1/0 rather than True/False, so the row reads the same on both families
+Row 'pas2js_output_normalised' (
+    "bom=$(if ($hadBom) { 1 } else { 0 }) cr=$(if ($hadCr) { 1 } else { 0 })")
 
 # the bootstrap, as a bundled classic script, byte-exactly with LF. -Jc
 # concatenates the RTL and declares `rtl` without starting it, so a later
@@ -240,6 +251,12 @@ if ($bindingLines.Count -ge 1) {
     foreach ($m in $moduleStarts) {
         if ($m.Line -lt $at) { $owner = $m.Name }
     }
+    # INSIDE the module body, not merely after its opening line: a binding
+    # emitted at top level after the LAST module would otherwise inherit
+    # that module's name
+    $next = @($moduleStarts | Where-Object { $_.Line -gt $at })
+    Require ($next.Count -gt 0) `
+        'the raw native binding is emitted after the last module body'
 }
 Require ($owner -ceq 'pweb.native') `
     ("the raw native binding is emitted inside module '$owner', expected " +
@@ -260,18 +277,56 @@ Require (-not ($indexText -match '<script(?![^>]*\ssrc=)[^>]*>[^<]')) `
     'the built index.html carries an inline script'
 Require ($indexText -match '<link[^>]*rel="stylesheet"') `
     'the built index.html does not link the stylesheet'
+# and the two scripts load IN ORDER: -Jc declares `rtl` without starting it,
+# so boot.js must come after app.js or nothing runs
+$appJsAt = $indexText.IndexOf('assets/app.js')
+$bootJsAt = $indexText.IndexOf('assets/boot.js')
+Require (($appJsAt -ge 0) -and ($bootJsAt -ge 0)) `
+    'the built index.html does not load both app.js and boot.js'
+Require ($appJsAt -lt $bootJsAt) `
+    'the built index.html loads boot.js before app.js'
 
 # --- 5. app.pwb, through the frozen bundler --------------------------------
 $appPwb = Join-Path $stage 'app.pwb'
 & $bundler $dist $appPwb 2>&1 | Tee-Object -FilePath $log -Append | Out-Null
 Require ($LASTEXITCODE -eq 0) 'the app.pwb build FAILED'
 Row 'pas2js_app_pwb_bytes' (Get-Item -LiteralPath $appPwb).Length
-# the SEMANTIC inventory, not the archive bytes: CAP-6/CAP-7L measured that
-# the mORMot static DEFLATE object emits different bytes per toolchain, and
-# CAP-10B0 measured the ZIP `version made by` OS byte on top of that. What is
-# a function of the input alone is the logical name, length and digest of
-# each entry, which is what four targets compare.
-Row 'pas2js_app_pwb_semantic_digest' $rows['pas2js_static_inventory_digest']
+# the SEMANTIC inventory OF THE ARCHIVE - opened and projected, not inferred
+# from the directory that went into it. CAP-6/CAP-7L measured that the mORMot
+# static DEFLATE object emits different bytes per toolchain, and CAP-10B0
+# measured the ZIP `version made by` OS byte on top of that; what is a
+# function of the input alone is the logical name, length and digest of each
+# entry, which is what four targets compare.
+#
+# The projection is CAP-7F's `Write-LogicalManifest`, reused in shape:
+# `entry=<name> size=<n> sha256=<hex>` per entry, bytewise-sorted, one final
+# newline. That also brings manifest.json - which the bundler owns and the
+# dist never contained - inside the measurement, so a bundler that stopped
+# stamping the protocol would be visible here.
+$zipRows = New-Object System.Collections.Generic.List[string]
+$zip = [System.IO.Compression.ZipFile]::OpenRead($appPwb)
+try {
+    $names = SortOrdinal @($zip.Entries |
+        Where-Object { -not $_.FullName.EndsWith('/') } |
+        ForEach-Object { $_.FullName })
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        foreach ($name in $names) {
+            $entry = $zip.GetEntry($name)
+            $ms = [System.IO.MemoryStream]::new()
+            $s = $entry.Open()
+            try { $s.CopyTo($ms) } finally { $s.Dispose() }
+            $entryBytes = $ms.ToArray()
+            $ms.Dispose()
+            $hex = -join ($sha256.ComputeHash($entryBytes) |
+                ForEach-Object { $_.ToString('x2') })
+            $zipRows.Add("entry=$name size=$($entryBytes.Length) sha256=$hex")
+        }
+    } finally { $sha256.Dispose() }
+} finally { $zip.Dispose() }
+Require ($zipRows.Count -gt 0) 'the app.pwb logical inventory came out empty'
+Row 'pas2js_app_pwb_entries' $zipRows.Count
+Row 'pas2js_app_pwb_semantic_digest' (Sha256Text (($zipRows -join "`n") + "`n"))
 
 # --- 6. the generated Pascal program, against the STAGED SDK ---------------
 $sdkSrc = Join-Path $sdkRoot 'share/pweb/src'
@@ -287,6 +342,25 @@ try {
     $sdkUnits = @('lib', 'rpc', 'security', 'webview', 'assets',
                   'platform/windows') |
         ForEach-Object { "-Fu$(Join-Path $sdkSrc $_)" }
+    # THE NATIVE HALF OF THE SDK-ROOT CLAIM, asserted rather than assumed.
+    # The Pas2JS compile above proves its one PWeb unit path names the staged
+    # SDK; the same has to be true of the six the FPC compile is handed, and
+    # nothing had ever measured it - which is exactly how the POSIX CAP-10B1
+    # proof kept a repo-relative platform path while its header claimed
+    # otherwise.
+    $checkoutSrc = Join-Path $repoRoot 'src'
+    $nativeFromSdk = $true
+    foreach ($u in $sdkUnits) {
+        if (-not $u.StartsWith("-Fu$sdkSrc")) {
+            $nativeFromSdk = $false
+            Require $false "the native compile's PWeb unit path is not staged: $u"
+        }
+        if ($u.StartsWith("-Fu$checkoutSrc")) {
+            $nativeFromSdk = $false
+            Require $false "the native compile names this repository's src/: $u"
+        }
+    }
+    Row 'pas2js_native_from_sdk_root' $(if ($nativeFromSdk) { 'PASS' } else { 'FAIL' })
     fpc -Px86_64 -Twin64 -MObjFPC -Sh -B -Xm `
         "-FU$unitDir" "-FE$binDir" "-Fu$(Join-Path $project 'src')" `
         @sdkUnits `
@@ -312,6 +386,14 @@ finally {
 }
 Require $nativeBuilt 'the generated Pascal program does not compile'
 Row 'pas2js_native_build' $(if ($nativeBuilt) { 'PASS' } else { 'FAIL' })
+# STOP HERE rather than crash below. Everything after this point handles an
+# executable; without one, $ErrorActionPreference = 'Stop' would surface an
+# opaque Get-FileHash error instead of the diagnosed FAIL and the collected
+# failure list. The POSIX twin has always done this (`[ -x ... ] || die`).
+if (-not (Test-Path -LiteralPath (Join-Path $binDir 'demo.exe'))) {
+    foreach ($f in $failures) { Write-Host "GATE FAILURE: $f" }
+    throw 'CAP-10B2 build proof FAILED: the generated program produced no executable'
+}
 git -C deps/mormot2 diff --exit-code HEAD -- src/core/mormot.core.interfaces.pas |
     Out-Null
 Require ($LASTEXITCODE -eq 0) 'CAP-3U source is not pristine after the restore'
@@ -367,17 +449,35 @@ $proc = Start-Process -FilePath (Join-Path $release 'demo.exe') `
 # sampled WHILE the window is live: a socket opened and closed between runs
 # would be invisible afterwards
 $listeners = 0
+$sampled = 0
 for ($i = 0; $i -lt 60 -and -not $proc.HasExited; $i++) {
     try {
         $n = @(Get-NetTCPConnection -State Listen -OwningProcess $proc.Id `
                 -ErrorAction SilentlyContinue).Count
         $u = @(Get-NetUDPEndpoint -OwningProcess $proc.Id `
                 -ErrorAction SilentlyContinue).Count
+        $sampled++
         if (($n + $u) -gt $listeners) { $listeners = $n + $u }
     } catch { }
     Start-Sleep -Milliseconds 500
 }
-$proc.WaitForExit()
+# A SAMPLER THAT NEVER SAMPLED reports a clean zero for any host, and
+# `listener_count = 0` is an ABSOLUTE PIN in the aggregate - so a missing
+# cmdlet would satisfy the pin by proving nothing.
+Require ($sampled -gt 0) `
+    'the listening-socket sampler never ran: listener_count would be a vacuous 0'
+# BOUNDED, and killed rather than waited on forever. The application is given
+# its auto-close window plus a generous margin; a process that outlives that
+# has hung, and hanging until the 30-minute CI step timeout would produce no
+# evidence at all - which is precisely the "no report received" conflation
+# this harness exists to avoid.
+if (-not $proc.WaitForExit($autoCloseMs * 3)) {
+    try { $proc.Kill() } catch { }
+    $proc.WaitForExit(10000) | Out-Null
+    Require $false ("the generated application did not exit within " +
+        "$($autoCloseMs * 3)ms and was killed -- a HUNG RUN, which is a " +
+        'timing observation and not a runtime verdict')
+}
 $started.Stop()
 $elapsedMs = [int]$started.Elapsed.TotalMilliseconds
 $stdout = if (Test-Path $outFile) { Get-Content $outFile -Raw } else { '' }
@@ -467,6 +567,16 @@ if (Test-Path -LiteralPath $reactProof) {
             Require $false "the CAP-10B1 react record reports $flag = $($rp.$flag)"
         }
     }
+    # THE REPORT SHAPE, compared PAGE TO PAGE rather than each against a
+    # literal. Both starters answer the same eight questions under the same
+    # names; asserting only the Pas2JS set against a constant would have let
+    # the React page grow or lose a field with the parity claim still green.
+    Require ("$($rp.report_fields)" -ne '') `
+        ('the CAP-10B1 react record carries no report_fields -- the shape ' +
+         'half of the parity claim cannot be measured against a memory')
+    Require ("$($rp.report_fields)" -ceq $reportFields) `
+        ("the two pages report different shapes: react " +
+         "'$($rp.report_fields)' vs pas2js '$reportFields'")
     foreach ($pair in @(@('rpc_result', 'pas2js_rpc_result'),
                         @('listener_count', 'pas2js_listener_count'),
                         @('loose_assets_used', 'pas2js_loose_assets'))) {

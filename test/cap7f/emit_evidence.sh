@@ -989,7 +989,12 @@ for v in "${create_corpus}" "${proof_corpus}"; do
         *) die "the CAP-10B1 records carry an unexpected verdict: ${v}" ;;
     esac
 done
-advertised_ui="$(b1_str advertised_ui)"
+# CAP-10B2 renamed this: the CAP-10B1 gate used to emit `advertised_ui` with
+# one value and now emits `supported_uis` with the whole set. Reading the old
+# name here after the rename gave an empty string, and the empty-digest guard
+# below caught it on the first hosted run - which is the guard doing exactly
+# what it exists for.
+b1_supported_uis="$(b1_str supported_uis)"
 create_help_digest="$(b1_str create_help_digest)"
 create_help_bytes="$(b1_num create_help_bytes)"
 [ -n "${create_help_bytes}" ] || create_help_bytes=0
@@ -1032,7 +1037,7 @@ if [ "${create_corpus}" = 'PASS' ] && [ "${proof_corpus}" = 'PASS' ]; then
                 "generated_inventory_digest=${generated_inventory_digest}" \
                 "generated_pweb_json_digest=${generated_pweb_json_digest}" \
                 "generated_package_lock_digest=${generated_package_lock_digest}" \
-                "advertised_ui=${advertised_ui}"; do
+                "supported_uis=${b1_supported_uis}"; do
         case "${pair}" in
             *=) die "the CAP-10B1 record records PASS with an empty ${pair%%=*}" ;;
         esac
@@ -1043,7 +1048,7 @@ if [ "${create_corpus}" = 'PASS' ] && [ "${proof_corpus}" = 'PASS' ]; then
         die 'the CAP-10B1 build proof records a listening socket'
 fi
 printf '[CAP-10B1] create_corpus: %s (ui=%s refusals=%s files=%s doctor=%s) proof_corpus: %s (rpc=%s listeners=%s)\n' \
-    "${create_corpus}" "${advertised_ui}" "${create_refusals}" \
+    "${create_corpus}" "${b1_supported_uis}" "${create_refusals}" \
     "${generated_file_count}" "${doctor_result}" "${proof_corpus}" \
     "${rpc_result}" "${listener_count}"
 
@@ -1091,6 +1096,12 @@ for v in "${pas2js_create_corpus}" "${pas2js_proof_corpus}"; do
     esac
 done
 supported_uis="$(b2_str supported_uis)"
+# TWO GATES PARSE THE SAME HELP TEXT and both emit the set they read out of
+# it. Nothing had required them to agree, so a CAP-10B1 record and a
+# CAP-10B2 record could have carried two different advertised sets into one
+# evidence file, of which only the second travelled.
+[ "${b1_supported_uis}" = "${supported_uis}" ] ||
+    die "the CAP-10B1 record advertises '${b1_supported_uis}' and the CAP-10B2 record '${supported_uis}'"
 pas2js_create_refusals="$(b2_num pas2js_create_refusals)"
 [ -n "${pas2js_create_refusals}" ] || pas2js_create_refusals=0
 pas2js_no_partial="$(b2_str pas2js_no_partial)"
@@ -1119,6 +1130,9 @@ pas2js_compiler_sha256="$(b2p_str pas2js_compiler_sha256)"
 pas2js_frontend_build="$(b2p_str pas2js_frontend_build)"
 pas2js_native_build="$(b2p_str pas2js_native_build)"
 pas2js_sdk_from_sdk_root="$(b2p_str pas2js_sdk_from_sdk_root)"
+pas2js_native_from_sdk_root="$(b2p_str pas2js_native_from_sdk_root)"
+pas2js_app_pwb_entries="$(b2p_num pas2js_app_pwb_entries)"
+[ -n "${pas2js_app_pwb_entries}" ] || pas2js_app_pwb_entries=0
 pas2js_output_sweep="$(b2p_str pas2js_output_sweep)"
 pas2js_output_normalised="$(b2p_str pas2js_output_normalised)"
 pas2js_static_inventory_digest="$(b2p_str pas2js_static_inventory_digest)"
@@ -1340,6 +1354,8 @@ cat > "${work}/evidence.json" <<EOF
   "pas2js_frontend_build": "${pas2js_frontend_build}",
   "pas2js_native_build": "${pas2js_native_build}",
   "pas2js_sdk_from_sdk_root": "${pas2js_sdk_from_sdk_root}",
+  "pas2js_native_from_sdk_root": "${pas2js_native_from_sdk_root}",
+  "pas2js_app_pwb_entries": "${pas2js_app_pwb_entries}",
   "pas2js_output_sweep": "${pas2js_output_sweep}",
   "pas2js_output_normalised": "${pas2js_output_normalised}",
   "pas2js_static_inventory_digest": "${pas2js_static_inventory_digest}",

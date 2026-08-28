@@ -372,6 +372,11 @@ foreach ($line in ($stdout -split "`n")) {
 Require ($reportJson -ne '') 'the generated application printed no ready report'
 if ($reportJson -ne '') {
     $report = $reportJson | ConvertFrom-Json
+    # the report's FIELD SET, emitted so CAP-10B2 can compare the two pages'
+    # shapes to each other. Without it the "same report shape" half of the
+    # React/Pas2JS parity claim was measured on the Pas2JS page alone and
+    # compared against a literal.
+    Row 'report_fields' ((SortOrdinal @($report.PSObject.Properties.Name)) -join ',')
     foreach ($flag in 'html', 'css', 'js', 'secure', 'handshake', 'rpc', 'errmap') {
         Require ($report.$flag -eq $true) "the page reported $flag = $($report.$flag)"
         Row $flag $(if ($report.$flag -eq $true) { 'true' } else { 'false' })

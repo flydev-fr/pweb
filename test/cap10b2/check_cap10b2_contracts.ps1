@@ -11,11 +11,14 @@
 #      exactly what CAP-10A refused to do with `create` itself.
 #
 #   2. THERE IS ONE GENERATED NATIVE APPLICATION, NOT TWO. src/
-#      app.services.pas is BYTE-IDENTICAL between the react and pas2js
-#      templates, and src/program.lpr is byte-identical once comments are
-#      removed - its only difference is the frontend name in the data-path
-#      comment. `.gitattributes` and the stylesheet are byte-identical too.
-#      The UI is build content; it is not native behaviour.
+#      app.services.pas and `.gitattributes` are BYTE-IDENTICAL between the
+#      react and pas2js templates, and src/program.lpr is byte-identical
+#      once comments are removed - its only difference is the frontend name
+#      in the data-path comment, and the differing lines are proven to lie
+#      before the first line of code. The stylesheet matches rule for rule
+#      and differs in one sentence of its header, because the React copy
+#      names App.tsx and a Pas2JS project has none. The UI is build content;
+#      it is not native behaviour.
 #
 #   3. THE PAS2JS FRONTEND IS THE CANONICAL ONE. It reaches the backend
 #      through the frozen pweb.native SDK, with the same entry points, the
@@ -118,6 +121,17 @@ function Sha256Text([string]$Text) {
 function CodeText([string]$Path) {
     return (((Get-CodeLines $Path) | ForEach-Object { $_.Text.TrimEnd() }) -join "`n")
 }
+# ORDINAL, never Sort-Object. PowerShell's default sort is culture-aware and
+# case-insensitive; the values sorted here become `supported_uis` and the
+# public template-id set, and a set whose ORDER comes from the runner's
+# culture is a set two implementations can disagree about for a reason that
+# has nothing to do with its members. MEASURED on hosted run 33126638202.
+function SortOrdinal([string[]]$Items) {
+    $copy = [string[]]::new($Items.Length)
+    [Array]::Copy($Items, $copy, $Items.Length)
+    [Array]::Sort($copy, [System.StringComparer]::Ordinal)
+    return $copy
+}
 
 $react = 'tools/templates/react'
 $p2j = 'tools/templates/pas2js'
@@ -141,12 +155,17 @@ $argsSource = [System.IO.File]::ReadAllText('tools/pweb/pweb.cli.args.pas')
 $listText = [System.IO.File]::ReadAllText('tools/templates/templates.list')
 
 # --- 1. the advertised UIs ARE the shipped templates ----------------------
+# `[A-Z0-9_]+` and `[^']*`, both widened deliberately: a constant named
+# PWEB_CLI_UI_SOLID_JS or valued with anything at all must ENTER this set, so
+# that the exact-set comparison below refuses it. A narrow pattern would have
+# let a third accepted frontend kind slip past the cross-check by not
+# matching it.
 $parserUis = @()
 foreach ($m in [regex]::Matches($argsSource,
-        "PWEB_CLI_UI_[A-Z0-9]+\s*=\s*'([a-z0-9]+)'")) {
+        "PWEB_CLI_UI_[A-Z0-9_]+\s*=\s*'([^']*)'")) {
     $parserUis += $m.Groups[1].Value
 }
-$parserUis = @($parserUis | Sort-Object -CaseSensitive -Unique)
+$parserUis = SortOrdinal @($parserUis | Select-Object -Unique)
 
 # the trusted list, parsed the way the builder parses it: `template` opens a
 # block and the keys under it belong to that block
@@ -166,10 +185,10 @@ foreach ($line in [System.IO.File]::ReadAllLines('tools/templates/templates.list
         }
     }
 }
-$publicIds = @($templates.Keys | Where-Object {
-    $templates[$_]['visibility'] -ceq 'public' } | Sort-Object -CaseSensitive)
-$declaredUis = @($publicIds | ForEach-Object { $templates[$_]['ui'] } |
-    Sort-Object -CaseSensitive)
+$publicIds = SortOrdinal @($templates.Keys | Where-Object {
+    $templates[$_]['visibility'] -ceq 'public' })
+$declaredUis = SortOrdinal @($publicIds |
+    ForEach-Object { $templates[$_]['ui'] })
 $supportedUis = ($parserUis -join ',')
 if ($supportedUis -cne 'pas2js,react') {
     Violation ("the parser's compiled allowlist is '$supportedUis', " +
@@ -192,15 +211,17 @@ foreach ($id in $publicIds) {
             'the template up BY the --ui value')
     }
 }
-if ($templates['fixture']['visibility'] -cne 'private') {
+if (-not $templates.Contains('fixture')) {
+    Violation ('templates.list no longer declares the CAP-10B0 fixture -- ' +
+        'the private-template lock has nothing left to lock')
+} elseif ($templates['fixture']['visibility'] -cne 'private') {
     Violation 'the CAP-10B0 fixture is no longer private'
 }
 
 # --- 2. ONE generated native application ----------------------------------
 $byteIdentical = @(
     @('src/app.services.pas', 'src/app.services.pas'),
-    @('gitattributes', 'gitattributes'),
-    @('frontend/src/app.css', 'frontend/app.css')
+    @('gitattributes', 'gitattributes')
 )
 $sharedDigests = New-Object System.Collections.Generic.List[string]
 foreach ($pair in $byteIdentical) {
@@ -215,6 +236,37 @@ foreach ($pair in $byteIdentical) {
             'file that is allowed to drift is two')
     }
 }
+# THE STYLESHEET: the same rules, a different first sentence. The two
+# starters look identical on purpose, so every CSS declaration must match -
+# but the React copy's header says `--pweb-styled` "is read back by App.tsx",
+# and a Pas2JS project has no App.tsx. Byte-identity would have shipped that
+# sentence into every generated Pas2JS project; the frontend subtree is a
+# ratified permitted difference, so the file says who actually reads it and
+# the gate compares everything after the header comment instead.
+function CssBody([string]$Path) {
+    $text = [System.IO.File]::ReadAllText($Path)
+    $end = $text.IndexOf('*/')
+    if ($end -lt 0) { return $text }
+    return $text.Substring($end + 2)
+}
+$reactCss = CssBody (Join-Path $react 'frontend/src/app.css')
+$p2jCss = CssBody (Join-Path $p2j 'frontend/app.css')
+if ($reactCss -cne $p2jCss) {
+    Violation ('the two stylesheets differ outside their header comment -- ' +
+        'the two starters must look the same, and only the sentence naming ' +
+        'the file that reads --pweb-styled may differ')
+}
+$p2jCssText = [System.IO.File]::ReadAllText((Join-Path $p2j 'frontend/app.css'))
+if ($p2jCssText.Contains('App.tsx')) {
+    Violation ('the Pas2JS stylesheet still names App.tsx -- a Pas2JS ' +
+        'project has no such file')
+}
+if (-not $p2jCssText.Contains('frontend/src/app.pas')) {
+    Violation ('the Pas2JS stylesheet does not name the unit that reads ' +
+        '--pweb-styled')
+}
+$sharedDigests.Add("frontend/app.css-body $(Sha256Text $p2jCss)")
+
 # the entry point: identical CODE, and a raw difference confined to the
 # header comment. The UI literal is the ONE thing a native source may say
 # about its frontend, and it says it where nothing compiles it.
@@ -225,7 +277,12 @@ if ($reactCode -cne $p2jCode) {
         'only in comments -- the generated native host must not branch on ' +
         'frontend kind')
 }
-$sharedNativeDigest = Sha256Text ($p2jCode + "`n")
+# NAMED for what it is. `shared_native_source_digest` is the GATES' field -
+# the rendered entry point plus the rendered service unit, which is what
+# reaches the four-target corpus. This one is over the TEMPLATE's entry point
+# alone, and giving it the same name would have put two different values
+# under one name in two artifacts of the same shard.
+$templateNativeDigest = Sha256Text ($p2jCode + "`n")
 # and the raw difference is exactly the data-path comment
 $reactRaw = [System.IO.File]::ReadAllLines((Join-Path $react 'src/program.lpr'))
 $p2jRaw = [System.IO.File]::ReadAllLines((Join-Path $p2j 'src/program.lpr'))
@@ -235,12 +292,19 @@ if ($reactRaw.Length -ne $p2jRaw.Length) {
         'templates -- the only permitted difference is the frontend name in ' +
         'the data-path comment')
 } else {
+    # CONTAINMENT, proven by line number rather than by the shape of the
+    # replacement text. The comment stripper emits a row only for a line it
+    # kept something from, so a line ABSENT from that set contributed no code
+    # at all - which is the exact question here, and it does not care that
+    # `program X;` sits above the header comment rather than below it.
+    $codeLineNumbers = @((Get-CodeLines (Join-Path $p2j 'src/program.lpr')) |
+        ForEach-Object { $_.Number })
     for ($i = 0; $i -lt $reactRaw.Length; $i++) {
         if ($reactRaw[$i] -cne $p2jRaw[$i]) {
             $diffLines++
-            if ($p2jRaw[$i] -notmatch '^\s+(Pas2JS|->)') {
-                Violation ("src/program.lpr line $($i + 1) differs outside " +
-                    "the data-path comment: $($p2jRaw[$i])")
+            if ($codeLineNumbers -contains ($i + 1)) {
+                Violation ("src/program.lpr line $($i + 1) differs and " +
+                    "carries CODE: $($p2jRaw[$i])")
             }
             if ($reactRaw[$i] -match '(React|@pweb/runtime)' -and
                 $p2jRaw[$i] -notmatch '(Pas2JS|pweb\.native)') {
@@ -347,13 +411,16 @@ if (@([regex]::Matches($sdkText, '__pweb_invoke')).Count -ne 1) {
 }
 
 # --- 5. a Pas2JS project needs no Node ------------------------------------
-foreach ($banned in 'package.json', 'package-lock.json', 'node_modules',
-                    'tsconfig.json', 'vite.config.ts', 'yarn.lock',
-                    'pnpm-lock.yaml') {
-    if (Test-Path (Join-Path $p2j $banned)) {
-        Violation ("the pas2js template ships $banned -- a Pas2JS project " +
-            'has no package manager, and nothing here exists to imitate the ' +
-            'react template')
+# RECURSIVELY, not just at the root: `frontend/package.json` is the one a
+# Pas2JS template would plausibly grow, and a root-only check would not see it
+$bannedNames = @('package.json', 'package-lock.json', 'node_modules',
+    'tsconfig.json', 'vite.config.ts', 'yarn.lock', 'pnpm-lock.yaml',
+    '.npmrc', 'bun.lockb')
+foreach ($f in (Get-ChildItem $p2j -Recurse -Force)) {
+    if ($bannedNames -contains $f.Name) {
+        Violation ("the pas2js template ships $($f.Name) -- a Pas2JS " +
+            'project has no package manager, and nothing here exists to ' +
+            'imitate the react template')
     }
 }
 foreach ($f in (Get-ChildItem $p2j -Recurse -File -Force)) {
@@ -373,11 +440,11 @@ foreach ($m in [regex]::Matches($listText,
         $p2jDeclared += $fm.Groups[1].Value
     }
 }
-$p2jDeclared = @($p2jDeclared | Sort-Object -CaseSensitive)
-$p2jExpected = @('README.md', 'frontend/app.css', 'frontend/index.html',
-    'frontend/pas2js.cfg', 'frontend/src/app.pas',
+$p2jDeclared = SortOrdinal $p2jDeclared
+$p2jExpected = SortOrdinal @('README.md', 'frontend/app.css',
+    'frontend/index.html', 'frontend/pas2js.cfg', 'frontend/src/app.pas',
     'frontend/src/program.lpr', 'gitattributes', 'gitignore',
-    'src/app.services.pas', 'src/program.lpr') | Sort-Object -CaseSensitive
+    'src/app.services.pas', 'src/program.lpr')
 if (($p2jDeclared -join '|') -cne ($p2jExpected -join '|')) {
     Violation ("the pas2js template declares $($p2jDeclared -join ', '), " +
         "expected $($p2jExpected -join ', ')")
@@ -526,7 +593,7 @@ $facts = [ordered]@{
     supported_uis              = $supportedUis
     public_template_ids        = ($publicIds -join ',')
     pas2js_template_files      = $p2jDeclared.Count
-    shared_native_source_digest = $sharedNativeDigest
+    template_native_code_digest = $templateNativeDigest
     shared_file_digests        = ($sharedDigests -join ';')
     native_comment_diff_lines  = $diffLines
     generated_conditionals     = $generatedConditionals
@@ -545,6 +612,6 @@ if ($violations.Count -gt 0) {
 }
 Write-Host ("[CAP-10B2] contracts PASS - $supportedUis are the advertised " +
     "and the shipped UIs, the generated native application is one " +
-    "application (code digest $($sharedNativeDigest.Substring(0, 12))..., " +
+    "application (code digest $($templateNativeDigest.Substring(0, 12))..., " +
     "$diffLines comment lines apart), and no application source names the " +
     'raw native binding')

@@ -15,13 +15,16 @@
 #     neither shows up in a count;
 #
 #   - THE REFUSALS ARE REAL, CATEGORISED, AND INCLUDE THE ONE THAT MOVED.
-#     Nine bad command lines and three broken installations are executed,
-#     each required to produce its own machine-stable cause AND its exit
-#     category. Among them is the refusal CAP-10B2 re-categorised: a CLI
-#     whose registry does not describe the pas2js template answers 4 with
-#     `template_unknown`, and it is a SECOND EXECUTABLE compiled against a
-#     react-only pack, because that branch is unreachable from the shipped
-#     one and a refusal nobody has watched fire is a comment;
+#     Nine bad command lines, three broken installations and one occupied
+#     destination are executed, each required to produce its own
+#     machine-stable cause AND its exit category. Two of them are new
+#     ground: the refusal CAP-10B2 re-categorised - a CLI whose registry
+#     does not describe the pas2js template answers 4 with
+#     `template_unknown`, proven with a SECOND EXECUTABLE compiled against a
+#     react-only pack because that branch is unreachable from the shipped
+#     one - and the exit-3 destination arm, which CAP-10B0 proved in-process
+#     against a synthetic plan and which no gate had ever watched become a
+#     process exit code;
 #
 #   - THE OUTPUT IS A FUNCTION OF THE INPUTS. The same project is created
 #     from three different working directories - one ordinary, one whose path
@@ -307,8 +310,27 @@ Require ($r.Code -eq 0) `
     ('the react-only CLI cannot create a react project either, so the ' +
      "template_unknown leg proves nothing: $($r.Err.Trim())")
 
+# THE DESTINATION ARM, exercised end to end for the first time. Every
+# transaction refusal maps to exit 3, and CAP-10B0 proved the transaction
+# itself in-process against a synthetic plan - but no gate had ever watched
+# `ExitForCreateRefusal` turn one into a process exit code on the real CLI.
+# Creating the same project twice is the smallest line that does it, and it
+# also proves the second attempt changed nothing: the tree the FIRST create
+# produced is digested before and after.
+$twice = Join-Path $work 'twice'
+Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $twice
+New-Item -ItemType Directory -Force $twice | Out-Null
+$first = RunCli $pweb $twice @('create', 'demo', '--ui', 'pas2js', '--bundle-id', $bundle)
+Require ($first.Code -eq 0) "the first create failed: $($first.Err.Trim())"
+$beforeSecond = InventoryOf (Join-Path $twice 'demo')
+MustRefuse 'destination-exists' $pweb $twice `
+    @('create', 'demo', '--ui', 'pas2js', '--bundle-id', $bundle) 3 'destination_exists'
+$afterSecond = InventoryOf (Join-Path $twice 'demo')
+Require ($afterSecond.Text -ceq $beforeSecond.Text) `
+    'the refused second create modified the project the first one produced'
+
 Row 'pas2js_create_refusals' $refusals
-$expectedRefusals = 12
+$expectedRefusals = 13
 Require ($refusals -eq $expectedRefusals) `
     "expected $expectedRefusals proven refusals, observed $refusals"
 

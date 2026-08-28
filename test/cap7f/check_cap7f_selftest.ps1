@@ -155,11 +155,17 @@
 #         load-bearing field)
 #   (c102) pas2js_build_out_of_tree=FAIL -> mustPass refusal
 #   (c103) react_pas2js_parity=FAIL -> mustPass refusal
-#   (c104) pas2js_create_refusals drifted from 12 -> REFUSALS refusal
+#   (c104) pas2js_create_refusals drifted from 13 -> REFUSALS refusal
 #   (c105) pas2js_sdk_from_sdk_root=FAIL -> mustPass refusal (the frontend
 #         compiled against this repository's checkout rather than against
 #         the staged SDK root)
-#   (c8-c105 additionally assert the refusal came through the EXPECTED branch
+#   (c106) pas2js_native_from_sdk_root=FAIL -> mustPass refusal (the same
+#         model's other half, for the FPC compile)
+#   (c107) pas2js_app_pwb_entries=4 -> BAD-BUNDLE-INVENTORY refusal. Five is
+#         index.html, the three assets and the manifest.json the BUNDLER
+#         owns; four would mean the semantic digest was computed over the
+#         dist directory instead of over the archive
+#   (c8-c107 additionally assert the refusal came through the EXPECTED branch
 #    where one is named)
 #   (e) a count-preserving directive swap in an allowlisted file
 #                                          -> divergence sweep refuses via the
@@ -1448,7 +1454,7 @@ Invoke-AggExpectFail 'cap10b2-parity' 'react_pas2js_parity'
 Reset-Fixture
 $f = Join-Path $fx 'ev/linux/evidence.json'
 $e = Get-Content $f -Raw | ConvertFrom-Json
-$e.pas2js_create_refusals = '11'
+$e.pas2js_create_refusals = '12'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap10b2-refusal-count' 'REFUSALS'
 
@@ -1462,6 +1468,28 @@ $e = Get-Content $f -Raw | ConvertFrom-Json
 $e.pas2js_sdk_from_sdk_root = 'FAIL'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap10b2-sdk-provenance' 'pas2js_sdk_from_sdk_root'
+
+# --- (c106) the NATIVE compile used the checkout, not the SDK root --------
+# the other half of the same model, and the half that had gone unmeasured on
+# both shards until a review pointed out that the CAP-10B1 POSIX proof could
+# quietly go back to naming the repository's src/ with everything still green
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.pas2js_native_from_sdk_root = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b2-native-provenance' 'pas2js_native_from_sdk_root'
+
+# --- (c107) the app.pwb inventory lost an entry ---------------------------
+# five entries: index.html, the three assets, and the manifest.json the
+# BUNDLER owns. Four would mean the semantic digest was computed over the
+# dist directory rather than over the archive - which is what it used to be
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.pas2js_app_pwb_entries = '4'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b2-bundle-inventory' 'BAD-BUNDLE-INVENTORY'
 
 # --- (d) divergence sweep must refuse an off-allowlist conditional -----------
 $fixturePas = 'src/zz_cap7f_selftest_fixture.pas'

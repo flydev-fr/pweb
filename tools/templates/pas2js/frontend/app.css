@@ -4,9 +4,10 @@
  * stylesheet. The native Content-Security-Policy allows style-src 'self',
  * so a linked sheet like this one is exactly what the runtime expects.
  *
- * --pweb-styled is read back by App.tsx: a custom property returns the
- * token it was declared with, which is the cheapest honest proof that this
- * file was fetched, parsed and applied rather than merely requested.
+ * --pweb-styled is read back by frontend/src/app.pas: a custom property
+ * returns the token it was declared with, which is the cheapest honest proof
+ * that this file was fetched, parsed and applied rather than merely
+ * requested.
  */
 
 :root {

@@ -399,6 +399,12 @@ report="$(grep -o 'demo: ready {.*}' "${out_file}" | tail -n 1 |
     sed 's/^demo: ready //')"
 [ -n "${report}" ] || require 1 'the generated application printed no ready report'
 if [ -n "${report}" ]; then
+    # the report's FIELD SET, emitted so CAP-10B2 can compare the two pages'
+    # shapes to each other. Without it the "same report shape" half of the
+    # React/Pas2JS parity claim was measured on the Pas2JS page alone and
+    # compared against a literal.
+    row report_fields "$(printf '%s' "${report}" | tr ',' '\n' |
+        sed 's/^[{ ]*"//; s/".*$//' | LC_ALL=C sort | tr '\n' ',' | sed 's/,$//')"
     for flag in html css js secure handshake rpc errmap; do
         if printf '%s' "${report}" | grep -q "\"${flag}\":true"; then
             row "${flag}" 'true'
