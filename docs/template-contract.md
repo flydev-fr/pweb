@@ -1,23 +1,24 @@
-# The PWeb template contract (CAP-10B0, CAP-10B1)
+# The PWeb template contract (CAP-10B0, CAP-10B1, CAP-10B2)
 
-The scaffolding engine frozen by CAP-10B0 and the first template CAP-10B1
-ships through it: where templates come from, what is allowed to be trusted
-about them, how a project's identity is decided, and what `pweb create`
-does.
+The scaffolding engine frozen by CAP-10B0 and the two public templates
+CAP-10B1 and CAP-10B2 ship through it: where templates come from, what is
+allowed to be trusted about them, how a project's identity is decided, and
+what `pweb create` does.
 
 Everything here is a **contract**. The wording may be improved freely; the
 carrier, the trust anchor, the identity mapping, the placeholder set, the
 line-ending rule, the bounds and the transaction may not, except by a
 version bump.
 
-**`pweb create` exists in this build**, and §12 describes the one template
-it can produce. CAP-10B0 froze an engine and deliberately exposed no
+**`pweb create` exists in this build**, and §12 and §13 describe the two
+templates it can produce. CAP-10B0 froze an engine and deliberately exposed no
 command: the scaffold engine was not linked into the `pweb` executable at
 all, and `test/cap10b0/check_cap10b0_contracts.ps1` measured that against
 the CLI's compiled unit set on every CI leg. CAP-10B1 **inverts that same
 measurement** rather than deleting it — the engine must now be linked — and
-`dev`, `run` and `build` remain unknown commands. CAP-10B2 adds the Pas2JS
-template.
+`dev`, `run` and `build` remain unknown commands. CAP-10B2 adds the second
+template and widens the `--ui` allowlist to the two kinds schema 1 has
+ratified since CAP-10A.
 
 ---
 
@@ -126,8 +127,11 @@ tools/templates/
 ```
 
 `tools/templates/` is deliberately not under `tools/pweb/`: that directory
-is inside the CAP-7F divergence sweep, and a Pas2JS template will ship
-`.pas` files that have no business being judged for platform conditionals.
+is inside the CAP-7F divergence sweep, and the Pas2JS template ships `.pas`
+files — native and browser alike — that have no business being judged for
+platform conditionals against a production budget. They are judged instead
+by `test/cap10b2/check_cap10b2_contracts.ps1`, which allows them **none** at
+all beyond the ratified `{$apptype console}`.
 
 **Every file is declared explicitly** — its output path, its content kind
 and its file mode — and the builder cross-checks the declaration against the
@@ -268,12 +272,17 @@ pweb create NAME --ui react --bundle-id <reverse.dns>
   working directory, read once through the single CAP-10A CWD seam and
   never re-read. Shipping one rule is smaller than shipping two, and the
   option stays designed for the shard that needs it.
-- **`--ui pas2js` is a usage failure in this build.** The accepted set is a
-  compiled allowlist in the parser, not a lookup in whatever archive happens
-  to be installed: a CLI whose refusal depends on the contents of an archive
-  is a CLI that would advertise a frontend the moment somebody added one.
-  CAP-10B2 widens the allowlist in the same commit as the template that
-  makes the claim true.
+- **`--ui react|pas2js`, and nothing else.** The accepted set is a compiled
+  allowlist in the parser, not a lookup in whatever archive happens to be
+  installed: a CLI whose refusal depends on the contents of an archive is a
+  CLI that would advertise a frontend the moment somebody added one.
+  CAP-10B2 widened the allowlist in the same commit as the template that
+  makes the claim true, and added no alias and no case fold — `React` and
+  `PAS2JS` are refused exactly like `svelte`, because schema 1 matches `ui`
+  case-sensitively. The template **id** IS the `--ui` value: `PWebTplFind`
+  looks the template up by that string, so `docs/cli-contract.md`'s grammar,
+  the parser's constants and the two public template ids are one set, and
+  `test/cap10b2/check_cap10b2_contracts.ps1` cross-checks them three ways.
 - **The destination must not exist** — not as a file, not as a non-empty
   directory, not as an empty one, not as a symlink or junction, and not as a
   case-colliding sibling. Refusing the empty directory too is deliberate:
@@ -286,9 +295,12 @@ pweb create NAME --ui react --bundle-id <reverse.dns>
   initialise a repository or open a browser. There is no code path through
   which it could: the engine's sources name no process API, no transport and
   no package manager, and its compiled unit set links no networking unit.
-- **CAP-10B0 adds no exit code.** The engine returns typed refusal codes and
-  CAP-10B1 ratifies the mapping, so the frozen CAP-10A taxonomy
-  (`6 > 5 > 4 > 3 > 2 > 0`) is untouched.
+- **No shard here adds an exit code.** The engine returns typed refusal
+  codes, CAP-10B1 ratified the mapping and CAP-10B2 moved exactly one row of
+  it — an unknown template id is now an environment failure, because a
+  compiled allowlist checked before the lookup means no command line can
+  reach that code. The frozen CAP-10A taxonomy (`6 > 5 > 4 > 3 > 2 > 0`) is
+  untouched; `docs/cli-contract.md` §4 carries the whole mapping.
 
 ---
 
@@ -671,8 +683,8 @@ example hosts produce.
 
 | pack | `--include` | consumer | contains |
 |---|---|---|---|
-| test pack | `all` | the CAP-10B0 engine suite | `fixture` + `react` |
-| SDK pack | `public` | the shipped `pweb` CLI | `react` only |
+| test pack | `all` | the CAP-10B0 engine suite | `fixture` + `react` + `pas2js` |
+| SDK pack | `public` | the shipped `pweb` CLI | `react` + `pas2js` |
 
 The public CLI compiles against the **public** registry, so it is
 structurally incapable of describing the private fixture at all. The
@@ -685,3 +697,127 @@ claiming any digest stayed the same. The CAP-9C1 split is unchanged:
 `template_semantic_digest` is compared across all four targets,
 `template_pack_digest` is pinned per target, and the `ZIP_OS` made-by
 divergence remains accepted.
+
+---
+
+## 13. The Pas2JS template (CAP-10B2)
+
+The second public template, and the one that closes CAP-10B. It is **the
+same application** as §12's, with the frontend written in Object Pascal and
+compiled to browser JavaScript by the pinned Pas2JS 3.0.1 through the frozen
+`pweb.native` SDK.
+
+### The generated project
+
+Eleven files. Ten come from the template; `pweb.json` comes from the
+serializer.
+
+```
+demo/
+  pweb.json                 generated, not templated
+  .gitattributes  .gitignore  README.md
+  src/
+    demo.lpr                the native entry point
+    app.services.pas        the service, the capability policy, the bridge
+  frontend/
+    index.html  app.css  pas2js.cfg
+    src/
+      demoapp.lpr           the browser entry point: uses app; RunApp
+      app.pas               the application, over the pweb.native SDK
+```
+
+The set is asserted **exactly**, in both directions, as §12's is.
+
+### What is shared, and what is allowed to differ
+
+There is ONE generated native application, not two. For the same `NAME` and
+`--bundle-id`:
+
+| file | relationship | measured by |
+|---|---|---|
+| `src/app.services.pas` | byte-identical | `check_cap10b2_contracts.ps1` |
+| `.gitattributes` | byte-identical | idem |
+| `frontend/app.css` ↔ `frontend/src/app.css` | byte-identical | idem |
+| `src/demo.lpr` | identical CODE; 4 raw lines apart | idem |
+| `pweb.json` | differs only in `"ui"` | `run_cap10b2_gates.ps1` |
+| `README.md`, `.gitignore` | UI-specific | — |
+
+`src/demo.lpr`'s only difference is the frontend name inside the data-path
+**comment** (`React -> @pweb/runtime` against `Pas2JS -> pweb.native`). The
+gate strips comments and requires the remainder to be byte-identical, then
+requires every differing raw line to lie inside that comment — so the UI is
+build content and never native behaviour, and no generated Pascal names a
+frontend kind in code at all.
+
+`.gitignore` is the one root file that is **allowed** to differ, and the
+reason is honesty rather than convenience: React's names `node_modules/` and
+the `.pweb` staging directory a build materialises the TypeScript SDK into,
+and a Pas2JS project has neither. Shipping those bytes would ship a false
+statement about the project's own build.
+
+### No Node, and nothing that imitates one
+
+A Pas2JS project has no `package.json`, no lockfile, no `node_modules`, no
+`tsconfig.json` and no bundler configuration, and `pweb doctor` requires
+none of them for it: the React rows report `not_applicable` with cause
+`ui_not_react`, and `frontend.pas2js` becomes required instead. The template
+ships **no JavaScript or TypeScript at all** — the browser code is produced
+from the Pascal beside it.
+
+### The build, and the one line of handwritten JavaScript
+
+`frontend/pas2js.cfg` carries the compile options the project owns, and
+exactly those: `-Tbrowser -Jc -Jirtl.js -O1`. It carries **no path** — not
+the PWeb Pas2JS SDK's unit path and not the output path — because both are
+absolute and belong to the machine doing the build. They are passed beside
+it, from the trusted SDK root:
+
+```
+pas2js @<project>/frontend/pas2js.cfg \
+       -Fu<sdk-root>/share/pweb/sdk/pas2js \
+       -o<external-stage>/dist/assets/app.js \
+       <project>/frontend/src/demoapp.lpr
+```
+
+The output lands **outside** the project, so a Pas2JS build cannot modify
+the project it builds — a stronger property than the React path, which
+materialises `node_modules` into its working copy.
+
+`-Jc` concatenates the RTL into that one file and declares `rtl` without
+starting it, so the page loads `assets/app.js` and then a one-line
+`assets/boot.js` containing `rtl.run();`, emitted by the build. That is the
+already-frozen CAP-5 model and it is the only handwritten JavaScript in the
+application: an inline `<script>` would be forbidden by the ratified
+`script-src 'self'` with no `'unsafe-inline'`, measured blocked on all three
+engines when CAP-8B moved this same line out of `index.html`.
+
+The built frontend is exactly four files — `index.html`, `assets/app.js`,
+`assets/boot.js`, `assets/app.css` — which the frozen CAP-6 bundler packs
+into `app.pwb`. There is no Pas2JS-specific bundle format.
+
+**The compiled JavaScript is normalised before it is packed**, and the
+reason is a measurement: Pas2JS writes its output through the host's text
+layer, so on Windows `app.js` begins with a UTF-8 BOM and carries CRLF while
+on POSIX it carries LF. Packing the compiler's raw bytes would make the
+Pas2JS `app.pwb` an OS-family artifact. The build strips the BOM and
+converts CRLF to LF — the same decision, for the same reason, that makes the
+CAP-5 build write `boot.js` byte-exactly with LF rather than through
+`Set-Content`.
+
+### The raw binding, and how ownership is proven
+
+The generated application must not name `__pweb_invoke`,
+`webkit.messageHandlers` or `chrome.webview`. The SDK necessarily does — it
+is the transport — so a whole-bundle ban would be a rule about the runtime
+rather than about the application. Ownership is proven by
+**occurrence classification** instead, and it was measured on the frozen
+CAP-5 bundle before it was written down:
+
+1. zero occurrences in the generated project's sources;
+2. **exactly one** occurrence in the compiled bundle,
+   `this.PWEB_NATIVE_BINDING_NAME = "__pweb_invoke"`;
+3. that occurrence lies inside the `rtl.module("pweb.native", …)` body;
+4. zero occurrences of either platform channel anywhere.
+
+A second binding emitted by the application would break (2); a binding
+emitted outside the SDK would break (3).

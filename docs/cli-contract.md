@@ -1,6 +1,7 @@
-# The `pweb` CLI contract (CAP-10A, CAP-10B1)
+# The `pweb` CLI contract (CAP-10A, CAP-10B1, CAP-10B2)
 
-The public surface frozen by CAP-10A and extended by CAP-10B1: what the
+The public surface frozen by CAP-10A and extended by CAP-10B1 and CAP-10B2:
+what the
 executable accepts, what `pweb.json` means, what `pweb doctor --json` emits,
 what each exit code promises, and the development-trust decision CAP-10C
 will implement.
@@ -16,7 +17,7 @@ vocabulary and the exit codes may not, except by a version bump.
 ```
 pweb --help
 pweb --version
-pweb create NAME --ui react --bundle-id <reverse.dns>
+pweb create NAME --ui react|pas2js --bundle-id <reverse.dns>
 pweb create --help
 pweb doctor [--json] [--with-paths] [--project <path>] [--no-color] [--verbose]
 ```
@@ -26,6 +27,15 @@ commands** — not stubs, not "not implemented" placeholders, and not listed in
 `--help`. A command that parses is a promise, and a lifecycle CLI that
 promises a build it cannot perform is worse than one that has not got there
 yet.
+
+**CAP-10B2 adds the second frontend and nothing else.** It ships one more
+trusted public template, widens the compiled `--ui` allowlist to the two kinds
+schema 1 already ratified, and moves exactly one exit mapping: a template the
+compiled registry does not describe is now an **environment** failure (4)
+rather than a usage one, because with a two-value allowlist no command line
+can reach that code — it means the pack this installation carries does not
+describe a template this build advertises. Nothing else about the command
+surface changed, and `dev`, `run` and `build` are still unknown commands.
 
 CAP-10B0 built the private engine — the template carrier, the identity
 mapping, the placeholder model and the atomic creation transaction, all
@@ -38,7 +48,7 @@ required to come out the other way.
 ### `pweb create`
 
 ```
-pweb create NAME --ui react --bundle-id <reverse.dns>
+pweb create NAME --ui react|pas2js --bundle-id <reverse.dns>
 ```
 
 - `NAME` is one positional operand, and it is the whole of the project's
@@ -47,10 +57,17 @@ pweb create NAME --ui react --bundle-id <reverse.dns>
   is `^[a-z][a-z0-9]*$`, 1..64 bytes — a strict subset of the schema-1
   `name` grammar, and `pweb create my-app` is refused rather than
   transformed. `docs/template-contract.md` §6 records why.
-- **`--ui` is required**, and the only value this build accepts is `react`.
-  `--ui pas2js` is a **usage** failure until CAP-10B2 ships that template:
-  the accepted set is a compiled allowlist in the parser, not a lookup in
-  whatever archive happens to be installed.
+- **`--ui` is required**, and the values this build accepts are exactly
+  `react` and `pas2js` — the two frontend kinds schema 1 has ratified since
+  CAP-10A, each shipped with the trusted template that makes the claim true.
+  The accepted set is a **compiled allowlist in the parser**, not a lookup in
+  whatever archive happens to be installed: a CLI whose refusal depends on the
+  contents of an archive is a CLI that would advertise a frontend the moment
+  somebody added one. There is no alias (`p2js`, `pas`, `js`) and no case
+  fold: `--ui React` and `--ui PAS2JS` are refused exactly like `--ui svelte`,
+  because schema 1 matches `ui` case-sensitively and a CLI that accepted a
+  spelling the descriptor reader later refuses would be scaffolding a project
+  its own `doctor` rejects.
 - **`--bundle-id` is required and never defaulted.** Inventing an
   organisation from a project name is the silent derivation this contract
   refuses, and a default would give every developer who scaffolds `notes`
@@ -370,16 +387,26 @@ Precedence is 6 > 5 > 4 > 3 > 2 > 0. Human diagnostic text never changes the
 category, and there is no stack trace by default: an internal failure is a
 category, and the CLI is not a debugger.
 
-**CAP-10B1 added no category.** `create`'s refusals map onto the six that
-already existed, and the mapping is exact:
+**Neither CAP-10B1 nor CAP-10B2 added a category.** `create`'s refusals map
+onto the six that already existed, and the mapping is exact:
 
 | exit | `create` causes |
 |---|---|
 | 0 | the destination now exists and holds the plan |
-| 2 | invalid `NAME`, invalid `--bundle-id`, a missing, duplicated or unknown option, a missing operand, an extra positional, an unsupported `--ui`, an unknown or non-public template id |
+| 2 | invalid `NAME`, invalid `--bundle-id`, a missing, duplicated or unknown option, a missing operand, an extra positional, an unsupported `--ui`, a non-public template id |
 | 3 | the destination's parent is missing, not a directory, a link or not writable; the destination exists or case-collides; the staging sibling is taken or cannot be created; a write, a verification, a file mode or the committing rename failed |
-| 4 | the SDK root could not be resolved from the running image, or the template pack is missing, the wrong size, the wrong digest, not a readable archive, or does not match the registry compiled into this executable |
+| 4 | the SDK root could not be resolved from the running image, or the template pack is missing, the wrong size, the wrong digest, not a readable archive, does not match the registry compiled into this executable, or **does not carry a template this build advertises** |
 | 6 | any planning failure, and a generated descriptor the frozen reader refuses — each reachable only if a pack that passed its own digest disagreed with its own compiled registry, which is an invariant failure and not a user error |
+
+**CAP-10B2 moved one row and nothing else.** An unknown template id was a
+usage cause while `--ui` had one accepted value and the pack had one template;
+with a compiled two-value allowlist checked before any lookup, a typed
+frontend kind can no longer reach the lookup at all, so reaching it means the
+installation's pack does not describe an advertised template — the same class
+of fact as a missing or tampered pack, and nothing the user did. The refusal
+is proven rather than reasoned about: `test/cap10b2` compiles a second CLI
+against a react-only pack and requires `create --ui pas2js` to answer 4 with
+`template_unknown`.
 
 **`create` can never produce a 5.** It starts no child process, so there is
 no probe for one to come from. That is a property of the code path and the
