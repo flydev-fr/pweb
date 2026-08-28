@@ -2,7 +2,7 @@
 title: 'CAP-10B2 — the public Pas2JS scaffold and the close of CAP-10B'
 type: 'feature'
 created: '2026-08-28'
-status: 'in-progress'
+status: 'in-review'
 baseline_commit: '9503b53a55c9dfa0eb0b826f74010cff7beaaf65'
 review_loop_iteration: 0
 context:
@@ -249,10 +249,10 @@ Pas2JS project.
 .gitignore                         ratification item 1
 README.md                          Pas2JS text
 pweb.json                          generated; differs from React only in "ui"
-src/{{PASCAL_PROGRAM}}.lpr         React's, one header-comment line apart
+src/{{PASCAL_PROGRAM}}.lpr         React's, 4 header-comment lines apart
 src/app.services.pas               byte-identical to React
 frontend/index.html                static shell, two external scripts, one link
-frontend/app.css                   byte-identical to React's frontend/src/app.css
+frontend/app.css                   React's rules; header names app.pas
 frontend/pas2js.cfg                -Tbrowser -Jc -Jirtl.js -O1
 frontend/src/{{PASCAL_PROGRAM}}app.lpr   program demoapp; uses app; RunApp
 frontend/src/app.pas               the application logic over the frozen SDK

@@ -737,7 +737,7 @@ There is ONE generated native application, not two. For the same `NAME` and
 |---|---|---|
 | `src/app.services.pas` | byte-identical | `check_cap10b2_contracts.ps1` |
 | `.gitattributes` | byte-identical | idem |
-| `frontend/app.css` ↔ `frontend/src/app.css` | byte-identical | idem |
+| `frontend/app.css` ↔ `frontend/src/app.css` | same rules, one header sentence apart | idem |
 | `src/demo.lpr` | identical CODE; 4 raw lines apart | idem |
 | `pweb.json` | differs only in `"ui"` | `run_cap10b2_gates.ps1` |
 | `README.md`, `.gitignore` | UI-specific | — |
@@ -753,7 +753,18 @@ frontend kind in code at all.
 reason is honesty rather than convenience: React's names `node_modules/` and
 the `.pweb` staging directory a build materialises the TypeScript SDK into,
 and a Pas2JS project has neither. Shipping those bytes would ship a false
-statement about the project's own build.
+statement about the project's own build. The stylesheet differs for the same
+reason and by one sentence only: the React copy's header says `--pweb-styled`
+"is read back by App.tsx", and the file that reads it in a Pas2JS project is
+`frontend/src/app.pas`. Every CSS rule is compared; only the header comment
+may differ, and the gate refuses a Pas2JS stylesheet that still names
+`App.tsx`.
+
+Both gates are **positive allowlists**: they require the files they name to
+match and say nothing about a file nobody has named yet. What closes that gap
+is the exact-set check — the generated tree is asserted as a SET in both
+directions on every target — so a newly shared root file cannot appear
+without a gate being extended to describe it.
 
 ### No Node, and nothing that imitates one
 
@@ -779,9 +790,12 @@ pas2js @<project>/frontend/pas2js.cfg \
        <project>/frontend/src/demoapp.lpr
 ```
 
-The output lands **outside** the project, so a Pas2JS build cannot modify
-the project it builds — a stronger property than the React path, which
-materialises `node_modules` into its working copy.
+The private CAP-10B2 harness sends that output to an **external stage**, so
+nothing it does touches the project it is building — a stronger property than
+the React path, which materialises `node_modules` into its working copy. That
+is a fact about the harness, not a rule about every build: `pweb.json`'s
+`output` is `dist`, the generated `.gitignore` reserves it, and CAP-10D will
+decide what a real `pweb build` puts there.
 
 `-Jc` concatenates the RTL into that one file and declares `rtl` without
 starting it, so the page loads `assets/app.js` and then a one-line
