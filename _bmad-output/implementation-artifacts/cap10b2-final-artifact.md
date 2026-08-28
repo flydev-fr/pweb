@@ -1,8 +1,9 @@
 # CAP-10B2 — Final Artifact: the public Pas2JS scaffold, and the close of CAP-10B
 
-CAP-10B2 closes on hosted run **33160209188** (2026-08-28, commit
-`13d9e68`, branch `phase/cap-10/b2-pas2js-scaffold`, baseline `9503b53`):
-all six jobs green, `cap7 aggregate` recording `pas2js_create_corpus: PASS`
+CAP-10B2 closes on hosted run **33168355248** (2026-08-28, commit
+`64e0cd8`, branch `phase/cap-10/b2-pas2js-scaffold`, baseline `9503b53`):
+all six jobs green on the **first attempt**, no step re-run, `cap7 aggregate`
+recording `pas2js_create_corpus: PASS`
 and `pas2js_proof_corpus: PASS` on every target, ONE
 `pas2js_generated_inventory_digest`
 `d34b50871f6c66076dd89f708bdac741e03f0947c931939e09e0ec265f99e280` — 11
@@ -14,29 +15,26 @@ Object Pascal.
 `pweb create NAME --ui react|pas2js --bundle-id <reverse.dns>` is the whole
 command surface. `dev`, `run` and `build` are still unknown commands.
 
-And one thing this closure does not get to read cleaner than it was: the
-Markdown-only commit that recorded it (`5dc1754`) went red on Windows,
-twice, at the **CAP-6b3 uninstall gate** — `uninstall left 11 file(s)
-behind` on the first attempt and `left 8 file(s)` on the second, a different
-subset of WebView2 browser images each time. Gates 1–8 passed on both,
-including the bundled runtime returning 42. It is a lock race in a closed
-shard's harness, diagnosed and ledgered rather than patched blind, and it is
-not caused by this one: the same step passed on three consecutive runs of
-this branch, the CAP-6b3 steps run *before* any CAP-10 step, and the commit
-that first went red changed 376 lines of Markdown and one comment line.
-**The CAP-10B2 evidence in this artifact is from run 33160209188, whose
-Windows job was green end to end.**
+**Why the closure run is not the first green one.** Run **33160209188**
+(commit `13d9e68`) was the first in which every CAP-10B2 gate passed on all
+four targets, and every digest quoted here is identical on both runs; it
+remains valid B2 evidence, cited as such below. It is not the branch's
+closure run, because the commit that first *recorded* this closure
+(`5dc1754`, Markdown only) then went red on Windows **twice** at the
+**CAP-6b3 uninstall gate** — `left 11 file(s) behind`, then `left 8
+file(s)`, a different subset of WebView2 browser images each time, gates 1–8
+passing both times. A lock race in a closed shard's CI harness, not a
+CAP-10B2 defect: that step passed on three consecutive runs of this branch,
+CAP-6b3 runs *before* any CAP-10 step, and that commit changed 376 lines of
+Markdown and one comment line. It is now **corrected in CI teardown only**
+(below); 33168355248 is the first green run on a HEAD carrying it.
 
-Two further things about that run are part of the record rather than hidden
-by it.
-Its `macos-x64` leg first went red at `CAP-7M2 setup pinned Node` with
-`getaddrinfo ENOTFOUND nodejs.org` and `ENOTFOUND api.github.com` — a DNS
-failure on the runner, before any PWeb code was reached — and was re-run
-green on the identical commit; the three other legs were already green and
-were not re-run. And two earlier hosted runs are described below rather than
-elided: **33155622286** and **33158296971** each failed for a defect in this
-shard's own evidence plumbing, and both were found by machinery that was
-looking for something else.
+Run 33160209188's `macos-x64` leg first went red at `CAP-7M2 setup pinned
+Node` with `getaddrinfo ENOTFOUND nodejs.org` — a runner DNS failure before
+any PWeb code ran — and was re-run green on the identical commit; the
+closure run needed no re-run on any leg. Two earlier runs, **33155622286**
+and **33158296971**, each failed for a defect in this shard's own evidence
+plumbing and are described below rather than elided.
 
 ## The claim this shard exists to make
 
@@ -261,12 +259,12 @@ Nine of them are **absolute pins** rather than agreements:
 `pas2js_sdk_binding_owner = true`, `pas2js_report_received = true`,
 `pas2js_clean_shutdown = true`.
 
-Per-target observations, recorded and never compared:
-`pas2js_compiler_arch` / `_host` / `_sha256` (the pinned compiler is a
-different artifact per platform by design — i386, x86_64, aarch64),
-`pas2js_doctor_row` (`pass/ok` on Linux, `warning/tool_duplicated` where a
-second Pas2JS is on PATH), `pas2js_app_pwb_bytes`, `native_binary_equal`,
-`pas2js_run_elapsed_ms` and `pas2js_output_normalised`.
+Per-target observations, recorded and never compared: `pas2js_compiler_arch`
+/ `_host` / `_sha256` (the pinned compiler is a different artifact per
+platform by design — i386, x86_64, aarch64), `pas2js_doctor_row` (`pass/ok`
+on Linux, `warning/tool_duplicated` where a second Pas2JS is on PATH),
+`pas2js_app_pwb_bytes`, `native_binary_equal`, `pas2js_run_elapsed_ms`,
+`pas2js_output_normalised`.
 
 Thirteen create refusals are executed against real compiled CLIs on every
 target — six rejected UI spellings (`PAS2JS`, `Pas2js`, `pas2JS`, `p2js`,
@@ -290,6 +288,36 @@ asserts `-iSP` before it compiles anything, and the aggregate carries a
 `TRANSLATED-COMPILER` refusal for the macos-arm64 leg specifically. Measured
 on the real runner: `pas2js_compiler_arch = aarch64`, with a compiler
 sha256 distinct from every other target's.
+
+## The CAP-6b3 uninstall race, corrected
+
+Fixed before the branch closed, in **CI teardown only**. Cause: gates 7
+and 8 launch three copies of the installed application, each spawning a
+WebView2 browser image from *inside* the bundled Fixed Runtime tree; nothing
+waited for those to exit; Windows will not delete a mapped image; Inno
+reports success anyway; and the 300-second poll had become the only thing
+waiting — a timeout, not a synchronisation.
+
+`test/cap6b3/wv2procdrain.ps1` now runs immediately before the uninstaller:
+enumerate through `Win32_Process`, select **only** images whose
+canonicalised path lies under this installation on a *component* boundary,
+bounded graceful window, terminate the remainder **by PID** with the image
+re-checked against a fresh record at kill time, re-enumerate until empty or
+a bounded timeout — and if anything remains, **refuse to run the uninstaller
+at all**, printing the surviving pid/image list, so the gate cannot degrade
+into a cleanup step that always passes. Nothing global: `taskkill /IM`,
+`Stop-Process -Name` and every machine-wide WebView2 or Evergreen action are
+absent by rule and by test — the runner's unrelated Evergreen processes are
+what CAP-6b1, CAP-6b2 and gate 8's no-fallback proof depend on.
+`check_wv2procdrain.ps1` proves T1–T11 on injected records plus a live CIM
+query, in the Windows job *before* the gate.
+
+On the closure run the bundled browser still held the tree on sweep 1 and
+was gone on sweep 2 (`graceful=True terminated=0`) — the window nothing used
+to wait for. Nothing had to be killed. `CAP-6b3 gate 9 PASS`,
+`CAP6B3_SETUP_GATES_PASS`, CAP-6b4 matrix green behind it, `git diff
+13d9e68 64e0cd8 -- src/ sdk/ examples/ deps/ tools/` empty. Narrative and
+lessons in `deferred-work.md`.
 
 ## Freeze result
 
@@ -321,8 +349,8 @@ gitignore negation; the generated `.gitattributes` that cannot cover `*.cfg`
 without re-baselining a frozen React value; `native_binary_equal` as an
 observation; the absence of a harness-level fixture for the now-reachable
 "no report received" branch; `contracts.json` being uploaded and consumed by
-nothing; the `ci.yml` documentation budget at 197.5 KB; the CAP-6b3 uninstall race
-this closure surfaced and did not patch; and the CAP-10C handoff for the
-Pas2JS side of `pweb dev`.
+nothing; the `ci.yml` documentation budget at 197.5 KB; and the CAP-10C
+handoff for the Pas2JS side of `pweb dev`. The CAP-6b3 race this closure
+surfaced is ledgered **RESOLVED**, not deferred.
 
 **CAP-10B PASS — REACT AND PAS2JS SCAFFOLDS FROZEN**
