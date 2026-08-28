@@ -15,6 +15,10 @@ aggregator refusals + 2 divergence refusals** on the same run (73+2 before
 this shard), so all fifteen new refusal branches are proven red on fixtures
 before the real aggregation is trusted.
 
+**Re-ratified on run 33129150289** (commit
+`68f881a`, the closure commit itself), all six jobs green, with every
+CAP-10B1 field byte-identical to the 33127976094 run.
+
 Two earlier hosted runs are part of the record rather than hidden by it.
 Run **33126638202** turned both macOS legs red on a gate that judged the
 RUNNER instead of the project, and its Linux leg exposed a digest that two
@@ -22,6 +26,18 @@ implementations of one projection could never agree on. Both are described
 under *Adversarial review* below; both were defects in this shard's own
 gates, and both were found by the four-target matrix rather than by reading
 the code.
+
+And one thing this closure does not get to read cleaner than it was: the
+Markdown-only commit that recorded it went red on Windows the first time,
+at the **CAP-5 Pas2JS runtime smoke**, with `page/runtime verdict was not
+successful (state=0; 0=no report received)`. The React smoke passed in the
+same step, the same step was green on the implementation commit minutes
+earlier, and a re-run of the identical commit was green — so it is
+intermittent, it is a CAP-5 gate this shard changed no file of, and it is
+ledgered rather than explained. What is NOT claimed here is that one green
+re-run proves anything about an intermittent failure; what is claimed is
+that the failure is reproducibly absent from CAP-10B1's own surface and
+that nobody has yet measured its cause.
 
 CAP-10B1 turns the frozen CAP-10B0 engine into a command. It adds ONE
 trusted public template, links the scaffold engine into the CLI for the
