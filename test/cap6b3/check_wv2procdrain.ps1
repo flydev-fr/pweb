@@ -22,10 +22,15 @@
 #   T8  a timeout with a survivor FAILS, and fails before any uninstall
 #   T9  no global process-name termination primitive exists in either script
 #   T10 the uninstaller is invoked only after the drain has succeeded
+#   T11 the dot-sourced helper leaks no strict mode or preference into the
+#       gate that sources it
 #
 # Usage: pwsh -File test/cap6b3/check_wv2procdrain.ps1
 
 $ErrorActionPreference = 'Stop'
+# strictness is THIS script's choice, set here rather than in the dot-sourced
+# helper - see T11 and the note at the top of wv2procdrain.ps1
+Set-StrictMode -Version Latest
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $PSScriptRoot 'wv2procdrain.ps1')
 
@@ -239,6 +244,21 @@ Check (($drainAt -ge 0) -and ($uninsAt -ge 0) -and ($drainAt -lt $uninsAt)) `
 Check (($gateCode -match 'Assert-PWebProcessDrained -Root \$InstallDir') -and
        ($gateCode -match 'Assert-PWebProcessDrained -Root \$InstalledRuntime')) `
     'T10c the drain roots are this installation, not a machine-wide path'
+
+# --- T11 --------------------------------------------------------------------
+# THE HELPER IS DOT-SOURCED, so anything it sets lands in the GATE's scope.
+# MEASURED: a dot-sourced `Set-StrictMode -Version Latest` makes the sourcing
+# script throw on its next missing property - and gates 9 and 10 run after the
+# drain call in a 590-line script that has never run under strict mode. This
+# test exists because that shipped once.
+Check ($drainCode -notmatch 'Set-StrictMode') `
+    'T11 the dot-sourced helper imposes no strict mode on the gate that sources it'
+# and the helper must not change any other caller-visible preference either
+foreach ($leak in 'ErrorActionPreference', 'Set-Location', 'Push-Location',
+                  'ProgressPreference') {
+    Check ($drainCode -notmatch [regex]::Escape($leak)) `
+        "T11b the helper does not set $leak in its caller's scope"
+}
 
 if ($failures.Count -gt 0) {
     Write-Host ''

@@ -54,7 +54,16 @@
 # next sweep, a timeout with a survivor - none of which can be staged against
 # a real browser.
 
-Set-StrictMode -Version Latest
+# NO Set-StrictMode HERE, and that is not an oversight. This file is
+# DOT-SOURCED into run_fixed_setup_gates.ps1, and `Set-StrictMode` applies to
+# the CALLER'S scope - MEASURED: a dot-sourced `Set-StrictMode -Version
+# Latest` makes the sourcing script throw on the next missing property. That
+# gate is 590 lines that have never run under strict mode, and gates 9 and 10
+# come after the drain call, so shipping it here would have turned the gate
+# red for a reason with nothing to do with process teardown. The functions
+# below guard every property access with try/catch and need no strict mode of
+# their own; check_wv2procdrain.ps1 sets it for itself, where it is that
+# script's own choice.
 
 # Canonicalise for comparison, or return '' when the path cannot be read or
 # resolved. An unreadable path must never be treated as matching: this
