@@ -1258,7 +1258,7 @@ $e.runtime_from_sdk_root = 'FAIL'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap10b1-runtime-provenance' 'runtime_from_sdk_root'
 
-# =========================== CAP-10B2 (c85-c101) ===========================
+# ========================== CAP-10B2 (c85-c107) ==========================
 #
 # Every refusal branch this shard adds, proven red on fixtures before the
 # real aggregation is trusted. The pattern is CAP-10B1's: a verdict rewritten

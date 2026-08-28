@@ -2,7 +2,7 @@
 title: 'CAP-10B2 — the public Pas2JS scaffold and the close of CAP-10B'
 type: 'feature'
 created: '2026-08-28'
-status: 'in-review'
+status: 'done'
 baseline_commit: '9503b53a55c9dfa0eb0b826f74010cff7beaaf65'
 review_loop_iteration: 0
 context:
@@ -335,3 +335,64 @@ intermittent timing failure is never reported as a runtime defect.
   every new refusal branch proven red on fixtures, total COUNTED not hardcoded.
 - hosted CI on the shard branch -- all six jobs green, `cap7 aggregate`
   reporting one `pas2js_generated_inventory_digest` on four targets.
+
+## Suggested Review Order
+
+**The public surface — start here**
+
+- The two compiled UI constants; everything else in the shard follows from them.
+  [`pweb.cli.args.pas:81`](../../tools/pweb/pweb.cli.args.pas#L81)
+
+- Byte-exact allowlist: `React` and `PAS2JS` refused like `svelte`.
+  [`pweb.cli.args.pas:507`](../../tools/pweb/pweb.cli.args.pas#L507)
+
+- Help interpolates both constants, so it cannot advertise what the parser refuses.
+  [`pweb.cli.report.pas:181`](../../tools/pweb/pweb.cli.report.pas#L181)
+
+- The one exit mapping that moved, with the reason at the point of the change.
+  [`pweb.pas:143`](../../tools/pweb/pweb.pas#L143)
+
+**The template, and the parity that makes it one application**
+
+- The new public block; the template id IS the `--ui` value.
+  [`templates.list:215`](../../tools/templates/templates.list#L215)
+
+- The application over the frozen SDK — handshake, Add, typed refusal, report.
+  [`app.pas:92`](../../tools/templates/pas2js/frontend/src/app.pas#L92)
+
+- Compile options the project owns, and deliberately no path at all.
+  [`pas2js.cfg:7`](../../tools/templates/pas2js/frontend/pas2js.cfg#L7)
+
+- The only native difference: four comment lines naming the frontend.
+  [`program.lpr:26`](../../tools/templates/pas2js/src/program.lpr#L26)
+
+**The gates**
+
+- Comment-stripped code equality, and why the placeholder substitution is load-bearing.
+  [`check_cap10b2_contracts.ps1:62`](../../test/cap10b2/check_cap10b2_contracts.ps1#L62)
+
+- The React closure pin — the one drift this shard could have hidden.
+  [`run_cap10b2_gates.ps1:59`](../../test/cap10b2/run_cap10b2_gates.ps1#L59)
+
+- The BOM/CRLF normalisation that makes a four-target digest possible at all.
+  [`prove_cap10b2.ps1:160`](../../test/cap10b2/prove_cap10b2.ps1#L160)
+
+- Raw-binding ownership by occurrence classification, not by an impossible ban.
+  [`prove_cap10b2.ps1:227`](../../test/cap10b2/prove_cap10b2.ps1#L227)
+
+- A second CLI, built only to be refused by.
+  [`build_cap10b2.ps1:5`](../../test/cap10b2/build_cap10b2.ps1#L5)
+
+- `if cmd`, never `cmd` then `$?` — the review finding that made failures reportable.
+  [`prove_cap10b2.sh:265`](../../test/cap10b2/prove_cap10b2.sh#L265)
+
+**Aggregation and documentation**
+
+- The new absolute pins, including the whole advertised set.
+  [`check_cap7f_aggregate.ps1:150`](../../test/cap7f/check_cap7f_aggregate.ps1#L150)
+
+- Twenty-three new legs proving each refusal branch red on fixtures.
+  [`check_cap7f_selftest.ps1:1261`](../../test/cap7f/check_cap7f_selftest.ps1#L1261)
+
+- The Pas2JS template contract, the permitted differences and their reasons.
+  [`template-contract.md:703`](../../docs/template-contract.md#L703)
