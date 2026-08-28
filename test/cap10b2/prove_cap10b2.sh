@@ -744,7 +744,14 @@ fi
 # corpus ends up with two shapes. The numeric keys are NAMED rather than
 # sniffed - a sha256 that happened to be sixty-four decimal digits would
 # otherwise be emitted as a number.
-numeric_keys='|pas2js_app_exit|pas2js_listener_count|pas2js_rpc_result|pas2js_app_pwb_bytes|pas2js_run_elapsed_ms|'
+# EVERY key the PowerShell twin emits as a JSON number must be here, or the
+# two records carry the same fact in two shapes and the emitter's numeric
+# reader silently substitutes 0 for the quoted one. MEASURED on hosted run
+# 33158296971: `pas2js_app_pwb_entries` was missing from this list, the three
+# POSIX targets published 0 where Windows published 5, and the aggregator's
+# BAD-BUNDLE-INVENTORY branch refused all three - which is the layered
+# defence working, and is why the count is a compared field at all.
+numeric_keys='|pas2js_app_exit|pas2js_listener_count|pas2js_rpc_result|pas2js_app_pwb_bytes|pas2js_app_pwb_entries|pas2js_run_elapsed_ms|'
 evidence="${work}/proof-${target}.json"
 {
     printf '{\n'

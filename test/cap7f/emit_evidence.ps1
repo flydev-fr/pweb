@@ -976,6 +976,14 @@ if (($pas2jsCreateCorpus -ceq 'PASS') -and ($pas2jsProofCorpus -ceq 'PASS')) {
     if ("$($b2p.pas2js_compiler_version)" -ne '3.0.1') {
         throw "[CAP-7F] the CAP-10B2 build proof used Pas2JS $($b2p.pas2js_compiler_version)"
     }
+    # a COUNTED field that reads 0 beside a PASS verdict was not read at all;
+    # the POSIX twin's numeric reader falls back to 0 when the record carries
+    # the value in a shape it cannot parse, which is how one quoting
+    # difference between the two proof writers reached three targets on run
+    # 33158296971
+    if ("$($b2p.pas2js_app_pwb_entries)" -eq '0') {
+        throw '[CAP-7F] the CAP-10B2 build proof records PASS with pas2js_app_pwb_entries=0'
+    }
 }
 Write-Host ("[CAP-10B2] pas2js_create_corpus: $pas2jsCreateCorpus " +
     "(uis=$($b2.supported_uis) refusals=$($b2.pas2js_create_refusals) " +

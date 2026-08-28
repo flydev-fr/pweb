@@ -1180,6 +1180,12 @@ if [ "${pas2js_create_corpus}" = 'PASS' ] && [ "${pas2js_proof_corpus}" = 'PASS'
         die 'the CAP-10B2 build proof records a listening socket'
     [ "${pas2js_compiler_version}" = '3.0.1' ] ||
         die "the CAP-10B2 build proof used Pas2JS ${pas2js_compiler_version}"
+    # a COUNTED field that reads 0 beside a PASS verdict was not read at all:
+    # `b2p_num` falls back to 0 when the record carries the value in a shape
+    # it cannot parse, which is how one quoting difference between the two
+    # proof writers reached three targets on run 33158296971
+    [ "${pas2js_app_pwb_entries}" != '0' ] ||
+        die 'the CAP-10B2 build proof records PASS with pas2js_app_pwb_entries=0 -- the value was not readable from the record'
 fi
 printf '[CAP-10B2] pas2js_create_corpus: %s (uis=%s refusals=%s files=%s doctor=%s) pas2js_proof_corpus: %s (pas2js=%s/%s rpc=%s listeners=%s parity=%s)\n' \
     "${pas2js_create_corpus}" "${supported_uis}" "${pas2js_create_refusals}" \
