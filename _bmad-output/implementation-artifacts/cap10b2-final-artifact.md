@@ -14,7 +14,21 @@ Object Pascal.
 `pweb create NAME --ui react|pas2js --bundle-id <reverse.dns>` is the whole
 command surface. `dev`, `run` and `build` are still unknown commands.
 
-Two things about that run are part of the record rather than hidden by it.
+And one thing this closure does not get to read cleaner than it was: the
+Markdown-only commit that recorded it (`5dc1754`) went red on Windows,
+twice, at the **CAP-6b3 uninstall gate** — `uninstall left 11 file(s)
+behind` on the first attempt and `left 8 file(s)` on the second, a different
+subset of WebView2 browser images each time. Gates 1–8 passed on both,
+including the bundled runtime returning 42. It is a lock race in a closed
+shard's harness, diagnosed and ledgered rather than patched blind, and it is
+not caused by this one: the same step passed on three consecutive runs of
+this branch, the CAP-6b3 steps run *before* any CAP-10 step, and the commit
+that first went red changed 376 lines of Markdown and one comment line.
+**The CAP-10B2 evidence in this artifact is from run 33160209188, whose
+Windows job was green end to end.**
+
+Two further things about that run are part of the record rather than hidden
+by it.
 Its `macos-x64` leg first went red at `CAP-7M2 setup pinned Node` with
 `getaddrinfo ENOTFOUND nodejs.org` and `ENOTFOUND api.github.com` — a DNS
 failure on the runner, before any PWeb code was reached — and was re-run
@@ -307,7 +321,8 @@ gitignore negation; the generated `.gitattributes` that cannot cover `*.cfg`
 without re-baselining a frozen React value; `native_binary_equal` as an
 observation; the absence of a harness-level fixture for the now-reachable
 "no report received" branch; `contracts.json` being uploaded and consumed by
-nothing; the `ci.yml` documentation budget at 197.5 KB; and the CAP-10C
-handoff for the Pas2JS side of `pweb dev`.
+nothing; the `ci.yml` documentation budget at 197.5 KB; the CAP-6b3 uninstall race
+this closure surfaced and did not patch; and the CAP-10C handoff for the
+Pas2JS side of `pweb dev`.
 
 **CAP-10B PASS — REACT AND PAS2JS SCAFFOLDS FROZEN**
