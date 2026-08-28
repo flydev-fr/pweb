@@ -115,7 +115,7 @@ function RunCli([string]$Exe, [string]$WorkDir, [string[]]$CliArgs) {
 #
 # The pack the shipped CLI carries is not the pack the CAP-10B0 engine suite
 # uses: that one is built `--include all` and carries the private fixture,
-# this one is built `--include public` and carries the react template alone.
+# this one is built `--include public` and carries the two public templates.
 # Both digests travel, and they are compared differently for the reason
 # CAP-10B0 measured on run 33093385300: mORMot stamps the CREATING OS into
 # the ZIP `version made by` field, so archive BYTES are an OS-family
@@ -163,16 +163,20 @@ if (Test-Path -LiteralPath $builder) {
             }
         }
     }
-    Require ("$($rows['public_template_count'])" -ceq '1') `
+    # CAP-10B2 INVERTED this count rather than deleting it: the public pack
+    # carried exactly one template while react was the only public one, and
+    # it carries exactly two now that pas2js shipped. An exact number is
+    # what makes "a third template arrived unnoticed" a failure.
+    Require ("$($rows['public_template_count'])" -ceq '2') `
         ("the public pack carries $($rows['public_template_count']) " +
-         'templates, expected exactly 1 (react)')
+         'templates, expected exactly 2 (react and pas2js)')
 }
 
 # --- 1. the advertised surface --------------------------------------------
 $help = RunCli $pweb $repoRoot @('--help')
 Require ($help.Code -eq 0) '--help did not exit 0'
-Require ($help.Out.Contains('pweb create NAME --ui react')) `
-    'the global help does not advertise create'
+Require ($help.Out.Contains('pweb create NAME --ui react|pas2js')) `
+    'the global help does not advertise create with both frontend kinds'
 foreach ($absent in 'pweb dev', 'pweb run', 'pweb build') {
     Require (-not $help.Out.Contains($absent)) `
         "the global help advertises an unimplemented command: $absent"
@@ -182,10 +186,8 @@ Row 'cli_create_available' $(if ($help.Out.Contains('pweb create NAME')) {
 
 $createHelp = RunCli $pweb $repoRoot @('create', '--help')
 Require ($createHelp.Code -eq 0) 'create --help did not exit 0'
-Require ($createHelp.Out.Contains('This build supports: react')) `
-    'create --help does not advertise react'
-Require (-not $createHelp.Out.Contains('pas2js')) `
-    'create --help advertises pas2js before CAP-10B2 exists'
+Require ($createHelp.Out.Contains('This build supports: react|pas2js')) `
+    'create --help does not advertise both frontend kinds'
 # RECORDED, NOT COMPARED - and the reason is a measurement that has not
 # been finished rather than a preference. On hosted run 33126638202 the
 # Linux and both macOS runners produced one digest for this text and the
@@ -195,25 +197,29 @@ Require (-not $createHelp.Out.Contains('pas2js')) `
 # string and not in the console seam, and this shard has not measured it.
 #
 # What the help must CLAIM is asserted structurally instead, on every
-# target: create appears in the global help, `This build supports: react`
-# appears here, `pas2js` does not, dev/run/build do not, and `advertised_ui`
-# is parsed back OUT of this text and absolute-pinned to `react` by the
+# target: create appears in the global help, `This build supports:
+# react|pas2js` appears here, dev/run/build do not, and `supported_uis` is
+# parsed back OUT of this text and absolute-pinned to `pas2js,react` by the
 # aggregator. The byte length travels beside the digest so the next reader
 # can tell a length difference from a substitution in one look.
 Row 'create_help_digest' (Sha256Text ($createHelp.Out.Replace("`r`n", "`n")))
 Row 'create_help_bytes' ([System.Text.Encoding]::UTF8.GetByteCount(
     $createHelp.Out.Replace("`r`n", "`n")))
 # the advertised set, read back OUT of the help text rather than restated
-# here: a gate that asserts its own copy of the answer proves nothing
+# here: a gate that asserts its own copy of the answer proves nothing. The
+# text carries the parser's own order (react|pas2js); the evidence carries
+# ONE canonical order, sorted bytewise, so four targets compare a set rather
+# than a presentation.
 $advertised = ''
 foreach ($line in ($createHelp.Out -split "`n")) {
     if ($line -match 'This build supports:\s*(.+?)\s*$') {
         $advertised = $Matches[1]
     }
 }
-Require ($advertised -ceq 'react') `
-    "create --help advertises '$advertised', expected 'react'"
-Row 'advertised_ui' $advertised
+$supported = (SortOrdinal @($advertised -split '\|')) -join ','
+Require ($supported -ceq 'pas2js,react') `
+    "create --help advertises '$advertised', expected 'react|pas2js'"
+Row 'supported_uis' $supported
 
 # dev/run/build must still be UNKNOWN COMMANDS, not merely unadvertised
 foreach ($absent in 'dev', 'run', 'build') {
@@ -246,7 +252,13 @@ $bundle = 'com.example.demo'
 MustRefuse 'missing-name' $pweb $sandbox @('create', '--ui', 'react', '--bundle-id', $bundle) 2 'missing_operand'
 MustRefuse 'invalid-name' $pweb $sandbox @('create', 'My-App', '--ui', 'react', '--bundle-id', $bundle) 2 'invalid_name'
 MustRefuse 'missing-ui' $pweb $sandbox @('create', 'demo', '--bundle-id', $bundle) 2 'missing_option'
-MustRefuse 'pas2js-ui' $pweb $sandbox @('create', 'demo', '--ui', 'pas2js', '--bundle-id', $bundle) 2 'unsupported_ui'
+# CAP-10B2 INVERTED this leg rather than dropping it. It used to prove that
+# `--ui pas2js` was a usage failure; that template shipped, so the same
+# claim - "a kind this build has no template for is refused by the PARSER,
+# not by a template lookup" - is now carried by a case variant. `React` is
+# not `react`: schema 1 matches `ui` case-sensitively, so a CLI that
+# accepted it would scaffold a project its own doctor rejects.
+MustRefuse 'case-ui' $pweb $sandbox @('create', 'demo', '--ui', 'React', '--bundle-id', $bundle) 2 'unsupported_ui'
 MustRefuse 'unknown-ui' $pweb $sandbox @('create', 'demo', '--ui', 'svelte', '--bundle-id', $bundle) 2 'unsupported_ui'
 MustRefuse 'missing-bundle' $pweb $sandbox @('create', 'demo', '--ui', 'react') 2 'missing_option'
 MustRefuse 'invalid-bundle' $pweb $sandbox @('create', 'demo', '--ui', 'react', '--bundle-id', 'NotADns') 2 'invalid_bundle_id'

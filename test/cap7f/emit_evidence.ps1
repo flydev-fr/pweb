@@ -895,7 +895,7 @@ if (($createCorpus -ceq 'PASS') -and ($proofCorpus -ceq 'PASS')) {
                         @('generated_inventory_digest', "$($b1.generated_inventory_digest)"),
                         @('generated_pweb_json_digest', "$($b1.generated_pweb_json_digest)"),
                         @('generated_package_lock_digest', "$($b1.generated_package_lock_digest)"),
-                        @('advertised_ui', "$($b1.advertised_ui)"))) {
+                        @('supported_uis', "$($b1.supported_uis)"))) {
         if ($pair[1] -eq '') {
             throw "[CAP-7F] the CAP-10B1 record records PASS with an empty $($pair[0])"
         }
@@ -908,10 +908,74 @@ if (($createCorpus -ceq 'PASS') -and ($proofCorpus -ceq 'PASS')) {
     }
 }
 Write-Host "[CAP-10B1] generated_inventory_digest: $($b1.generated_inventory_digest)"
-Write-Host ("[CAP-10B1] create_corpus: $createCorpus (ui=$($b1.advertised_ui) " +
-    "refusals=$($b1.create_refusals) files=$($b1.generated_file_count) " +
+Write-Host ("[CAP-10B1] create_corpus: $createCorpus " +
+    "(refusals=$($b1.create_refusals) files=$($b1.generated_file_count) " +
     "doctor=$($b1.doctor_result)) proof_corpus: $proofCorpus " +
     "(rpc=$($b1p.rpc_result) listeners=$($b1p.listener_count))")
+
+# --------------------------- CAP-10B2: the Pas2JS scaffold -------------------
+#
+# Two records again, and the same split as CAP-10B1's: cli-<target>.json is
+# the headless create matrix (both UIs created, the refusal set including the
+# one whose category moved, three working directories required to agree, the
+# real doctor on both projects) and proof-<target>.json is the build proof
+# (the pinned Pas2JS, the static output, app.pwb, a real window, and the
+# page's own report).
+#
+# `advertised_ui` is GONE from the CAP-10B1 record and `supported_uis` has
+# taken its place: one frontend was a value, two are a SET, and a set needs
+# one canonical order (bytewise) so four targets compare membership rather
+# than presentation.
+$b2File = Join-Path $repoRoot 'build/cap10b2/cli-windows-x86_64.json'
+$b2ProofFile = Join-Path $repoRoot 'build/cap10b2/proof-windows-x86_64.json'
+foreach ($f in $b2File, $b2ProofFile) {
+    if (-not (Test-Path $f)) {
+        throw "[CAP-7F] $(Split-Path -Leaf $f) missing -- the CAP-10B2 gates have not run in this workspace"
+    }
+}
+$b2 = Get-Content $b2File -Raw | ConvertFrom-Json
+$b2p = Get-Content $b2ProofFile -Raw | ConvertFrom-Json
+$pas2jsCreateCorpus = "$($b2.pas2js_create_corpus)"
+$pas2jsProofCorpus = "$($b2p.pas2js_proof_corpus)"
+foreach ($pair in @(@('pas2js_create_corpus', $pas2jsCreateCorpus),
+                    @('pas2js_proof_corpus', $pas2jsProofCorpus))) {
+    if ($pair[1] -notin @('PASS', 'FAIL')) {
+        throw "[CAP-7F] the CAP-10B2 record carries an unexpected $($pair[0]): $($pair[1])"
+    }
+}
+if (($pas2jsCreateCorpus -ceq 'PASS') -and ($pas2jsProofCorpus -ceq 'PASS')) {
+    # a green verdict with an empty digest is a proof of nothing, and an
+    # empty string compares equal to another empty string on four targets
+    foreach ($pair in @(
+            @('supported_uis', "$($b2.supported_uis)"),
+            @('pas2js_generated_inventory_digest', "$($b2.pas2js_generated_inventory_digest)"),
+            @('pas2js_pweb_json_digest', "$($b2.pas2js_pweb_json_digest)"),
+            @('pas2js_frontend_source_digest', "$($b2.pas2js_frontend_source_digest)"),
+            @('shared_native_source_digest', "$($b2.shared_native_source_digest)"),
+            @('react_generated_inventory_digest', "$($b2.react_generated_inventory_digest)"),
+            @('pas2js_static_inventory_digest', "$($b2p.pas2js_static_inventory_digest)"),
+            @('pas2js_compiler_version', "$($b2p.pas2js_compiler_version)"))) {
+        if ($pair[1] -eq '') {
+            throw "[CAP-7F] the CAP-10B2 record records PASS with an empty $($pair[0])"
+        }
+    }
+    if ("$($b2p.pas2js_rpc_result)" -ne '42') {
+        throw "[CAP-7F] the CAP-10B2 build proof records PASS with pas2js_rpc_result=$($b2p.pas2js_rpc_result)"
+    }
+    if ("$($b2p.pas2js_listener_count)" -ne '0') {
+        throw '[CAP-7F] the CAP-10B2 build proof records a listening socket'
+    }
+    if ("$($b2p.pas2js_compiler_version)" -ne '3.0.1') {
+        throw "[CAP-7F] the CAP-10B2 build proof used Pas2JS $($b2p.pas2js_compiler_version)"
+    }
+}
+Write-Host ("[CAP-10B2] pas2js_create_corpus: $pas2jsCreateCorpus " +
+    "(uis=$($b2.supported_uis) refusals=$($b2.pas2js_create_refusals) " +
+    "files=$($b2.pas2js_generated_file_count) doctor=$($b2.pas2js_doctor_result)) " +
+    "pas2js_proof_corpus: $pas2jsProofCorpus " +
+    "(pas2js=$($b2p.pas2js_compiler_version)/$($b2p.pas2js_compiler_arch) " +
+    "rpc=$($b2p.pas2js_rpc_result) listeners=$($b2p.pas2js_listener_count) " +
+    "parity=$($b2p.react_pas2js_parity))")
 
 # --- run identity -----------------------------------------------------------
 $sha = $env:GITHUB_SHA
@@ -1010,7 +1074,6 @@ $evidence = [ordered]@{
     package_manager_calls           = "$($tpl.package_manager_calls)"
     template_modes_applicable       = $templateModes
     create_corpus                   = $createCorpus
-    advertised_ui                   = "$($b1.advertised_ui)"
     create_help_digest              = "$($b1.create_help_digest)"
     create_help_bytes               = "$($b1.create_help_bytes)"
     create_stdout_digest            = "$($b1.create_stdout_digest)"
@@ -1046,6 +1109,56 @@ $evidence = [ordered]@{
     listener_count                  = "$($b1p.listener_count)"
     raw_primitive_used              = "$($b1p.raw_primitive_used)"
     loose_assets_used               = "$($b1p.loose_assets_used)"
+    supported_uis                   = "$($b2.supported_uis)"
+    pas2js_create_corpus            = $pas2jsCreateCorpus
+    pas2js_create_refusals          = "$($b2.pas2js_create_refusals)"
+    pas2js_no_partial               = "$($b2.pas2js_no_partial)"
+    pas2js_create_deterministic     = "$($b2.pas2js_create_deterministic)"
+    pas2js_create_stdout_digest     = "$($b2.pas2js_create_stdout_digest)"
+    pas2js_generated_inventory_digest = "$($b2.pas2js_generated_inventory_digest)"
+    pas2js_generated_inventory_exact = "$($b2.pas2js_generated_inventory_exact)"
+    pas2js_generated_file_count     = "$($b2.pas2js_generated_file_count)"
+    pas2js_generated_total_bytes    = "$($b2.pas2js_generated_total_bytes)"
+    pas2js_pweb_json_digest         = "$($b2.pas2js_pweb_json_digest)"
+    pas2js_frontend_source_digest   = "$($b2.pas2js_frontend_source_digest)"
+    pas2js_generated_no_host_path   = "$($b2.pas2js_generated_no_host_path)"
+    react_generated_inventory_digest = "$($b2.react_generated_inventory_digest)"
+    react_regression_result         = "$($b2.react_regression_result)"
+    shared_native_source_digest     = "$($b2.shared_native_source_digest)"
+    native_parity                   = "$($b2.native_parity)"
+    pas2js_doctor_result            = "$($b2.pas2js_doctor_result)"
+    pas2js_doctor_row               = "$($b2.pas2js_doctor_row)"
+    pas2js_doctor_version           = "$($b2.pas2js_doctor_version)"
+    pas2js_proof_corpus             = $pas2jsProofCorpus
+    pas2js_compiler_version         = "$($b2p.pas2js_compiler_version)"
+    pas2js_compiler_arch            = "$($b2p.pas2js_compiler_arch)"
+    pas2js_compiler_host            = "$($b2p.pas2js_compiler_host)"
+    pas2js_compiler_sha256          = "$($b2p.pas2js_compiler_sha256)"
+    pas2js_frontend_build           = "$($b2p.pas2js_frontend_build)"
+    pas2js_native_build             = "$($b2p.pas2js_native_build)"
+    pas2js_sdk_from_sdk_root        = "$($b2p.pas2js_sdk_from_sdk_root)"
+    pas2js_output_sweep             = "$($b2p.pas2js_output_sweep)"
+    pas2js_output_normalised        = "$($b2p.pas2js_output_normalised)"
+    pas2js_static_inventory_digest  = "$($b2p.pas2js_static_inventory_digest)"
+    pas2js_app_pwb_semantic_digest  = "$($b2p.pas2js_app_pwb_semantic_digest)"
+    pas2js_app_pwb_bytes            = "$($b2p.pas2js_app_pwb_bytes)"
+    pas2js_secure_origin            = "$($b2p.pas2js_secure_origin)"
+    pas2js_rpc_result               = "$($b2p.pas2js_rpc_result)"
+    pas2js_error_mapping            = "$($b2p.pas2js_error_mapping)"
+    pas2js_listener_count           = "$($b2p.pas2js_listener_count)"
+    pas2js_loose_assets             = "$($b2p.pas2js_loose_assets)"
+    pas2js_app_raw_binding          = "$($b2p.pas2js_app_raw_binding)"
+    pas2js_sdk_binding_owner        = "$($b2p.pas2js_sdk_binding_owner)"
+    pas2js_clean_shutdown           = "$($b2p.pas2js_clean_shutdown)"
+    pas2js_report_received          = "$($b2p.pas2js_report_received)"
+    pas2js_report_fields            = "$($b2p.pas2js_report_fields)"
+    pas2js_tree_digest              = "$($b2p.pas2js_tree_digest)"
+    pas2js_tree_unchanged           = "$($b2p.pas2js_tree_unchanged)"
+    pas2js_build_out_of_tree        = "$($b2p.pas2js_build_out_of_tree)"
+    react_pas2js_parity             = "$($b2p.react_pas2js_parity)"
+    react_regression_runtime        = "$($b2p.react_regression_runtime)"
+    native_binary_equal             = "$($b2p.native_binary_equal)"
+    pas2js_run_elapsed_ms           = "$($b2p.pas2js_run_elapsed_ms)"
     release_layout                  = $releaseLayout
     no_listener                     = $noListener
     no_listener_provenance          = 'source-sweep re-executed (check_cap6_nonetwork.ps1); CAP-5/CAP-6 job gates precede this emitter'

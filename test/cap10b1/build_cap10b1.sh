@@ -16,6 +16,7 @@
 #   sdk/bin/pweb                     the public CLI
 #   sdk/share/pweb/pweb-templates.zip     the public pack
 #   sdk/share/pweb/sdk/typescript/        the pinned TypeScript SDK
+#   sdk/share/pweb/sdk/pas2js/            the PWeb Pas2JS SDK
 #   sdk/share/pweb/src/                   the PWeb Pascal source root
 #
 # TWO PACKS, FROM ONE TRUSTED SOURCE. test/cap10b0 builds `--include all`,
@@ -118,11 +119,24 @@ fpc -MObjFPC -Sh -B -FUbuild/cap10b1/bundler-units -FEbuild/cap10b1/bin \
     ${platform_flags} tools/bundler/pwebbundle.pas ||
     die 'the CAP-6 bundler compile FAILED'
 
-step 'the SDK root data: the TypeScript SDK and the Pascal source root'
+step 'the SDK root data: both frontend SDKs and the Pascal source root'
 node tools/stage-ts-sdk.mjs sdk/typescript \
     build/cap10b1/sdk/share/pweb/sdk/typescript ||
     die 'staging the TypeScript SDK FAILED'
 cp -R -- src build/cap10b1/sdk/share/pweb/src
+# the PWeb Pas2JS SDK, staged for the same reason the TypeScript one is
+# (CAP-10B2). A generated Pas2JS project names NO unit path for it: the -Fu
+# that finds pweb.native is supplied at build time and points HERE, so "the
+# frontend compiles" cannot quietly mean "it compiles beside its own
+# framework's git checkout".
+#
+# The unit and its README, NAMED - not the directory, which also carries the
+# SDK's own test program. An installation ships what a project compiles
+# against, and a staging rule that copies whatever happens to be there is a
+# staging rule that will one day ship a test.
+mkdir -p -- build/cap10b1/sdk/share/pweb/sdk/pas2js
+cp -- sdk/pas2js/pweb.native.pas sdk/pas2js/README.md \
+    build/cap10b1/sdk/share/pweb/sdk/pas2js/
 
 for artifact in build/cap10b1/gen/pweb.templates.registry.inc \
                 build/cap10b1/sdk/bin/pweb \
@@ -130,6 +144,7 @@ for artifact in build/cap10b1/gen/pweb.templates.registry.inc \
                 build/cap10b1/sdk/share/pweb/pweb-templates.zip \
                 build/cap10b1/sdk/share/pweb/sdk/typescript/package.json \
                 build/cap10b1/sdk/share/pweb/sdk/typescript/dist/src/index.js \
+                build/cap10b1/sdk/share/pweb/sdk/pas2js/pweb.native.pas \
                 build/cap10b1/sdk/share/pweb/src/webview/pweb.webview.host.pas; do
     [ -e "${artifact}" ] || die "expected ${artifact}"
 done

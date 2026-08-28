@@ -4,12 +4,19 @@
 # SEVEN THINGS ARE CHECKED, and each is a claim CAP-10B1 makes that would
 # otherwise be a comment:
 #
-#   1. REACT IS THE ONLY UI, IN ONE PLACE. The parser carries a compiled
-#      allowlist, the help text INTERPOLATES it, and no source anywhere in
-#      the CLI accepts `pas2js` as a create value. A build that advertised a
-#      frontend it has no template for would be promising a scaffold it
-#      cannot produce, which is exactly what CAP-10A refused to do with
-#      `create` itself.
+#   1. THE ADVERTISED UIs ARE THE COMPILED ONES, EACH SPELLED ONCE. The
+#      parser carries a compiled allowlist and the help text INTERPOLATES
+#      it. A build that advertised a frontend it has no template for would
+#      be promising a scaffold it cannot produce, which is exactly what
+#      CAP-10A refused to do with `create` itself.
+#
+#      CAP-10B2 INVERTED THIS RULE RATHER THAN DELETING IT. CAP-10B1
+#      required that no source anywhere accept `pas2js`; the same
+#      measurement now has to come out the other way, because the template
+#      that makes the claim true shipped. What did NOT change is the shape:
+#      the allowlist is still compiled, still spelled once per kind, and the
+#      help still cannot carry its own copy of the answer. The Pas2JS
+#      template's own rules live in test/cap10b2.
 #
 #   2. `dev`, `run` AND `build` ARE STILL UNKNOWN COMMANDS. Not stubs, not
 #      "not implemented" placeholders, and not in any help text.
@@ -103,33 +110,54 @@ $argsSource = [System.IO.File]::ReadAllText('tools/pweb/pweb.cli.args.pas')
 $reportSource = [System.IO.File]::ReadAllText('tools/pweb/pweb.cli.report.pas')
 $programSource = [System.IO.File]::ReadAllText('tools/pweb/pweb.pas')
 
-# --- 1. react is the only UI, and it is spelled ONCE ----------------------
-$uiConst = [regex]::Match($argsSource,
-    "PWEB_CLI_UI_REACT\s*=\s*'([a-z0-9]+)'")
-if (-not $uiConst.Success) {
-    Violation 'pweb.cli.args.pas declares no PWEB_CLI_UI_REACT allowlist'
-} elseif ($uiConst.Groups[1].Value -cne 'react') {
-    Violation ("the supported UI constant is '$($uiConst.Groups[1].Value)', " +
-        "expected 'react'")
+# --- 1. the two UIs, each spelled ONCE ------------------------------------
+$uiConsts = [ordered]@{ PWEB_CLI_UI_REACT = 'react'; PWEB_CLI_UI_PAS2JS = 'pas2js' }
+$advertised = New-Object System.Collections.Generic.List[string]
+foreach ($name in $uiConsts.Keys) {
+    $m = [regex]::Match($argsSource, "$name\s*=\s*'([a-z0-9]+)'")
+    if (-not $m.Success) {
+        Violation "pweb.cli.args.pas declares no $name allowlist constant"
+    } elseif ($m.Groups[1].Value -cne $uiConsts[$name]) {
+        Violation ("$name is '$($m.Groups[1].Value)', expected " +
+            "'$($uiConsts[$name])'")
+    } else {
+        $advertised.Add($m.Groups[1].Value)
+    }
 }
-$advertisedUi = if ($uiConst.Success) { $uiConst.Groups[1].Value } else { '' }
-# the help text must INTERPOLATE the constant, never restate it: a second
-# spelling is a second contract
-if ($reportSource -notmatch 'This build supports:\s*''\s*\+\s*PWEB_CLI_UI_REACT') {
-    Violation ('pweb.cli.report.pas does not interpolate PWEB_CLI_UI_REACT ' +
+# ONE canonical order, bytewise, so the fact travels the same way on every
+# target and through every gate that carries it
+$advertisedUi = (($advertised.ToArray() | Sort-Object -CaseSensitive) -join ',')
+# the help text must INTERPOLATE both constants, never restate them: a
+# second spelling is a second contract
+if ($reportSource -notmatch
+    'This build supports: ''\s*\+\s*PWEB_CLI_UI_REACT\s*\+\s*''\|''\s*\+\s*PWEB_CLI_UI_PAS2JS') {
+    Violation ('pweb.cli.report.pas does not interpolate BOTH UI constants ' +
         'into the create help - a help text with its own copy of the ' +
         'answer can advertise a frontend the parser refuses')
 }
+# and the allowlist that decides it must name both, in CODE
+$allowlistNames = 0
 foreach ($row in (Get-CodeLines 'tools/pweb/pweb.cli.args.pas')) {
-    if ($row.Text -match "'pas2js'") {
-        Violation ("pweb.cli.args.pas accepts 'pas2js' as CODE: " +
-            "line $($row.Number) -- CAP-10B2 owns that template")
+    if ($row.Text -match 'Result\.Ui\s*<>\s*PWEB_CLI_UI_(REACT|PAS2JS)') {
+        $allowlistNames++
     }
+    # the kinds are named by their CONSTANTS everywhere except the two
+    # declarations - a bare literal in the parser is the second spelling
+    # this rule exists to prevent
+    if (($row.Text -match "'(react|pas2js)'") -and
+        ($row.Text -notmatch 'PWEB_CLI_UI_(REACT|PAS2JS)\s*=')) {
+        Violation ("pweb.cli.args.pas spells a frontend kind as a bare " +
+            "literal at line $($row.Number): $($row.Text.Trim())")
+    }
+}
+if ($allowlistNames -ne 2) {
+    Violation ("the create allowlist tests $allowlistNames UI constant(s), " +
+        'expected exactly 2 (react and pas2js)')
 }
 foreach ($doc in 'docs/cli-contract.md', 'docs/template-contract.md') {
     $text = [System.IO.File]::ReadAllText($doc)
-    if ($text -match '(?m)^\s*pweb create NAME --ui pas2js') {
-        Violation "$doc advertises `pweb create --ui pas2js` as available"
+    if (-not $text.Contains('--ui react|pas2js')) {
+        Violation "$doc does not document the create grammar --ui react|pas2js"
     }
 }
 
@@ -398,7 +426,7 @@ if ($null -eq $runtimeEntry) {
 
 # --- 7. the documented surface is the compiled surface -------------------
 $cliDoc = [System.IO.File]::ReadAllText('docs/cli-contract.md')
-foreach ($phrase in 'pweb create NAME --ui react --bundle-id',
+foreach ($phrase in 'pweb create NAME --ui react|pas2js --bundle-id',
                     'pweb create --help') {
     if (-not $cliDoc.Contains($phrase)) {
         Violation "docs/cli-contract.md does not document: $phrase"
@@ -438,7 +466,7 @@ if ($violations.Count -gt 0) {
     foreach ($v in $violations) { Write-Host "CONTRACT VIOLATION: $v" }
     throw "CAP-10B1 contract cross-checks FAILED: $($violations.Count)"
 }
-Write-Host ("[CAP-10B1] contracts PASS - react is the only advertised UI, " +
-    "$($onDisk.Count) tracked template sources, $($generatedConditionals) " +
-    'platform conditionals in the generated Pascal, and no process or ' +
-    'environment API on the create path')
+Write-Host ("[CAP-10B1] contracts PASS - the advertised UIs are " +
+    "$advertisedUi, $($onDisk.Count) tracked react template sources, " +
+    "$($generatedConditionals) platform conditionals in the generated " +
+    'Pascal, and no process or environment API on the create path')

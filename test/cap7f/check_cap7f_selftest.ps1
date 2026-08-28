@@ -122,7 +122,44 @@
 #         partial destination behind)
 #   (c84) runtime_from_sdk_root=FAIL -> mustPass refusal (@pweb/runtime
 #         came from somewhere the SDK root did not supply)
-#   (c8-c84 additionally assert the refusal came through the EXPECTED branch
+#   (c85) pas2js_create_corpus rewritten to SKIP -> mustPass refusal
+#   (c86) pas2js_generated_inventory_digest diverging -> equality refusal
+#         (the whole claim of CAP-10B2 in one field)
+#   (c87) pas2js_static_inventory_digest diverging -> equality refusal. This
+#         is the field the BOM/CRLF normalisation exists to make satisfiable
+#         at all: Pas2JS writes through the host's text layer (MEASURED:
+#         UTF-8 BOM + CRLF on Windows, LF on POSIX), so a regression in that
+#         step lands here rather than anywhere legible
+#   (c88) shared_native_source_digest diverging -> equality refusal (the two
+#         UIs stopped being one generated native application)
+#   (c89) react_generated_inventory_digest diverging -> equality refusal.
+#         THE regression this shard could plausibly hide: it changes the
+#         pack, the registry and the CLI the React project is created by
+#   (c90) react_regression_result=FAIL -> mustPass refusal
+#   (c91) native_parity=FAIL -> mustPass refusal
+#   (c92) pas2js_doctor_result=FAIL -> mustPass refusal
+#   (c93) pas2js_proof_corpus=FAIL -> mustPass refusal
+#   (c94) pas2js_rpc_result=41 on EVERY target -> ABSOLUTE PIN refusal
+#   (c95) pas2js_listener_count=1 on EVERY target -> ABSOLUTE PIN refusal
+#   (c96) pas2js_app_raw_binding=true on EVERY target -> ABSOLUTE PIN refusal
+#   (c97) pas2js_sdk_binding_owner=false on EVERY target -> the OTHER
+#         direction of the same rule: not "the application emitted one" but
+#         "the one occurrence left the frozen SDK's module"
+#   (c98) pas2js_compiler_version=3.0.2 on EVERY target -> ABSOLUTE PIN
+#   (c99) pas2js_compiler_arch=x86_64 on macos-arm64 -> TRANSLATED-COMPILER
+#         refusal (upstream ships no aarch64 Pas2JS, so an x86_64 one there
+#         means Rosetta, which the no-translation invariant refuses)
+#   (c100) pas2js_report_fields short one member -> BAD-REPORT-SHAPE refusal
+#   (c101) an EMPTY pas2js_generated_inventory_digest on EVERY target ->
+#         BAD-DIGEST refusal (the c52/c60 hole, aimed at this shard's own
+#         load-bearing field)
+#   (c102) pas2js_build_out_of_tree=FAIL -> mustPass refusal
+#   (c103) react_pas2js_parity=FAIL -> mustPass refusal
+#   (c104) pas2js_create_refusals drifted from 12 -> REFUSALS refusal
+#   (c105) pas2js_sdk_from_sdk_root=FAIL -> mustPass refusal (the frontend
+#         compiled against this repository's checkout rather than against
+#         the staged SDK root)
+#   (c8-c105 additionally assert the refusal came through the EXPECTED branch
 #    where one is named)
 #   (e) a count-preserving directive swap in an allowlisted file
 #                                          -> divergence sweep refuses via the
@@ -1075,19 +1112,23 @@ $e.create_corpus = 'FAIL'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap10b1-create-corpus' 'create_corpus'
 
-# --- (c71) CAP-10B1: Pas2JS falsely advertised ----------------------------
+# --- (c71) CAP-10B2: a third frontend falsely advertised -------------------
 # an ABSOLUTE pin, not merely an agreement: four targets that all grew a
-# pas2js claim would agree perfectly and be wrong together, and a CLI that
+# `svelte` claim would agree perfectly and be wrong together, and a CLI that
 # advertises a template nobody shipped is precisely what CAP-10A refused to
-# do with `create` itself
+# do with `create` itself.
+#
+# CAP-10B2 REDIRECTED this leg rather than deleting it. It used to prove
+# that a falsely advertised `pas2js` was refused; that template shipped, so
+# the same rule is now aimed at the next kind nobody has shipped.
 Reset-Fixture
 foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
     $f = Join-Path $fx "ev/$t/evidence.json"
     $e = Get-Content $f -Raw | ConvertFrom-Json
-    $e.advertised_ui = 'pas2js'
+    $e.supported_uis = 'pas2js,react,svelte'
     $e | ConvertTo-Json -Depth 4 | Set-Content $f
 }
-Invoke-AggExpectFail 'cap10b1-pas2js-advertised' 'ABSOLUTE PIN VIOLATED'
+Invoke-AggExpectFail 'cap10b2-extra-ui-advertised' 'ABSOLUTE PIN VIOLATED'
 
 # --- (c72) CAP-10B1: the generated project diverged between targets -------
 # the whole claim of this shard in one field: `pweb create` is a function of
@@ -1210,6 +1251,217 @@ $e = Get-Content $f -Raw | ConvertFrom-Json
 $e.runtime_from_sdk_root = 'FAIL'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap10b1-runtime-provenance' 'runtime_from_sdk_root'
+
+# =========================== CAP-10B2 (c85-c101) ===========================
+#
+# Every refusal branch this shard adds, proven red on fixtures before the
+# real aggregation is trusted. The pattern is CAP-10B1's: a verdict rewritten
+# to FAIL must reach the mustPass branch by name, a digest perturbed on ONE
+# target must reach the equality branch by name, and a value drifted on EVERY
+# target must reach the absolute-pin branch - because four targets that
+# agree can still be wrong together.
+
+# --- (c85) the Pas2JS create verdict itself -------------------------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.pas2js_create_corpus = 'SKIP'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b2-create-corpus' 'pas2js_create_corpus'
+
+# --- (c86) the generated Pas2JS project diverged between targets ----------
+# the whole claim of this shard in one field: `pweb create --ui pas2js` is a
+# function of its inputs, and four targets must produce the same bytes
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.pas2js_generated_inventory_digest =
+    'deadbeef' + "$($e.pas2js_generated_inventory_digest)".Substring(8)
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b2-generated-divergence' 'pas2js_generated_inventory_digest'
+
+# --- (c87) the compiled static output diverged ----------------------------
+# this is the field the BOM/CRLF normalisation exists to make satisfiable,
+# so a regression in that step lands here rather than anywhere legible
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.pas2js_static_inventory_digest =
+    'deadbeef' + "$($e.pas2js_static_inventory_digest)".Substring(8)
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b2-static-divergence' 'pas2js_static_inventory_digest'
+
+# --- (c88) the two UIs stopped sharing one native application -------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.shared_native_source_digest =
+    'deadbeef' + "$($e.shared_native_source_digest)".Substring(8)
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b2-native-divergence' 'shared_native_source_digest'
+
+# --- (c89) REACT DRIFTED while the Pas2JS fields stayed green -------------
+# the one regression this shard could plausibly hide, given that it changes
+# the pack, the registry and the CLI the React project is created by
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.react_generated_inventory_digest =
+    'deadbeef' + "$($e.react_generated_inventory_digest)".Substring(8)
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b2-react-drift' 'react_generated_inventory_digest'
+
+# --- (c90) ...and the verdict that names it -------------------------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.react_regression_result = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b2-react-regression' 'react_regression_result'
+
+# --- (c91) the generated projects stopped agreeing about the native half --
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.native_parity = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b2-native-parity' 'native_parity'
+
+# --- (c92) the doctor rejected the Pas2JS scaffold ------------------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.pas2js_doctor_result = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b2-doctor' 'pas2js_doctor_result'
+
+# --- (c93) the build proof itself -----------------------------------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.pas2js_proof_corpus = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b2-proof-corpus' 'pas2js_proof_corpus'
+
+# --- (c94) the arithmetic, on EVERY target --------------------------------
+Reset-Fixture
+foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$t/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.pas2js_rpc_result = '41'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10b2-rpc-41' 'ABSOLUTE PIN VIOLATED'
+
+# --- (c95) a listening socket, on EVERY target ----------------------------
+Reset-Fixture
+foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$t/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.pas2js_listener_count = '1'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10b2-listener' 'ABSOLUTE PIN VIOLATED'
+
+# --- (c96) the application emitted its own raw binding --------------------
+Reset-Fixture
+foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$t/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.pas2js_app_raw_binding = 'true'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10b2-app-raw-binding' 'ABSOLUTE PIN VIOLATED'
+
+# --- (c97) the binding stopped being SDK-owned ----------------------------
+# the OTHER direction of the same rule: not "the application emitted one"
+# but "the one occurrence is no longer inside the frozen SDK's module"
+Reset-Fixture
+foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$t/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.pas2js_sdk_binding_owner = 'false'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10b2-binding-owner' 'ABSOLUTE PIN VIOLATED'
+
+# --- (c98) a different Pas2JS, in unison ----------------------------------
+# the pin is EXACT because the SDK is compiled by it: a different compiler
+# is a different product, not a newer one
+Reset-Fixture
+foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$t/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.pas2js_compiler_version = '3.0.2'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10b2-compiler-version' 'ABSOLUTE PIN VIOLATED'
+
+# --- (c99) macOS arm64 ran a TRANSLATED compiler --------------------------
+# upstream publishes no aarch64 Pas2JS, so an x86_64 one on the arm64 leg
+# means Rosetta - which the ratified no-translation invariant refuses
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.pas2js_compiler_arch = 'x86_64'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b2-rosetta' 'TRANSLATED-COMPILER'
+
+# --- (c100) the page reported a different shape ---------------------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.pas2js_report_fields = 'css,handshake,html,js,rpc,secure,value'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b2-report-shape' 'BAD-REPORT-SHAPE'
+
+# --- (c101) an EMPTY Pas2JS digest on EVERY target ------------------------
+# the c52/c60 hole, aimed at this shard's own load-bearing field: four empty
+# strings agree perfectly, so a gate that stopped emitting would look
+# exactly like one that passed everywhere
+Reset-Fixture
+foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$t/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.pas2js_generated_inventory_digest = ''
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10b2-empty-digest' 'BAD-DIGEST'
+
+# --- (c102) the build wrote into the project it was given ------------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.pas2js_build_out_of_tree = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b2-build-in-tree' 'pas2js_build_out_of_tree'
+
+# --- (c103) React and Pas2JS stopped agreeing at runtime -------------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.react_pas2js_parity = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b2-parity' 'react_pas2js_parity'
+
+# --- (c104) the refusal set shrank ----------------------------------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.pas2js_create_refusals = '11'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b2-refusal-count' 'REFUSALS'
+
+# --- (c105) the frontend compiled against the checkout, not the SDK root ---
+# the SDK-root dependency model for the Pas2JS half, in one field: the ONE
+# PWeb unit path the compiler is handed must be the staged SDK, and this
+# repository's own sdk/pas2js must not appear among the arguments at all
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.pas2js_sdk_from_sdk_root = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10b2-sdk-provenance' 'pas2js_sdk_from_sdk_root'
 
 # --- (d) divergence sweep must refuse an off-allowlist conditional -----------
 $fixturePas = 'src/zz_cap7f_selftest_fixture.pas'

@@ -10,15 +10,17 @@
 #   sdk/bin/pweb.exe                 the public CLI
 #   sdk/share/pweb/pweb-templates.zip     the public pack
 #   sdk/share/pweb/sdk/typescript/        the pinned TypeScript SDK
+#   sdk/share/pweb/sdk/pas2js/            the PWeb Pas2JS SDK
 #   sdk/share/pweb/src/                   the PWeb Pascal source root
 #
 # TWO PACKS, FROM ONE TRUSTED SOURCE, AND THE DIFFERENCE IS THE POINT.
 # test/cap10b0 builds `--include all`, which carries the private neutral
 # fixture the engine suite needs. This script builds `--include public`,
-# which carries the react template and nothing else - so the registry
-# compiled into the SHIPPED executable does not describe the fixture at all
-# and no public command can reach it even by exact name. The RequirePublic
-# refusal is the second lock; this is the first.
+# which carries the two PUBLIC templates - react and, since CAP-10B2,
+# pas2js - and nothing else, so the registry compiled into the SHIPPED
+# executable does not describe the fixture at all and no public command can
+# reach it even by exact name. The RequirePublic refusal is the second lock;
+# this is the first.
 #
 # WHY THE SDK ROOT IS STAGED RATHER THAN POINTED AT THE CHECKOUT. The
 # generated project must be provably buildable from an INSTALLATION, not
@@ -108,12 +110,29 @@ if ($LASTEXITCODE -ne 0) { throw 'staging the TypeScript SDK FAILED' }
 Copy-Item -Recurse -Force src `
     (Join-Path $repoRoot 'build/cap10b1/sdk/share/pweb/src')
 
+# the PWeb Pas2JS SDK, staged for the same reason the TypeScript one is
+# (CAP-10B2). A generated Pas2JS project names NO unit path for it: the
+# -Fu that finds pweb.native is supplied at build time and points HERE, so
+# "the frontend compiles" cannot quietly mean "it compiles beside its own
+# framework's git checkout".
+# The unit and its README, NAMED - not the directory, which also carries the
+# SDK's own test program. An installation ships what a project compiles
+# against, and a staging rule that copies whatever happens to be there is a
+# staging rule that will one day ship a test.
+New-Item -ItemType Directory -Force `
+    build/cap10b1/sdk/share/pweb/sdk/pas2js | Out-Null
+foreach ($f in 'pweb.native.pas', 'README.md') {
+    Copy-Item -Force (Join-Path $repoRoot "sdk/pas2js/$f") `
+        (Join-Path $repoRoot "build/cap10b1/sdk/share/pweb/sdk/pas2js/$f")
+}
+
 foreach ($artifact in 'build/cap10b1/gen/pweb.templates.registry.inc',
                       'build/cap10b1/sdk/bin/pweb.exe',
                       'build/cap10b1/bin/pwebbundle.exe',
                       'build/cap10b1/sdk/share/pweb/pweb-templates.zip',
                       'build/cap10b1/sdk/share/pweb/sdk/typescript/package.json',
                       'build/cap10b1/sdk/share/pweb/sdk/typescript/dist/src/index.js',
+                      'build/cap10b1/sdk/share/pweb/sdk/pas2js/pweb.native.pas',
                       'build/cap10b1/sdk/share/pweb/src/webview/pweb.webview.host.pas') {
     if (-not (Test-Path $artifact)) { throw "expected $artifact" }
 }

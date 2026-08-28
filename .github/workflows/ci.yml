@@ -1908,6 +1908,66 @@ jobs:
             build/cap10b1-gates.log
             build/cap10b1-proof.log
 
+      # ----------------------------------------------------------------
+      # CAP-10B2: the public Pas2JS scaffold, and the close of CAP-10B.
+      #
+      # The same three layers as CAP-10B1's, plus one build: a SECOND `pweb`
+      # compiled against a react-only pack, which exists so that "a pack that
+      # does not describe an advertised template is an ENVIRONMENT failure"
+      # is a refusal somebody watched fire rather than a mapping somebody
+      # reasoned about. Nothing shipped comes from that executable.
+      #
+      # The build proof compiles the generated frontend with the pinned
+      # Pas2JS 3.0.1 fetched by the CAP-5 step above, against the SDK root
+      # CAP-10B1's build staged, into an EXTERNAL stage - so the project it
+      # builds is never written to at all - then packs app.pwb with the
+      # frozen bundler and drives the result to 42 in a real WebView.
+      # ----------------------------------------------------------------
+      - name: CAP-10B2 build the react-only CLI that proves template_unknown
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap10b2/build_cap10b2.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B2 build FAILED' }
+
+      - name: CAP-10B2 contract cross-checks (two UIs, one native app, no npm)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10b2/check_cap10b2_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B2 contract cross-checks FAILED' }
+
+      - name: CAP-10B2 pas2js create gates + evidence
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap10b2/run_cap10b2_gates.ps1 2>&1 |
+            Tee-Object -FilePath build/cap10b2-gates.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B2 create gates FAILED' }
+
+      - name: CAP-10B2 private build proof and real GUI run
+        shell: pwsh
+        timeout-minutes: 30
+        run: |
+          pwsh -NoProfile -File test/cap10b2/prove_cap10b2.ps1 2>&1 |
+            Tee-Object -FilePath build/cap10b2-proof.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B2 build proof FAILED' }
+
+      - name: CAP-10B2 upload the pas2js corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10b2-pas2js-windows
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10b2/cli-windows-x86_64.json
+            build/cap10b2/proof-windows-x86_64.json
+            build/cap10b2/contracts.json
+            build/cap10b2/generated-inventory.txt
+            build/cap10b2/proof.log
+            build/cap10b2-gates.log
+            build/cap10b2-proof.log
+
       - name: CAP-7F emit the Windows evidence artifact
         shell: pwsh
         timeout-minutes: 10
@@ -2564,6 +2624,46 @@ jobs:
             build/cap10b1/generated-inventory.txt
             build/cap10b1/gen/pweb.templates.registry.inc
             build/cap10b1/proof.log
+
+      # CAP-10B2: the public Pas2JS scaffold (see the windows job for the
+      # layering). The build proof opens a REAL WebKitGTK window under Xvfb
+      # and drives the generated Pas2JS application to 42.
+      - name: CAP-10B2 build the react-only CLI that proves template_unknown
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap10b2/build_cap10b2.sh
+
+      - name: CAP-10B2 contract cross-checks (two UIs, one native app, no npm)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10b2/check_cap10b2_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B2 contract cross-checks FAILED' }
+
+      - name: CAP-10B2 pas2js create gates + evidence
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap10b2/run_cap10b2_gates.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B2 create gates FAILED' }
+
+      - name: CAP-10B2 private build proof and real GUI run
+        shell: bash
+        timeout-minutes: 30
+        run: xvfb-run -a test/cap10b2/prove_cap10b2.sh
+
+      - name: CAP-10B2 upload the pas2js corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10b2-pas2js-linux
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10b2/cli-linux-x86_64.json
+            build/cap10b2/proof-linux-x86_64.json
+            build/cap10b2/contracts.json
+            build/cap10b2/generated-inventory.txt
+            build/cap10b2/proof.log
 
       - name: CAP-7F emit the Linux evidence artifact
         shell: bash
@@ -3256,6 +3356,47 @@ jobs:
             build/cap10b1/gen/pweb.templates.registry.inc
             build/cap10b1/proof.log
 
+      # CAP-10B2: the public Pas2JS scaffold (see the windows job for the
+      # layering). The build proof opens a REAL WKWebView and drives the
+      # generated Pas2JS application to 42, from a .app bundle because
+      # WKWebView keys persistent state by bundle identifier.
+      - name: CAP-10B2 build the react-only CLI that proves template_unknown
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap10b2/build_cap10b2.sh
+
+      - name: CAP-10B2 contract cross-checks (two UIs, one native app, no npm)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10b2/check_cap10b2_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B2 contract cross-checks FAILED' }
+
+      - name: CAP-10B2 pas2js create gates + evidence
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap10b2/run_cap10b2_gates.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B2 create gates FAILED' }
+
+      - name: CAP-10B2 private build proof and real GUI run
+        shell: bash
+        timeout-minutes: 30
+        run: test/cap10b2/prove_cap10b2.sh
+
+      - name: CAP-10B2 upload the pas2js corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10b2-pas2js-macos-x64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10b2/cli-macos-x86_64.json
+            build/cap10b2/proof-macos-x86_64.json
+            build/cap10b2/contracts.json
+            build/cap10b2/generated-inventory.txt
+            build/cap10b2/proof.log
+
       - name: CAP-7F emit the macOS x64 evidence artifact
         shell: bash
         timeout-minutes: 10
@@ -3873,6 +4014,48 @@ jobs:
             build/cap10b1/generated-inventory.txt
             build/cap10b1/gen/pweb.templates.registry.inc
             build/cap10b1/proof.log
+
+      # CAP-10B2: the public Pas2JS scaffold (see the windows job for the
+      # layering). THE NO-ROSETTA LEG: upstream publishes no aarch64 Pas2JS,
+      # so this job compiles the pinned logical version natively from the
+      # pinned FPC revision, and prove_cap10b2.sh asserts `-iSP` is aarch64
+      # before it compiles anything with it.
+      - name: CAP-10B2 build the react-only CLI that proves template_unknown
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap10b2/build_cap10b2.sh
+
+      - name: CAP-10B2 contract cross-checks (two UIs, one native app, no npm)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10b2/check_cap10b2_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B2 contract cross-checks FAILED' }
+
+      - name: CAP-10B2 pas2js create gates + evidence
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap10b2/run_cap10b2_gates.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10B2 create gates FAILED' }
+
+      - name: CAP-10B2 private build proof and real GUI run
+        shell: bash
+        timeout-minutes: 30
+        run: test/cap10b2/prove_cap10b2.sh
+
+      - name: CAP-10B2 upload the pas2js corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10b2-pas2js-macos-arm64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10b2/cli-macos-arm64.json
+            build/cap10b2/proof-macos-arm64.json
+            build/cap10b2/contracts.json
+            build/cap10b2/generated-inventory.txt
+            build/cap10b2/proof.log
 
       - name: CAP-7F emit the macOS arm64 evidence artifact
         shell: bash

@@ -9,7 +9,10 @@
 # THE RELOCATION IS THE PROOF. The project is copied out of the tree that
 # created it and its bytes are digested BEFORE and AFTER everything below.
 # THE SDK ROOT IS THE OTHER PROOF: every PWeb unit path names the STAGED
-# build/cap10b1/sdk/share/pweb/src, never this repository's src/.
+# build/cap10b1/sdk/share/pweb/src, never this repository's src/. CAP-10B2
+# corrected the platform unit path here, which had been repo-relative while
+# the Windows twin already named the staged tree - the claim was true of the
+# other five paths and not of that one.
 #
 # Two things differ per platform and both are at the seam, not in the claim:
 #   - the release layout. Linux ships exe + app.pwb + libwebview.so.0.12 in
@@ -77,14 +80,14 @@ Linux)
     dylib='libwebview.so.0.12'
     [ -f "${dist}/${dylib}" ] ||
         die "staged webview library missing: ${dist}/${dylib}"
-    platform_units='-Fusrc/platform/linux'
     static_dir="${repo_root}/deps/mormot2/static/x86_64-linux"
     compile_generated() {
         # -k-lgcc_s: the DSO is findable but was never NAMED, which
         # --as-needed will not do on the caller's behalf (the CAP-9C2
         # measurement, reused verbatim)
         fpc -MObjFPC -Sh -B -FU"${unit_dir}" -FE"${bin_dir}" \
-            -Fu"${project}/src" "${sdk_units[@]}" -Fusrc/platform/linux \
+            -Fu"${project}/src" "${sdk_units[@]}" \
+            -Fu"${sdk_src}/platform/linux" \
             "${mormot_units[@]}" "-Fl${static_dir}" "-Fl${dist}" \
             -k'-rpath=$ORIGIN' -k-lgcc_s "${project}/src/demo.lpr"
     }
@@ -116,7 +119,8 @@ Darwin)
     static_dir="${PWEB_MACOS_STATIC_DIR}"
     compile_generated() {
         fpc -MObjFPC -Sh -B -FU"${unit_dir}" -FE"${bin_dir}" \
-            -Fu"${project}/src" "${sdk_units[@]}" -Fusrc/platform/macos \
+            -Fu"${project}/src" "${sdk_units[@]}" \
+            -Fu"${sdk_src}/platform/macos" \
             "${mormot_units[@]}" "${PWEB_MACOS_FPC_FLAGS[@]}" \
             "${PWEB_MACOS_FPC_LINK_BRIDGE[@]}" "${project}/src/demo.lpr"
     }

@@ -84,7 +84,7 @@ $required = @(
     'template_source_gate', 'template_offline', 'template_refusals',
     'template_file_count', 'create_present', 'network_calls',
     'package_manager_calls', 'template_modes_applicable',
-    'create_corpus', 'advertised_ui', 'create_help_digest',
+    'create_corpus', 'create_help_digest',
     'create_help_bytes', 'create_stdout_digest', 'create_refusals',
     'create_no_partial',
     'create_deterministic', 'public_pack_digest', 'public_pack_bytes',
@@ -100,6 +100,32 @@ $required = @(
     'secure_origin',
     'rpc_result', 'error_mapping', 'listener_count', 'raw_primitive_used',
     'loose_assets_used',
+    # CAP-10B2: the second frontend. `supported_uis` REPLACES CAP-10B1's
+    # `advertised_ui` - one kind was a value, two are a set - and the rest
+    # splits the same way the CAP-10B1 pair does: what create produced, and
+    # what building and running it proved.
+    'supported_uis',
+    'pas2js_create_corpus', 'pas2js_create_refusals', 'pas2js_no_partial',
+    'pas2js_create_deterministic', 'pas2js_create_stdout_digest',
+    'pas2js_generated_inventory_digest', 'pas2js_generated_inventory_exact',
+    'pas2js_generated_file_count', 'pas2js_generated_total_bytes',
+    'pas2js_pweb_json_digest', 'pas2js_frontend_source_digest',
+    'pas2js_generated_no_host_path', 'react_generated_inventory_digest',
+    'react_regression_result', 'shared_native_source_digest',
+    'native_parity', 'pas2js_doctor_result', 'pas2js_doctor_row',
+    'pas2js_doctor_version',
+    'pas2js_proof_corpus', 'pas2js_compiler_version', 'pas2js_compiler_arch',
+    'pas2js_compiler_host', 'pas2js_compiler_sha256', 'pas2js_frontend_build',
+    'pas2js_native_build', 'pas2js_sdk_from_sdk_root', 'pas2js_output_sweep',
+    'pas2js_output_normalised',
+    'pas2js_static_inventory_digest', 'pas2js_app_pwb_semantic_digest',
+    'pas2js_app_pwb_bytes', 'pas2js_secure_origin', 'pas2js_rpc_result',
+    'pas2js_error_mapping', 'pas2js_listener_count', 'pas2js_loose_assets',
+    'pas2js_app_raw_binding', 'pas2js_sdk_binding_owner',
+    'pas2js_clean_shutdown', 'pas2js_report_received', 'pas2js_report_fields',
+    'pas2js_tree_digest', 'pas2js_tree_unchanged', 'pas2js_build_out_of_tree',
+    'react_pas2js_parity', 'react_regression_runtime', 'native_binary_equal',
+    'pas2js_run_elapsed_ms',
     'release_layout', 'no_listener', 'app_pwb_react_sha256',
     'logical_inventory_sha256_react', 'github_sha', 'github_run_id', 'waivers'
 )
@@ -111,15 +137,30 @@ $absolutePins = @{
     origin          = 'pweb://app'
     secure          = 'true'
     rpc_add_20_22   = '42'
-    # CAP-10B1: the five facts that four targets could agree on and still be
-    # wrong about. `react` is the only frontend this build has a template
-    # for; the scaffold's own arithmetic is 42; and a generated application
-    # opens no listener, uses no raw primitive and ships no loose asset.
-    advertised_ui      = 'react'
+    # CAP-10B1: the four facts that four targets could agree on and still be
+    # wrong about. The scaffold's own arithmetic is 42, and a generated
+    # application opens no listener, uses no raw primitive and ships no
+    # loose asset.
     rpc_result         = '42'
     listener_count     = '0'
     raw_primitive_used = 'false'
     loose_assets_used  = 'false'
+    # CAP-10B2: the same discipline for the second frontend, plus the two
+    # facts this shard exists to make true. `supported_uis` is the WHOLE
+    # advertised set in one canonical bytewise order, so a build that grew a
+    # third kind or lost one is refused here rather than merely disagreeing
+    # with its neighbours; and `pas2js_compiler_version` is pinned because
+    # the SDK is compiled by it, which makes a different compiler a
+    # different product rather than a newer one.
+    supported_uis            = 'pas2js,react'
+    pas2js_compiler_version  = '3.0.1'
+    pas2js_rpc_result        = '42'
+    pas2js_listener_count    = '0'
+    pas2js_app_raw_binding   = 'false'
+    pas2js_loose_assets      = 'false'
+    pas2js_sdk_binding_owner = 'true'
+    pas2js_report_received   = 'true'
+    pas2js_clean_shutdown    = 'true'
 }
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
 $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
@@ -153,7 +194,22 @@ $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
     'public_pack_deterministic',
     'proof_corpus', 'generated_tree_unchanged', 'frontend_typecheck',
     'frontend_build', 'frontend_no_dev_code', 'frontend_transport_clean',
-    'runtime_from_sdk_root', 'native_build', 'secure_origin', 'error_mapping')
+    'runtime_from_sdk_root', 'native_build', 'secure_origin', 'error_mapping',
+    # CAP-10B2: the two verdicts and the sub-claims a green pair is made of,
+    # named individually for the reason the CAP-10B1 set is - 'React drifted
+    # while only the Pas2JS gates stayed green', 'the two projects stopped
+    # sharing one native application', 'the doctor stopped being UI-aware',
+    # 'the compiled output grew a second binding' and 'the build wrote into
+    # the project' are different defects with different fixes, and an
+    # aggregate that only said "CAP-10B2 FAILED" would send every one of
+    # them to the same wrong place.
+    'pas2js_create_corpus', 'pas2js_create_deterministic', 'pas2js_no_partial',
+    'pas2js_generated_inventory_exact', 'pas2js_generated_no_host_path',
+    'pas2js_doctor_result', 'react_regression_result', 'native_parity',
+    'pas2js_proof_corpus', 'pas2js_tree_unchanged', 'pas2js_build_out_of_tree',
+    'pas2js_frontend_build', 'pas2js_native_build', 'pas2js_output_sweep',
+    'pas2js_secure_origin', 'pas2js_error_mapping', 'pas2js_sdk_from_sdk_root',
+    'react_pas2js_parity', 'react_regression_runtime')
 # fields that must agree, value-for-value, across all four targets
 # (capability_policy_digest is the CAP-8A structured policy-decision corpus and
 # navigation_policy_digest the CAP-8B one: four targets, one byte-identical
@@ -243,7 +299,7 @@ $equalityFields = @(
     # text and absolute-pinned above. create_help_bytes travels beside the
     # digest so the next reader can tell a length change from a
     # substitution without a hosted run.
-    'advertised_ui', 'create_stdout_digest',
+    'create_stdout_digest',
     'create_refusals', 'public_semantic_digest', 'public_file_count',
     'generated_inventory_digest', 'generated_pweb_json_digest',
     'generated_package_lock_digest', 'generated_file_count',
@@ -252,7 +308,43 @@ $equalityFields = @(
     # no raw primitive and no loose asset. These are the CAP-10B1
     # acceptance criteria stated as compared fields rather than as prose.
     'rpc_result', 'listener_count', 'raw_primitive_used',
-    'loose_assets_used'
+    'loose_assets_used',
+    # CAP-10B2: what `pweb create --ui pas2js` produces and what building it
+    # yields, both pure functions of NAME, bundleId, the template pack and
+    # the pinned compiler. The generated tree, the descriptor, the frontend
+    # sources and the STATIC OUTPUT are compared byte for byte across four
+    # targets; so is the React tree, which must still be the CAP-10B1
+    # closure corpus.
+    #
+    # `pas2js_static_inventory_digest` is a compared field only because the
+    # build NORMALISES the compiler's output first: Pas2JS writes through
+    # the host's text layer (MEASURED: UTF-8 BOM + CRLF on Windows, LF on
+    # POSIX), and the harness strips the BOM and converts CRLF to LF before
+    # anything is packed. Without that step this field would be
+    # unsatisfiable by construction, exactly as CAP-10B0's
+    # template_pack_digest turned out to be.
+    #
+    # Deliberately ABSENT, and each for a reason rather than an oversight:
+    # `pas2js_app_pwb_bytes` (the container's bytes are a toolchain and
+    # OS-family property - the CAP-6/CAP-7L and ZIP_OS measurements),
+    # `pas2js_compiler_arch` / `_host` / `_sha256` (the pinned compiler is a
+    # different artifact per platform BY DESIGN, and on macOS arm64 it is
+    # built from source; prove_cap10b2 asserts the architecture where it can
+    # mean something), `pas2js_doctor_row` (a per-host observation, like
+    # every other doctor observation), `native_binary_equal` and
+    # `pas2js_run_elapsed_ms` (measurements, reported not required), and
+    # `pas2js_output_normalised` (which records what the HOST's compiler
+    # emitted, and is expected to differ - that is the whole finding).
+    'supported_uis', 'pas2js_create_stdout_digest', 'pas2js_create_refusals',
+    'pas2js_generated_inventory_digest', 'pas2js_generated_file_count',
+    'pas2js_generated_total_bytes', 'pas2js_pweb_json_digest',
+    'pas2js_frontend_source_digest', 'react_generated_inventory_digest',
+    'shared_native_source_digest', 'pas2js_static_inventory_digest',
+    'pas2js_app_pwb_semantic_digest', 'pas2js_tree_digest',
+    'pas2js_compiler_version', 'pas2js_doctor_version',
+    'pas2js_report_fields', 'pas2js_rpc_result', 'pas2js_listener_count',
+    'pas2js_app_raw_binding', 'pas2js_loose_assets',
+    'pas2js_sdk_binding_owner'
 )
 # the CAP-9C2 semantic gate names, carried in ONE place across the two
 # emitters and this aggregator (see test/cap7f/emit_evidence.ps1)
@@ -585,6 +677,77 @@ foreach ($t in $evidence.Keys) {
             }
         }
     }
+    # CAP-10B2: the same shape again, for the same reason, over the digests
+    # this shard's whole claim rests on. `react_generated_inventory_digest`
+    # is in the list deliberately: the one drift this shard could hide is
+    # React changing while every new Pas2JS field stayed green.
+    if ("$($e.pas2js_create_corpus)" -ceq 'PASS') {
+        foreach ($d in 'pas2js_generated_inventory_digest',
+                       'pas2js_pweb_json_digest',
+                       'pas2js_frontend_source_digest',
+                       'shared_native_source_digest',
+                       'react_generated_inventory_digest') {
+            if ("$($e.$d)" -notmatch '^[0-9a-f]{64}$') {
+                $failures.Add("CAP-10B2 BAD-DIGEST: target=$t $d='$($e.$d)'")
+            }
+        }
+        $pf = 0
+        if (-not [int]::TryParse("$($e.pas2js_generated_file_count)", [ref]$pf)) {
+            $failures.Add("CAP-10B2 NON-NUMERIC: target=$t pas2js_generated_file_count='$($e.pas2js_generated_file_count)'")
+        } elseif ($pf -le 0) {
+            $failures.Add("CAP-10B2 NO-FILES: target=$t pas2js_generated_file_count=$pf -- a project with no file is not a project")
+        }
+        $pr = 0
+        if (-not [int]::TryParse("$($e.pas2js_create_refusals)", [ref]$pr)) {
+            $failures.Add("CAP-10B2 NON-NUMERIC: target=$t pas2js_create_refusals='$($e.pas2js_create_refusals)'")
+        } elseif ($pr -ne 12) {
+            $failures.Add("CAP-10B2 REFUSALS: target=$t pas2js_create_refusals=$pr, expected 12 -- a refusal nobody watched fire is a comment")
+        }
+        # THE UI VOCABULARY IS EXACT, and it is checked as a SET rather than
+        # as a substring: 'react' alone, 'pas2js' alone and a third kind
+        # that arrived unnoticed are three different defects and all three
+        # are refused here. The absolute pin above catches four targets that
+        # drifted together; this catches the shape.
+        if ("$($e.supported_uis)" -cnotmatch '^pas2js,react$') {
+            $failures.Add("CAP-10B2 BAD-UI-SET: target=$t supported_uis='$($e.supported_uis)' -- the advertised set is exactly react and pas2js, in bytewise order")
+        }
+    }
+    if ("$($e.pas2js_proof_corpus)" -ceq 'PASS') {
+        foreach ($d in 'pas2js_static_inventory_digest',
+                       'pas2js_app_pwb_semantic_digest',
+                       'pas2js_tree_digest') {
+            if ("$($e.$d)" -notmatch '^[0-9a-f]{64}$') {
+                $failures.Add("CAP-10B2 BAD-DIGEST: target=$t $d='$($e.$d)'")
+            }
+        }
+        # the compiler that produced it, identified per target. The VERSION
+        # is absolutely pinned above; this refuses an unidentified artifact,
+        # which is how a build that silently fell back to whatever was on
+        # PATH would look.
+        if ("$($e.pas2js_compiler_sha256)" -notmatch '^[0-9a-f]{64}$') {
+            $failures.Add("CAP-10B2 BAD-COMPILER-SHA: target=$t pas2js_compiler_sha256='$($e.pas2js_compiler_sha256)'")
+        }
+        # NO ROSETTA, asserted where it can mean something: the macOS arm64
+        # leg must have used a compiler built for aarch64. Upstream ships no
+        # such binary, so this is the one field that proves the native
+        # source build actually happened rather than a translated x86_64 one.
+        if (($t -eq 'macos-arm64') -and
+            ("$($e.pas2js_compiler_arch)" -cne 'aarch64')) {
+            $failures.Add("CAP-10B2 TRANSLATED-COMPILER: target=$t pas2js_compiler_arch='$($e.pas2js_compiler_arch)', expected aarch64 -- Rosetta is refused by the ratified no-translation invariant")
+        }
+        $pl = 0
+        if (-not [int]::TryParse("$($e.pas2js_listener_count)", [ref]$pl)) {
+            $failures.Add("CAP-10B2 NON-NUMERIC: target=$t pas2js_listener_count='$($e.pas2js_listener_count)'")
+        }
+        # the page's own report SHAPE, which is the React starter's. Both
+        # frontends answer the same eight questions under the same names,
+        # which is what makes react_pas2js_parity a comparison rather than
+        # two separate readings.
+        if ("$($e.pas2js_report_fields)" -cne
+            'css,errmap,handshake,html,js,rpc,secure,value') {
+            $failures.Add("CAP-10B2 BAD-REPORT-SHAPE: target=$t pas2js_report_fields='$($e.pas2js_report_fields)'")
+        }
+    }
 }
 
 # --- cross-target equality ---------------------------------------------------
@@ -718,13 +881,23 @@ $matrix = [ordered]@{
         template_digest                = $first.template_digest
         template_semantic_digest       = $first.template_semantic_digest
         template_pack_schema           = $first.template_pack_schema
-        advertised_ui                  = $first.advertised_ui
+        supported_uis                  = $first.supported_uis
         public_semantic_digest         = $first.public_semantic_digest
         generated_inventory_digest     = $first.generated_inventory_digest
         generated_pweb_json_digest     = $first.generated_pweb_json_digest
         generated_package_lock_digest  = $first.generated_package_lock_digest
         generated_tree_digest          = $first.generated_tree_digest
         rpc_result                     = $first.rpc_result
+        pas2js_generated_inventory_digest = $first.pas2js_generated_inventory_digest
+        pas2js_pweb_json_digest        = $first.pas2js_pweb_json_digest
+        pas2js_frontend_source_digest  = $first.pas2js_frontend_source_digest
+        pas2js_static_inventory_digest = $first.pas2js_static_inventory_digest
+        pas2js_app_pwb_semantic_digest = $first.pas2js_app_pwb_semantic_digest
+        shared_native_source_digest    = $first.shared_native_source_digest
+        react_generated_inventory_digest = $first.react_generated_inventory_digest
+        pas2js_compiler_version        = $first.pas2js_compiler_version
+        pas2js_report_fields           = $first.pas2js_report_fields
+        pas2js_rpc_result              = $first.pas2js_rpc_result
         logical_inventory_sha256_react = $first.logical_inventory_sha256_react
         logical_inventory_sha256_pas2js = $evidence['linux-x86_64'].logical_inventory_sha256_pas2js
     }
@@ -772,6 +945,24 @@ foreach ($t in $evidence.Keys) {
         native_build       = $e.native_build
         secure_origin      = $e.secure_origin
         error_mapping      = $e.error_mapping
+        # CAP-10B2, per target: the verdicts, and the observations that are
+        # facts about THIS runner rather than about the scaffold
+        pas2js_create_corpus = $e.pas2js_create_corpus
+        pas2js_proof_corpus  = $e.pas2js_proof_corpus
+        pas2js_doctor_result = $e.pas2js_doctor_result
+        pas2js_doctor_row    = $e.pas2js_doctor_row
+        react_regression_result = $e.react_regression_result
+        react_pas2js_parity  = $e.react_pas2js_parity
+        native_parity        = $e.native_parity
+        pas2js_frontend_build = $e.pas2js_frontend_build
+        pas2js_native_build  = $e.pas2js_native_build
+        pas2js_output_sweep  = $e.pas2js_output_sweep
+        pas2js_compiler_host = $e.pas2js_compiler_host
+        pas2js_compiler_sha256 = $e.pas2js_compiler_sha256
+        pas2js_output_normalised = $e.pas2js_output_normalised
+        pas2js_app_pwb_bytes = $e.pas2js_app_pwb_bytes
+        pas2js_run_elapsed_ms = $e.pas2js_run_elapsed_ms
+        native_binary_equal  = $e.native_binary_equal
         # the PUBLIC pack's bytes, per target and for the same ZIP_OS reason
         # the CAP-10B0 pack's are: identical within an OS family, one byte
         # per entry apart between them
@@ -832,12 +1023,20 @@ foreach ($t in $evidence.Keys) {
     $summary += "  - $t template_pack_digest ``$($evidence[$t].template_pack_digest)`` ($($evidence[$t].template_pack_bytes) bytes, rebuilt-and-compared on target: $($evidence[$t].template_deterministic))"
 }
 $summary += "- CAP-10B0 the scaffold engine is now LINKED into the CLI on every target: create_present=$($first.create_present), and creation still runs nothing (network_calls=$($first.network_calls), package_manager_calls=$($first.package_manager_calls))"
-$summary += "- CAP-10B1 ``pweb create NAME --ui $($first.advertised_ui) --bundle-id <id>`` produces a byte-identical project on all four targets: generated_inventory_digest ``$($first.generated_inventory_digest)``, $($first.generated_file_count) files, $($first.generated_total_bytes) bytes, pweb.json ``$($first.generated_pweb_json_digest)``, package-lock ``$($first.generated_package_lock_digest)`` ($($first.create_refusals) refusals proven, no partial destination: $($first.create_no_partial))"
+$summary += "- CAP-10B1 ``pweb create NAME --ui react --bundle-id <id>`` produces a byte-identical project on all four targets: generated_inventory_digest ``$($first.generated_inventory_digest)``, $($first.generated_file_count) files, $($first.generated_total_bytes) bytes, pweb.json ``$($first.generated_pweb_json_digest)``, package-lock ``$($first.generated_package_lock_digest)`` ($($first.create_refusals) refusals proven, no partial destination: $($first.create_no_partial))"
 $summary += "- CAP-10B1 public_semantic_digest ``$($first.public_semantic_digest)`` equal on all four targets ($($first.public_file_count) template files; the pack's BYTES are per-OS-family and reported below, not compared)"
 foreach ($t in $evidence.Keys) {
     $summary += "  - $t public_pack_digest ``$($evidence[$t].public_pack_digest)`` ($($evidence[$t].public_pack_bytes) bytes, rebuilt-and-compared on target: $($evidence[$t].public_pack_deterministic))"
 }
 $summary += "- CAP-10B1 the generated project builds and runs on every target: doctor=$($first.doctor_result), typecheck=$($first.frontend_typecheck), frontend=$($first.frontend_build), native=$($first.native_build), secure=$($first.secure_origin), CalculatorService.Add(20,22)=$($first.rpc_result), errmap=$($first.error_mapping), listeners=$($first.listener_count), raw_primitive=$($first.raw_primitive_used), loose_assets=$($first.loose_assets_used), and the build left the project unchanged ($($first.generated_tree_unchanged))"
+$summary += "- CAP-10B2 ``pweb create NAME --ui pas2js --bundle-id <id>`` produces a byte-identical project on all four targets: pas2js_generated_inventory_digest ``$($first.pas2js_generated_inventory_digest)``, $($first.pas2js_generated_file_count) files, $($first.pas2js_generated_total_bytes) bytes, pweb.json ``$($first.pas2js_pweb_json_digest)``, frontend sources ``$($first.pas2js_frontend_source_digest)`` ($($first.pas2js_create_refusals) refusals proven, no partial destination: $($first.pas2js_no_partial))"
+$summary += "- CAP-10B2 supported_uis ``$($first.supported_uis)`` on all four targets, and the React corpus is unchanged from its CAP-10B1 closure value ``$($first.react_generated_inventory_digest)`` ($($first.react_regression_result))"
+$summary += "- CAP-10B2 ONE generated native application: shared_native_source_digest ``$($first.shared_native_source_digest)`` equal across both UIs and all four targets (native_parity=$($first.native_parity))"
+$summary += "- CAP-10B2 the generated Pas2JS project builds and runs on every target with Pas2JS $($first.pas2js_compiler_version): doctor=$($first.pas2js_doctor_result), frontend=$($first.pas2js_frontend_build), native=$($first.pas2js_native_build), static output ``$($first.pas2js_static_inventory_digest)``, secure=$($first.pas2js_secure_origin), CalculatorService.Add(20,22)=$($first.pas2js_rpc_result), errmap=$($first.pas2js_error_mapping), listeners=$($first.pas2js_listener_count), app_raw_binding=$($first.pas2js_app_raw_binding), sdk_binding_owner=$($first.pas2js_sdk_binding_owner), loose_assets=$($first.pas2js_loose_assets), and the build never touched the project ($($first.pas2js_build_out_of_tree))"
+$summary += "- CAP-10B2 React/Pas2JS backend parity on every target: $($first.react_pas2js_parity) (same report shape ``$($first.pas2js_report_fields)``, same 42, no listener on either)"
+foreach ($t in $evidence.Keys) {
+    $summary += "  - $t pas2js compiler $($evidence[$t].pas2js_compiler_host) sha256 ``$($evidence[$t].pas2js_compiler_sha256)``, raw output $($evidence[$t].pas2js_output_normalised), app.pwb $($evidence[$t].pas2js_app_pwb_bytes) bytes, native binary equal to the react build: $($evidence[$t].native_binary_equal)"
+}
 $summary += "- react logical_inventory_sha256 ``$($first.logical_inventory_sha256_react)`` equal on all four targets"
 $summary += "- pas2js logical_inventory_sha256 ``$($matrix.agreement.logical_inventory_sha256_pas2js)`` equal on linux/macos-x64/macos-arm64"
 $summaryText = $summary -join "`n"

@@ -1047,6 +1047,133 @@ printf '[CAP-10B1] create_corpus: %s (ui=%s refusals=%s files=%s doctor=%s) proo
     "${generated_file_count}" "${doctor_result}" "${proof_corpus}" \
     "${rpc_result}" "${listener_count}"
 
+# ------------------------- CAP-10B2: the Pas2JS scaffold ---------------------
+#
+# Two records again, and the same split as CAP-10B1's: cli-<target>.json is
+# the headless create matrix (both UIs created, the refusal set including the
+# one whose category moved, three working directories required to agree, the
+# real doctor on both projects) and proof-<target>.json is the build proof
+# (the pinned Pas2JS, the static output, app.pwb, a real window, and the
+# page's own report).
+#
+# `advertised_ui` is GONE from the CAP-10B1 record and `supported_uis` has
+# taken its place: one frontend was a value, two are a SET, and a set needs
+# one canonical order (bytewise) so four targets compare membership rather
+# than presentation.
+b2_file="${repo_root}/build/cap10b2/cli-${target}.json"
+b2_proof="${repo_root}/build/cap10b2/proof-${target}.json"
+[ -f "${b2_file}" ] ||
+    die "cap10b2/cli-${target}.json missing -- the CAP-10B2 gates have not run in this workspace"
+[ -f "${b2_proof}" ] ||
+    die "cap10b2/proof-${target}.json missing -- the CAP-10B2 build proof has not run in this workspace"
+b2_str() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+        "${b2_file}" | head -n 1
+}
+b2_num() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p" \
+        "${b2_file}" | head -n 1
+}
+b2p_str() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+        "${b2_proof}" | head -n 1
+}
+b2p_num() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p" \
+        "${b2_proof}" | head -n 1
+}
+pas2js_create_corpus="$(b2_str pas2js_create_corpus)"
+pas2js_proof_corpus="$(b2p_str pas2js_proof_corpus)"
+for v in "${pas2js_create_corpus}" "${pas2js_proof_corpus}"; do
+    case "${v}" in
+        PASS | FAIL) ;;
+        *) die "the CAP-10B2 records carry an unexpected verdict: ${v}" ;;
+    esac
+done
+supported_uis="$(b2_str supported_uis)"
+pas2js_create_refusals="$(b2_num pas2js_create_refusals)"
+[ -n "${pas2js_create_refusals}" ] || pas2js_create_refusals=0
+pas2js_no_partial="$(b2_str pas2js_no_partial)"
+pas2js_create_deterministic="$(b2_str pas2js_create_deterministic)"
+pas2js_create_stdout_digest="$(b2_str pas2js_create_stdout_digest)"
+pas2js_generated_inventory_digest="$(b2_str pas2js_generated_inventory_digest)"
+pas2js_generated_inventory_exact="$(b2_str pas2js_generated_inventory_exact)"
+pas2js_generated_file_count="$(b2_num pas2js_generated_file_count)"
+[ -n "${pas2js_generated_file_count}" ] || pas2js_generated_file_count=0
+pas2js_generated_total_bytes="$(b2_num pas2js_generated_total_bytes)"
+[ -n "${pas2js_generated_total_bytes}" ] || pas2js_generated_total_bytes=0
+pas2js_pweb_json_digest="$(b2_str pas2js_pweb_json_digest)"
+pas2js_frontend_source_digest="$(b2_str pas2js_frontend_source_digest)"
+pas2js_generated_no_host_path="$(b2_str pas2js_generated_no_host_path)"
+react_generated_inventory_digest="$(b2_str react_generated_inventory_digest)"
+react_regression_result="$(b2_str react_regression_result)"
+shared_native_source_digest="$(b2_str shared_native_source_digest)"
+native_parity="$(b2_str native_parity)"
+pas2js_doctor_result="$(b2_str pas2js_doctor_result)"
+pas2js_doctor_row="$(b2_str pas2js_doctor_row)"
+pas2js_doctor_version="$(b2_str pas2js_doctor_version)"
+pas2js_compiler_version="$(b2p_str pas2js_compiler_version)"
+pas2js_compiler_arch="$(b2p_str pas2js_compiler_arch)"
+pas2js_compiler_host="$(b2p_str pas2js_compiler_host)"
+pas2js_compiler_sha256="$(b2p_str pas2js_compiler_sha256)"
+pas2js_frontend_build="$(b2p_str pas2js_frontend_build)"
+pas2js_native_build="$(b2p_str pas2js_native_build)"
+pas2js_sdk_from_sdk_root="$(b2p_str pas2js_sdk_from_sdk_root)"
+pas2js_output_sweep="$(b2p_str pas2js_output_sweep)"
+pas2js_output_normalised="$(b2p_str pas2js_output_normalised)"
+pas2js_static_inventory_digest="$(b2p_str pas2js_static_inventory_digest)"
+pas2js_app_pwb_semantic_digest="$(b2p_str pas2js_app_pwb_semantic_digest)"
+pas2js_app_pwb_bytes="$(b2p_num pas2js_app_pwb_bytes)"
+[ -n "${pas2js_app_pwb_bytes}" ] || pas2js_app_pwb_bytes=0
+pas2js_secure_origin="$(b2p_str pas2js_secure_origin)"
+pas2js_rpc_result="$(b2p_num pas2js_rpc_result)"
+[ -n "${pas2js_rpc_result}" ] || pas2js_rpc_result=0
+pas2js_error_mapping="$(b2p_str pas2js_error_mapping)"
+pas2js_listener_count="$(b2p_num pas2js_listener_count)"
+[ -n "${pas2js_listener_count}" ] || pas2js_listener_count=0
+pas2js_loose_assets="$(b2p_str pas2js_loose_assets)"
+pas2js_app_raw_binding="$(b2p_str pas2js_app_raw_binding)"
+pas2js_sdk_binding_owner="$(b2p_str pas2js_sdk_binding_owner)"
+pas2js_clean_shutdown="$(b2p_str pas2js_clean_shutdown)"
+pas2js_report_received="$(b2p_str pas2js_report_received)"
+pas2js_report_fields="$(b2p_str pas2js_report_fields)"
+pas2js_tree_digest="$(b2p_str pas2js_tree_digest)"
+pas2js_tree_unchanged="$(b2p_str pas2js_tree_unchanged)"
+pas2js_build_out_of_tree="$(b2p_str pas2js_build_out_of_tree)"
+react_pas2js_parity="$(b2p_str react_pas2js_parity)"
+react_regression_runtime="$(b2p_str react_regression_runtime)"
+native_binary_equal="$(b2p_str native_binary_equal)"
+pas2js_run_elapsed_ms="$(b2p_num pas2js_run_elapsed_ms)"
+[ -n "${pas2js_run_elapsed_ms}" ] || pas2js_run_elapsed_ms=0
+if [ "${pas2js_create_corpus}" = 'PASS' ] && [ "${pas2js_proof_corpus}" = 'PASS' ]; then
+    # a green verdict with an empty digest is a proof of nothing, and an
+    # empty string compares equal to another empty string on four targets
+    for pair in "supported_uis=${supported_uis}" \
+                "pas2js_generated_inventory_digest=${pas2js_generated_inventory_digest}" \
+                "pas2js_pweb_json_digest=${pas2js_pweb_json_digest}" \
+                "pas2js_frontend_source_digest=${pas2js_frontend_source_digest}" \
+                "pas2js_static_inventory_digest=${pas2js_static_inventory_digest}" \
+                "shared_native_source_digest=${shared_native_source_digest}" \
+                "react_generated_inventory_digest=${react_generated_inventory_digest}" \
+                "pas2js_compiler_version=${pas2js_compiler_version}"; do
+        case "${pair}" in
+            *=) die "the CAP-10B2 record records PASS with an empty ${pair%%=*}" ;;
+        esac
+    done
+    [ "${pas2js_rpc_result}" = '42' ] ||
+        die "the CAP-10B2 build proof records PASS with pas2js_rpc_result=${pas2js_rpc_result}"
+    [ "${pas2js_listener_count}" = '0' ] ||
+        die 'the CAP-10B2 build proof records a listening socket'
+    [ "${pas2js_compiler_version}" = '3.0.1' ] ||
+        die "the CAP-10B2 build proof used Pas2JS ${pas2js_compiler_version}"
+fi
+printf '[CAP-10B2] pas2js_create_corpus: %s (uis=%s refusals=%s files=%s doctor=%s) pas2js_proof_corpus: %s (pas2js=%s/%s rpc=%s listeners=%s parity=%s)\n' \
+    "${pas2js_create_corpus}" "${supported_uis}" "${pas2js_create_refusals}" \
+    "${pas2js_generated_file_count}" "${pas2js_doctor_result}" \
+    "${pas2js_proof_corpus}" "${pas2js_compiler_version}" \
+    "${pas2js_compiler_arch}" "${pas2js_rpc_result}" \
+    "${pas2js_listener_count}" "${react_pas2js_parity}"
+
 # ---------------------------- write the evidence -----------------------------
 # every interpolated free-text value goes through json_escape: the toolchain
 # banner lines especially are nobody's to promise quote-free
@@ -1150,7 +1277,6 @@ cat > "${work}/evidence.json" <<EOF
   "package_manager_calls": "${package_manager_calls}",
   "template_modes_applicable": "${template_modes}",
   "create_corpus": "${create_corpus}",
-  "advertised_ui": "${advertised_ui}",
   "create_help_digest": "${create_help_digest}",
   "create_help_bytes": "${create_help_bytes}",
   "create_stdout_digest": "${create_stdout_digest}",
@@ -1186,6 +1312,56 @@ cat > "${work}/evidence.json" <<EOF
   "listener_count": "${listener_count}",
   "raw_primitive_used": "${raw_primitive_used}",
   "loose_assets_used": "${loose_assets_used}",
+  "supported_uis": "${supported_uis}",
+  "pas2js_create_corpus": "${pas2js_create_corpus}",
+  "pas2js_create_refusals": "${pas2js_create_refusals}",
+  "pas2js_no_partial": "${pas2js_no_partial}",
+  "pas2js_create_deterministic": "${pas2js_create_deterministic}",
+  "pas2js_create_stdout_digest": "${pas2js_create_stdout_digest}",
+  "pas2js_generated_inventory_digest": "${pas2js_generated_inventory_digest}",
+  "pas2js_generated_inventory_exact": "${pas2js_generated_inventory_exact}",
+  "pas2js_generated_file_count": "${pas2js_generated_file_count}",
+  "pas2js_generated_total_bytes": "${pas2js_generated_total_bytes}",
+  "pas2js_pweb_json_digest": "${pas2js_pweb_json_digest}",
+  "pas2js_frontend_source_digest": "${pas2js_frontend_source_digest}",
+  "pas2js_generated_no_host_path": "${pas2js_generated_no_host_path}",
+  "react_generated_inventory_digest": "${react_generated_inventory_digest}",
+  "react_regression_result": "${react_regression_result}",
+  "shared_native_source_digest": "${shared_native_source_digest}",
+  "native_parity": "${native_parity}",
+  "pas2js_doctor_result": "${pas2js_doctor_result}",
+  "pas2js_doctor_row": "${pas2js_doctor_row}",
+  "pas2js_doctor_version": "${pas2js_doctor_version}",
+  "pas2js_proof_corpus": "${pas2js_proof_corpus}",
+  "pas2js_compiler_version": "${pas2js_compiler_version}",
+  "pas2js_compiler_arch": "${pas2js_compiler_arch}",
+  "pas2js_compiler_host": "${pas2js_compiler_host}",
+  "pas2js_compiler_sha256": "${pas2js_compiler_sha256}",
+  "pas2js_frontend_build": "${pas2js_frontend_build}",
+  "pas2js_native_build": "${pas2js_native_build}",
+  "pas2js_sdk_from_sdk_root": "${pas2js_sdk_from_sdk_root}",
+  "pas2js_output_sweep": "${pas2js_output_sweep}",
+  "pas2js_output_normalised": "${pas2js_output_normalised}",
+  "pas2js_static_inventory_digest": "${pas2js_static_inventory_digest}",
+  "pas2js_app_pwb_semantic_digest": "${pas2js_app_pwb_semantic_digest}",
+  "pas2js_app_pwb_bytes": "${pas2js_app_pwb_bytes}",
+  "pas2js_secure_origin": "${pas2js_secure_origin}",
+  "pas2js_rpc_result": "${pas2js_rpc_result}",
+  "pas2js_error_mapping": "${pas2js_error_mapping}",
+  "pas2js_listener_count": "${pas2js_listener_count}",
+  "pas2js_loose_assets": "${pas2js_loose_assets}",
+  "pas2js_app_raw_binding": "${pas2js_app_raw_binding}",
+  "pas2js_sdk_binding_owner": "${pas2js_sdk_binding_owner}",
+  "pas2js_clean_shutdown": "${pas2js_clean_shutdown}",
+  "pas2js_report_received": "${pas2js_report_received}",
+  "pas2js_report_fields": "${pas2js_report_fields}",
+  "pas2js_tree_digest": "${pas2js_tree_digest}",
+  "pas2js_tree_unchanged": "${pas2js_tree_unchanged}",
+  "pas2js_build_out_of_tree": "${pas2js_build_out_of_tree}",
+  "react_pas2js_parity": "${react_pas2js_parity}",
+  "react_regression_runtime": "${react_regression_runtime}",
+  "native_binary_equal": "${native_binary_equal}",
+  "pas2js_run_elapsed_ms": "${pas2js_run_elapsed_ms}",
   "release_layout": "${release_layout}",
   "no_listener": "${no_listener}",
   "no_listener_provenance": "${no_listener_prov}",

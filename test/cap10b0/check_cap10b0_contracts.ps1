@@ -265,8 +265,12 @@ foreach ($f in $declared) {
 }
 
 # --- 5. the trusted source is LF and carries no secret --------------------
+# .cfg joined in CAP-10B2: the Pas2JS template ships frontend/pas2js.cfg,
+# which is text the pack builder refuses a CR in - so the checkout sweep has
+# to be able to see it, or a CRLF checkout would be diagnosed as a build
+# failure rather than as a checkout problem.
 $textExt = @('.md', '.txt', '.json', '.js', '.mjs', '.css', '.html', '.svg',
-    '.lpr', '.lpi', '.pas', '.inc', '.sh', '.list')
+    '.lpr', '.lpi', '.pas', '.inc', '.cfg', '.sh', '.list')
 $crFiles = 0
 foreach ($f in (Get-ChildItem 'tools/templates' -Recurse -File)) {
     $rel = $f.FullName.Substring($repoRoot.Length + 1) -replace '\\', '/'
