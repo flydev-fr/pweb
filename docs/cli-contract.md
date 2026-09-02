@@ -1,4 +1,4 @@
-# The `pweb` CLI contract (CAP-10A, CAP-10B1, CAP-10B2)
+# The `pweb` CLI contract (CAP-10A, CAP-10B1, CAP-10B2, CAP-10C0)
 
 The public surface frozen by CAP-10A and extended by CAP-10B1 and CAP-10B2:
 what the
@@ -20,13 +20,21 @@ pweb --version
 pweb create NAME --ui react|pas2js --bundle-id <reverse.dns>
 pweb create --help
 pweb doctor [--json] [--with-paths] [--project <path>] [--no-color] [--verbose]
+pweb run [--project <path>]
+pweb run --help
 ```
 
-That is the whole of it in this build. `dev`, `run` and `build` are **unknown
+That is the whole of it in this build. `dev` and `build` are **unknown
 commands** — not stubs, not "not implemented" placeholders, and not listed in
 `--help`. A command that parses is a promise, and a lifecycle CLI that
 promises a build it cannot perform is worse than one that has not got there
 yet.
+
+**CAP-10C0 adds `run` and the engine under it** (section 7 and
+[supervision-contract.md](supervision-contract.md)). `run` launches an
+already-built application in production mode and supervises it; it builds
+nothing. It takes `--project` and nothing else, and passes the application
+no argument at all.
 
 **CAP-10B2 adds the second frontend and nothing else.** It ships one more
 trusted public template, widens the compiled `--ui` allowlist to the two kinds
@@ -412,6 +420,22 @@ against a react-only pack and requires `create --ui pas2js` to answer 4 with
 no probe for one to come from. That is a property of the code path and the
 contract check measures it.
 
+**CAP-10C0 added no category either.** `run` maps onto the same six, and the
+mapping was ratified before a line of it was written:
+
+| exit | `run` causes |
+|---|---|
+| 0 | the application exited 0, after a normal or a requested shutdown |
+| 2 | a duplicated, unknown or foreign option (`--json`, `--verbose`, `--no-color`), an operand |
+| 3 | the project was refused (every CAP-10A descriptor cause), or the layout beneath `output` is absent (`not_built`), reached through a link (`layout_link`), spelled in a different case (`layout_case`), outside the root (`layout_escape`) or the wrong shape (`layout_shape`) |
+| 4 | supervision could not be established: the stop handler, the pipes, the Job Object, or process creation (`supervision_unavailable`) |
+| 5 | the application exited nonzero, died by a signal, or had to be force-terminated after the grace interval — its real status is printed |
+| 6 | a spawn refusal that no ratified layout can produce, or a child the platform could not reap |
+
+Human text never changes the category and the category never depends on
+what the application printed: a host that refuses a tampered `app.pwb`
+exits 1 on its own, and `run` reports `application exited 1` and answers 5.
+
 ---
 
 ## 5. The development-trust decision (ratified, implemented at CAP-10C)
@@ -481,3 +505,67 @@ declares the capability and supplies no opener dies at startup rather than
 answering something plausible at runtime.
 
 CAP-10B's generated hosts install this layer. They do not reimplement it.
+
+---
+
+## 7. `pweb run` and the supervision engine (CAP-10C0)
+
+```
+pweb run [--project <path>]
+pweb run --help
+```
+
+`run` launches what the project has **already built**, in production mode,
+supervises it in the foreground, propagates its termination and leaves no
+process of its behind. It compiles nothing, runs no package manager, no
+Pas2JS, no FPC and no git, repacks no `app.pwb`, modifies neither the project
+nor its layout, opens no listener and touches no network — each of those a
+property of what the run path does not link, measured by
+`test/cap10c0/check_cap10c0_contracts.ps1` and by the gates.
+
+**Resolution.** The project is discovered exactly as `doctor` discovers it
+(one reading of the working directory, at startup), `pweb.json` is
+strict-parsed, and the built layout is resolved beneath `output` by the one
+ratified rule — the same executable-relative release model the hosts
+themselves resolve:
+
+```
+<root>/<output>/<os>-<arch>/release/
+  windows, linux    <ident>[.exe] + app.pwb beside it
+  macos             <ident>.app/Contents/MacOS/<ident>
+                    <ident>.app/Contents/Resources/app.pwb
+                    <ident>.app/Contents/Info.plist
+```
+
+`<os>-<arch>` is `windows-x86_64`, `linux-x86_64`, `macos-x86_64` or
+`macos-arm64` — the CLI's own target name — and `<ident>` is the program
+identifier schema 1 fixes as the basename of `native.program`. Every
+component is walked by the CAP-10A confinement rule (exact on-disk spelling,
+a reparse point anywhere refuses the whole path, the resolved directory
+compared byte-exact with the root), so a layout reached through a link or a
+case variant is refused under its own cause and never read as "not built".
+CAP-10D produces exactly this layout and nothing else.
+
+**The launch.** The application is started through the one execution engine
+(`tools/pweb/pweb.cli.process.pas`, see
+[supervision-contract.md](supervision-contract.md)) with **no argument**, the
+executable's own directory as the working directory, and the supervisor's
+environment inherited unchanged — nothing injected, no `.env` read, no
+development flag. Its stdout and stderr are forwarded line by line; the
+supervisor's own lines are `pweb: `-prefixed on stderr and carry no ANSI.
+Nothing printed names an absolute path, the SDK, a home directory or an
+unrelated process. Ctrl+C (Windows) or `SIGINT`/`SIGTERM`/`SIGHUP` (POSIX)
+on `pweb` becomes a graceful close request to the application — `WM_CLOSE`
+to its visible top-level windows, `SIGTERM` to its process group — and the
+host runs its normal CAP-9 teardown; only after the grace interval is the
+tree force-terminated, and that is reported as forced. When the application
+is gone, whatever it left is drained by job / process-group membership and
+reported.
+
+**Runs from an unrelated working directory behave identically**, and the
+gate runs every leg from one.
+
+**Production trust holds.** `run` adds no `ws://`, `localhost` or
+`127.0.0.1` allowance, no proxy, no watcher and no listener; the privileged
+origin stays `pweb://app` and the production CSP is unchanged.
+`test/cap10a/check_dev_trust.ps1` keeps running on every leg.

@@ -1,6 +1,6 @@
 program pweb;
 
-{ The PWeb application lifecycle CLI (CAP-10A, CAP-10B1, CAP-10B2).
+{ The PWeb application lifecycle CLI (CAP-10A, CAP-10B1, CAP-10B2, CAP-10C0).
 
     pweb --help
     pweb --version
@@ -8,35 +8,46 @@ program pweb;
     pweb create --help
     pweb doctor [--json] [--with-paths] [--project <path>] [--no-color]
                 [--verbose]
+    pweb run [--project <path>]
+    pweb run --help
 
   WHAT THIS BUILD IS. One native FPC console executable, the public entry
-  point of the framework. It can diagnose a machine against a project, and
-  since CAP-10B1 it can create one.
+  point of the framework. It can diagnose a machine against a project,
+  since CAP-10B1 it can create one, and since CAP-10C0 it can launch the
+  application a project has already built and supervise it.
 
-  WHAT IT IS NOT, AND SAYS SO BY BEING SILENT. `dev`, `run` and `build` are
-  unknown commands here. They are not stubs, not "not implemented in this
-  build" placeholders, and they are not listed in --help - because a command
-  that parses is a promise, and a lifecycle CLI that promises a build it
-  cannot perform is worse than one that has not got there yet.
+  WHAT IT IS NOT, AND SAYS SO BY BEING SILENT. `dev` and `build` are unknown
+  commands here. They are not stubs, not "not implemented in this build"
+  placeholders, and they are not listed in --help - because a command that
+  parses is a promise, and a lifecycle CLI that promises a build it cannot
+  perform is worse than one that has not got there yet.
 
   THE PROCESS IS STILL INERT. It opens no socket, resolves no host, downloads
   nothing and installs nothing. `create` writes exactly one tree - the
   project it was asked for, through the frozen CAP-10B0 transaction - and
   writes nothing anywhere else: not a lock file, not the registry, not PATH,
-  not a temporary probe file. The only thing this CLI ever starts is a
-  version probe of a tool it found on PATH, from `doctor`, by exact absolute
-  path, with an argument array, bounded, with no shell anywhere
-  (pweb.cli.probe). `create` starts nothing at all.
+  not a temporary probe file. Everything this CLI ever starts goes through
+  ONE execution engine (pweb.cli.process): a version probe of a tool found
+  on PATH, from `doctor`, and the built application, from `run` - each by
+  exact absolute path, with an argument array, an explicit working
+  directory and no shell anywhere. `create` starts nothing at all, and
+  `run` starts exactly one process and owns every process it spawns in
+  turn.
 
   THE EXIT CODE IS THE CONTRACT, and the human text never changes it:
 
       0  success
       2  usage error          - the command line was refused
-      3  project error        - no usable pweb.json, or a destination that
-                                cannot become one
-      4  environment error    - a required check failed, or the SDK's own
-                                trusted resources are missing or untrusted
-      5  probe error          - a required probe could not be run or bounded
+      3  project error        - no usable pweb.json, a destination that
+                                cannot become one, or a layout that has not
+                                been built or is not confined
+      4  environment error    - a required check failed, the SDK's own
+                                trusted resources are missing or untrusted,
+                                or supervision cannot be established
+      5  probe error          - a required probe could not be run or
+                                bounded; for `run`, the application exited
+                                nonzero, died by a signal or had to be
+                                force-terminated (its real status is printed)
       6  internal error       - an unexpected failure, reported without a
                                 stack trace
 
@@ -45,10 +56,11 @@ program pweb;
   probe for one to come from.
 
   THE WORKING DIRECTORY IS READ EXACTLY ONCE, at startup, by the ONE seam in
-  Main. `doctor` uses it to seed the upward search for a descriptor and
-  `create` uses it as the destination's parent. From that moment the
+  Main. `doctor` and `run` use it to seed the upward search for a descriptor
+  and `create` uses it as the destination's parent. From that moment the
   canonical root is the only anchor: no later path resolution consults the
-  CWD, nothing re-reads it, and the process never changes it. }
+  CWD, nothing re-reads it, and the process never changes it - `run`'s
+  child is started in the application's OWN directory, never in this one. }
 
 {$mode ObjFPC}{$H+}
 
@@ -71,6 +83,8 @@ uses
   pweb.cli.template,
   pweb.cli.scaffold,
   pweb.cli.write,
+  pweb.cli.process,
+  pweb.cli.run,
   pweb.cli.args;
 
 const
@@ -336,6 +350,172 @@ begin
   Result := PWEB_EXIT_OK;
 end;
 
+{ `pweb run [--project <path>]`.
+
+  Resolve the project exactly as doctor does, resolve the built layout
+  beneath its `output` by the one ratified rule (pweb.cli.run), and hand the
+  executable to the one execution engine in its supervise profile. This
+  function decides exit codes and prints the supervisor's own lines; it
+  never builds, never touches the layout, and passes the application no
+  argument.
+
+  THE EXIT MAPPING (ratified at the CAP-10C0 checkpoint):
+
+      0  the application exited 0, after a normal or a requested shutdown
+      2  usage
+      3  the project was refused, or the layout is absent / not confined
+      4  supervision prerequisites unavailable (stop handler, pipes, Job
+         Object, process creation)
+      5  the application exited nonzero, died by a signal, or had to be
+         force-terminated - its real status is printed
+      6  internal: a refusal that cannot arise from a ratified layout, or a
+         child the platform could not reap
+
+  The human text never changes the category, and the category never
+  depends on what the application printed. }
+
+procedure RunRefused(const Cause, Detail: RawUtf8);
+begin
+  EmitErr('pweb: run refused: ' + Cause);
+  if Detail <> '' then
+    EmitErr(': ' + Detail);
+  EmitErr(#10);
+end;
+
+// the forwarding sink: the application's lines, verbatim, each on its own
+// stream, each re-terminated with one LF. A line the engine had to cut is
+// marked so the reader knows it is looking at a bounded head
+procedure ForwardLine(Opaque: Pointer; Stream: TPWebCliChildStream;
+  const Line: RawUtf8; Truncated: Boolean);
+var
+  text: RawUtf8;
+begin
+  text := Line;
+  if Truncated then
+    text := text + ' [truncated by pweb]';
+  if Stream = pcsStdOut then
+    Emit(text + #10)
+  else
+    EmitErr(text + #10);
+end;
+
+// the pid, so a supervisor of the supervisor (the CAP-10C0 test driver, a
+// script) can watch the application itself and not only pweb
+procedure ApplicationStarted(Opaque: Pointer; Pid: PtrInt);
+begin
+  EmitErr('pweb: started pid ' + RawUtf8(IntToStr(Pid)) + #10);
+end;
+
+function RunRun(const Args: TPWebCliArgs; const StartDir: RawUtf8): Integer;
+var
+  project: TPWebCliProject;
+  layout: TPWebCliRunLayout;
+  r: TPWebCliExecResult;
+  i, forced: PtrInt;
+begin
+  project := PWebCliOpenProject(Args.ProjectPath, StartDir);
+  if project.Refusal <> pcrNone then
+  begin
+    RunRefused(PWebCliProjectRefusalText(project.Refusal), project.Detail);
+    exit(PWEB_EXIT_PROJECT);
+  end;
+  layout := PWebCliResolveRunLayout(project, PWebCliHostOs, PWebCliHostArch);
+  if layout.Refusal <> prrNone then
+  begin
+    RunRefused(PWebCliRunRefusalText(layout.Refusal), layout.Detail);
+    if layout.Refusal = prrNotBuilt then
+      EmitErr('pweb: the project has not been built for ' + layout.Target +
+        '; run builds nothing'#10);
+    exit(PWEB_EXIT_PROJECT);
+  end;
+  // the stop handler is a prerequisite of supervision, not of the
+  // application: without it a Ctrl+C would kill the supervisor and leave
+  // the tree behind, which is the one thing this command must never do
+  if not PWebCliInstallStopHandler then
+  begin
+    RunRefused('supervision_unavailable', 'stop_handler');
+    exit(PWEB_EXIT_ENVIRONMENT);
+  end;
+  // the report names the LOGICAL layout only: never an absolute path, never
+  // the SDK, never the home directory
+  EmitErr('pweb: running ' + layout.ExeLogical + ' (' +
+    PWebCliUiText(project.Ui) + ', production)'#10);
+  r := PWebCliRunApplication(layout, @ForwardLine, nil,
+    @ApplicationStarted, nil);
+  case r.Outcome of
+    pcoSpawnRefused:
+      begin
+        // unreachable for a ratified layout: the identifier grammar
+        // admits no batch file and the walk admits no NUL. Reaching it is
+        // the CLI contradicting itself
+        RunRefused(PWebCliExecRefusalText(r.Refusal), '');
+        exit(PWEB_EXIT_INTERNAL);
+      end;
+    pcoSpawnFailed:
+      begin
+        RunRefused('supervision_unavailable',
+          PWebCliSpawnFailureText(r.Failure) + ' (error ' +
+          RawUtf8(IntToStr(r.OsError)) + ')');
+        exit(PWEB_EXIT_ENVIRONMENT);
+      end;
+  end;
+  if r.StopRequested then
+    EmitErr('pweb: stop requested (' + RawUtf8(IntToStr(r.StopPosts)) +
+      ' close request(s) delivered)'#10);
+  // the descendants, drained by membership after the application's exit
+  forced := 0;
+  for i := 0 to High(r.Drain.Seen) do
+    if r.Drain.Seen[i].Forced then
+      Inc(forced);
+  if Length(r.Drain.Seen) > 0 then
+    EmitErr('pweb: drained ' + RawUtf8(IntToStr(Length(r.Drain.Seen))) +
+      ' descendant process(es) in ' + RawUtf8(IntToStr(r.Drain.Passes)) +
+      ' pass(es), ' + RawUtf8(IntToStr(forced)) + ' forced'#10);
+  if r.Drain.Remaining > 0 then
+    EmitErr('pweb: ' + RawUtf8(IntToStr(r.Drain.Remaining)) +
+      ' descendant process(es) survived the drain'#10);
+  case r.Outcome of
+    pcoExited:
+      begin
+        if r.ExitCode = 0 then
+        begin
+          EmitErr('pweb: application exited 0'#10);
+          if r.Drain.Remaining > 0 then
+            exit(PWEB_EXIT_INTERNAL);
+          exit(PWEB_EXIT_OK);
+        end;
+        // the real status, in decimal and - for the NTSTATUS range a
+        // crashed Windows process reports - in hex beside it
+        if r.ExitCode < 0 then
+          EmitErr('pweb: application exited ' +
+            RawUtf8(IntToStr(Cardinal(r.ExitCode))) + ' (0x' +
+            RawUtf8(IntToHex(Cardinal(r.ExitCode), 8)) + ')'#10)
+        else
+          EmitErr('pweb: application exited ' +
+            RawUtf8(IntToStr(r.ExitCode)) + #10);
+        exit(PWEB_EXIT_PROBE);
+      end;
+    pcoSignaled:
+      begin
+        EmitErr('pweb: application terminated by signal ' +
+          RawUtf8(IntToStr(r.Signal)) + #10);
+        exit(PWEB_EXIT_PROBE);
+      end;
+    pcoForced:
+      begin
+        EmitErr('pweb: application force-terminated after ' +
+          RawUtf8(IntToStr(PWEB_CLI_RUN_GRACE_MS)) +
+          ' ms without closing; reaped in ' +
+          RawUtf8(IntToStr(r.KillToReapMs)) + ' ms'#10);
+        exit(PWEB_EXIT_PROBE);
+      end;
+  else
+    // pcoUnreaped: the platform could not reap what it terminated
+    EmitErr('pweb: application could not be reaped'#10);
+    exit(PWEB_EXIT_INTERNAL);
+  end;
+end;
+
 function Main: Integer;
 var
   args: TPWebCliArgs;
@@ -349,10 +529,12 @@ begin
     if args.Detail <> '' then
       EmitErr(': ' + args.Detail);
     EmitErr(#10#10);
-    if args.Command = pccCreate then
-      EmitErr(PWebCliCreateHelp)
+    case args.Command of
+      pccCreate: EmitErr(PWebCliCreateHelp);
+      pccRun:    EmitErr(PWebCliRunHelp);
     else
       EmitErr(PWebCliUsageBanner);
+    end;
     exit(PWEB_EXIT_USAGE);
   end;
   // --help and --version are complete requests: they answer on stdout and
@@ -361,10 +543,12 @@ begin
   // asked
   if args.Help then
   begin
-    if args.Command = pccCreate then
-      Emit(PWebCliCreateHelp)
+    case args.Command of
+      pccCreate: Emit(PWebCliCreateHelp);
+      pccRun:    Emit(PWebCliRunHelp);
     else
       Emit(PWebCliUsageBanner);
+    end;
     exit(PWEB_EXIT_OK);
   end;
   if args.Version then
@@ -383,6 +567,7 @@ begin
   case args.Command of
     pccCreate: Result := RunCreate(args, startDir);
     pccDoctor: Result := RunDoctor(args, startDir);
+    pccRun:    Result := RunRun(args, startDir);
   else
     // unreachable: the parser refuses a line with no command
     Result := PWEB_EXIT_INTERNAL;

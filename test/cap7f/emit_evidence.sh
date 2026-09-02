@@ -1194,6 +1194,101 @@ printf '[CAP-10B2] pas2js_create_corpus: %s (uis=%s refusals=%s files=%s doctor=
     "${pas2js_compiler_arch}" "${pas2js_rpc_result}" \
     "${pas2js_listener_count}" "${react_pas2js_parity}"
 
+# ----------------------------- CAP-10C0 -------------------------------------
+# build/cap10c0/cli-<target>.json is ONE record: the supervision suite's
+# decision corpus (digested), the drivers over the real CLI, and the run
+# command on the two built projects the B1/B2 proofs left behind - staged
+# byte-for-byte beneath their own output. Mechanism names, intervals and
+# pids are observations; decisions are what four targets compare.
+c0_file="${repo_root}/build/cap10c0/cli-${target}.json"
+[ -f "${c0_file}" ] ||
+    die "cap10c0/cli-${target}.json missing -- the CAP-10C0 gates have not run in this workspace"
+c0_str() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+        "${c0_file}" | head -n 1
+}
+c0_num() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p" \
+        "${c0_file}" | head -n 1
+}
+supervision_corpus="$(c0_str supervision_corpus)"
+run_corpus="$(c0_str run_corpus)"
+for v in "${supervision_corpus}" "${run_corpus}"; do
+    case "${v}" in
+        PASS | FAIL) ;;
+        *) die "the CAP-10C0 record carries an unexpected verdict: ${v}" ;;
+    esac
+done
+cli_run_available="$(c0_str cli_run_available)"
+advertised_commands="$(c0_str advertised_commands)"
+supervision_digest="$(c0_str supervision_digest)"
+supervision_corpus_lines="$(c0_num supervision_corpus_lines)"
+supervision_shell_used="$(c0_str supervision_shell_used)"
+supervision_tree_model="$(c0_str supervision_tree_model)"
+argv_roundtrip="$(c0_str argv_roundtrip)"
+exit_propagation="$(c0_str exit_propagation)"
+death_never_exit_zero="$(c0_str death_never_exit_zero)"
+signal_outcome_typed="$(c0_str signal_outcome_typed)"
+graceful_stop_mechanism="$(c0_str graceful_stop_mechanism)"
+forced_kill_required="$(c0_str forced_kill_required)"
+grandchild_drained="$(c0_str grandchild_drained)"
+zombie_left="$(c0_str zombie_left)"
+workdir_explicit="$(c0_str workdir_explicit)"
+environment_policy="$(c0_str environment_policy)"
+batch_file_refused="$(c0_str batch_file_refused)"
+run_interrupt_clean="$(c0_str run_interrupt_clean)"
+supervisor_terminated_tree_dies="$(c0_str supervisor_terminated_tree_dies)"
+descendants_after_exit="$(c0_num descendants_after_exit)"
+global_name_kill_present="$(c0_str global_name_kill_present)"
+run_react_rpc_value="$(c0_num run_react_rpc_value)"
+run_pas2js_rpc_value="$(c0_num run_pas2js_rpc_value)"
+run_secure_origin="$(c0_str run_secure_origin)"
+run_error_mapping="$(c0_str run_error_mapping)"
+run_listener_count="$(c0_num run_listener_count)"
+run_network_calls="$(c0_num run_network_calls)"
+run_tool_calls="$(c0_num run_tool_calls)"
+run_dev_allowance_present="$(c0_str run_dev_allowance_present)"
+run_tree_unchanged="$(c0_str run_tree_unchanged)"
+run_no_ansi="$(c0_str run_no_ansi)"
+run_not_built="$(c0_str run_not_built)"
+run_layout_link="$(c0_str run_layout_link)"
+run_output_escape="$(c0_str run_output_escape)"
+run_tampered_bundle="$(c0_str run_tampered_bundle)"
+run_option_matrix="$(c0_str run_option_matrix)"
+run_project_descriptor_form="$(c0_str run_project_descriptor_form)"
+dev_build_unknown="$(c0_str dev_build_unknown)"
+shutdown_order="$(c0_str shutdown_order)"
+run_elapsed_ms="$(c0_str run_elapsed_ms)"
+run_descendants_drained="$(c0_str run_descendants_drained)"
+run_descendants_forced="$(c0_str run_descendants_forced)"
+run_drain_passes="$(c0_str run_drain_passes)"
+stage_react_release_digest="$(c0_str stage_react_release_digest)"
+stage_pas2js_release_digest="$(c0_str stage_pas2js_release_digest)"
+# a numeric row the reader could not parse reads as EMPTY here, never as 0:
+# the CAP-10B2 lesson (run 33158296971) was a numeric fallback of 0
+# satisfying an absolute pin by proving nothing
+if [ "${supervision_corpus}" = 'PASS' ] && [ "${run_corpus}" = 'PASS' ]; then
+    [ -n "${supervision_digest}" ] ||
+        die 'the CAP-10C0 record records PASS with an empty supervision_digest'
+    [ "${run_react_rpc_value}" = '42' ] ||
+        die "the CAP-10C0 record records PASS with run_react_rpc_value='${run_react_rpc_value}'"
+    [ "${run_pas2js_rpc_value}" = '42' ] ||
+        die "the CAP-10C0 record records PASS with run_pas2js_rpc_value='${run_pas2js_rpc_value}'"
+    [ "${run_listener_count}" = '0' ] ||
+        die "the CAP-10C0 record records PASS with run_listener_count='${run_listener_count}'"
+    [ "${descendants_after_exit}" = '0' ] ||
+        die "the CAP-10C0 record records PASS with descendants_after_exit='${descendants_after_exit}'"
+    [ "${supervision_shell_used}" = 'false' ] ||
+        die 'the CAP-10C0 record records PASS with supervision_shell_used set'
+    [ "${global_name_kill_present}" = 'false' ] ||
+        die 'the CAP-10C0 record records PASS with global_name_kill_present set'
+fi
+printf '[CAP-10C0] supervision_corpus: %s (lines=%s tree=%s stop=%s) run_corpus: %s (react=%s pas2js=%s listeners=%s descendants=%s interrupt=%s)\n' \
+    "${supervision_corpus}" "${supervision_corpus_lines}" \
+    "${supervision_tree_model}" "${graceful_stop_mechanism}" "${run_corpus}" \
+    "${run_react_rpc_value}" "${run_pas2js_rpc_value}" "${run_listener_count}" \
+    "${descendants_after_exit}" "${run_interrupt_clean}"
+
 # ---------------------------- write the evidence -----------------------------
 # every interpolated free-text value goes through json_escape: the toolchain
 # banner lines especially are nobody's to promise quote-free
@@ -1384,6 +1479,53 @@ cat > "${work}/evidence.json" <<EOF
   "react_regression_runtime": "${react_regression_runtime}",
   "native_binary_equal": "${native_binary_equal}",
   "pas2js_run_elapsed_ms": "${pas2js_run_elapsed_ms}",
+  "cli_run_available": "${cli_run_available}",
+  "advertised_commands": "${advertised_commands}",
+  "supervision_corpus": "${supervision_corpus}",
+  "supervision_digest": "${supervision_digest}",
+  "supervision_corpus_lines": "${supervision_corpus_lines}",
+  "supervision_shell_used": "${supervision_shell_used}",
+  "supervision_tree_model": "${supervision_tree_model}",
+  "argv_roundtrip": "${argv_roundtrip}",
+  "exit_propagation": "${exit_propagation}",
+  "death_never_exit_zero": "${death_never_exit_zero}",
+  "signal_outcome_typed": "${signal_outcome_typed}",
+  "graceful_stop_mechanism": "${graceful_stop_mechanism}",
+  "forced_kill_required": "${forced_kill_required}",
+  "grandchild_drained": "${grandchild_drained}",
+  "zombie_left": "${zombie_left}",
+  "workdir_explicit": "${workdir_explicit}",
+  "environment_policy": "${environment_policy}",
+  "batch_file_refused": "${batch_file_refused}",
+  "run_interrupt_clean": "${run_interrupt_clean}",
+  "supervisor_terminated_tree_dies": "${supervisor_terminated_tree_dies}",
+  "descendants_after_exit": "${descendants_after_exit}",
+  "global_name_kill_present": "${global_name_kill_present}",
+  "run_corpus": "${run_corpus}",
+  "run_react_rpc_value": "${run_react_rpc_value}",
+  "run_pas2js_rpc_value": "${run_pas2js_rpc_value}",
+  "run_secure_origin": "${run_secure_origin}",
+  "run_error_mapping": "${run_error_mapping}",
+  "run_listener_count": "${run_listener_count}",
+  "run_network_calls": "${run_network_calls}",
+  "run_tool_calls": "${run_tool_calls}",
+  "run_dev_allowance_present": "${run_dev_allowance_present}",
+  "run_tree_unchanged": "${run_tree_unchanged}",
+  "run_no_ansi": "${run_no_ansi}",
+  "run_not_built": "${run_not_built}",
+  "run_layout_link": "${run_layout_link}",
+  "run_output_escape": "${run_output_escape}",
+  "run_tampered_bundle": "${run_tampered_bundle}",
+  "run_option_matrix": "${run_option_matrix}",
+  "run_project_descriptor_form": "${run_project_descriptor_form}",
+  "dev_build_unknown": "${dev_build_unknown}",
+  "shutdown_order": "${shutdown_order}",
+  "run_elapsed_ms": "${run_elapsed_ms}",
+  "run_descendants_drained": "${run_descendants_drained}",
+  "run_descendants_forced": "${run_descendants_forced}",
+  "run_drain_passes": "${run_drain_passes}",
+  "stage_react_release_digest": "${stage_react_release_digest}",
+  "stage_pas2js_release_digest": "${stage_pas2js_release_digest}",
   "release_layout": "${release_layout}",
   "no_listener": "${no_listener}",
   "no_listener_provenance": "${no_listener_prov}",

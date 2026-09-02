@@ -193,6 +193,11 @@ function PWebHostRun(const Options: TPWebHostOptions;
 
 implementation
 
+{$ifdef OSPOSIX}
+uses
+  baseunix; // CAP-10C0: the graceful-stop helper's pipe and sigaction
+{$endif OSPOSIX}
+
 type
   { The platform-selected NAMES of this unit, and the only ones. Windows and
     Linux expose the identical surface - Create(webview_t, IAssetStore),
@@ -354,6 +359,113 @@ begin
   if handle <> nil then
     webview_dispatch(webview_t(handle), @PWebHostTerminate, nil);
 end;
+
+{$ifdef OSPOSIX}
+{ CAP-10C0: the graceful-stop helper, POSIX only.
+
+  A supervisor (`pweb run`) asks a host to close by sending SIGTERM to its
+  process group; a terminal sends SIGINT or SIGHUP. Without a handler the
+  default action ends the process at once and the orderly teardown after
+  webview_run - binding closed, scheduler drained, guard and handler
+  detached, webview destroyed - never runs. On Windows the same request
+  arrives as WM_CLOSE on the top-level window and the upstream backend
+  already turns it into webview_terminate, so nothing is needed there.
+
+  This helper is SEMANTICS-NEUTRAL by construction: it translates the signal
+  into the very same call the auto-close thread makes - one
+  InterlockedExchange on HostAutoCloseHandle and one webview_dispatch of
+  PWebHostTerminate - so a signalled host exits through exactly the path a
+  timed one does, and the CAP-9 shutdown order below is untouched.
+
+  The signal handler itself does one async-signal-safe thing: it writes a
+  byte to a self-pipe. A dedicated thread blocks on that pipe and performs
+  the dispatch, because webview_dispatch is not something a signal handler
+  may call. Teardown writes a different byte so the thread returns, joins
+  it inside the same margin the closer thread gets, restores the default
+  dispositions and closes the pipe - so a signal arriving after the run has
+  ended behaves exactly as it did before this helper existed. }
+var
+  HostStopPipe: TFilDes = (-1, -1);
+
+const
+  HOST_STOP_BYTE_SIGNAL = 1;
+  HOST_STOP_BYTE_TEARDOWN = 2;
+
+procedure PWebHostStopSignal(Sig: LongInt; Info: PSigInfo;
+  Context: PSigContext); cdecl;
+var
+  b: Byte;
+begin
+  b := HOST_STOP_BYTE_SIGNAL;
+  FpWrite(HostStopPipe[1], b, 1);
+end;
+
+function PWebHostStopThread(Param: Pointer): PtrInt;
+var
+  b: Byte;
+  n: PtrInt;
+  handle: Pointer;
+begin
+  Result := 0;
+  b := 0;
+  repeat
+    n := FpRead(HostStopPipe[0], b, 1);
+  until (n > 0) or
+        ((n < 0) and (fpgeterrno <> ESysEINTR));
+  if (n > 0) and
+     (b = HOST_STOP_BYTE_SIGNAL) then
+  begin
+    handle := InterlockedExchange(HostAutoCloseHandle, nil);
+    if handle <> nil then
+      webview_dispatch(webview_t(handle), @PWebHostTerminate, nil);
+  end;
+end;
+
+function PWebHostInstallStopHelper(out AThread: system.TThreadID): Boolean;
+var
+  act: SigActionRec;
+  id: system.TThreadID;
+begin
+  Result := False;
+  AThread := system.TThreadID(0);
+  if FpPipe(HostStopPipe) <> 0 then
+    exit;
+  FillChar(act, SizeOf(act), 0);
+  act.sa_handler := SigActionHandler(@PWebHostStopSignal);
+  FpSigEmptySet(act.sa_mask);
+  if (FpSigaction(SIGTERM, @act, nil) <> 0) or
+     (FpSigaction(SIGINT, @act, nil) <> 0) or
+     (FpSigaction(SIGHUP, @act, nil) <> 0) then
+    exit;
+  AThread := BeginThread(@PWebHostStopThread, nil, id);
+  Result := AThread <> system.TThreadID(0);
+end;
+
+procedure PWebHostRemoveStopHelper(AThread: system.TThreadID);
+var
+  b: Byte;
+begin
+  // default dispositions first, so a late signal behaves as before
+  FpSignal(SIGTERM, SignalHandler(SIG_DFL));
+  FpSignal(SIGINT, SignalHandler(SIG_DFL));
+  FpSignal(SIGHUP, SignalHandler(SIG_DFL));
+  if AThread <> system.TThreadID(0) then
+  begin
+    b := HOST_STOP_BYTE_TEARDOWN;
+    FpWrite(HostStopPipe[1], b, 1);
+    if WaitForThreadTerminate(AThread, PWEB_HOST_CLOSER_MARGIN_MS) <> 0 then
+      WriteLn(StdErr, HostLogPrefix,
+        ': FAIL the stop helper thread did not terminate');
+    CloseThread(AThread);
+  end;
+  if HostStopPipe[0] >= 0 then
+    FpClose(HostStopPipe[0]);
+  if HostStopPipe[1] >= 0 then
+    FpClose(HostStopPipe[1]);
+  HostStopPipe[0] := -1;
+  HostStopPipe[1] := -1;
+end;
+{$endif OSPOSIX}
 
 { The pre-create check: one cause per platform that is knowable BEFORE
   webview_create collapses every bad state into a single nil, refused with
@@ -562,6 +674,10 @@ var
   verdictFile: TFileName;
   closerId, closerHandle: system.TThreadID; // mormot.core.os shadows it
   closerStarted, safeToDestroy, schedulerDrained: Boolean;
+  {$ifdef OSPOSIX}
+  stopHelper: system.TThreadID;
+  stopHelperInstalled: Boolean;
+  {$endif OSPOSIX}
 begin
   Result := 0;
   if Policy = nil then
@@ -665,8 +781,20 @@ begin
         if not closerStarted then
           raise Exception.Create('unable to start the auto-close thread');
       end;
+      {$ifdef OSPOSIX}
+      // CAP-10C0: SIGTERM / SIGINT / SIGHUP become the same terminate
+      // dispatch the auto-close thread uses - installed last, removed
+      // first, so it exists exactly while webview_run does
+      stopHelperInstalled := PWebHostInstallStopHelper(stopHelper);
+      if not stopHelperInstalled then
+        raise Exception.Create('unable to install the stop helper');
+      {$endif OSPOSIX}
       WebViewCheck(webview_run(w), 'webview_run');
     finally
+      {$ifdef OSPOSIX}
+      if stopHelperInstalled then
+        PWebHostRemoveStopHelper(stopHelper);
+      {$endif OSPOSIX}
       if closerStarted then
       begin
         if WaitForThreadTerminate(closerHandle,

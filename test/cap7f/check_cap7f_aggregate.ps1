@@ -128,6 +128,28 @@ $required = @(
     'pas2js_tree_digest', 'pas2js_tree_unchanged', 'pas2js_build_out_of_tree',
     'react_pas2js_parity', 'react_regression_runtime', 'native_binary_equal',
     'pas2js_run_elapsed_ms',
+    # CAP-10C0: process supervision and `pweb run`. The decision corpus
+    # (digested), the drivers over the real CLI, and the run command on the
+    # two built projects; the platform observations travel beside them and
+    # are recorded per target, never compared.
+    'cli_run_available', 'advertised_commands',
+    'supervision_corpus', 'supervision_digest', 'supervision_corpus_lines',
+    'supervision_shell_used', 'supervision_tree_model', 'argv_roundtrip',
+    'exit_propagation', 'death_never_exit_zero', 'signal_outcome_typed',
+    'graceful_stop_mechanism', 'forced_kill_required', 'grandchild_drained',
+    'zombie_left', 'workdir_explicit', 'environment_policy',
+    'batch_file_refused', 'run_interrupt_clean',
+    'supervisor_terminated_tree_dies', 'descendants_after_exit',
+    'global_name_kill_present',
+    'run_corpus', 'run_react_rpc_value', 'run_pas2js_rpc_value',
+    'run_secure_origin', 'run_error_mapping', 'run_listener_count',
+    'run_network_calls', 'run_tool_calls', 'run_dev_allowance_present',
+    'run_tree_unchanged', 'run_no_ansi', 'run_not_built', 'run_layout_link',
+    'run_output_escape', 'run_tampered_bundle', 'run_option_matrix',
+    'run_project_descriptor_form', 'dev_build_unknown', 'shutdown_order',
+    'run_elapsed_ms', 'run_descendants_drained', 'run_descendants_forced',
+    'run_drain_passes', 'stage_react_release_digest',
+    'stage_pas2js_release_digest',
     'release_layout', 'no_listener', 'app_pwb_react_sha256',
     'logical_inventory_sha256_react', 'github_sha', 'github_run_id', 'waivers'
 )
@@ -163,6 +185,43 @@ $absolutePins = @{
     pas2js_sdk_binding_owner = 'true'
     pas2js_report_received   = 'true'
     pas2js_clean_shutdown    = 'true'
+    # CAP-10C0: the facts four targets could agree on and still be wrong
+    # about. The advertised set is exactly the three commands the binary
+    # implements; the engine links no shell and no name-based kill; both
+    # applications answer 42 through `pweb run`, open nothing, call no tool
+    # and leave nothing behind; every exit CATEGORY is the ratified one
+    # (an exit-3 that became a 4 on one target is refused here, not merely
+    # noticed); an interrupt closes the application cleanly and a terminated
+    # supervisor takes its tree with it.
+    cli_run_available        = 'true'
+    advertised_commands      = 'create,doctor,run'
+    supervision_shell_used   = 'false'
+    global_name_kill_present = 'false'
+    argv_roundtrip           = 'exact'
+    exit_propagation         = 'exact'
+    death_never_exit_zero    = 'true'
+    forced_kill_required     = 'true'
+    grandchild_drained       = 'true'
+    zombie_left              = 'false'
+    workdir_explicit         = 'true'
+    environment_policy       = 'inherit_unchanged'
+    batch_file_refused       = 'true'
+    run_interrupt_clean      = 'true'
+    supervisor_terminated_tree_dies = 'true'
+    descendants_after_exit   = '0'
+    run_react_rpc_value      = '42'
+    run_pas2js_rpc_value     = '42'
+    run_listener_count       = '0'
+    run_network_calls        = '0'
+    run_tool_calls           = '0'
+    run_dev_allowance_present = 'false'
+    run_no_ansi              = 'true'
+    run_not_built            = 'exit3/not_built'
+    run_layout_link          = 'exit3/layout_link'
+    run_output_escape        = 'exit3'
+    run_tampered_bundle      = 'exit5/host_refused'
+    dev_build_unknown        = 'true'
+    shutdown_order           = 'binding_close>scheduler_drained>guard_detached>handler_detached>webview_destroyed'
 }
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
 $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
@@ -212,7 +271,11 @@ $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
     'pas2js_frontend_build', 'pas2js_native_build', 'pas2js_output_sweep',
     'pas2js_secure_origin', 'pas2js_error_mapping', 'pas2js_sdk_from_sdk_root',
     'pas2js_native_from_sdk_root',
-    'react_pas2js_parity', 'react_regression_runtime')
+    'react_pas2js_parity', 'react_regression_runtime',
+    # CAP-10C0: the two verdicts and the sub-claims a green pair is made of
+    'supervision_corpus', 'run_corpus', 'run_secure_origin',
+    'run_error_mapping', 'run_tree_unchanged', 'run_option_matrix',
+    'run_project_descriptor_form')
 # fields that must agree, value-for-value, across all four targets
 # (capability_policy_digest is the CAP-8A structured policy-decision corpus and
 # navigation_policy_digest the CAP-8B one: four targets, one byte-identical
@@ -348,7 +411,13 @@ $equalityFields = @(
     'pas2js_compiler_version', 'pas2js_doctor_version',
     'pas2js_report_fields', 'pas2js_rpc_result', 'pas2js_listener_count',
     'pas2js_app_raw_binding', 'pas2js_loose_assets',
-    'pas2js_sdk_binding_owner'
+    'pas2js_sdk_binding_owner',
+    # CAP-10C0: the supervision DECISION corpus - pure logic over the
+    # fixture child and injected records, one byte-identical decision set on
+    # four targets. Mechanism names, intervals and pids are deliberately
+    # outside it (supervision_tree_model, graceful_stop_mechanism and the
+    # rest are per-target observations, validated against the OS below).
+    'supervision_digest', 'supervision_corpus_lines'
 )
 # the CAP-9C2 semantic gate names, carried in ONE place across the two
 # emitters and this aggregator (see test/cap7f/emit_evidence.ps1)
@@ -762,6 +831,52 @@ foreach ($t in $evidence.Keys) {
             $failures.Add("CAP-10B2 BAD-BUNDLE-INVENTORY: target=$t pas2js_app_pwb_entries=$pe, expected 5 (index.html, three assets, manifest.json)")
         }
     }
+    # CAP-10C0: defense in depth beside the absolute pins. An EMPTY
+    # supervision digest on four targets agrees perfectly; the tree model
+    # and the graceful-stop mechanism are per-target OBSERVATIONS, but each
+    # has exactly one honest value per operating system, and a Windows leg
+    # reporting process_group would be a leg that ran the wrong body.
+    if ("$($e.supervision_corpus)" -ceq 'PASS') {
+        if ("$($e.supervision_digest)" -notmatch '^[0-9a-f]{64}$') {
+            $failures.Add("CAP-10C0 BAD-DIGEST: target=$t supervision_digest='$($e.supervision_digest)'")
+        }
+        $sl = 0
+        if (-not [int]::TryParse("$($e.supervision_corpus_lines)", [ref]$sl)) {
+            $failures.Add("CAP-10C0 NON-NUMERIC: target=$t supervision_corpus_lines='$($e.supervision_corpus_lines)'")
+        } elseif ($sl -le 0) {
+            $failures.Add("CAP-10C0 NO-DECISIONS: target=$t supervision_corpus_lines=$sl -- a suite that recorded no decision decided nothing")
+        }
+        $expectedTree = if ($expectations[$t].os -eq 'windows') { 'job_object' } else { 'process_group' }
+        if ("$($e.supervision_tree_model)" -cne $expectedTree) {
+            $failures.Add("CAP-10C0 WRONG-TREE-MODEL: target=$t supervision_tree_model='$($e.supervision_tree_model)', expected $expectedTree")
+        }
+        $expectedStop = if ($expectations[$t].os -eq 'windows') { 'wm_close_visible_toplevel' } else { 'sigterm_process_group' }
+        if ("$($e.graceful_stop_mechanism)" -cne $expectedStop) {
+            $failures.Add("CAP-10C0 WRONG-STOP-MECHANISM: target=$t graceful_stop_mechanism='$($e.graceful_stop_mechanism)', expected $expectedStop")
+        }
+        # a signal death is typed where signals exist, and honestly absent
+        # where they do not - a POSIX leg reading not_applicable skipped S2
+        $expectedSignal = if ($expectations[$t].os -eq 'windows') { 'not_applicable' } else { 'true' }
+        if ("$($e.signal_outcome_typed)" -cne $expectedSignal) {
+            $failures.Add("CAP-10C0 SIGNAL-NOT-TYPED: target=$t signal_outcome_typed='$($e.signal_outcome_typed)', expected $expectedSignal")
+        }
+    }
+    if ("$($e.run_corpus)" -ceq 'PASS') {
+        foreach ($z in 'run_listener_count', 'run_network_calls', 'run_tool_calls',
+                       'descendants_after_exit') {
+            $zv = 0
+            if (-not [int]::TryParse("$($e.$z)", [ref]$zv)) {
+                $failures.Add("CAP-10C0 NON-NUMERIC: target=$t $z='$($e.$z)'")
+            } elseif ($zv -ne 0) {
+                $failures.Add("CAP-10C0 NOT-INERT: target=$t $z=$zv -- `pweb run` launched something it must not")
+            }
+        }
+        foreach ($d in 'stage_react_release_digest', 'stage_pas2js_release_digest') {
+            if ("$($e.$d)" -notmatch '^[0-9a-f]{64}$') {
+                $failures.Add("CAP-10C0 BAD-DIGEST: target=$t $d='$($e.$d)' -- the run measured no staged release")
+            }
+        }
+    }
 }
 
 # --- cross-target equality ---------------------------------------------------
@@ -912,6 +1027,11 @@ $matrix = [ordered]@{
         pas2js_compiler_version        = $first.pas2js_compiler_version
         pas2js_report_fields           = $first.pas2js_report_fields
         pas2js_rpc_result              = $first.pas2js_rpc_result
+        supervision_digest             = $first.supervision_digest
+        advertised_commands            = $first.advertised_commands
+        run_react_rpc_value            = $first.run_react_rpc_value
+        run_pas2js_rpc_value           = $first.run_pas2js_rpc_value
+        shutdown_order                 = $first.shutdown_order
         logical_inventory_sha256_react = $first.logical_inventory_sha256_react
         logical_inventory_sha256_pas2js = $evidence['linux-x86_64'].logical_inventory_sha256_pas2js
     }
@@ -977,6 +1097,19 @@ foreach ($t in $evidence.Keys) {
         pas2js_app_pwb_bytes = $e.pas2js_app_pwb_bytes
         pas2js_run_elapsed_ms = $e.pas2js_run_elapsed_ms
         native_binary_equal  = $e.native_binary_equal
+        # CAP-10C0, per target: the verdicts, and the mechanism facts that
+        # are about THIS operating system rather than about the contract
+        supervision_corpus   = $e.supervision_corpus
+        run_corpus           = $e.run_corpus
+        supervision_tree_model = $e.supervision_tree_model
+        graceful_stop_mechanism = $e.graceful_stop_mechanism
+        signal_outcome_typed = $e.signal_outcome_typed
+        run_elapsed_ms       = $e.run_elapsed_ms
+        run_descendants_drained = $e.run_descendants_drained
+        run_descendants_forced = $e.run_descendants_forced
+        run_drain_passes     = $e.run_drain_passes
+        stage_react_release_digest = $e.stage_react_release_digest
+        stage_pas2js_release_digest = $e.stage_pas2js_release_digest
         # the PUBLIC pack's bytes, per target and for the same ZIP_OS reason
         # the CAP-10B0 pack's are: identical within an OS family, one byte
         # per entry apart between them
@@ -1050,6 +1183,11 @@ $summary += "- CAP-10B2 the generated Pas2JS project builds and runs on every ta
 $summary += "- CAP-10B2 React/Pas2JS backend parity on every target: $($first.react_pas2js_parity) (same report shape ``$($first.pas2js_report_fields)``, same 42, no listener on either)"
 foreach ($t in $evidence.Keys) {
     $summary += "  - $t pas2js compiler $($evidence[$t].pas2js_compiler_host) sha256 ``$($evidence[$t].pas2js_compiler_sha256)``, raw output $($evidence[$t].pas2js_output_normalised), app.pwb $($evidence[$t].pas2js_app_pwb_bytes) bytes, native binary equal to the react build: $($evidence[$t].native_binary_equal)"
+}
+$summary += "- CAP-10C0 ONE supervision engine, one decision corpus: supervision_digest ``$($first.supervision_digest)`` equal on all four targets ($($first.supervision_corpus_lines) decisions; argv=$($first.argv_roundtrip), exit=$($first.exit_propagation), death_never_exit_zero=$($first.death_never_exit_zero), forced_kill_required=$($first.forced_kill_required), zombie=$($first.zombie_left), env=$($first.environment_policy), shell=$($first.supervision_shell_used), name_kill=$($first.global_name_kill_present))"
+$summary += "- CAP-10C0 ``pweb run`` on the built React and Pas2JS projects on every target: advertised ``$($first.advertised_commands)``, CalculatorService.Add(20,22)=$($first.run_react_rpc_value)/$($first.run_pas2js_rpc_value), secure=$($first.run_secure_origin), listeners=$($first.run_listener_count), network=$($first.run_network_calls), tools=$($first.run_tool_calls), descendants_after_exit=$($first.descendants_after_exit), interrupt=$($first.run_interrupt_clean), supervisor_terminated_tree_dies=$($first.supervisor_terminated_tree_dies), not_built=$($first.run_not_built), link=$($first.run_layout_link), tampered=$($first.run_tampered_bundle), dev/build unknown=$($first.dev_build_unknown)"
+foreach ($t in $evidence.Keys) {
+    $summary += "  - $t tree=$($evidence[$t].supervision_tree_model) stop=$($evidence[$t].graceful_stop_mechanism) signal_typed=$($evidence[$t].signal_outcome_typed) drained=$($evidence[$t].run_descendants_drained) forced=$($evidence[$t].run_descendants_forced) passes=$($evidence[$t].run_drain_passes) elapsed_ms=$($evidence[$t].run_elapsed_ms)"
 }
 $summary += "- react logical_inventory_sha256 ``$($first.logical_inventory_sha256_react)`` equal on all four targets"
 $summary += "- pas2js logical_inventory_sha256 ``$($matrix.agreement.logical_inventory_sha256_pas2js)`` equal on linux/macos-x64/macos-arm64"

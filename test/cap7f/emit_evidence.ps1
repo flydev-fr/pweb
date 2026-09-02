@@ -993,6 +993,45 @@ Write-Host ("[CAP-10B2] pas2js_create_corpus: $pas2jsCreateCorpus " +
     "rpc=$($b2p.pas2js_rpc_result) listeners=$($b2p.pas2js_listener_count) " +
     "parity=$($b2p.react_pas2js_parity))")
 
+# --- CAP-10C0: process supervision and `pweb run` ---------------------------
+# build/cap10c0/cli-<target>.json is ONE record: the supervision suite's
+# decision corpus (digested), the drivers over the real CLI, and the run
+# command on the two built projects the B1/B2 proofs left behind - staged
+# byte-for-byte beneath their own output. Mechanism names, intervals and
+# pids are observations; decisions are what four targets compare.
+$c0File = Join-Path $repoRoot 'build/cap10c0/cli-windows-x86_64.json'
+if (-not (Test-Path $c0File)) {
+    throw '[CAP-7F] cap10c0/cli-windows-x86_64.json missing -- the CAP-10C0 gates have not run in this workspace'
+}
+$c0 = Get-Content $c0File -Raw | ConvertFrom-Json
+$supervisionCorpus = "$($c0.supervision_corpus)"
+$runCorpus = "$($c0.run_corpus)"
+foreach ($pair in @(@('supervision_corpus', $supervisionCorpus),
+                    @('run_corpus', $runCorpus))) {
+    if ($pair[1] -notin @('PASS', 'FAIL')) {
+        throw "[CAP-7F] the CAP-10C0 record carries an unexpected $($pair[0]): $($pair[1])"
+    }
+}
+if (($supervisionCorpus -ceq 'PASS') -and ($runCorpus -ceq 'PASS')) {
+    if ("$($c0.supervision_digest)" -eq '') {
+        throw '[CAP-7F] the CAP-10C0 record records PASS with an empty supervision_digest'
+    }
+    foreach ($pair in @(@('run_react_rpc_value', '42'), @('run_pas2js_rpc_value', '42'),
+                        @('run_listener_count', '0'), @('descendants_after_exit', '0'),
+                        @('supervision_shell_used', 'false'),
+                        @('global_name_kill_present', 'false'))) {
+        if ("$($c0.($pair[0]))" -ne $pair[1]) {
+            throw "[CAP-7F] the CAP-10C0 record records PASS with $($pair[0])=$($c0.($pair[0]))"
+        }
+    }
+}
+Write-Host ("[CAP-10C0] supervision_corpus: $supervisionCorpus " +
+    "(digest=$("$($c0.supervision_digest)".Substring(0, 12))... lines=$($c0.supervision_corpus_lines) " +
+    "tree=$($c0.supervision_tree_model) stop=$($c0.graceful_stop_mechanism)) " +
+    "run_corpus: $runCorpus (react=$($c0.run_react_rpc_value) pas2js=$($c0.run_pas2js_rpc_value) " +
+    "listeners=$($c0.run_listener_count) descendants=$($c0.descendants_after_exit) " +
+    "interrupt=$($c0.run_interrupt_clean))")
+
 # --- run identity -----------------------------------------------------------
 $sha = $env:GITHUB_SHA
 if (-not $sha) { $sha = (& git rev-parse HEAD).Trim() }
@@ -1177,6 +1216,54 @@ $evidence = [ordered]@{
     react_regression_runtime        = "$($b2p.react_regression_runtime)"
     native_binary_equal             = "$($b2p.native_binary_equal)"
     pas2js_run_elapsed_ms           = "$($b2p.pas2js_run_elapsed_ms)"
+    # CAP-10C0
+    cli_run_available               = "$($c0.cli_run_available)"
+    advertised_commands             = "$($c0.advertised_commands)"
+    supervision_corpus              = $supervisionCorpus
+    supervision_digest              = "$($c0.supervision_digest)"
+    supervision_corpus_lines        = "$($c0.supervision_corpus_lines)"
+    supervision_shell_used          = "$($c0.supervision_shell_used)"
+    supervision_tree_model          = "$($c0.supervision_tree_model)"
+    argv_roundtrip                  = "$($c0.argv_roundtrip)"
+    exit_propagation                = "$($c0.exit_propagation)"
+    death_never_exit_zero           = "$($c0.death_never_exit_zero)"
+    signal_outcome_typed            = "$($c0.signal_outcome_typed)"
+    graceful_stop_mechanism         = "$($c0.graceful_stop_mechanism)"
+    forced_kill_required            = "$($c0.forced_kill_required)"
+    grandchild_drained              = "$($c0.grandchild_drained)"
+    zombie_left                     = "$($c0.zombie_left)"
+    workdir_explicit                = "$($c0.workdir_explicit)"
+    environment_policy              = "$($c0.environment_policy)"
+    batch_file_refused              = "$($c0.batch_file_refused)"
+    run_interrupt_clean             = "$($c0.run_interrupt_clean)"
+    supervisor_terminated_tree_dies = "$($c0.supervisor_terminated_tree_dies)"
+    descendants_after_exit          = "$($c0.descendants_after_exit)"
+    global_name_kill_present        = "$($c0.global_name_kill_present)"
+    run_corpus                      = $runCorpus
+    run_react_rpc_value             = "$($c0.run_react_rpc_value)"
+    run_pas2js_rpc_value            = "$($c0.run_pas2js_rpc_value)"
+    run_secure_origin               = "$($c0.run_secure_origin)"
+    run_error_mapping               = "$($c0.run_error_mapping)"
+    run_listener_count              = "$($c0.run_listener_count)"
+    run_network_calls               = "$($c0.run_network_calls)"
+    run_tool_calls                  = "$($c0.run_tool_calls)"
+    run_dev_allowance_present       = "$($c0.run_dev_allowance_present)"
+    run_tree_unchanged              = "$($c0.run_tree_unchanged)"
+    run_no_ansi                     = "$($c0.run_no_ansi)"
+    run_not_built                   = "$($c0.run_not_built)"
+    run_layout_link                 = "$($c0.run_layout_link)"
+    run_output_escape               = "$($c0.run_output_escape)"
+    run_tampered_bundle             = "$($c0.run_tampered_bundle)"
+    run_option_matrix               = "$($c0.run_option_matrix)"
+    run_project_descriptor_form     = "$($c0.run_project_descriptor_form)"
+    dev_build_unknown               = "$($c0.dev_build_unknown)"
+    shutdown_order                  = "$($c0.shutdown_order)"
+    run_elapsed_ms                  = "$($c0.run_elapsed_ms)"
+    run_descendants_drained         = "$($c0.run_descendants_drained)"
+    run_descendants_forced          = "$($c0.run_descendants_forced)"
+    run_drain_passes                = "$($c0.run_drain_passes)"
+    stage_react_release_digest      = "$($c0.stage_react_release_digest)"
+    stage_pas2js_release_digest     = "$($c0.stage_pas2js_release_digest)"
     release_layout                  = $releaseLayout
     no_listener                     = $noListener
     no_listener_provenance          = 'source-sweep re-executed (check_cap6_nonetwork.ps1); CAP-5/CAP-6 job gates precede this emitter'

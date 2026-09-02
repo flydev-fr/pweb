@@ -1491,6 +1491,150 @@ $e.pas2js_app_pwb_entries = '4'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap10b2-bundle-inventory' 'BAD-BUNDLE-INVENTORY'
 
+# ========================== CAP-10C0 (c108-c121) =========================
+#
+# Every refusal the supervision aggregate adds, proven red on fixtures
+# before the real aggregation is trusted: a verdict rewritten to SKIP must
+# reach the mustPass branch, the decision corpus perturbed on ONE target
+# must reach the equality branch, a value drifted on EVERY target must reach
+# the absolute-pin branch, and the per-target defense-in-depth branches must
+# each refuse by name.
+
+# --- (c108) the supervision verdict rewritten to SKIP ---------------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.supervision_corpus = 'SKIP'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c0-supervision-corpus' 'supervision_corpus'
+
+# --- (c109) the run verdict rewritten to FAIL -----------------------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.run_corpus = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c0-run-corpus' 'run_corpus'
+
+# --- (c110) the decision corpus diverged on one target -------------------
+# the whole engine claim in one field: pure logic over the fixture child
+# and injected records must decide identically on four targets
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.supervision_digest = 'deadbeef' + "$($e.supervision_digest)".Substring(8)
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c0-decision-divergence' 'supervision_digest'
+
+# --- (c111) an EMPTY decision digest on EVERY target ----------------------
+# the c52/c60/c101 hole, aimed at this shard's load-bearing field
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.supervision_digest = ''
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10c0-empty-digest' 'CAP-10C0 BAD-DIGEST'
+
+# --- (c112) shell execution observed, in unison ---------------------------
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.supervision_shell_used = 'true'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10c0-shell-used' 'supervision_shell_used'
+
+# --- (c113) a descendant survived the drain, on every target --------------
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.descendants_after_exit = '1'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10c0-descendants' 'descendants_after_exit'
+
+# --- (c114) a descendant survived on ONE target, beside a PASS verdict ----
+# the defense-in-depth branch: not the pin (three targets still read 0)
+# but the per-target NOT-INERT refusal
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.descendants_after_exit = '2'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c0-descendants-one-target' 'NOT-INERT'
+
+# --- (c115) a development allowance present, in unison --------------------
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.run_dev_allowance_present = 'true'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10c0-dev-allowance' 'run_dev_allowance_present'
+
+# --- (c116) a listener under `pweb run`, in unison -------------------------
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.run_listener_count = '1'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10c0-listener' 'run_listener_count'
+
+# --- (c117) the React run answered 41 on every target ---------------------
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.run_react_rpc_value = '41'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10c0-rpc-drift' 'run_react_rpc_value'
+
+# --- (c118) the exit CATEGORY diverged: not-built became a 4 in unison ----
+# different human text must never alter the category, and neither may a
+# platform: the pin carries the category and the cause together
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.run_not_built = 'exit4/not_built'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10c0-exit-category' 'run_not_built'
+
+# --- (c119) a name-based kill primitive present, in unison ----------------
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.global_name_kill_present = 'true'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10c0-name-kill' 'global_name_kill_present'
+
+# --- (c120) a Windows leg that ran the wrong tree body --------------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.supervision_tree_model = 'process_group'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c0-tree-model' 'WRONG-TREE-MODEL'
+
+# --- (c121) a POSIX leg that never typed a signal death -------------------
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.signal_outcome_typed = 'not_applicable'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c0-signal-typed' 'SIGNAL-NOT-TYPED'
+
 # --- (d) divergence sweep must refuse an off-allowlist conditional -----------
 $fixturePas = 'src/zz_cap7f_selftest_fixture.pas'
 Remove-Item -Force -ErrorAction SilentlyContinue $fixturePas

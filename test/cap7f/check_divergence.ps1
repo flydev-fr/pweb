@@ -49,7 +49,7 @@ $directiveRx = [regex]::new('\{\$\s*(?:ifdef|ifndef|elseif|if|else|endif)\b[^}]*
 $directiveParenRx = [regex]::new('\(\*\$\s*(?:ifdef|ifndef|elseif|if|else|endif)\b[^*]*\*\)',
     [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
 $platformRx = [regex]::new(
-    '\b(WIN32|WIN64|WINDOWS|OSWINDOWS|MSWINDOWS|LINUX|DARWIN|UNIX|POSIX|BSD|FREEBSD|NETBSD|OPENBSD|IOS|OSX|MACOS|HAIKU|ANDROID|SOLARIS|SUNOS|AIX|CPUX86_64|CPUX64|CPUX86|CPUAARCH64|CPUARM64|CPUARM|AARCH64|CPU32|CPU64)\b',
+    '\b(WIN32|WIN64|WINDOWS|OSWINDOWS|MSWINDOWS|LINUX|DARWIN|UNIX|POSIX|OSPOSIX|OSLINUX|OSDARWIN|OSMAC|OSBSD|OSANDROID|BSD|FREEBSD|NETBSD|OPENBSD|IOS|OSX|MACOS|HAIKU|ANDROID|SOLARIS|SUNOS|AIX|CPUX86_64|CPUX64|CPUX86|CPUAARCH64|CPUARM64|CPUARM|AARCH64|CPU32|CPU64)\b',
     [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
 
 function Get-PlatformDirectiveMatches([string]$Line) {
@@ -87,8 +87,17 @@ $allow = @{
     # test/cap10b1/check_cap10b1_contracts.ps1 measures on the template
     # source. Every {$ifdef} here selects a NAME or a whole platform body;
     # none of them decides anything.
-    'src/webview/pweb.webview.host.pas'  = @{ directives = 30;
-        fingerprint = 'd2532d995c765ec48458495e3f765f7e3d5aee8bcd6556ad57ebb7538069a623' }
+    # CAP-10C0 RE-RATIFIED at 40 (was 30): the POSIX graceful-stop helper -
+    # the baseunix uses, the helper's own region, the two variables and the
+    # install/remove call sites around webview_run - five OSPOSIX regions
+    # that select a whole body each. The count moved for a second reason
+    # worth naming: the mORMot OS spellings (OSPOSIX, OSLINUX, OSDARWIN,
+    # OSMAC, OSBSD, OSANDROID) were ABSENT from the platform-symbol filter
+    # above, so a conditional spelled the mormot.defines.inc way was not a
+    # conditional to this sweep. CAP-10C0 added them; nothing else in the
+    # swept surface used one, so no other row moved.
+    'src/webview/pweb.webview.host.pas'  = @{ directives = 40;
+        fingerprint = 'f1c4d9ab6b9842843ec823b1d8cd5ba1e98c5f712c579817c45eaf8140b71dec' }
     'src/assets/pweb.assets.folder.pas'  = @{ directives = 10;  # Darwin F_GETPATH / Windows wide-API split
         fingerprint = '145ed55144e2e7c509bfda6cc19fadc863a58f41f31747f8835c26ec2e5c48c9' }
     'src/assets/pweb.assets.bundle.pas'  = @{ directives = 6;   # I/O mechanism only (ratified)
@@ -107,8 +116,16 @@ $allow = @{
     # resolution and the host engine probe - so that pweb.cli.args,
     # .project, .paths, .probe, .doctor, .report and .toolchain stay at
     # ZERO and this sweep keeps them there.
-    'tools/pweb/pweb.cli.platform.pas'   = @{ directives = 24;
-        fingerprint = '91f95444ba9fff35c95bb243080042f9e13054797072cfb69ee302bff57fb35b' }
+    # CAP-10C0 RE-RATIFIED at 36 (was 24): the child-process primitives. The
+    # Windows body (CreateProcessW + Job Object) and the POSIX body
+    # (fork/execve + process group) went INSIDE the existing conditional
+    # regions, as CAP-10B0's filesystem primitives did; what grew the count
+    # is the POSIX body's own split - Linux's prctl(PR_SET_PDEATHSIG) and
+    # /proc pgrp scan against Darwin's libproc enumeration, plus the Darwin
+    # variadic fcntl wrapper the CAP-10A F_GETPATH precedent already
+    # required. Every one selects a whole platform body; none decides.
+    'tools/pweb/pweb.cli.platform.pas'   = @{ directives = 36;
+        fingerprint = 'e1fcbe2461a0fe9bdd31b66200dee78f7faa7ee1c199476964e5383cf08c3be9' }
     # CAP-10A: the program, whose only conditional is {$apptype console}
     'tools/pweb/pweb.pas'                = @{ directives = 2;
         fingerprint = '0dc7a84a71485678f01dc0e7032093d6858fb389878b52157a2f69671187305d' }

@@ -24,6 +24,8 @@
     pweb create --help
     pweb doctor [--json] [--with-paths] [--project <path>] [--no-color]
                 [--verbose]
+    pweb run [--project <path>]
+    pweb run --help
 
   Long options only. There are no short forms in v1 - not because they are
   bad, but because every alias is a second spelling of one contract and this
@@ -51,6 +53,12 @@
   and `pas2js` - the two kinds schema 1 has ratified since CAP-10A - in the
   same commit as the second template, and it added no alias and no case
   fold: `React` and `PAS2JS` are refused exactly like `svelte`.
+
+  CAP-10C0 ADDS `run`, which takes `--project` and nothing else. It has no
+  operand, no `--json` (it is a foreground supervisor, not a report), no
+  colour and no verbosity, and - the rule that matters - NO pass-through:
+  nothing typed after `run` ever reaches the application, because the
+  application is launched in production mode with an empty argument vector.
 
   DELIBERATELY NOT IMPLEMENTED: response files (`@file` is an ordinary
   positional and is never expanded), `--` as an argument terminator (it is
@@ -83,10 +91,11 @@ const
 
 type
   /// the commands this build exposes
-  // - dev/run/build are NOT here: an unimplemented command that parses is a
+  // - dev/build are NOT here: an unimplemented command that parses is a
   // promise the binary cannot keep, so they are unknown commands and are
-  // refused like any other
-  TPWebCliCommand = (pccNone, pccCreate, pccDoctor);
+  // refused like any other. CAP-10C0 added `run`, which does the whole of
+  // what its name says: it launches an already-built application
+  TPWebCliCommand = (pccNone, pccCreate, pccDoctor, pccRun);
 
   /// why a command line was refused - ordinal 0 is the accepted state
   TPWebCliUsage = (
@@ -421,6 +430,8 @@ begin
           Result.Command := pccCreate
         else if token = 'doctor' then
           Result.Command := pccDoctor
+        else if token = 'run' then
+          Result.Command := pccRun
         else
         begin
           Refuse(Result, pcuUnknownCommand, token);
@@ -461,6 +472,23 @@ begin
       Refuse(Result, pcuOptionNotForCommand, '--project');
       exit;
     end;
+    if Result.Verbose then
+    begin
+      Refuse(Result, pcuOptionNotForCommand, '--verbose');
+      exit;
+    end;
+    if Result.NoColor then
+    begin
+      Refuse(Result, pcuOptionNotForCommand, '--no-color');
+      exit;
+    end;
+  end;
+  // run takes the project option and nothing else: it emits no colour, no
+  // verbose diagnostics and no machine report, and the application it
+  // launches receives NO argument - so each of these is an option this
+  // command does not have, rather than one it quietly ignores or forwards
+  if Result.Command = pccRun then
+  begin
     if Result.Verbose then
     begin
       Refuse(Result, pcuOptionNotForCommand, '--verbose');

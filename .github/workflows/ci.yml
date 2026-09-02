@@ -1980,6 +1980,43 @@ jobs:
             build/cap10b2-gates.log
             build/cap10b2-proof.log
 
+      - name: CAP-10C0 build the supervision suite and the fixture child
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          pwsh -NoProfile -File test/cap10c0/build_cap10c0.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10C0 build FAILED' }
+
+      - name: CAP-10C0 contract cross-checks (bounds, no shell at the link, no name-kill, env, shutdown order)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10c0/check_cap10c0_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10C0 contract cross-checks FAILED' }
+
+      - name: CAP-10C0 supervision suite + pweb run gates + evidence
+        shell: bash
+        timeout-minutes: 30
+        run: |
+          pwsh -NoProfile -File test/cap10c0/run_cap10c0_gates.ps1 2>&1 |
+            tee build/cap10c0-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10C0 upload the supervision corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10c0-supervision-windows
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10c0/cli-windows-x86_64.json
+            build/cap10c0/contracts.json
+            build/cap10c0/supervise-corpus.txt
+            build/cap10c0/supervise-observed.txt
+            build/cap10c0/c0tests.log
+            build/cap10c0/run-*-stdout.txt
+            build/cap10c0/run-*-stderr.txt
+            build/cap10c0-gates.log
       - name: CAP-7F emit the Windows evidence artifact
         shell: pwsh
         timeout-minutes: 10
@@ -2677,6 +2714,41 @@ jobs:
             build/cap10b2/generated-inventory.txt
             build/cap10b2/proof.log
 
+      - name: CAP-10C0 build the supervision suite and the fixture child
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap10c0/build_cap10c0.sh
+
+      - name: CAP-10C0 contract cross-checks (bounds, no shell at the link, no name-kill, env, shutdown order)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10c0/check_cap10c0_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10C0 contract cross-checks FAILED' }
+
+      - name: CAP-10C0 supervision suite + pweb run gates + evidence
+        shell: bash
+        timeout-minutes: 30
+        run: |
+          xvfb-run -a pwsh -NoProfile -File test/cap10c0/run_cap10c0_gates.ps1 2>&1 |
+            tee build/cap10c0-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10C0 upload the supervision corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10c0-supervision-linux
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10c0/cli-linux-x86_64.json
+            build/cap10c0/contracts.json
+            build/cap10c0/supervise-corpus.txt
+            build/cap10c0/supervise-observed.txt
+            build/cap10c0/c0tests.log
+            build/cap10c0/run-*-stdout.txt
+            build/cap10c0/run-*-stderr.txt
+            build/cap10c0-gates.log
       - name: CAP-7F emit the Linux evidence artifact
         shell: bash
         timeout-minutes: 10
@@ -3409,6 +3481,41 @@ jobs:
             build/cap10b2/generated-inventory.txt
             build/cap10b2/proof.log
 
+      - name: CAP-10C0 build the supervision suite and the fixture child
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap10c0/build_cap10c0.sh
+
+      - name: CAP-10C0 contract cross-checks (bounds, no shell at the link, no name-kill, env, shutdown order)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10c0/check_cap10c0_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10C0 contract cross-checks FAILED' }
+
+      - name: CAP-10C0 supervision suite + pweb run gates + evidence
+        shell: bash
+        timeout-minutes: 30
+        run: |
+          pwsh -NoProfile -File test/cap10c0/run_cap10c0_gates.ps1 2>&1 |
+            tee build/cap10c0-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10C0 upload the supervision corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10c0-supervision-macos-x64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10c0/cli-macos-x86_64.json
+            build/cap10c0/contracts.json
+            build/cap10c0/supervise-corpus.txt
+            build/cap10c0/supervise-observed.txt
+            build/cap10c0/c0tests.log
+            build/cap10c0/run-*-stdout.txt
+            build/cap10c0/run-*-stderr.txt
+            build/cap10c0-gates.log
       - name: CAP-7F emit the macOS x64 evidence artifact
         shell: bash
         timeout-minutes: 10
@@ -4069,6 +4176,41 @@ jobs:
             build/cap10b2/generated-inventory.txt
             build/cap10b2/proof.log
 
+      - name: CAP-10C0 build the supervision suite and the fixture child
+        shell: bash
+        timeout-minutes: 15
+        run: test/cap10c0/build_cap10c0.sh
+
+      - name: CAP-10C0 contract cross-checks (bounds, no shell at the link, no name-kill, env, shutdown order)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10c0/check_cap10c0_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10C0 contract cross-checks FAILED' }
+
+      - name: CAP-10C0 supervision suite + pweb run gates + evidence
+        shell: bash
+        timeout-minutes: 30
+        run: |
+          pwsh -NoProfile -File test/cap10c0/run_cap10c0_gates.ps1 2>&1 |
+            tee build/cap10c0-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10C0 upload the supervision corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10c0-supervision-macos-arm64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10c0/cli-macos-arm64.json
+            build/cap10c0/contracts.json
+            build/cap10c0/supervise-corpus.txt
+            build/cap10c0/supervise-observed.txt
+            build/cap10c0/c0tests.log
+            build/cap10c0/run-*-stdout.txt
+            build/cap10c0/run-*-stderr.txt
+            build/cap10c0-gates.log
       - name: CAP-7F emit the macOS arm64 evidence artifact
         shell: bash
         timeout-minutes: 10

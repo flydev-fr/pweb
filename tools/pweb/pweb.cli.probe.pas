@@ -1,45 +1,31 @@
 {
   pweb.cli.probe - executable resolution and bounded, shell-free tool probes
-  (CAP-10A).
+  (CAP-10A, re-based on the CAP-10C0 engine).
 
-  THE ONLY PLACE IN THE CLI THAT STARTS A PROCESS. Everything about how a
-  child is launched, bounded, drained and killed is written here once.
+  RESOLVES a tool on PATH deterministically and PROBES it through the ONE
+  execution engine of the CLI, pweb.cli.process, in its `probe` profile.
+  Nothing about how a child is launched, bounded, drained or killed lives
+  here any more: CAP-10C0 moved that into pweb.cli.process and
+  pweb.cli.platform so that `pweb doctor`, `pweb run` and the later `dev` and
+  `build` commands share one implementation rather than three.
 
   ---------------------------------------------------------------------------
-  NO SHELL, AND HOW THAT IS TRUE RATHER THAN CLAIMED
+  THE CAP-10A SEMANTICS, UNCHANGED
   ---------------------------------------------------------------------------
 
   Every probe is (exact absolute executable path, argument array, timeout).
-  There is no command string anywhere in this unit: nothing is concatenated,
-  quoted, escaped or interpolated, so there is no grammar for a descriptor
-  value or an environment variable to escape from - and no descriptor value
-  ever reaches this unit in the first place, because the tool names are
-  compile-time constants in pweb.cli.toolchain.
+  There is still no command string anywhere in this unit, no descriptor value
+  reaches it (the tool names are compile-time constants in pweb.cli.toolchain),
+  stdin is /dev/null or NUL from the first instant, both streams are drained
+  together, each is captured up to a byte ceiling and read-and-discarded past
+  it, and a child that outstays the bound is terminated and reaped rather than
+  waited on. The exit code is exact on every platform.
 
-  The launch goes through FPC's `process` unit, whose POSIX body calls
-  fpexecv/fpexecve directly (packages/fcl-process/src/unix/process.inc) and
-  whose Windows body calls CreateProcessW. `cmd.exe /c`, `/bin/sh -c`,
-  system(), popen() and mORMot's RunRedirect/RunCommand (which uses popen on
-  POSIX) are all absent by construction, and
-  test/cap10a/check_cap10a_contracts.ps1 sweeps this tree for every one of
-  those spellings.
-
-  ---------------------------------------------------------------------------
-  BOUNDED IN EVERY DIRECTION
-  ---------------------------------------------------------------------------
-
-    - a wall-clock timeout per probe, after which the child is TERMINATED
-      and reaped rather than waited on forever;
-    - stdin is closed immediately, so a tool that decides to ask a question
-      gets EOF instead of blocking on a terminal the CLI never gave it;
-    - stdout AND stderr are drained together, in one non-blocking loop.
-      Draining only one of them is the classic deadlock: the child fills the
-      other pipe's buffer and blocks, the parent waits for an exit that can
-      never come. Both are read every pass;
-    - each stream is CAPTURED up to a byte ceiling and then read-and-
-      discarded past it. Discarding rather than stopping matters: a probe
-      that stopped reading would recreate the same deadlock at the ceiling
-      instead of at the buffer.
+  What CAP-10C0 changed underneath: the Windows launch no longer goes through
+  FPC's TProcess and its own quoting, but through CreateProcessW with a
+  command line built by the msvcrt-exact rule and a Job Object that owns the
+  whole tree; the POSIX launch is fork/execve into a process group of its
+  own. A tool that spawns helpers and exits leaves nothing behind.
 
   ---------------------------------------------------------------------------
   WHAT IS NEVER EXECUTED
@@ -51,7 +37,11 @@
   because of where the user happened to be standing is precisely the shape of
   attack the PATH rules elsewhere in this unit exist to avoid. The empty PATH
   entry, which POSIX defines as the working directory, is dropped for the
-  same reason (pweb.cli.platform).
+  same reason (pweb.cli.platform). A batch file is never executed either: the
+  engine refuses `.cmd` / `.bat` before any spawn.
+
+  The working directory handed to a probe is the tool's OWN directory: it is
+  explicit, deterministic, and never the directory this CLI was started from.
 }
 unit pweb.cli.probe;
 
@@ -61,12 +51,10 @@ interface
 
 uses
   sysutils,
-  classes,
-  pipes,
-  process,
   mormot.core.base,
   pweb.cli.platform,
-  pweb.cli.toolchain;
+  pweb.cli.toolchain,
+  pweb.cli.process;
 
 type
   /// what happened to one probe - ordinal 0 is a failure state
@@ -75,10 +63,12 @@ type
     ppoNotFound,
     /// the candidate resolves inside the project root: reported, NOT run
     ppoInsideProject,
-    /// the process could not be created
+    /// the process could not be created (or was refused before creation)
     ppoSpawnFailed,
     /// the bound expired; the child was terminated
     ppoTimedOut,
+    /// the child died by a signal (POSIX) - distinct from an exit code
+    ppoDied,
     /// the child ran to completion (whatever its exit code)
     ppoCompleted);
 
@@ -130,6 +120,7 @@ begin
     ppoInsideProject: Result := 'tool_inside_project';
     ppoSpawnFailed:   Result := 'probe_spawn_failed';
     ppoTimedOut:      Result := 'probe_timed_out';
+    ppoDied:          Result := 'probe_died';
     ppoCompleted:     Result := 'probe_completed';
   else
     Result := 'probe_failed';
@@ -218,115 +209,47 @@ begin
     Result := ppoNotFound;
 end;
 
-// read whatever is available from one pipe, capturing up to Cap bytes and
-// DISCARDING the rest - a reader that stopped would deadlock the child at
-// the ceiling instead of at the buffer
-procedure DrainPipe(Stream: TInputPipeStream; var Dest: RawUtf8;
-  Cap: PtrInt; var Truncated: Boolean; var Moved: Boolean);
-var
-  avail, got, keep: LongInt;
-  buf: array[0 .. 8191] of Byte;
-  chunk: RawUtf8;
-begin
-  if Stream = nil then
-    exit;
-  repeat
-    avail := Stream.NumBytesAvailable;
-    if avail <= 0 then
-      exit;
-    if avail > SizeOf(buf) then
-      avail := SizeOf(buf);
-    got := Stream.Read(buf, avail);
-    if got <= 0 then
-      exit;
-    Moved := True;
-    keep := got;
-    if Length(Dest) + keep > Cap then
-    begin
-      keep := Cap - Length(Dest);
-      Truncated := True;
-    end;
-    if keep > 0 then
-    begin
-      SetString(chunk, PAnsiChar(@buf[0]), keep);
-      Dest := Dest + chunk;
-    end;
-  until False;
-end;
-
 function PWebCliRunProbe(const ExePath: RawUtf8;
   const Args: array of RawUtf8; TimeoutMs: Cardinal): TPWebCliProbe;
 var
-  p: TProcess;
+  spec: TPWebCliExecSpec;
+  r: TPWebCliExecResult;
   i: PtrInt;
-  started, now64: QWord;
-  moved: Boolean;
+  dir, name: RawUtf8;
 begin
   Result := Default(TPWebCliProbe);
   Result.Outcome := ppoSpawnFailed;
   Result.Path := ExePath;
-  p := TProcess.Create(nil);
-  try
-    // the EXACT resolved path, never a name the platform would search for
-    p.Executable := string(ExePath);
-    for i := 0 to High(Args) do
-      p.Parameters.Add(string(Args[i]));
-    // poUsePipes and nothing else: no shell, no detached console, no
-    // inherited terminal
-    p.Options := [poUsePipes];
-    p.ShowWindow := swoHIDE;
-    try
-      p.Execute;
-    except
-      exit; // ppoSpawnFailed, with no partial state to explain
-    end;
-    // EOF on stdin from the first instant: a tool that prompts gets an
-    // answer it can act on instead of a terminal it will wait on forever
-    p.CloseInput;
-    started := GetTickCount64;
-    repeat
-      moved := False;
-      DrainPipe(p.Output, Result.Output, PWEB_CLI_PROBE_MAX_BYTES,
-        Result.Truncated, moved);
-      DrainPipe(p.Stderr, Result.ErrorText, PWEB_CLI_PROBE_MAX_BYTES,
-        Result.Truncated, moved);
-      if not p.Running then
-        break;
-      now64 := GetTickCount64;
-      if (now64 >= started) and
-         (now64 - started > TimeoutMs) then
+  spec := Default(TPWebCliExecSpec);
+  spec.ExePath := ExePath;
+  SetLength(spec.Args, Length(Args));
+  for i := 0 to High(Args) do
+    spec.Args[i] := Args[i];
+  // explicit, deterministic, never this process's working directory
+  if PWebCliSplitLast(ExePath, dir, name) then
+    spec.WorkDir := dir
+  else
+    spec.WorkDir := ExePath;
+  spec.Profile := pepProbe;
+  spec.TimeoutMs := TimeoutMs;
+  r := PWebCliExecute(spec);
+  Result.Output := r.Output;
+  Result.ErrorText := r.ErrorText;
+  Result.Truncated := r.Truncated;
+  case r.Outcome of
+    pcoExited:
       begin
-        Result.Outcome := ppoTimedOut;
-        try
-          p.Terminate(255);
-        except
-          // a child that cannot be terminated is still a timeout, and the
-          // CLI is about to exit anyway - never a raise out of a probe
-        end;
-        try
-          p.WaitOnExit;
-        except
-        end;
-        exit;
+        Result.Outcome := ppoCompleted;
+        Result.ExitCode := r.ExitCode;
       end;
-      if not moved then
-        Sleep(5);
-    until False;
-    // the child has exited: take what is still sitting in the pipes
-    DrainPipe(p.Output, Result.Output, PWEB_CLI_PROBE_MAX_BYTES,
-      Result.Truncated, moved);
-    DrainPipe(p.Stderr, Result.ErrorText, PWEB_CLI_PROBE_MAX_BYTES,
-      Result.Truncated, moved);
-    // ExitCode, NEVER ExitStatus. On POSIX ExitStatus is the RAW wait(2)
-    // status - exit 3 reads as 768 - and ExitCode is the one that applies
-    // wexitstatus; on Windows the two are the same property. MEASURED: the
-    // ExitStatus form passed on Windows and reported 768 for exit 3 on
-    // Linux, which is precisely the shape of a cross-platform defect that a
-    // single-platform test would have shipped.
-    Result.ExitCode := p.ExitCode;
-    Result.Outcome := ppoCompleted;
-  finally
-    p.Free;
+    pcoSignaled:
+      Result.Outcome := ppoDied;
+    pcoForced,
+    pcoUnreaped:
+      // the ONLY way a probe is forced is its bound expiring
+      Result.Outcome := ppoTimedOut;
+  else
+    Result.Outcome := ppoSpawnFailed;
   end;
 end;
 

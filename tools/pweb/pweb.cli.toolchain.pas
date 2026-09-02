@@ -72,6 +72,38 @@ const
   // mount is not a thing a CLI should be able to do
   PWEB_CLI_DISCOVERY_MAX_DEPTH = 64;
 
+  { CAP-10C0 - the supervision bounds. Every one of them is a LIMIT on how
+    long the supervisor may wait for something it does not control, never a
+    tuning knob: a supervised application that has not honoured a graceful
+    stop inside PWEB_CLI_RUN_GRACE_MS is killed, and one that has not died
+    inside PWEB_CLI_RUN_KILL_MS after that is reported as unreaped rather
+    than waited on forever. test/cap10c0/check_cap10c0_contracts.ps1
+    cross-checks each value against docs/supervision-contract.md. }
+
+  /// graceful window: from the stop request (WM_CLOSE / SIGTERM to the
+  // group) until the tree is force-terminated
+  PWEB_CLI_RUN_GRACE_MS = 5000;
+
+  /// forced window: from TerminateJobObject / SIGKILL until the child must
+  // have been reaped
+  PWEB_CLI_RUN_KILL_MS = 3000;
+
+  /// while the graceful stop finds no window to close yet (a host still
+  // starting up), the request is re-posted at this interval
+  PWEB_CLI_RUN_STOP_RETRY_MS = 250;
+
+  /// ceiling on ONE forwarded line, in bytes; the rest of a longer line is
+  // discarded and the line is marked truncated
+  PWEB_CLI_RUN_LINE_MAX = 4096;
+
+  /// ceiling on the retained stderr tail kept for the exit report
+  PWEB_CLI_RUN_DIAG_MAX = 65536;
+
+  /// after the child exits, how many enumeration passes the descendant
+  // drain makes at PWEB_CLI_RUN_DRAIN_POLL_MS before it stops re-checking
+  PWEB_CLI_RUN_DRAIN_PASSES = 20;
+  PWEB_CLI_RUN_DRAIN_POLL_MS = 250;
+
 implementation
 
 end.

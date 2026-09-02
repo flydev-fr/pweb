@@ -85,6 +85,9 @@ function PWebCliUsageBanner: RawUtf8;
 // disagree is how a CLI ends up promising a template nobody shipped
 function PWebCliCreateHelp: RawUtf8;
 
+/// the `pweb run --help` text
+function PWebCliRunHelp: RawUtf8;
+
 /// the --version line
 function PWebCliVersionLine: RawUtf8;
 
@@ -106,11 +109,11 @@ end;
 
 function PWebCliUsageBanner: RawUtf8;
 begin
-  // dev/run/build are absent ON PURPOSE. This build does not implement
-  // them, and a command listed in help that answers "not implemented" is a
-  // contract nobody can rely on either way. `create` appears here for the
-  // first time in CAP-10B1 because it is now a command that does the whole
-  // of what its name says.
+  // dev/build are absent ON PURPOSE. This build does not implement them,
+  // and a command listed in help that answers "not implemented" is a
+  // contract nobody can rely on either way. `create` appeared here in
+  // CAP-10B1 and `run` in CAP-10C0, each in the shard that made it a
+  // command that does the whole of what its name says.
   Result :=
     'pweb - the PWeb application lifecycle CLI' + CRLF_NONE +
     CRLF_NONE +
@@ -121,12 +124,16 @@ begin
       PWEB_CLI_UI_PAS2JS + ' --bundle-id <reverse.dns>' + CRLF_NONE +
     '  pweb doctor [--json] [--with-paths] [--project <path>]' + CRLF_NONE +
     '              [--no-color] [--verbose]' + CRLF_NONE +
+    '  pweb run [--project <path>]' + CRLF_NONE +
     CRLF_NONE +
     'commands:' + CRLF_NONE +
     '  create         create a new PWeb project (pweb create --help)' +
       CRLF_NONE +
     '  doctor         diagnose this machine against the current project' +
       CRLF_NONE +
+    '  run            launch the already-built application and supervise' +
+      CRLF_NONE +
+    '                 it in the foreground (pweb run --help)' + CRLF_NONE +
     CRLF_NONE +
     'options:' + CRLF_NONE +
     '  --ui <kind>    the frontend kind to scaffold (create only)' +
@@ -200,6 +207,48 @@ begin
     'exit codes:' + CRLF_NONE +
     '  0 success   2 usage   3 project   4 environment   6 internal' +
       CRLF_NONE;
+end;
+
+function PWebCliRunHelp: RawUtf8;
+begin
+  Result :=
+    'pweb run - launch the already-built application and supervise it' +
+      CRLF_NONE +
+    CRLF_NONE +
+    'usage:' + CRLF_NONE +
+    '  pweb run [--project <path>]' + CRLF_NONE +
+    CRLF_NONE +
+    'options:' + CRLF_NONE +
+    '  --project <p>  use this pweb.json, or the project rooted at this' +
+      CRLF_NONE +
+    '                 directory, instead of searching upward from the' +
+      CRLF_NONE +
+    '                 working directory' + CRLF_NONE +
+    '  --help         show this text' + CRLF_NONE +
+    CRLF_NONE +
+    'the application is taken from the project''s output directory:' +
+      CRLF_NONE +
+    '  <output>/<os>-<arch>/release/    the native executable and app.pwb' +
+      CRLF_NONE +
+    '                                   (a .app bundle on macOS)' + CRLF_NONE +
+    'and must already have been built. Run builds nothing: it does not' +
+      CRLF_NONE +
+    'compile, run a package manager, repack app.pwb, modify the project or' +
+      CRLF_NONE +
+    'open a network connection. The application starts in production mode' +
+      CRLF_NONE +
+    'with no arguments and inherits this environment unchanged; its output' +
+      CRLF_NONE +
+    'is forwarded, Ctrl+C asks it to close gracefully, and every process' +
+      CRLF_NONE +
+    'it started is gone before pweb exits.' + CRLF_NONE +
+    CRLF_NONE +
+    'exit codes:' + CRLF_NONE +
+    '  0 the application exited 0   2 usage   3 project or not built' +
+      CRLF_NONE +
+    '  4 supervision unavailable   5 the application exited nonzero, died' +
+      CRLF_NONE +
+    '    or had to be terminated   6 internal' + CRLF_NONE;
 end;
 
 { ---------------------------------------------------------------------------

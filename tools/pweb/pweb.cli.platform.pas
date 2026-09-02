@@ -309,6 +309,163 @@ function PWebCliFindExecutable(const Dir, Tool: RawUtf8;
 // platform - never reimplemented here
 function PWebCliEngine: TPWebCliEngineFact;
 
+
+{ ---------------------------------------------------------------------------
+  CHILD PROCESSES (CAP-10C0)
+
+  The raw primitives under the ONE execution engine in pweb.cli.process.
+  Nothing here decides anything: the engine owns the drain loop, the bounds,
+  the graceful-then-forced escalation and the outcome typing, and these
+  functions are the platform's verbs for it - spawn, read, poll, wait, stop,
+  kill, enumerate, release.
+
+  Windows: CreateProcessW from an explicitly quoted command line the engine
+  built, stdio inheritance restricted to exactly three handles, the child
+  created SUSPENDED, placed in a fresh Job Object carrying
+  JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, then resumed - so every descendant is
+  a job member and the whole tree dies with the supervisor's last handle,
+  whether the supervisor exits, is killed, or crashes. MEASURED on the dev
+  host before this shard was planned: six WebView2 processes spawned by a
+  generated host were inside the job, the six unrelated Evergreen processes
+  on the machine were not, and the job was empty 254 ms after the host
+  exited.
+
+  POSIX: fork + setpgid(0,0) + execve with the argument vector, so the child
+  leads a process group of its own and the group is what SIGTERM and SIGKILL
+  are sent to. Exec failure travels back through a close-on-exec pipe, so a
+  path that exists but cannot run is a typed spawn failure rather than an
+  exit code 127 that looks like the application's own. Every child is
+  reaped through waitpid; on Linux PR_SET_PDEATHSIG additionally kills the
+  direct child if the supervisor dies without a chance to signal the group.
+  --------------------------------------------------------------------------- }
+
+type
+  /// one child process this CLI started, owned by the platform seam
+  // - opaque to every other unit: the fields are handles and pids and
+  // nothing outside this unit interprets them
+  TPWebCliChild = record
+    /// the child's process id
+    Pid: PtrInt;
+    /// POSIX: the process group the child leads; Windows: 0
+    Group: PtrInt;
+    /// Windows: the process handle; POSIX: 0
+    Handle: PtrUInt;
+    /// Windows: the Job Object every descendant belongs to; POSIX: 0
+    Job: PtrUInt;
+    /// the supervisor's read ends of the child's stdout and stderr
+    OutRead: PtrInt;
+    ErrRead: PtrInt;
+    /// True until PWebCliChildWait has reaped the child
+    Running: Boolean;
+    /// the exit code, meaningful when Running = False and Signal = 0
+    ExitCode: Integer;
+    /// POSIX: the terminating signal when Running = False; Windows: 0
+    Signal: Integer;
+  end;
+
+  /// why a spawn produced no running child - machine-stable, one cause each
+  TPWebCliSpawnFailure = (
+    psfNone,
+    /// the stdio pipes or the NUL / /dev/null stdin could not be created
+    psfPipes,
+    /// Windows: the Job Object could not be created, configured, or the
+    // child could not be assigned to it
+    psfJobObject,
+    /// CreateProcessW / fork failed
+    psfCreate,
+    /// POSIX: exec failed after fork; the child reported it and was reaped
+    psfExec,
+    /// the working directory could not be entered
+    psfWorkDir);
+
+  /// one process observed inside the supervised tree
+  TPWebCliTreeMember = record
+    Pid: PtrInt;
+    ParentPid: PtrInt;
+    /// the canonical image path, or '' when it could not be read - never
+    // guessed, never derived from a name
+    Image: RawUtf8;
+  end;
+  TPWebCliTreeMembers = array of TPWebCliTreeMember;
+
+  TPWebCliChildStream = (pcsStdOut, pcsStdErr);
+
+/// fixed text for a spawn failure
+function PWebCliSpawnFailureText(Failure: TPWebCliSpawnFailure): RawUtf8;
+
+/// start ONE child: exact executable path, argument vector, explicit working
+/// directory, stdin from NUL / /dev/null, stdout and stderr piped back
+// - Args is the vector AFTER argv[0]; the engine has already refused NUL,
+// invalid UTF-8 and batch-file executables
+// - SeparateConsole (Windows only, ignored elsewhere) gives the child a
+// console of its own; used by the CAP-10C0 stop-signal test driver so a
+// console control event has a console to travel through, never by a
+// public command
+function PWebCliChildSpawn(const ExePath: RawUtf8;
+  const Args: TRawUtf8DynArray; const WorkDir: RawUtf8;
+  SeparateConsole: Boolean; out Child: TPWebCliChild;
+  out Failure: TPWebCliSpawnFailure; out OsError: Integer): Boolean;
+
+/// read what is available RIGHT NOW from one stream, never blocking
+// - > 0: bytes stored in Buf; 0: nothing available; -1: the stream is closed
+function PWebCliChildRead(var Child: TPWebCliChild;
+  Stream: TPWebCliChildStream; Buf: Pointer; Cap: PtrInt): PtrInt;
+
+/// block for at most TimeoutMs until the child may have exited or produced
+/// output (POSIX: poll on both pipes; Windows: wait on the process handle)
+procedure PWebCliChildPoll(var Child: TPWebCliChild; TimeoutMs: Cardinal);
+
+/// reap the child if it has exited, without blocking
+// - True when Running became False; ExitCode / Signal are then set
+function PWebCliChildWait(var Child: TPWebCliChild): Boolean;
+
+/// ask the tree to stop gracefully
+// - Windows: WM_CLOSE posted to every VISIBLE top-level window owned by the
+// child pid; returns how many were posted (0 = no window yet, retry)
+// - POSIX: SIGTERM to the process group; returns 1 on success
+function PWebCliChildStop(var Child: TPWebCliChild): Integer;
+
+/// terminate the whole tree at once - the bounded last resort
+// - Windows: TerminateJobObject; POSIX: SIGKILL to the process group
+function PWebCliChildKill(var Child: TPWebCliChild): Boolean;
+
+/// every process currently belonging to the tree, by MEMBERSHIP only
+// - Windows: the Job Object's process id list; POSIX: every process whose
+// pgid is the child's group. The child itself is included while it lives
+// - Image is read per member and left '' when unreadable
+function PWebCliChildMembers(const Child: TPWebCliChild): TPWebCliTreeMembers;
+
+/// close every handle and descriptor; the record is unusable afterwards
+// - Windows: closing the Job Object handle kills any member still alive
+// (KILL_ON_JOB_CLOSE) - by then the engine has drained or killed them
+procedure PWebCliChildRelease(var Child: TPWebCliChild);
+
+/// route Ctrl+C / Ctrl+Break (Windows) or SIGINT / SIGTERM / SIGHUP (POSIX)
+/// into PWebCliStopRequested instead of the default termination
+// - Windows also re-enables Ctrl+C for this process, which a parent may
+// have disabled by creating it in a new process group
+// - POSIX also ignores SIGPIPE so a closed forwarding target is an error
+// the engine sees rather than a signal that kills the supervisor
+function PWebCliInstallStopHandler: Boolean;
+
+/// True once a stop signal has been received; never reset
+function PWebCliStopRequested: Boolean;
+
+/// the tree-ownership model of this platform: 'job_object' or 'process_group'
+function PWebCliTreeModelText: RawUtf8;
+
+/// True while a process with that id exists (a query, never a signal)
+// - test evidence only: the CLI itself decides nothing from it
+function PWebCliPidAlive(Pid: PtrInt): Boolean;
+
+/// the Windows command line for (ExePath, Args), quoted by the msvcrt /
+/// CommandLineToArgvW rules so the child's argv is byte-for-byte Args
+// - platform-free on purpose: it is a pure string function, proven by a
+// golden table on all four targets and by a round-trip against a real
+// child on Windows, and it is the ONLY place a command line is ever built
+function PWebCliWindowsCommandLine(const ExePath: RawUtf8;
+  const Args: TRawUtf8DynArray): RawUtf8;
+
 implementation
 
 uses
@@ -1042,6 +1199,536 @@ begin
     Result.Category := 'version_unusable';
 end;
 
+{ ---------------------------------------------------------------------------
+  child processes - Windows: CreateProcessW + Job Object
+  --------------------------------------------------------------------------- }
+
+const
+  PWEB_CREATE_SUSPENDED = $00000004;
+  PWEB_CREATE_NEW_CONSOLE = $00000010;
+  PWEB_CREATE_NEW_PROCESS_GROUP = $00000200;
+  PWEB_CREATE_UNICODE_ENVIRONMENT = $00000400;
+  PWEB_EXTENDED_STARTUPINFO_PRESENT = $00080000;
+  PWEB_PROC_THREAD_ATTRIBUTE_HANDLE_LIST = $00020002;
+  PWEB_JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = $00002000;
+  PWEB_JobObjectBasicProcessIdList = 3;
+  PWEB_JobObjectExtendedLimitInformation = 9;
+  PWEB_PROCESS_QUERY_LIMITED_INFORMATION = $1000;
+  PWEB_ERROR_BROKEN_PIPE = 109;
+  PWEB_ERROR_MORE_DATA = 234;
+  PWEB_WM_CLOSE = $0010;
+  PWEB_CTRL_C_EVENT = 0;
+  PWEB_CTRL_BREAK_EVENT = 1;
+  PWEB_CTRL_CLOSE_EVENT = 2;
+  // the sizes the kernel expects for the two job structures on x64,
+  // checked at run time against the records below rather than trusted
+  PWEB_JOB_EXT_LIMIT_BYTES = 144;
+  PWEB_PROCESS_BASIC_INFO_BYTES = 48;
+  PWEB_JOB_PID_LIST_FIRST = 256;
+  PWEB_JOB_PID_LIST_MAX = 4096;
+
+type
+  TPWebJobBasicLimit = record
+    PerProcessUserTimeLimit: Int64;
+    PerJobUserTimeLimit: Int64;
+    LimitFlags: DWORD;
+    MinimumWorkingSetSize: PtrUInt;
+    MaximumWorkingSetSize: PtrUInt;
+    ActiveProcessLimit: DWORD;
+    Affinity: PtrUInt;
+    PriorityClass: DWORD;
+    SchedulingClass: DWORD;
+  end;
+  TPWebIoCounters = record
+    ReadOperationCount: QWord;
+    WriteOperationCount: QWord;
+    OtherOperationCount: QWord;
+    ReadTransferCount: QWord;
+    WriteTransferCount: QWord;
+    OtherTransferCount: QWord;
+  end;
+  TPWebJobExtendedLimit = record
+    Basic: TPWebJobBasicLimit;
+    Io: TPWebIoCounters;
+    ProcessMemoryLimit: PtrUInt;
+    JobMemoryLimit: PtrUInt;
+    PeakProcessMemoryUsed: PtrUInt;
+    PeakJobMemoryUsed: PtrUInt;
+  end;
+  TPWebProcessBasicInformation = record
+    ExitStatus: LongInt;
+    PebBaseAddress: Pointer;
+    AffinityMask: PtrUInt;
+    BasePriority: LongInt;
+    UniqueProcessId: PtrUInt;
+    InheritedFromUniqueProcessId: PtrUInt;
+  end;
+  TPWebStartupInfoExW = record
+    StartupInfo: TStartupInfoW;
+    lpAttributeList: Pointer;
+  end;
+
+// Vista+ / absent from the FPC 3.2.2 windows unit
+function CreateJobObjectW(lpJobAttributes: PSecurityAttributes;
+  lpName: PWideChar): THandle;
+  stdcall; external 'kernel32.dll' name 'CreateJobObjectW';
+function SetInformationJobObject(hJob: THandle; JobObjectInformationClass: Integer;
+  lpJobObjectInformation: Pointer; cbJobObjectInformationLength: DWORD): BOOL;
+  stdcall; external 'kernel32.dll' name 'SetInformationJobObject';
+function QueryInformationJobObject(hJob: THandle;
+  JobObjectInformationClass: Integer; lpJobObjectInformation: Pointer;
+  cbJobObjectInformationLength: DWORD; lpReturnLength: PDWORD): BOOL;
+  stdcall; external 'kernel32.dll' name 'QueryInformationJobObject';
+function AssignProcessToJobObject(hJob, hProcess: THandle): BOOL;
+  stdcall; external 'kernel32.dll' name 'AssignProcessToJobObject';
+function TerminateJobObject(hJob: THandle; uExitCode: UINT): BOOL;
+  stdcall; external 'kernel32.dll' name 'TerminateJobObject';
+function InitializeProcThreadAttributeList(lpAttributeList: Pointer;
+  dwAttributeCount, dwFlags: DWORD; var lpSize: SIZE_T): BOOL;
+  stdcall; external 'kernel32.dll' name 'InitializeProcThreadAttributeList';
+function UpdateProcThreadAttribute(lpAttributeList: Pointer; dwFlags: DWORD;
+  Attribute: PtrUInt; lpValue: Pointer; cbSize: SIZE_T;
+  lpPreviousValue: Pointer; lpReturnSize: PSIZE_T): BOOL;
+  stdcall; external 'kernel32.dll' name 'UpdateProcThreadAttribute';
+procedure DeleteProcThreadAttributeList(lpAttributeList: Pointer);
+  stdcall; external 'kernel32.dll' name 'DeleteProcThreadAttributeList';
+function QueryFullProcessImageNameW(hProcess: THandle; dwFlags: DWORD;
+  lpExeName: PWideChar; var lpdwSize: DWORD): BOOL;
+  stdcall; external 'kernel32.dll' name 'QueryFullProcessImageNameW';
+// the parent pid of an arbitrary process, asked of the kernel directly: a
+// QUERY on one handle, never an enumeration by name
+function NtQueryInformationProcess(ProcessHandle: THandle;
+  ProcessInformationClass: Integer; ProcessInformation: Pointer;
+  ProcessInformationLength: ULONG; ReturnLength: PULONG): LongInt;
+  stdcall; external 'ntdll.dll' name 'NtQueryInformationProcess';
+
+procedure CloseIf(var H: THandle);
+begin
+  if (H <> 0) and
+     (H <> INVALID_HANDLE_VALUE) then
+    CloseHandle(H);
+  H := 0;
+end;
+
+function PWebCliChildSpawn(const ExePath: RawUtf8;
+  const Args: TRawUtf8DynArray; const WorkDir: RawUtf8;
+  SeparateConsole: Boolean; out Child: TPWebCliChild;
+  out Failure: TPWebCliSpawnFailure; out OsError: Integer): Boolean;
+var
+  sa: TSecurityAttributes;
+  outRead, outWrite, errRead, errWrite, nulIn, job: THandle;
+  handles: array[0 .. 2] of THandle;
+  attrSize: SIZE_T;
+  attrList: Pointer;
+  six: TPWebStartupInfoExW;
+  pi: TProcessInformation;
+  limit: TPWebJobExtendedLimit;
+  exeW, cmdW, dirW: SynUnicode;
+  flags: DWORD;
+begin
+  Result := False;
+  Child := Default(TPWebCliChild);
+  Failure := psfNone;
+  OsError := 0;
+  outRead := 0; outWrite := 0; errRead := 0; errWrite := 0;
+  nulIn := 0; job := 0;
+  attrList := nil;
+  FillChar(pi, SizeOf(pi), 0);
+  // the working directory is a precondition, refused before anything is
+  // created: CreateProcessW would fail with an error that names nothing
+  if PWebCliNodeKind(WorkDir) <> pcnDirectory then
+  begin
+    Failure := psfWorkDir;
+    exit;
+  end;
+  if SizeOf(limit) <> PWEB_JOB_EXT_LIMIT_BYTES then
+  begin
+    Failure := psfJobObject; // the record does not match the kernel's shape
+    exit;
+  end;
+  FillChar(sa, SizeOf(sa), 0);
+  sa.nLength := SizeOf(sa);
+  sa.bInheritHandle := True;
+  try
+    // --- the three stdio handles, and ONLY those are inheritable ------------
+    if not CreatePipe(outRead, outWrite, @sa, 0) or
+       not CreatePipe(errRead, errWrite, @sa, 0) then
+    begin
+      OsError := GetLastError;
+      Failure := psfPipes;
+      exit;
+    end;
+    // the supervisor's own read ends must not leak into the child, or the
+    // child would hold its own pipe open and EOF could never arrive
+    SetHandleInformation(outRead, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(errRead, HANDLE_FLAG_INHERIT, 0);
+    nulIn := CreateFileW('NUL', GENERIC_READ,
+      FILE_SHARE_READ or FILE_SHARE_WRITE, @sa, OPEN_EXISTING, 0, 0);
+    if nulIn = INVALID_HANDLE_VALUE then
+    begin
+      OsError := GetLastError;
+      nulIn := 0;
+      Failure := psfPipes;
+      exit;
+    end;
+    // --- the Job Object, created and configured BEFORE the child exists ----
+    job := CreateJobObjectW(nil, nil);
+    if job = 0 then
+    begin
+      OsError := GetLastError;
+      Failure := psfJobObject;
+      exit;
+    end;
+    FillChar(limit, SizeOf(limit), 0);
+    limit.Basic.LimitFlags := PWEB_JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    if not SetInformationJobObject(job,
+         PWEB_JobObjectExtendedLimitInformation, @limit, SizeOf(limit)) then
+    begin
+      OsError := GetLastError;
+      Failure := psfJobObject;
+      exit;
+    end;
+    // --- the explicit handle list ---------------------------------------
+    attrSize := 0;
+    InitializeProcThreadAttributeList(nil, 1, 0, attrSize);
+    attrList := AllocMem(attrSize);
+    if not InitializeProcThreadAttributeList(attrList, 1, 0, attrSize) then
+    begin
+      OsError := GetLastError;
+      FreeMem(attrList);
+      attrList := nil;
+      Failure := psfCreate;
+      exit;
+    end;
+    handles[0] := nulIn;
+    handles[1] := outWrite;
+    handles[2] := errWrite;
+    if not UpdateProcThreadAttribute(attrList, 0,
+         PWEB_PROC_THREAD_ATTRIBUTE_HANDLE_LIST, @handles[0],
+         SizeOf(handles), nil, nil) then
+    begin
+      OsError := GetLastError;
+      Failure := psfCreate;
+      exit;
+    end;
+    FillChar(six, SizeOf(six), 0);
+    six.StartupInfo.cb := SizeOf(six);
+    six.StartupInfo.dwFlags := STARTF_USESTDHANDLES;
+    six.StartupInfo.hStdInput := nulIn;
+    six.StartupInfo.hStdOutput := outWrite;
+    six.StartupInfo.hStdError := errWrite;
+    six.lpAttributeList := attrList;
+    // --- the process, SUSPENDED so it joins the job before its first
+    // instruction can spawn anything of its own ---------------------------
+    exeW := W(PWebCliDisplayPath(ExePath));
+    cmdW := W(PWebCliWindowsCommandLine(PWebCliDisplayPath(ExePath), Args));
+    dirW := W(PWebCliDisplayPath(WorkDir));
+    // the command line buffer must be writable: CreateProcessW may modify it
+    UniqueString(cmdW);
+    flags := PWEB_CREATE_SUSPENDED or PWEB_CREATE_UNICODE_ENVIRONMENT or
+      PWEB_EXTENDED_STARTUPINFO_PRESENT;
+    // a new process group, so the console's Ctrl+C reaches the supervisor
+    // and not the application; the supervisor forwards it as a graceful
+    // stop instead. (With a separate console the group is implicit.)
+    if SeparateConsole then
+      flags := flags or PWEB_CREATE_NEW_CONSOLE
+    else
+      flags := flags or PWEB_CREATE_NEW_PROCESS_GROUP;
+    // lpEnvironment = nil: the child inherits this process's environment
+    // block UNCHANGED, which is the ratified CAP-10C0 policy
+    if not CreateProcessW(PWideChar(exeW), PWideChar(cmdW), nil, nil, True,
+         flags, nil, PWideChar(dirW), six.StartupInfo, pi) then
+    begin
+      OsError := GetLastError;
+      Failure := psfCreate;
+      exit;
+    end;
+    if not AssignProcessToJobObject(job, pi.hProcess) then
+    begin
+      // a child that cannot be owned is not started at all: it is still
+      // suspended, so it has done nothing and can be discarded safely
+      OsError := GetLastError;
+      TerminateProcess(pi.hProcess, 1);
+      CloseHandle(pi.hThread);
+      CloseHandle(pi.hProcess);
+      Failure := psfJobObject;
+      exit;
+    end;
+    ResumeThread(pi.hThread);
+    CloseHandle(pi.hThread);
+    Child.Pid := pi.dwProcessId;
+    Child.Handle := pi.hProcess;
+    Child.Job := job;
+    Child.OutRead := outRead;
+    Child.ErrRead := errRead;
+    Child.Running := True;
+    job := 0;
+    outRead := 0;
+    errRead := 0;
+    Result := True;
+  finally
+    if attrList <> nil then
+    begin
+      DeleteProcThreadAttributeList(attrList);
+      FreeMem(attrList);
+    end;
+    // the child's ends are closed in the parent whatever happened: the
+    // child holds its own copies, and a parent that kept a write end would
+    // never see EOF on its own read end
+    CloseIf(outWrite);
+    CloseIf(errWrite);
+    CloseIf(nulIn);
+    CloseIf(outRead);
+    CloseIf(errRead);
+    CloseIf(job);
+  end;
+end;
+
+function PWebCliChildRead(var Child: TPWebCliChild;
+  Stream: TPWebCliChildStream; Buf: Pointer; Cap: PtrInt): PtrInt;
+var
+  h: THandle;
+  avail, got: DWORD;
+begin
+  Result := -1;
+  if Stream = pcsStdOut then
+    h := Child.OutRead
+  else
+    h := Child.ErrRead;
+  if (h = 0) or
+     (Cap <= 0) then
+    exit;
+  avail := 0;
+  // PeekNamedPipe is the non-blocking question; ReadFile on an anonymous
+  // pipe would block until at least one byte arrived
+  if not PeekNamedPipe(h, nil, 0, nil, @avail, nil) then
+  begin
+    if GetLastError = PWEB_ERROR_BROKEN_PIPE then
+      exit(-1);
+    exit(0);
+  end;
+  if avail = 0 then
+    exit(0);
+  if avail > DWORD(Cap) then
+    avail := Cap;
+  got := 0;
+  if not ReadFile(h, Buf^, avail, got, nil) then
+  begin
+    if GetLastError = PWEB_ERROR_BROKEN_PIPE then
+      exit(-1);
+    exit(0);
+  end;
+  Result := got;
+end;
+
+procedure PWebCliChildPoll(var Child: TPWebCliChild; TimeoutMs: Cardinal);
+begin
+  // the process handle is the only waitable object here - an anonymous pipe
+  // is not - so this returns early on exit and on time otherwise; the engine
+  // reads both pipes on every pass either way
+  if Child.Running and
+     (Child.Handle <> 0) then
+    WaitForSingleObject(Child.Handle, TimeoutMs)
+  else
+    Sleep(TimeoutMs);
+end;
+
+function PWebCliChildWait(var Child: TPWebCliChild): Boolean;
+var
+  code: DWORD;
+begin
+  Result := not Child.Running;
+  if Result or
+     (Child.Handle = 0) then
+    exit;
+  if WaitForSingleObject(Child.Handle, 0) <> WAIT_OBJECT_0 then
+    exit;
+  code := 0;
+  GetExitCodeProcess(Child.Handle, code);
+  Child.ExitCode := Integer(code);
+  Child.Signal := 0;
+  Child.Running := False;
+  Result := True;
+end;
+
+var
+  EnumClosePid: DWORD;
+  EnumClosePosted: Integer;
+
+// one callback per top-level window; ONLY a visible window owned by the
+// child pid is asked to close. Hidden top-level windows belong to COM,
+// WebView2 and the runtime itself and a WM_CLOSE to those would destroy
+// infrastructure the host is still using
+function CloseWindowsOfPid(hwnd: HWND; lParam: LPARAM): BOOL; stdcall;
+var
+  pid: DWORD;
+begin
+  Result := True;
+  pid := 0;
+  GetWindowThreadProcessId(hwnd, @pid);
+  if (pid = EnumClosePid) and
+     IsWindowVisible(hwnd) then
+    if PostMessageW(hwnd, PWEB_WM_CLOSE, 0, 0) then
+      Inc(EnumClosePosted);
+end;
+
+function PWebCliChildStop(var Child: TPWebCliChild): Integer;
+begin
+  Result := 0;
+  if not Child.Running then
+    exit;
+  EnumClosePid := Child.Pid;
+  EnumClosePosted := 0;
+  EnumWindows(@CloseWindowsOfPid, 0);
+  Result := EnumClosePosted;
+end;
+
+function PWebCliChildKill(var Child: TPWebCliChild): Boolean;
+begin
+  Result := False;
+  if Child.Job <> 0 then
+    Result := TerminateJobObject(Child.Job, 1);
+  if Child.Running and
+     (Child.Handle <> 0) then
+    // belt and braces: the job covers the tree, this covers the child even
+    // if the job handle were somehow gone
+    Result := TerminateProcess(Child.Handle, 1) or Result;
+end;
+
+function ImagePathOfPid(Pid: DWORD; out ParentPid: PtrInt): RawUtf8;
+var
+  h: THandle;
+  buf: array[0 .. 32767] of WideChar;
+  len: DWORD;
+  pbi: TPWebProcessBasicInformation;
+  ret: ULONG;
+begin
+  Result := '';
+  ParentPid := 0;
+  h := OpenProcess(PWEB_PROCESS_QUERY_LIMITED_INFORMATION, False, Pid);
+  if h = 0 then
+    exit; // unreadable: recorded as '', never guessed
+  try
+    len := Length(buf);
+    if QueryFullProcessImageNameW(h, 0, @buf[0], len) and
+       (len > 0) then
+      Result := U(SynUnicode(WideString(PWideChar(@buf[0]))));
+    if SizeOf(pbi) = PWEB_PROCESS_BASIC_INFO_BYTES then
+    begin
+      ret := 0;
+      if NtQueryInformationProcess(h, 0, @pbi, SizeOf(pbi), @ret) = 0 then
+        ParentPid := pbi.InheritedFromUniqueProcessId;
+    end;
+  finally
+    CloseHandle(h);
+  end;
+end;
+
+function PWebCliChildMembers(const Child: TPWebCliChild): TPWebCliTreeMembers;
+var
+  capacity, i, n: PtrInt;
+  bytes, ret: DWORD;
+  buf: PByte;
+  pids: PPtrUInt;
+  ok: Boolean;
+begin
+  Result := nil;
+  if Child.Job = 0 then
+    exit;
+  capacity := PWEB_JOB_PID_LIST_FIRST;
+  repeat
+    bytes := 8 + capacity * SizeOf(PtrUInt);
+    buf := AllocMem(bytes);
+    try
+      ret := 0;
+      ok := QueryInformationJobObject(Child.Job,
+        PWEB_JobObjectBasicProcessIdList, buf, bytes, @ret);
+      if not ok and
+         (GetLastError = PWEB_ERROR_MORE_DATA) and
+         (capacity < PWEB_JOB_PID_LIST_MAX) then
+      begin
+        capacity := PWEB_JOB_PID_LIST_MAX;
+        continue;
+      end;
+      if not ok then
+        exit;
+      n := PDWORD(buf + 4)^; // NumberOfProcessIdsInList
+      if n > capacity then
+        n := capacity;
+      pids := PPtrUInt(buf + 8);
+      SetLength(Result, n);
+      for i := 0 to n - 1 do
+      begin
+        Result[i].Pid := pids[i];
+        Result[i].Image := ImagePathOfPid(pids[i], Result[i].ParentPid);
+      end;
+      exit;
+    finally
+      FreeMem(buf);
+    end;
+  until False;
+end;
+
+procedure PWebCliChildRelease(var Child: TPWebCliChild);
+var
+  h: THandle;
+begin
+  h := Child.OutRead; CloseIf(h);
+  h := Child.ErrRead; CloseIf(h);
+  h := Child.Handle;  CloseIf(h);
+  // the LAST handle to the job: with KILL_ON_JOB_CLOSE this is the moment
+  // any member still alive is terminated by the kernel
+  h := Child.Job;     CloseIf(h);
+  Child := Default(TPWebCliChild);
+end;
+
+var
+  StopFlag: LongInt;
+
+function StopHandler(dwCtrlType: DWORD): BOOL; stdcall;
+begin
+  // every console event is a stop request; the answer is always "handled"
+  // so the default handler (ExitProcess) never runs underneath a supervisor
+  // that has a tree to bring down first
+  // (CTRL_CLOSE_EVENT is the same request with a bounded window to act on
+  // it; dwCtrlType is deliberately not consulted)
+  InterlockedExchange(StopFlag, 1);
+  Result := True;
+end;
+
+function PWebCliInstallStopHandler: Boolean;
+begin
+  // a parent that created this process in a new group disabled Ctrl+C for
+  // it; re-enable it FIRST, so a terminal's Ctrl+C reaches the handler
+  SetConsoleCtrlHandler(nil, False);
+  Result := SetConsoleCtrlHandler(@StopHandler, True);
+end;
+
+function PWebCliStopRequested: Boolean;
+begin
+  Result := InterlockedExchangeAdd(StopFlag, 0) <> 0;
+end;
+
+function PWebCliTreeModelText: RawUtf8;
+begin
+  Result := 'job_object';
+end;
+
+function PWebCliPidAlive(Pid: PtrInt): Boolean;
+var
+  h: THandle;
+  code: DWORD;
+begin
+  Result := False;
+  h := OpenProcess(PWEB_PROCESS_QUERY_LIMITED_INFORMATION, False, Pid);
+  if h = 0 then
+    exit;
+  code := 0;
+  if GetExitCodeProcess(h, code) then
+    Result := code = STILL_ACTIVE;
+  CloseHandle(h);
+end;
+
 {$else}
 
 { ---------------------------------------------------------------------------
@@ -1699,7 +2386,655 @@ begin
   {$endif DARWIN}
 end;
 
+{ ---------------------------------------------------------------------------
+  child processes - POSIX: fork/execve + process group
+  --------------------------------------------------------------------------- }
+
+const
+  // what the child writes back through the status pipe when it cannot go on
+  PWEB_EXEC_STATUS_CHDIR = 1;
+  PWEB_EXEC_STATUS_EXEC = 2;
+  PWEB_POSIX_PROC_ALL_PIDS = 1;
+  PWEB_POSIX_PROC_PIDTBSDINFO = 3;
+  PWEB_POSIX_PROC_BSDINFO_BYTES = 136;
+  PWEB_POSIX_PIDPATH_MAX = 4096;
+  // absent from BaseUnix on both Linux and Darwin; 1 in every POSIX fcntl.h
+  FD_CLOEXEC = 1;
+  {$ifdef LINUX}
+  PWEB_PR_SET_PDEATHSIG = 1;
+  {$endif LINUX}
+
+// FPC 3.2.2's BaseUnix declares neither; both are plain libc calls
+function pweb_cli_setpgid(pid, pgid: pid_t): cint;
+  cdecl; external 'c' name 'setpgid';
+// the LIVE environment of this process, libc's own: FPC's `envp` is a copy
+// taken at startup, and a variable set since (setenv) would be missing
+// from a child handed that copy - MEASURED by the S18 marker
+var
+  environ: PPAnsiChar; cvar; external;
+{$ifdef LINUX}
+function pweb_cli_prctl(option: cint; arg2, arg3, arg4, arg5: culong): cint;
+  cdecl; external 'c' name 'prctl';
+{$else}
+// libproc, re-exported by libSystem: the process-group enumeration and the
+// image path of one pid, with no sysctl kinfo_proc layout to get wrong
+function proc_listpids(ptype, typeinfo: cuint; buffer: Pointer;
+  buffersize: cint): cint; cdecl; external 'c' name 'proc_listpids';
+function proc_pidinfo(pid, flavor: cint; arg: QWord; buffer: Pointer;
+  buffersize: cint): cint; cdecl; external 'c' name 'proc_pidinfo';
+function proc_pidpath(pid: cint; buffer: Pointer; buffersize: cuint): cint;
+  cdecl; external 'c' name 'proc_pidpath';
+
+type
+  // bsd/sys/proc_info.h proc_bsdinfo, 136 bytes; only three fields are read
+  TPWebProcBsdInfo = record
+    pbi_flags: cuint;
+    pbi_status: cuint;
+    pbi_xstatus: cuint;
+    pbi_pid: cuint;
+    pbi_ppid: cuint;
+    pbi_uid: cuint;
+    pbi_gid: cuint;
+    pbi_ruid: cuint;
+    pbi_rgid: cuint;
+    pbi_svuid: cuint;
+    pbi_svgid: cuint;
+    rfu_1: cuint;
+    pbi_comm: array[0 .. 15] of AnsiChar;
+    pbi_name: array[0 .. 31] of AnsiChar;
+    pbi_nfiles: cuint;
+    pbi_pgid: cuint;
+    pbi_pjobc: cuint;
+    e_tdev: cuint;
+    e_tpgid: cuint;
+    pbi_nice: cint;
+    pbi_start_tvsec: QWord;
+    pbi_start_tvusec: QWord;
+  end;
+{$endif LINUX}
+
+procedure CloseFd(var Fd: cint);
+begin
+  if Fd >= 0 then
+    FpClose(Fd);
+  Fd := -1;
+end;
+
+// fcntl with an integer argument. On Darwin the variadic declaration is
+// mandatory (arm64 passes variadic arguments on the stack), exactly as the
+// F_GETPATH call above already requires; Linux uses the RTL binding
+function SetFdControl(Fd, Cmd, Arg: cint): cint;
+begin
+  {$ifdef DARWIN}
+  Result := pweb_cli_fcntl(Fd, Cmd, Arg);
+  {$else}
+  Result := FpFcntl(Fd, Cmd, Arg);
+  {$endif DARWIN}
+end;
+
+function GetFdControl(Fd, Cmd: cint): cint;
+begin
+  {$ifdef DARWIN}
+  Result := pweb_cli_fcntl(Fd, Cmd);
+  {$else}
+  Result := FpFcntl(Fd, Cmd);
+  {$endif DARWIN}
+end;
+
+function PWebCliChildSpawn(const ExePath: RawUtf8;
+  const Args: TRawUtf8DynArray; const WorkDir: RawUtf8;
+  SeparateConsole: Boolean; out Child: TPWebCliChild;
+  out Failure: TPWebCliSpawnFailure; out OsError: Integer): Boolean;
+var
+  outp, errp, statusp: TFilDes;
+  nul: cint;
+  pid: pid_t;
+  strs: array of RawByteString;
+  argv: array of PAnsiChar;
+  exeC, dirC: RawByteString;
+  status: array[0 .. 1] of cint;
+  n: PtrInt;
+  waitStatus: cint;
+  i: PtrInt;
+begin
+  Result := False;
+  Child := Default(TPWebCliChild);
+  Failure := psfNone;
+  OsError := 0;
+  outp[0] := -1; outp[1] := -1;
+  errp[0] := -1; errp[1] := -1;
+  statusp[0] := -1; statusp[1] := -1;
+  nul := -1;
+  // SeparateConsole is a Windows-only notion; POSIX children share the
+  // terminal and the flag is accepted and ignored
+  if PWebCliNodeKind(WorkDir) <> pcnDirectory then
+  begin
+    Failure := psfWorkDir;
+    exit;
+  end;
+  // everything the child will need is built BEFORE the fork, so the child
+  // touches no heap between fork and exec
+  exeC := RawByteString(ExePath);
+  dirC := RawByteString(WorkDir);
+  SetLength(strs, Length(Args) + 1);
+  SetLength(argv, Length(Args) + 2);
+  strs[0] := exeC;
+  argv[0] := PAnsiChar(strs[0]);
+  for i := 0 to High(Args) do
+  begin
+    strs[i + 1] := RawByteString(Args[i]);
+    argv[i + 1] := PAnsiChar(strs[i + 1]);
+  end;
+  argv[High(argv)] := nil;
+  try
+    if (FpPipe(outp) <> 0) or
+       (FpPipe(errp) <> 0) or
+       (FpPipe(statusp) <> 0) then
+    begin
+      OsError := fpgeterrno;
+      Failure := psfPipes;
+      exit;
+    end;
+    // the supervisor's read ends and BOTH ends of the status pipe are
+    // close-on-exec: a successful exec closes the status write end, which
+    // is exactly the "no news is good news" the parent waits for below
+    SetFdControl(outp[0], F_SETFD, FD_CLOEXEC);
+    SetFdControl(errp[0], F_SETFD, FD_CLOEXEC);
+    SetFdControl(statusp[0], F_SETFD, FD_CLOEXEC);
+    SetFdControl(statusp[1], F_SETFD, FD_CLOEXEC);
+    nul := FpOpen('/dev/null', O_RDONLY);
+    if nul < 0 then
+    begin
+      OsError := fpgeterrno;
+      Failure := psfPipes;
+      exit;
+    end;
+    pid := FpFork;
+    if pid < 0 then
+    begin
+      OsError := fpgeterrno;
+      Failure := psfCreate;
+      exit;
+    end;
+    if pid = 0 then
+    begin
+      // ---- the child: async-signal-safe calls only, then exec ----------
+      pweb_cli_setpgid(0, 0);
+      {$ifdef LINUX}
+      // if the supervisor dies without signalling the group, the direct
+      // child is killed with it (Linux only; a defence, not the mechanism)
+      pweb_cli_prctl(PWEB_PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0);
+      {$endif LINUX}
+      FpDup2(nul, 0);
+      FpDup2(outp[1], 1);
+      FpDup2(errp[1], 2);
+      FpClose(nul);
+      FpClose(outp[1]);
+      FpClose(errp[1]);
+      if FpChDir(PAnsiChar(dirC)) <> 0 then
+      begin
+        status[0] := PWEB_EXEC_STATUS_CHDIR;
+        status[1] := fpgeterrno;
+        FpWrite(statusp[1], status, SizeOf(status));
+        FpExit(127);
+      end;
+      // environ is THIS process's environment, handed over unchanged
+      FpExecve(PAnsiChar(exeC), PPAnsiChar(@argv[0]), environ);
+      status[0] := PWEB_EXEC_STATUS_EXEC;
+      status[1] := fpgeterrno;
+      FpWrite(statusp[1], status, SizeOf(status));
+      FpExit(127);
+    end;
+    // ---- the parent ----------------------------------------------------
+    // the same call from both sides, so whichever runs first wins and the
+    // group exists before anything is sent to it
+    pweb_cli_setpgid(pid, pid);
+    CloseFd(nul);
+    CloseFd(outp[1]);
+    CloseFd(errp[1]);
+    CloseFd(statusp[1]);
+    repeat
+      n := FpRead(statusp[0], status, SizeOf(status));
+    until (n >= 0) or (fpgeterrno <> ESysEINTR);
+    CloseFd(statusp[0]);
+    if n = SizeOf(status) then
+    begin
+      // the child could not exec: it has already exited 127 and is reaped
+      // here, so a failed spawn leaves no zombie and no running process
+      repeat
+        i := FpWaitPid(pid, waitStatus, 0);
+      until (i = pid) or ((i < 0) and (fpgeterrno <> ESysEINTR));
+      OsError := status[1];
+      if status[0] = PWEB_EXEC_STATUS_CHDIR then
+        Failure := psfWorkDir
+      else
+        Failure := psfExec;
+      exit;
+    end;
+    SetFdControl(outp[0], F_SETFL, GetFdControl(outp[0], F_GETFL) or O_NONBLOCK);
+    SetFdControl(errp[0], F_SETFL, GetFdControl(errp[0], F_GETFL) or O_NONBLOCK);
+    Child.Pid := pid;
+    Child.Group := pid;
+    Child.OutRead := outp[0];
+    Child.ErrRead := errp[0];
+    Child.Running := True;
+    outp[0] := -1;
+    errp[0] := -1;
+    Result := True;
+  finally
+    CloseFd(nul);
+    CloseFd(outp[0]);
+    CloseFd(outp[1]);
+    CloseFd(errp[0]);
+    CloseFd(errp[1]);
+    CloseFd(statusp[0]);
+    CloseFd(statusp[1]);
+  end;
+end;
+
+function PWebCliChildRead(var Child: TPWebCliChild;
+  Stream: TPWebCliChildStream; Buf: Pointer; Cap: PtrInt): PtrInt;
+var
+  fd: cint;
+  n: PtrInt;
+begin
+  Result := -1;
+  if Stream = pcsStdOut then
+    fd := Child.OutRead
+  else
+    fd := Child.ErrRead;
+  if (fd < 0) or
+     (Cap <= 0) then
+    exit;
+  n := FpRead(fd, Buf^, Cap);
+  if n > 0 then
+    exit(n);
+  if n = 0 then
+    exit(-1); // EOF: every writer has closed its end
+  case fpgeterrno of
+    ESysEAGAIN,
+    ESysEINTR:
+      Result := 0;
+  else
+    Result := -1;
+  end;
+end;
+
+procedure PWebCliChildPoll(var Child: TPWebCliChild; TimeoutMs: Cardinal);
+var
+  fds: array[0 .. 1] of pollfd;
+  n: Integer;
+begin
+  n := 0;
+  if Child.OutRead >= 0 then
+  begin
+    fds[n].fd := Child.OutRead;
+    fds[n].events := POLLIN;
+    fds[n].revents := 0;
+    Inc(n);
+  end;
+  if Child.ErrRead >= 0 then
+  begin
+    fds[n].fd := Child.ErrRead;
+    fds[n].events := POLLIN;
+    fds[n].revents := 0;
+    Inc(n);
+  end;
+  // with no descriptor left, poll(nil, 0, ms) is a plain bounded sleep;
+  // the engine reaps with waitpid on every pass, so exit is never missed
+  FpPoll(@fds[0], n, TimeoutMs);
+end;
+
+function PWebCliChildWait(var Child: TPWebCliChild): Boolean;
+var
+  st: cint;
+  r: pid_t;
+begin
+  Result := not Child.Running;
+  if Result or
+     (Child.Pid <= 0) then
+    exit;
+  st := 0;
+  r := FpWaitPid(Child.Pid, st, WNOHANG);
+  if r = 0 then
+    exit; // still running
+  if r < 0 then
+  begin
+    if fpgeterrno = ESysEINTR then
+      exit;
+    // ECHILD: nothing to reap - the child is gone and nobody can say how.
+    // Reported as a signal death so it can never read as a clean exit 0
+    Child.ExitCode := -1;
+    Child.Signal := SIGKILL;
+    Child.Running := False;
+    exit(True);
+  end;
+  if wifexited(st) then
+  begin
+    Child.ExitCode := wexitstatus(st);
+    Child.Signal := 0;
+  end
+  else if wifsignaled(st) then
+  begin
+    Child.ExitCode := -1;
+    Child.Signal := wtermsig(st);
+  end
+  else
+    exit; // stopped/continued: not an exit
+  Child.Running := False;
+  Result := True;
+end;
+
+function PWebCliChildStop(var Child: TPWebCliChild): Integer;
+begin
+  Result := 0;
+  if Child.Group <= 0 then
+    exit;
+  if FpKill(-Child.Group, SIGTERM) = 0 then
+    Result := 1;
+end;
+
+function PWebCliChildKill(var Child: TPWebCliChild): Boolean;
+begin
+  Result := False;
+  if Child.Group <= 0 then
+    exit;
+  Result := FpKill(-Child.Group, SIGKILL) = 0;
+  if Child.Running and
+     (Child.Pid > 0) then
+    Result := (FpKill(Child.Pid, SIGKILL) = 0) or Result;
+end;
+
+{$ifdef LINUX}
+// /proc/<pid>/stat: "pid (comm) state ppid pgrp ..." - comm may carry spaces
+// and parentheses, so the fields are taken AFTER the last ')'
+function ReadProcStat(Pid: PtrInt; out ParentPid, Group: PtrInt): Boolean;
+var
+  fd: cint;
+  buf: array[0 .. 1023] of AnsiChar;
+  n, i, field: PtrInt;
+  text, tok: RawUtf8;
+  fields: array[0 .. 3] of RawUtf8;
+begin
+  Result := False;
+  ParentPid := 0;
+  Group := 0;
+  fd := FpOpen('/proc/' + IntToStr(Pid) + '/stat', O_RDONLY);
+  if fd < 0 then
+    exit;
+  n := FpRead(fd, buf, SizeOf(buf) - 1);
+  FpClose(fd);
+  if n <= 0 then
+    exit;
+  SetString(text, PAnsiChar(@buf[0]), n);
+  i := Length(text);
+  while (i > 0) and
+        (text[i] <> ')') do
+    Dec(i);
+  if i = 0 then
+    exit;
+  // after ')': ' state ppid pgrp session ...'
+  text := Copy(text, i + 1, MaxInt);
+  field := 0;
+  tok := '';
+  for i := 1 to Length(text) + 1 do
+    if (i > Length(text)) or
+       (text[i] = ' ') then
+    begin
+      if tok <> '' then
+      begin
+        if field <= High(fields) then
+          fields[field] := tok;
+        Inc(field);
+        tok := '';
+      end;
+    end
+    else
+      tok := tok + text[i];
+  if field < 3 then
+    exit;
+  ParentPid := StrToIntDef(string(fields[1]), 0);
+  Group := StrToIntDef(string(fields[2]), 0);
+  Result := True;
+end;
+
+function PWebCliChildMembers(const Child: TPWebCliChild): TPWebCliTreeMembers;
+var
+  dir: PDir;
+  entry: PDirent;
+  name: RawUtf8;
+  pid, ppid, pgrp: PtrInt;
+  n, i: PtrInt;
+  ok: Boolean;
+begin
+  Result := nil;
+  if Child.Group <= 0 then
+    exit;
+  dir := FpOpenDir('/proc');
+  if dir = nil then
+    exit;
+  n := 0;
+  try
+    repeat
+      entry := FpReadDir(dir^);
+      if entry = nil then
+        break;
+      name := RawUtf8(PAnsiChar(@entry^.d_name[0]));
+      ok := name <> '';
+      for i := 1 to Length(name) do
+        if not (name[i] in ['0' .. '9']) then
+        begin
+          ok := False;
+          break;
+        end;
+      if not ok then
+        continue;
+      pid := StrToIntDef(string(name), 0);
+      if pid <= 0 then
+        continue;
+      if not ReadProcStat(pid, ppid, pgrp) then
+        continue; // vanished between readdir and open: benign
+      if pgrp <> Child.Group then
+        continue;
+      SetLength(Result, n + 1);
+      Result[n].Pid := pid;
+      Result[n].ParentPid := ppid;
+      // unreadable (a setuid member, a race) stays '' - recorded, never
+      // guessed from the name
+      Result[n].Image := RawUtf8(fpReadLink('/proc/' + name + '/exe'));
+      Inc(n);
+    until False;
+  finally
+    FpCloseDir(dir^);
+  end;
+end;
+{$else}
+function PWebCliChildMembers(const Child: TPWebCliChild): TPWebCliTreeMembers;
+var
+  bytes, count, i, n: PtrInt;
+  pids: array of cint;
+  info: TPWebProcBsdInfo;
+  path: array[0 .. PWEB_POSIX_PIDPATH_MAX - 1] of AnsiChar;
+  len: cint;
+begin
+  Result := nil;
+  if (Child.Group <= 0) or
+     (SizeOf(info) <> PWEB_POSIX_PROC_BSDINFO_BYTES) then
+    exit;
+  bytes := proc_listpids(PWEB_POSIX_PROC_ALL_PIDS, 0, nil, 0);
+  if bytes <= 0 then
+    exit;
+  // headroom for processes created between the two calls
+  SetLength(pids, bytes div SizeOf(cint) + 64);
+  bytes := proc_listpids(PWEB_POSIX_PROC_ALL_PIDS, 0, @pids[0],
+    Length(pids) * SizeOf(cint));
+  if bytes <= 0 then
+    exit;
+  count := bytes div SizeOf(cint);
+  n := 0;
+  for i := 0 to count - 1 do
+  begin
+    if pids[i] <= 0 then
+      continue;
+    if proc_pidinfo(pids[i], PWEB_POSIX_PROC_PIDTBSDINFO, 0, @info,
+         SizeOf(info)) <> SizeOf(info) then
+      continue; // vanished or not ours to inspect: benign
+    if PtrInt(info.pbi_pgid) <> Child.Group then
+      continue;
+    SetLength(Result, n + 1);
+    Result[n].Pid := pids[i];
+    Result[n].ParentPid := info.pbi_ppid;
+    len := proc_pidpath(pids[i], @path[0], SizeOf(path));
+    if len > 0 then
+      SetString(Result[n].Image, PAnsiChar(@path[0]), len)
+    else
+      Result[n].Image := '';
+    Inc(n);
+  end;
+end;
+{$endif LINUX}
+
+procedure PWebCliChildRelease(var Child: TPWebCliChild);
+var
+  fd: cint;
+begin
+  fd := Child.OutRead; CloseFd(fd);
+  fd := Child.ErrRead; CloseFd(fd);
+  // a last non-blocking reap so no zombie is left by a caller that gave up
+  // waiting; the engine has already bounded that wait and reported it
+  PWebCliChildWait(Child);
+  Child := Default(TPWebCliChild);
+  Child.OutRead := -1;
+  Child.ErrRead := -1;
+end;
+
+var
+  StopFlag: LongInt;
+
+procedure StopSignal(Sig: LongInt; Info: PSigInfo; Context: PSigContext); cdecl;
+begin
+  // async-signal-safe by construction: one aligned store and nothing else
+  StopFlag := 1;
+end;
+
+function PWebCliInstallStopHandler: Boolean;
+var
+  act: SigActionRec;
+begin
+  FillChar(act, SizeOf(act), 0);
+  act.sa_handler := SigActionHandler(@StopSignal);
+  FpSigEmptySet(act.sa_mask);
+  Result := (FpSigaction(SIGINT, @act, nil) = 0) and
+            (FpSigaction(SIGTERM, @act, nil) = 0) and
+            (FpSigaction(SIGHUP, @act, nil) = 0);
+  // a forwarding target that went away must surface as EPIPE on the write,
+  // where the engine can act on it, not as a signal that kills the
+  // supervisor with the tree still running
+  FpSignal(SIGPIPE, SignalHandler(SIG_IGN));
+end;
+
+function PWebCliStopRequested: Boolean;
+begin
+  Result := StopFlag <> 0;
+end;
+
+function PWebCliTreeModelText: RawUtf8;
+begin
+  Result := 'process_group';
+end;
+
+function PWebCliPidAlive(Pid: PtrInt): Boolean;
+begin
+  // signal 0 delivers nothing and answers existence; EPERM means it exists
+  // and is not ours, which is still "alive"
+  Result := (Pid > 0) and
+            ((FpKill(Pid, 0) = 0) or (fpgeterrno = ESysEPERM));
+end;
+
 {$endif WINDOWS}
+
+{ ---------------------------------------------------------------------------
+  SHARED BODIES (CAP-10C0)
+  --------------------------------------------------------------------------- }
+
+function PWebCliSpawnFailureText(Failure: TPWebCliSpawnFailure): RawUtf8;
+begin
+  case Failure of
+    psfNone:      Result := 'ok';
+    psfPipes:     Result := 'spawn_pipes';
+    psfJobObject: Result := 'spawn_job_object';
+    psfCreate:    Result := 'spawn_create';
+    psfExec:      Result := 'spawn_exec';
+    psfWorkDir:   Result := 'spawn_workdir';
+  else
+    Result := 'spawn_failed';
+  end;
+end;
+
+function PWebCliWindowsCommandLine(const ExePath: RawUtf8;
+  const Args: TRawUtf8DynArray): RawUtf8;
+
+  // the inverse of the C runtime's parser (CommandLineToArgvW and msvcrt
+  // agree since Windows 2008): an argument is quoted when it is empty or
+  // carries a space, tab or quote; a run of N backslashes followed by a
+  // quote becomes 2N+1 backslashes and the escaped quote; a run of N
+  // backslashes at the END of a quoted argument becomes 2N, so the closing
+  // quote survives; every other backslash is literal
+  function QuoteOne(const Arg: RawUtf8): RawUtf8;
+  var
+    i, nb, k: PtrInt;
+    needs: Boolean;
+  begin
+    needs := Arg = '';
+    for i := 1 to Length(Arg) do
+      if Arg[i] in [' ', #9, #10, #11, '"'] then
+      begin
+        needs := True;
+        break;
+      end;
+    if not needs then
+      exit(Arg);
+    Result := '"';
+    i := 1;
+    while i <= Length(Arg) do
+    begin
+      nb := 0;
+      while (i <= Length(Arg)) and
+            (Arg[i] = '\') do
+      begin
+        Inc(nb);
+        Inc(i);
+      end;
+      if i > Length(Arg) then
+      begin
+        for k := 1 to nb * 2 do
+          Result := Result + '\';
+        break;
+      end;
+      if Arg[i] = '"' then
+      begin
+        for k := 1 to nb * 2 + 1 do
+          Result := Result + '\';
+        Result := Result + '"';
+      end
+      else
+      begin
+        for k := 1 to nb do
+          Result := Result + '\';
+        Result := Result + Arg[i];
+      end;
+      Inc(i);
+    end;
+    Result := Result + '"';
+  end;
+
+var
+  i: PtrInt;
+begin
+  Result := QuoteOne(ExePath);
+  for i := 0 to High(Args) do
+    Result := Result + ' ' + QuoteOne(Args[i]);
+end;
 
 { ---------------------------------------------------------------------------
   SHARED BODIES

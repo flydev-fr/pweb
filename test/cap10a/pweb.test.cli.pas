@@ -328,9 +328,22 @@ begin
   a := PWebCliParseArgs(Argv(['dev']));
   Check(a.Usage = pcuUnknownCommand, 'C3: dev is not in this build');
   Record_('args|dev|' + PWebCliUsageText(a.Usage));
+  // CAP-10C0 exposes `run`: a bare `pweb run` is a complete command line
+  // (the project is discovered from the working directory), so the case it
+  // makes here changed from "unknown command" to "accepted". The corpus
+  // line moved with it, and cli_digest was re-baselined by the CAP-10C0
+  // closure as a RECORDED supersession, exactly as CAP-10B1 recorded the
+  // template corpus one
   a := PWebCliParseArgs(Argv(['run']));
-  Check(a.Usage = pcuUnknownCommand, 'C3: run is not in this build');
+  Check(a.Usage = pcuNone, 'C3: run is a command since CAP-10C0');
+  Check(a.Command = pccRun, 'C3: and it is the run command');
   Record_('args|run|' + PWebCliUsageText(a.Usage));
+  a := PWebCliParseArgs(Argv(['run', '--json']));
+  Check(a.Usage = pcuOptionNotForCommand, 'C3: run has no machine report');
+  Record_('args|run --json|' + PWebCliUsageText(a.Usage));
+  a := PWebCliParseArgs(Argv(['run', 'extra']));
+  Check(a.Usage = pcuExtraPositional, 'C3: run takes no operand');
+  Record_('args|run extra|' + PWebCliUsageText(a.Usage));
   a := PWebCliParseArgs(Argv(['DOCTOR']));
   Check(a.Usage = pcuUnknownCommand, 'C3: commands are case-sensitive');
   Record_('args|DOCTOR|' + PWebCliUsageText(a.Usage));
