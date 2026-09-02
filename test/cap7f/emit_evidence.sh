@@ -1313,6 +1313,7 @@ c0_supervision_digest_unchanged="$(c1_str c0_supervision_digest_unchanged)"
 cli_digest_unchanged="$(c1_str cli_digest_unchanged)"
 doctor_schema_digest_unchanged="$(c1_str doctor_schema_digest_unchanged)"
 autoclose_stop_honoured="$(c1_str autoclose_stop_honoured)"
+doctor_platform_webview="$(c1_str doctor_platform_webview)"
 pipeline_corpus_lines="$(c1_num pipeline_corpus_lines)"
 lockfile_install_scripts="$(c1_num lockfile_install_scripts)"
 c1_app_pwb_react_entries="$(c1_num c1_app_pwb_react_entries)"
@@ -1638,6 +1639,7 @@ cat > "${work}/evidence.json" <<EOF
   "cli_digest_unchanged": "${cli_digest_unchanged}",
   "doctor_schema_digest_unchanged": "${doctor_schema_digest_unchanged}",
   "autoclose_stop_honoured": "${autoclose_stop_honoured}",
+  "doctor_platform_webview": "${doctor_platform_webview}",
   "pipeline_corpus_lines": "${pipeline_corpus_lines}",
   "lockfile_install_scripts": "${lockfile_install_scripts}",
   "c1_app_pwb_react_entries": "${c1_app_pwb_react_entries}",

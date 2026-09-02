@@ -82,6 +82,9 @@ uses
   pweb.cli.doctor;
 
 const
+  /// the doctor row a BUILD does not depend on - see FirstRequiredFailure
+  PWEB_CLI_ROW_WEBVIEW = 'platform.webview';
+
   /// the components of the npm entry-point rule, spelled once
   PWEB_NPM_NODE_MODULES = 'node_modules';
   PWEB_NPM_LIB = 'lib';
@@ -137,6 +140,11 @@ type
     DoctorCause: RawUtf8;
     /// the worst status the requirement graph reported
     DoctorStatus: TPWebCliStatus;
+    /// `platform.webview`'s own status/cause - RESOLVED and recorded, and
+    // deliberately not build-blocking: it asks whether this machine can
+    // DISPLAY a WebView, which is what running needs and not what compiling
+    // needs
+    WebviewRow: RawUtf8;
     Node: TPWebCliTool;
     Npm: TPWebCliTool;
     Fpc: TPWebCliTool;
@@ -255,25 +263,47 @@ begin
     TargetCpu := 'x86_64';
 end;
 
-// the first REQUIRED row that failed, in the report's own (id) order, so a
-// machine with several problems always names the same one
+// the first REQUIRED row that failed AND that a BUILD depends on, in the
+// report's own (id) order, so a machine with several problems always names
+// the same one
+//
+// WHY ONE ROW IS EXCLUDED. `platform.webview` asks whether this machine can
+// DISPLAY a WebView: the Evergreen runtime on Windows, WebKitGTK on Linux,
+// the WebKit framework on macOS. That is a requirement of RUNNING a built
+// application - `pweb run`'s, and the doctor reports it for exactly that
+// reason - and not of compiling one. A compiler needs the binding SOURCES,
+// which are in the SDK root, not the engine.
+//
+// MEASURED, and this is why the distinction is drawn rather than assumed:
+// hosted run 33674212855 refused both macOS pipelines at stage 2 with
+// `framework_absent`, on runners where the CAP-10B1 and CAP-10B2 harnesses
+// build and run the same projects successfully. A build that refuses because
+// a DISPLAY requirement was not met is a build refusing the wrong question.
+// The row is still RESOLVED and recorded as an observation, so nothing is
+// hidden: it simply does not block a compile.
 function FirstRequiredFailure(const Report: TPWebCliReport;
-  out Id, Cause: RawUtf8): Boolean;
+  out Id, Cause, WebviewStatus: RawUtf8): Boolean;
 var
   i: PtrInt;
 begin
   Id := '';
   Cause := '';
-  for i := 0 to High(Report.Checks) do
-    if (Report.Checks[i].Severity = pdvRequired) and
-       (Report.Checks[i].Status = pdsFail) then
-    begin
-      Id := Report.Checks[i].Id;
-      Cause := Report.Checks[i].Cause;
-      Result := True;
-      exit;
-    end;
+  WebviewStatus := '';
   Result := False;
+  for i := 0 to High(Report.Checks) do
+  begin
+    if Report.Checks[i].Id = PWEB_CLI_ROW_WEBVIEW then
+      WebviewStatus := PWebCliStatusText(Report.Checks[i].Status) + '/' +
+        Report.Checks[i].Cause;
+    if Result or
+       (Report.Checks[i].Severity <> pdvRequired) or
+       (Report.Checks[i].Status <> pdsFail) or
+       (Report.Checks[i].Id = PWEB_CLI_ROW_WEBVIEW) then
+      continue;
+    Id := Report.Checks[i].Id;
+    Cause := Report.Checks[i].Cause;
+    Result := True;
+  end;
 end;
 
 // resolve ONE executable and read a version out of it, with the
@@ -363,7 +393,8 @@ begin
   // pipeline's verdict, and its cause is the pipeline's cause
   report := PWebCliDoctorRun(PWebCliRealEnv, Project, pdmSource);
   Result.DoctorStatus := report.Status;
-  if FirstRequiredFailure(report, Result.DoctorRow, Result.DoctorCause) then
+  if FirstRequiredFailure(report, Result.DoctorRow, Result.DoctorCause,
+       Result.WebviewRow) then
   begin
     Result.Refusal := ptrDoctorRefused;
     exit;

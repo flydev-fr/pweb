@@ -200,6 +200,9 @@ begin
     Row('fpc_duplicates', IntText(res.Toolset.Fpc.Duplicates));
     Row('pas2js_version', res.Toolset.Pas2js.Version);
     Row('lifecycle_script_policy', 'ignore_scripts');
+    // RESOLVED and recorded, never build-blocking: it asks whether this
+    // machine can DISPLAY a WebView, which is what `pweb run` needs
+    Row('doctor_platform_webview', res.Toolset.WebviewRow);
     if project.Ui = puiReact then
       Row('network_stages', 'npm_ci')
     else

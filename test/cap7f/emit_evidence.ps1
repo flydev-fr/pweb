@@ -1317,6 +1317,7 @@ $evidence = [ordered]@{
     cli_digest_unchanged            = "$($c1.cli_digest_unchanged)"
     doctor_schema_digest_unchanged  = "$($c1.doctor_schema_digest_unchanged)"
     autoclose_stop_honoured         = "$($c1.autoclose_stop_honoured)"
+    doctor_platform_webview         = "$($c1.doctor_platform_webview)"
     pipeline_corpus_lines           = "$($c1.pipeline_corpus_lines)"
     lockfile_install_scripts        = "$($c1.lockfile_install_scripts)"
     c1_app_pwb_react_entries           = "$($c1.c1_app_pwb_react_entries)"

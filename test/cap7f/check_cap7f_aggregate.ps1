@@ -182,6 +182,7 @@ $required = @(
     'c0_supervision_digest_unchanged', 'cli_digest_unchanged',
     'doctor_schema_digest_unchanged',
     'autoclose_stop_honoured',
+    'doctor_platform_webview',
     'release_layout', 'no_listener', 'app_pwb_react_sha256',
     'logical_inventory_sha256_react', 'github_sha', 'github_run_id', 'waivers'
 )

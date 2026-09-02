@@ -259,8 +259,12 @@ foreach ($pair in @(@('react', $react), @('pas2js', $pas2js))) {
     $tag = $pair[0]; $r = $pair[1]
     Require ("$($r.Report['pipeline_result'])" -ceq 'ok') `
         "$tag`: pipeline_result is $($r.Report['pipeline_result'])"
-    Require ("$($r.Report['project_tree_unchanged'])" -ceq 'true') `
-        "$tag`: the pipeline MUTATED the project outside its ratified set"
+    # only meaningful on a run that REACHED a stage: a pipeline that refused
+    # at stage 2 has re-measured nothing, and its row says so honestly
+    if ($r.Code -eq 0) {
+        Require ("$($r.Report['project_tree_unchanged'])" -ceq 'true') `
+            "$tag`: the pipeline MUTATED the project outside its ratified set"
+    }
     # ST12 half: the driver's own lines carry no absolute path, no home
     # directory and no ANSI
     $own = @($r.Err -split "`n" | Where-Object { $_.StartsWith('pweb: ') })
@@ -295,6 +299,7 @@ foreach ($c in $allCommands) {
         "TC1: a batch file reached a command vector: $c"
 }
 Row 'lifecycle_script_policy' "$($react.Report['lifecycle_script_policy'])"
+Row 'doctor_platform_webview' "$($react.Report['doctor_platform_webview'])"
 Require ("$($react.Report['cmd.install'])".Contains('--ignore-scripts')) `
     'ST14: the install command does not carry --ignore-scripts'
 Row 'network_stages' "$($react.Report['network_stages'])"
