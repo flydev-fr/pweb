@@ -70,8 +70,15 @@ function Sha256File([string]$Path) {
     $text = [System.IO.File]::ReadAllText($Path).Replace("`r`n", "`n")
     return Sha256Text $text
 }
+# plain .NET, never Get-Item / Get-FileHash: on Unix pwsh treats a dot file
+# as HIDDEN and refuses it without -Force (MEASURED on run 33621204892: the
+# generated project's .gitattributes broke the digest on Linux)
 function Sha256Bytes([string]$Path) {
-    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return -join ($sha.ComputeHash([System.IO.File]::ReadAllBytes($Path)) |
+            ForEach-Object { $_.ToString('x2') })
+    } finally { $sha.Dispose() }
 }
 # ORDINAL, never Sort-Object: a culture-aware sort differs between runners
 function SortOrdinal([string[]]$Items) {
@@ -87,7 +94,7 @@ function TreeDigest([string]$Root) {
         ForEach-Object { $_.FullName })
     foreach ($f in $files) {
         $rel = $f.Substring($Root.Length).TrimStart('\', '/') -replace '\\', '/'
-        $parts.Add("$rel|$((Get-Item -LiteralPath $f).Length)|$(Sha256Bytes $f)")
+        $parts.Add("$rel|$([System.IO.FileInfo]::new($f).Length)|$(Sha256Bytes $f)")
     }
     return Sha256Text ($parts -join "`n")
 }

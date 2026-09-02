@@ -198,3 +198,141 @@ empty or carrying space/tab/quote): `a b` → `"a b"`; `` → `""`; `a"b` →
 - `pwsh test/cap10c0/run_cap10c0_gates.ps1` -- expected: S1–S18, R1–R14, T1–T4 PASS, `build/cap10c0/cli-windows-x86_64.json` with `run_react_rpc_value=42`, `run_pas2js_rpc_value=42`, `descendants_after_exit=0`.
 - `pwsh test/cap7f/check_divergence.ps1; pwsh test/cap10a/check_dev_trust.ps1; pwsh test/cap7f/check_cap7f_selftest.ps1` -- expected: allowlist re-ratified, dev trust PASS, self-test refusals grow by the C0 legs.
 - `gh run list --branch phase/cap-10/c0-run-supervision` -- expected: all six jobs green on the final HEAD.
+
+## Suggested Review Order
+
+**The one execution engine**
+
+- Entry point: profiles, escalation ladder, typed outcomes, the finally that never leaves a tree
+  [`pweb.cli.process.pas:711`](../../tools/pweb/pweb.cli.process.pas#L711)
+
+- Pre-spawn refusals: NUL, strict UTF-8, batch files on every platform
+  [`pweb.cli.process.pas:289`](../../tools/pweb/pweb.cli.process.pas#L289)
+
+- Line forwarding with the bound, CR-aware, sink failure never unwinds
+  [`pweb.cli.process.pas:582`](../../tools/pweb/pweb.cli.process.pas#L582)
+
+- The descendant drain: grace by time, forced by passes, kill on every pass
+  [`pweb.cli.process.pas:384`](../../tools/pweb/pweb.cli.process.pas#L384)
+
+- The probe re-based on the engine, signatures frozen, tool directory explicit
+  [`pweb.cli.probe.pas:212`](../../tools/pweb/pweb.cli.probe.pas#L212)
+
+**Windows tree ownership**
+
+- CreateProcessW suspended, handle list of three, Job Object with KILL_ON_JOB_CLOSE, then resume
+  [`pweb.cli.platform.pas:1338`](../../tools/pweb/pweb.cli.platform.pas#L1338)
+
+- The msvcrt quoting rule, platform-free and golden-tabled on four targets
+  [`pweb.cli.platform.pas:3096`](../../tools/pweb/pweb.cli.platform.pas#L3096)
+
+- WM_CLOSE to visible top-level windows of the child pid only
+  [`pweb.cli.platform.pas:1632`](../../tools/pweb/pweb.cli.platform.pas#L1632)
+
+- Membership enumeration through the job pid list, image paths recorded
+  [`pweb.cli.platform.pas:1684`](../../tools/pweb/pweb.cli.platform.pas#L1684)
+
+- Console control events: Ctrl+C returns, close/logoff/shutdown wait for the engine
+  [`pweb.cli.platform.pas:1756`](../../tools/pweb/pweb.cli.platform.pas#L1756)
+
+**POSIX tree ownership**
+
+- fork, own group, SIGPIPE default, descriptors closed, execve with live environ, exec failure typed
+  [`pweb.cli.platform.pas:2570`](../../tools/pweb/pweb.cli.platform.pas#L2570)
+
+- EOF closes the descriptor so poll never spins on HUP
+  [`pweb.cli.platform.pas:2736`](../../tools/pweb/pweb.cli.platform.pas#L2736)
+
+- Group SIGTERM, then SIGKILL; a probe is signalled by pid
+  [`pweb.cli.platform.pas:2834`](../../tools/pweb/pweb.cli.platform.pas#L2834)
+
+- Linux /proc pgrp scan and Darwin libproc scan, both by membership
+  [`pweb.cli.platform.pas:2912`](../../tools/pweb/pweb.cli.platform.pas#L2912)
+
+- Release kills the group last: the POSIX twin of closing the job
+  [`pweb.cli.platform.pas:3008`](../../tools/pweb/pweb.cli.platform.pas#L3008)
+
+**`pweb run`**
+
+- The layout rule, a pure function of the descriptor for every OS
+  [`pweb.cli.run.pas:186`](../../tools/pweb/pweb.cli.run.pas#L186)
+
+- Resolution through the CAP-10A walk: link, case, escape, shape, execute bit
+  [`pweb.cli.run.pas:270`](../../tools/pweb/pweb.cli.run.pas#L270)
+
+- The ratified exit mapping and the supervisor's own lines
+  [`pweb.pas:413`](../../tools/pweb/pweb.pas#L413)
+
+- Lines flushed on every write, so a pipe sees them as they happen
+  [`pweb.pas:108`](../../tools/pweb/pweb.pas#L108)
+
+**The host helper**
+
+- Signal to self-pipe to the same terminate dispatch as auto-close
+  [`pweb.webview.host.pas:399`](../../src/webview/pweb.webview.host.pas#L399)
+
+- Installed last before webview_run, previous dispositions saved and restored
+  [`pweb.webview.host.pas:449`](../../src/webview/pweb.webview.host.pas#L449)
+
+- The call site, flags defined before the try
+  [`pweb.webview.host.pas:837`](../../src/webview/pweb.webview.host.pas#L837)
+
+**The bounds and the contract**
+
+- Seven limits, stated once
+  [`pweb.cli.toolchain.pas:85`](../../tools/pweb/pweb.cli.toolchain.pas#L85)
+
+- Tree ownership, per platform, with the measured WebView2 job membership
+  [`supervision-contract.md:54`](../../docs/supervision-contract.md#L54)
+
+- Why membership decides and the path only annotates
+  [`supervision-contract.md:107`](../../docs/supervision-contract.md#L107)
+
+- The public grammar, layout and trust statement
+  [`cli-contract.md:512`](../../docs/cli-contract.md#L512)
+
+**Tests and gates**
+
+- The quoting golden table and the drain over injected records
+  [`pweb.test.supervise.pas:533`](../../test/cap10c0/pweb.test.supervise.pas#L533)
+
+- Graceful-then-forced, both intervals measured
+  [`pweb.test.supervise.pas:973`](../../test/cap10c0/pweb.test.supervise.pas#L973)
+
+- The grandchild owned by the tree
+  [`pweb.test.supervise.pas:1050`](../../test/cap10c0/pweb.test.supervise.pas#L1050)
+
+- The driver that delivers a real Ctrl+C to a live `pweb run`
+  [`pweb.test.supervise.pas:1390`](../../test/cap10c0/pweb.test.supervise.pas#L1390)
+
+- A terminated supervisor takes its tree, SIGKILL variant on Linux
+  [`pweb.test.supervise.pas:1522`](../../test/cap10c0/pweb.test.supervise.pas#L1522)
+
+- The fixture's Ctrl+C helper and PWEBCHILD_MODE stand-in
+  [`pwebchild.pas:351`](../../test/cap10c0/pwebchild.pas#L351)
+
+- Staging the B1/B2 releases byte for byte beneath `output`
+  [`run_cap10c0_gates.ps1:102`](../../test/cap10c0/run_cap10c0_gates.ps1#L102)
+
+- One real run leg: 42, listeners, tools, descendants, digests, no ANSI
+  [`run_cap10c0_gates.ps1:331`](../../test/cap10c0/run_cap10c0_gates.ps1#L331)
+
+- No FPC process unit at the link; no name-based kill in the source
+  [`check_cap10c0_contracts.ps1:126`](../../test/cap10c0/check_cap10c0_contracts.ps1#L126)
+
+- The shutdown order and the shared dispatch, pinned in the host's source
+  [`check_cap10c0_contracts.ps1:237`](../../test/cap10c0/check_cap10c0_contracts.ps1#L237)
+
+**Evidence plumbing**
+
+- Absolute pins the four targets could agree on and still be wrong about
+  [`check_cap7f_aggregate.ps1:188`](../../test/cap7f/check_cap7f_aggregate.ps1#L188)
+
+- Per-OS validation of the tree model, stop mechanism and typed signal death
+  [`check_cap7f_aggregate.ps1:836`](../../test/cap7f/check_cap7f_aggregate.ps1#L836)
+
+- Fourteen negative legs proving each refusal red on fixtures
+  [`check_cap7f_selftest.ps1:1503`](../../test/cap7f/check_cap7f_selftest.ps1#L1503)
+
+- The mORMot OS spellings the divergence filter had missed, and the two re-ratified rows
+  [`check_divergence.ps1:52`](../../test/cap7f/check_divergence.ps1#L52)
