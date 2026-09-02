@@ -187,10 +187,22 @@ $sdkBefore = TreeDigest $sdk
 
 # --- 1. the headless suite --------------------------------------------------
 $suiteLog = Join-Path $work 'c1tests.log'
-& $suite /noenter 2>&1 | Tee-Object -FilePath $suiteLog | Out-Null
+$corpusFile = Join-Path $work 'pipeline-corpus.txt'
+$observedFile = Join-Path $work 'pipeline-observed.txt'
+# removed BEFORE the suite runs, so a stale corpus from an earlier invocation
+# can never be read as this run's answer - the discipline CAP-10A already
+# applies to its own cli-corpus.txt
+Remove-Item -Force -ErrorAction SilentlyContinue $corpusFile, $observedFile
+# `/noenter` is the WINDOWS switch that skips mormot.core.test's interactive
+# ENTER wait. The POSIX runner has no such wait and READS THE ARGUMENT AS A
+# FILENAME: MEASURED on hosted run 33672783286, where it made the Linux suite
+# print its usage, exit 0, and write a corpus with no decisions in it - a
+# green verdict over nothing at all. CAP-10A and CAP-10C0 already run the
+# suite with no argument on POSIX; this now does too.
+if ($IsWindows) { & $suite /noenter 2>&1 | Tee-Object -FilePath $suiteLog | Out-Null }
+else { & $suite 2>&1 | Tee-Object -FilePath $suiteLog | Out-Null }
 $suiteCode = $LASTEXITCODE
 Require ($suiteCode -eq 0) "the CAP-10C1 suite FAILED (exit $suiteCode)"
-$corpusFile = Join-Path $work 'pipeline-corpus.txt'
 Require (Test-Path -LiteralPath $corpusFile) 'the suite emitted no decision corpus'
 if (Test-Path -LiteralPath $corpusFile) {
     $corpusText = ([System.IO.File]::ReadAllText($corpusFile)).Replace("`r`n", "`n")
@@ -203,7 +215,17 @@ if (Test-Path -LiteralPath $corpusFile) {
     Row 'pipeline_corpus_lines' 0
 }
 Row 'pipeline_available' 'true'
-Row 'pipeline_suite' $(if ($suiteCode -eq 0) { 'PASS' } else { 'FAIL' })
+# A SUITE THAT MADE NO DECISION IS NOT A PASS. An exit code alone cannot
+# tell "every assertion held" from "the runner printed its usage and
+# stopped", which is exactly what a wrong switch produced on three
+# targets at once (hosted run 33672783286). The corpus is the suite's own
+# record of what it decided, and a green verdict requires there to be one.
+Require ($rows['pipeline_corpus_lines'] -gt 0) `
+    ("the suite recorded $($rows['pipeline_corpus_lines']) decisions: a " +
+     'corpus with none is a verdict over nothing')
+Row 'pipeline_suite' $(
+    if (($suiteCode -eq 0) -and ($rows['pipeline_corpus_lines'] -gt 0)) { 'PASS' }
+    else { 'FAIL' })
 
 # --- 2. the two real pipelines ---------------------------------------------
 # A FAILING PIPELINE MUST PRINT ITS CHILD'S WORDS. The driver forwards a
