@@ -177,7 +177,8 @@ $help = RunCli $pweb $repoRoot @('--help')
 Require ($help.Code -eq 0) '--help did not exit 0'
 Require ($help.Out.Contains('pweb create NAME --ui react|pas2js')) `
     'the global help does not advertise create with both frontend kinds'
-foreach ($absent in 'pweb dev', 'pweb run', 'pweb build') {
+# (`pweb run` left this list with CAP-10C0, which implements and measures it)
+foreach ($absent in 'pweb dev', 'pweb build') {
     Require (-not $help.Out.Contains($absent)) `
         "the global help advertises an unimplemented command: $absent"
 }
@@ -221,8 +222,10 @@ Require ($supported -ceq 'pas2js,react') `
     "create --help advertises '$advertised', expected 'react|pas2js'"
 Row 'supported_uis' $supported
 
-# dev/run/build must still be UNKNOWN COMMANDS, not merely unadvertised
-foreach ($absent in 'dev', 'run', 'build') {
+# dev/build must still be UNKNOWN COMMANDS, not merely unadvertised (`run`
+# is a command since CAP-10C0 and is refused differently: it needs no
+# operand and answers about the project instead)
+foreach ($absent in 'dev', 'build') {
     $r = RunCli $pweb $repoRoot @($absent)
     Require ($r.Code -eq 2) `
         "'pweb $absent' must be an unknown command (exit 2), got $($r.Code)"

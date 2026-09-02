@@ -236,8 +236,8 @@ foreach ($line in ($createHelp.Out -split "`n")) {
 $supported = (SortOrdinal @($advertised -split '\|')) -join ','
 Require ($supported -ceq 'pas2js,react') `
     "create --help advertises '$advertised', expected 'react|pas2js'"
-# and the commands that must still not exist
-foreach ($absent in 'dev', 'run', 'build') {
+# and the commands that must still not exist (`run` exists since CAP-10C0)
+foreach ($absent in 'dev', 'build') {
     $r = RunCli $pweb $repoRoot @($absent)
     Require ($r.Code -eq 2) `
         "'pweb $absent' must be an unknown command (exit 2), got $($r.Code)"

@@ -284,7 +284,9 @@ if (Test-Path -LiteralPath $pweb) {
     Require ($p.ExitCode -eq 0) '--help did not exit 0'
     Require ($help.Contains('pweb create ')) `
         '--help does not advertise create'
-    foreach ($absent in 'dev ', 'run ', 'build') {
+    # CAP-10C0 moved `run` out of this list: it is advertised because it
+    # is implemented, and the CAP-10C0 gates measure it
+    foreach ($absent in 'dev ', 'build') {
         Require (-not $help.Contains("pweb $absent")) `
             "--help advertises an unimplemented command: $absent"
     }

@@ -1305,12 +1305,15 @@ function AssignProcessToJobObject(hJob, hProcess: THandle): BOOL;
   stdcall; external 'kernel32.dll' name 'AssignProcessToJobObject';
 function TerminateJobObject(hJob: THandle; uExitCode: UINT): BOOL;
   stdcall; external 'kernel32.dll' name 'TerminateJobObject';
+// SIZE_T spelled as PtrUInt and its pointer as a plain Pointer: the FPC
+// 3.2.2 `windows` unit on the hosted runner declares no PSIZE_T (MEASURED
+// on run 33612547645), and the ABI is the same machine word either way
 function InitializeProcThreadAttributeList(lpAttributeList: Pointer;
-  dwAttributeCount, dwFlags: DWORD; var lpSize: SIZE_T): BOOL;
+  dwAttributeCount, dwFlags: DWORD; var lpSize: PtrUInt): BOOL;
   stdcall; external 'kernel32.dll' name 'InitializeProcThreadAttributeList';
 function UpdateProcThreadAttribute(lpAttributeList: Pointer; dwFlags: DWORD;
-  Attribute: PtrUInt; lpValue: Pointer; cbSize: SIZE_T;
-  lpPreviousValue: Pointer; lpReturnSize: PSIZE_T): BOOL;
+  Attribute: PtrUInt; lpValue: Pointer; cbSize: PtrUInt;
+  lpPreviousValue: Pointer; lpReturnSize: Pointer): BOOL;
   stdcall; external 'kernel32.dll' name 'UpdateProcThreadAttribute';
 procedure DeleteProcThreadAttributeList(lpAttributeList: Pointer);
   stdcall; external 'kernel32.dll' name 'DeleteProcThreadAttributeList';
@@ -1340,7 +1343,7 @@ var
   sa: TSecurityAttributes;
   outRead, outWrite, errRead, errWrite, nulIn, job: THandle;
   handles: array[0 .. 2] of THandle;
-  attrSize: SIZE_T;
+  attrSize: PtrUInt;
   attrList: Pointer;
   six: TPWebStartupInfoExW;
   pi: TProcessInformation;
