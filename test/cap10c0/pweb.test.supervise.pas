@@ -404,8 +404,9 @@ type
     OutLines, ErrLines: TRawUtf8DynArray;
     OutCount, ErrCount: PtrInt;
     Truncated: Integer;
-    /// R10/S11: the pid `pweb: started pid N` named
+    /// R10/S11: the pid `pweb: started pid N` named, and when it was seen
     AppPid: PtrInt;
+    AppSeenAt: QWord;
     /// R10/S11: set once the application reported ready
     Ready: Boolean;
     /// R10/S11: the tick at which the driver acted, 0 until then
@@ -449,8 +450,29 @@ begin
     c^.ErrLines[n] := Line;
     Inc(c^.ErrCount);
     if Copy(Line, 1, 18) = 'pweb: started pid ' then
+    begin
       c^.AppPid := StrToIntDef(Utf8ToString(Copy(Line, 19, MaxInt)), 0);
+      c^.AppSeenAt := GetTickCount64;
+    end;
   end;
+end;
+
+const
+  /// how long after pweb named the application pid the drivers act when no
+  // ready line has arrived. A generated host's stdout is a PIPE here, and
+  // FPC's text layer block-buffers a pipe on Linux and macOS (MEASURED on
+  // run 33622404228: the ready report reached the driver only after the
+  // host exited, though the gate's own legs saw it fine because their host
+  // auto-closes). Windows flushes per line and the ready trigger still
+  // fires there first; everywhere else the host has long since served its
+  // page by the time this interval has passed (the B1/B2 proofs measured
+  // readiness in well under two seconds on every runner)
+  PWEB_C0_DRIVER_SETTLE_MS = 6000;
+
+function DriverArmed(const C: TCollector): Boolean;
+begin
+  Result := C.Ready or
+    ((C.AppPid > 0) and (GetTickCount64 - C.AppSeenAt >= PWEB_C0_DRIVER_SETTLE_MS));
 end;
 
 procedure Trim(var C: TCollector);
@@ -1396,9 +1418,10 @@ var
 begin
   Result := False; // the driver never asks the ENGINE to stop pweb
   c := Opaque;
-  if (not c^.Ready) or (c^.ActedAt <> 0) or (c^.PwebPid = 0) then
+  if (not DriverArmed(c^)) or (c^.ActedAt <> 0) or (c^.PwebPid = 0) then
     exit;
   c^.ActedAt := GetTickCount64;
+  Observe('driver_acted_on', BoolText(c^.Ready)); // true: the ready line
   case DriverAction of
     daSignalStop:
       begin
@@ -1535,7 +1558,10 @@ begin
   end;
   c := Default(TCollector);
   r := DrivePweb(stage, pweb, daTerminateSupervisor, c);
-  Check(c.Ready, 'S11: the application reported ready');
+  // the ready line is NOT required here: a tree ended by job close or by
+  // PDEATHSIG never flushes its stdout, so the line may never arrive; the
+  // pid pweb named (stderr, flushed per line) is the fact this row needs
+  Observe('s11_ready_seen', BoolText(c.Ready));
   Check(c.AppPid > 0, 'S11: pweb named the application pid');
   Check(c.ActedAt <> 0, 'S11: the supervisor was terminated');
   // Windows: TerminateProcess on pweb -> its job handle closes ->
@@ -1572,7 +1598,6 @@ begin
   begin
     c := Default(TCollector);
     r := DrivePweb(stage, pweb, daKillSupervisor, c);
-    Check(c.Ready, 'S11k: the application reported ready');
     Check(c.AppPid > 0, 'S11k: pweb named the application pid');
     started := GetTickCount64;
     gone := False;
