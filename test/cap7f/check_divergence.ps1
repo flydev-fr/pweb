@@ -87,17 +87,18 @@ $allow = @{
     # test/cap10b1/check_cap10b1_contracts.ps1 measures on the template
     # source. Every {$ifdef} here selects a NAME or a whole platform body;
     # none of them decides anything.
-    # CAP-10C0 RE-RATIFIED at 40 (was 30): the POSIX graceful-stop helper -
-    # the baseunix uses, the helper's own region, the two variables and the
-    # install/remove call sites around webview_run - five OSPOSIX regions
-    # that select a whole body each. The count moved for a second reason
+    # CAP-10C0 RE-RATIFIED at 42 (was 30): the POSIX graceful-stop helper -
+    # the baseunix uses, the helper's own region, the two variables, their
+    # initialisation before the try, and the install/remove call sites
+    # around webview_run - six OSPOSIX regions that select a whole body
+    # each. The count moved for a second reason
     # worth naming: the mORMot OS spellings (OSPOSIX, OSLINUX, OSDARWIN,
     # OSMAC, OSBSD, OSANDROID) were ABSENT from the platform-symbol filter
     # above, so a conditional spelled the mormot.defines.inc way was not a
     # conditional to this sweep. CAP-10C0 added them; nothing else in the
     # swept surface used one, so no other row moved.
-    'src/webview/pweb.webview.host.pas'  = @{ directives = 40;
-        fingerprint = 'f1c4d9ab6b9842843ec823b1d8cd5ba1e98c5f712c579817c45eaf8140b71dec' }
+    'src/webview/pweb.webview.host.pas'  = @{ directives = 42;
+        fingerprint = '23fcee7876fc7fb2b865d48926e0d9b5b3bdafbb04cfbcbb03170d6c21f08b40' }
     'src/assets/pweb.assets.folder.pas'  = @{ directives = 10;  # Darwin F_GETPATH / Windows wide-API split
         fingerprint = '145ed55144e2e7c509bfda6cc19fadc863a58f41f31747f8835c26ec2e5c48c9' }
     'src/assets/pweb.assets.bundle.pas'  = @{ directives = 6;   # I/O mechanism only (ratified)

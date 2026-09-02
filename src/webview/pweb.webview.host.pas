@@ -386,10 +386,15 @@ end;
   ended behaves exactly as it did before this helper existed. }
 var
   HostStopPipe: TFilDes = (-1, -1);
+  /// the dispositions found in place, restored on removal - never SIG_DFL
+  // assumed, because this unit is reused by every generated application
+  HostStopPrevious: array[0 .. 2] of SigActionRec;
+  HostStopPreviousValid: Boolean = False;
 
 const
   HOST_STOP_BYTE_SIGNAL = 1;
   HOST_STOP_BYTE_TEARDOWN = 2;
+  HOST_STOP_SIGNALS: array[0 .. 2] of cint = (SIGTERM, SIGINT, SIGHUP);
 
 procedure PWebHostStopSignal(Sig: LongInt; Info: PSigInfo;
   Context: PSigContext); cdecl;
@@ -421,34 +426,72 @@ begin
   end;
 end;
 
+// put back exactly what was there, and close the pipe: used by removal, and
+// by a partial installation so nothing armed or open is ever left behind
+procedure PWebHostRestoreSignals(Installed: Integer);
+var
+  i: Integer;
+begin
+  // only the slots that were actually replaced go back: a slot whose
+  // sigaction failed was never changed and has no saved value to restore
+  if HostStopPreviousValid then
+    for i := 0 to Installed - 1 do
+      FpSigaction(HOST_STOP_SIGNALS[i], @HostStopPrevious[i], nil);
+  HostStopPreviousValid := False;
+  if HostStopPipe[0] >= 0 then
+    FpClose(HostStopPipe[0]);
+  if HostStopPipe[1] >= 0 then
+    FpClose(HostStopPipe[1]);
+  HostStopPipe[0] := -1;
+  HostStopPipe[1] := -1;
+end;
+
 function PWebHostInstallStopHelper(out AThread: system.TThreadID): Boolean;
 var
   act: SigActionRec;
   id: system.TThreadID;
+  i: Integer;
 begin
   Result := False;
   AThread := system.TThreadID(0);
   if FpPipe(HostStopPipe) <> 0 then
+  begin
+    HostStopPipe[0] := -1;
+    HostStopPipe[1] := -1;
     exit;
+  end;
   FillChar(act, SizeOf(act), 0);
   act.sa_handler := SigActionHandler(@PWebHostStopSignal);
   FpSigEmptySet(act.sa_mask);
-  if (FpSigaction(SIGTERM, @act, nil) <> 0) or
-     (FpSigaction(SIGINT, @act, nil) <> 0) or
-     (FpSigaction(SIGHUP, @act, nil) <> 0) then
-    exit;
+  FillChar(HostStopPrevious, SizeOf(HostStopPrevious), 0);
+  HostStopPreviousValid := True;
+  for i := 0 to High(HOST_STOP_SIGNALS) do
+    if FpSigaction(HOST_STOP_SIGNALS[i], @act, @HostStopPrevious[i]) <> 0 then
+    begin
+      // a partial installation is no installation: the signals already
+      // taken go back to what they were and the pipe is closed, so no
+      // signal can ever be written into a pipe nobody reads
+      PWebHostRestoreSignals(i);
+      exit;
+    end;
   AThread := BeginThread(@PWebHostStopThread, nil, id);
   Result := AThread <> system.TThreadID(0);
+  if not Result then
+    PWebHostRestoreSignals(Length(HOST_STOP_SIGNALS));
 end;
 
 procedure PWebHostRemoveStopHelper(AThread: system.TThreadID);
 var
   b: Byte;
+  i: Integer;
 begin
-  // default dispositions first, so a late signal behaves as before
-  FpSignal(SIGTERM, SignalHandler(SIG_DFL));
-  FpSignal(SIGINT, SignalHandler(SIG_DFL));
-  FpSignal(SIGHUP, SignalHandler(SIG_DFL));
+  // the previous dispositions first, so a late signal behaves as before
+  if HostStopPreviousValid then
+  begin
+    for i := 0 to High(HOST_STOP_SIGNALS) do
+      FpSigaction(HOST_STOP_SIGNALS[i], @HostStopPrevious[i], nil);
+    HostStopPreviousValid := False;
+  end;
   if AThread <> system.TThreadID(0) then
   begin
     b := HOST_STOP_BYTE_TEARDOWN;
@@ -693,6 +736,12 @@ begin
   schedulerDrained := False;
   verdictFile := '';
   argAutoCloseMs := -1;
+  {$ifdef OSPOSIX}
+  // read in the finally below, so they must be defined before anything in
+  // the try can raise
+  stopHelperInstalled := False;
+  stopHelper := system.TThreadID(0);
+  {$endif OSPOSIX}
   try
     // parsed FIRST, so the verdict file is known before anything can fail:
     // a refused bundle still leaves a FAIL verdict when one was asked for

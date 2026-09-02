@@ -390,6 +390,23 @@ type
 
   TPWebCliChildStream = (pcsStdOut, pcsStdErr);
 
+  /// how a child is placed, decided by the engine per profile
+  TPWebCliSpawnOptions = record
+    /// POSIX: the child leads a process group of its own (the supervise
+    // profile), so the whole tree can be signalled; False keeps it in the
+    // caller's group (the probe profile), so a terminal's Ctrl+C still
+    // reaches a running version probe exactly as it did under CAP-10A.
+    // Windows always owns the tree through the Job Object
+    OwnGroup: Boolean;
+    /// Windows: STARTF_USESHOWWINDOW + SW_HIDE, so a probed console tool
+    // launched from a console-less pweb never flashes a window
+    HideWindow: Boolean;
+    /// Windows only, ignored elsewhere: give the child a console of its own;
+    // used by the CAP-10C0 stop-signal test driver so a console control
+    // event has a console to travel through, never by a public command
+    SeparateConsole: Boolean;
+  end;
+
 /// fixed text for a spawn failure
 function PWebCliSpawnFailureText(Failure: TPWebCliSpawnFailure): RawUtf8;
 
@@ -397,17 +414,15 @@ function PWebCliSpawnFailureText(Failure: TPWebCliSpawnFailure): RawUtf8;
 /// directory, stdin from NUL / /dev/null, stdout and stderr piped back
 // - Args is the vector AFTER argv[0]; the engine has already refused NUL,
 // invalid UTF-8 and batch-file executables
-// - SeparateConsole (Windows only, ignored elsewhere) gives the child a
-// console of its own; used by the CAP-10C0 stop-signal test driver so a
-// console control event has a console to travel through, never by a
-// public command
 function PWebCliChildSpawn(const ExePath: RawUtf8;
   const Args: TRawUtf8DynArray; const WorkDir: RawUtf8;
-  SeparateConsole: Boolean; out Child: TPWebCliChild;
+  const Options: TPWebCliSpawnOptions; out Child: TPWebCliChild;
   out Failure: TPWebCliSpawnFailure; out OsError: Integer): Boolean;
 
 /// read what is available RIGHT NOW from one stream, never blocking
 // - > 0: bytes stored in Buf; 0: nothing available; -1: the stream is closed
+// - a stream reported closed is CLOSED here and its descriptor cleared, so
+// a later poll never spins on a descriptor that only ever answers HUP
 function PWebCliChildRead(var Child: TPWebCliChild;
   Stream: TPWebCliChildStream; Buf: Pointer; Cap: PtrInt): PtrInt;
 
@@ -450,6 +465,13 @@ function PWebCliInstallStopHandler: Boolean;
 
 /// True once a stop signal has been received; never reset
 function PWebCliStopRequested: Boolean;
+
+/// the engine's word that the tree is gone and the report written
+// - Windows: a console close / logoff / shutdown handler blocks (bounded)
+// until this is called, because the system terminates the process the
+// moment that handler returns - so without the wait the graceful ladder
+// would never run and the tree would die by job close with no report
+procedure PWebCliStopAcknowledge;
 
 /// the tree-ownership model of this platform: 'job_object' or 'process_group'
 function PWebCliTreeModelText: RawUtf8;
@@ -1312,7 +1334,7 @@ end;
 
 function PWebCliChildSpawn(const ExePath: RawUtf8;
   const Args: TRawUtf8DynArray; const WorkDir: RawUtf8;
-  SeparateConsole: Boolean; out Child: TPWebCliChild;
+  const Options: TPWebCliSpawnOptions; out Child: TPWebCliChild;
   out Failure: TPWebCliSpawnFailure; out OsError: Integer): Boolean;
 var
   sa: TSecurityAttributes;
@@ -1414,6 +1436,11 @@ begin
     FillChar(six, SizeOf(six), 0);
     six.StartupInfo.cb := SizeOf(six);
     six.StartupInfo.dwFlags := STARTF_USESTDHANDLES;
+    if Options.HideWindow then
+    begin
+      six.StartupInfo.dwFlags := six.StartupInfo.dwFlags or STARTF_USESHOWWINDOW;
+      six.StartupInfo.wShowWindow := SW_HIDE;
+    end;
     six.StartupInfo.hStdInput := nulIn;
     six.StartupInfo.hStdOutput := outWrite;
     six.StartupInfo.hStdError := errWrite;
@@ -1430,7 +1457,7 @@ begin
     // a new process group, so the console's Ctrl+C reaches the supervisor
     // and not the application; the supervisor forwards it as a graceful
     // stop instead. (With a separate console the group is implicit.)
-    if SeparateConsole then
+    if Options.SeparateConsole then
       flags := flags or PWEB_CREATE_NEW_CONSOLE
     else
       flags := flags or PWEB_CREATE_NEW_PROCESS_GROUP;
@@ -1454,7 +1481,17 @@ begin
       Failure := psfJobObject;
       exit;
     end;
-    ResumeThread(pi.hThread);
+    if ResumeThread(pi.hThread) = DWORD(-1) then
+    begin
+      // a child that cannot be resumed would sit suspended forever under a
+      // supervisor with no bound: it is discarded, and the spawn has failed
+      OsError := GetLastError;
+      TerminateProcess(pi.hProcess, 1);
+      CloseHandle(pi.hThread);
+      CloseHandle(pi.hProcess);
+      Failure := psfCreate;
+      exit;
+    end;
     CloseHandle(pi.hThread);
     Child.Pid := pi.dwProcessId;
     Child.Handle := pi.hProcess;
@@ -1504,7 +1541,14 @@ begin
   if not PeekNamedPipe(h, nil, 0, nil, @avail, nil) then
   begin
     if GetLastError = PWEB_ERROR_BROKEN_PIPE then
+    begin
+      CloseHandle(h);
+      if Stream = pcsStdOut then
+        Child.OutRead := 0
+      else
+        Child.ErrRead := 0;
       exit(-1);
+    end;
     exit(0);
   end;
   if avail = 0 then
@@ -1515,7 +1559,14 @@ begin
   if not ReadFile(h, Buf^, avail, got, nil) then
   begin
     if GetLastError = PWEB_ERROR_BROKEN_PIPE then
+    begin
+      CloseHandle(h);
+      if Stream = pcsStdOut then
+        Child.OutRead := 0
+      else
+        Child.ErrRead := 0;
       exit(-1);
+    end;
     exit(0);
   end;
   Result := got;
@@ -1544,8 +1595,11 @@ begin
   if WaitForSingleObject(Child.Handle, 0) <> WAIT_OBJECT_0 then
     exit;
   code := 0;
-  GetExitCodeProcess(Child.Handle, code);
-  Child.ExitCode := Integer(code);
+  if GetExitCodeProcess(Child.Handle, code) then
+    Child.ExitCode := Integer(code)
+  else
+    // an exit the kernel will not report can never read as a clean 0
+    Child.ExitCode := -1;
   Child.Signal := 0;
   Child.Running := False;
   Result := True;
@@ -1650,7 +1704,11 @@ begin
         capacity := PWEB_JOB_PID_LIST_MAX;
         continue;
       end;
-      if not ok then
+      // a tree larger than the ceiling is reported by its first members
+      // rather than as empty: an enumeration that answered "nothing" for a
+      // job full of processes would let the drain declare victory
+      if not ok and
+         (GetLastError <> PWEB_ERROR_MORE_DATA) then
         exit;
       n := PDWORD(buf + 4)^; // NumberOfProcessIdsInList
       if n > capacity then
@@ -1684,16 +1742,41 @@ end;
 
 var
   StopFlag: LongInt;
+  StopDone: LongInt;
+
+const
+  // Windows terminates a process about five seconds after a close, logoff
+  // or shutdown handler RETURNS; the handler therefore waits, inside that
+  // window, for the engine to bring the tree down and write its report
+  PWEB_CTRL_CLOSE_WAIT_MS = 4500;
 
 function StopHandler(dwCtrlType: DWORD): BOOL; stdcall;
+var
+  waited: Integer;
 begin
   // every console event is a stop request; the answer is always "handled"
   // so the default handler (ExitProcess) never runs underneath a supervisor
   // that has a tree to bring down first
-  // (CTRL_CLOSE_EVENT is the same request with a bounded window to act on
-  // it; dwCtrlType is deliberately not consulted)
   InterlockedExchange(StopFlag, 1);
+  if (dwCtrlType <> PWEB_CTRL_C_EVENT) and
+     (dwCtrlType <> PWEB_CTRL_BREAK_EVENT) then
+  begin
+    // close / logoff / shutdown: the process dies when this returns, so
+    // give the engine its (bounded) chance to run the graceful ladder
+    waited := 0;
+    while (InterlockedExchangeAdd(StopDone, 0) = 0) and
+          (waited < PWEB_CTRL_CLOSE_WAIT_MS) do
+    begin
+      Sleep(50);
+      Inc(waited, 50);
+    end;
+  end;
   Result := True;
+end;
+
+procedure PWebCliStopAcknowledge;
+begin
+  InterlockedExchange(StopDone, 1);
 end;
 
 function PWebCliInstallStopHandler: Boolean;
@@ -2483,10 +2566,11 @@ end;
 
 function PWebCliChildSpawn(const ExePath: RawUtf8;
   const Args: TRawUtf8DynArray; const WorkDir: RawUtf8;
-  SeparateConsole: Boolean; out Child: TPWebCliChild;
+  const Options: TPWebCliSpawnOptions; out Child: TPWebCliChild;
   out Failure: TPWebCliSpawnFailure; out OsError: Integer): Boolean;
 var
   outp, errp, statusp: TFilDes;
+  fd: cint;
   nul: cint;
   pid: pid_t;
   strs: array of RawByteString;
@@ -2505,8 +2589,8 @@ begin
   errp[0] := -1; errp[1] := -1;
   statusp[0] := -1; statusp[1] := -1;
   nul := -1;
-  // SeparateConsole is a Windows-only notion; POSIX children share the
-  // terminal and the flag is accepted and ignored
+  // SeparateConsole and HideWindow are Windows-only notions; POSIX children
+  // share the terminal and both are accepted and ignored
   if PWebCliNodeKind(WorkDir) <> pcnDirectory then
   begin
     Failure := psfWorkDir;
@@ -2559,18 +2643,28 @@ begin
     if pid = 0 then
     begin
       // ---- the child: async-signal-safe calls only, then exec ----------
-      pweb_cli_setpgid(0, 0);
+      if Options.OwnGroup then
+        pweb_cli_setpgid(0, 0);
       {$ifdef LINUX}
       // if the supervisor dies without signalling the group, the direct
       // child is killed with it (Linux only; a defence, not the mechanism)
       pweb_cli_prctl(PWEB_PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0);
       {$endif LINUX}
+      // the supervisor ignores SIGPIPE for its own sake (see
+      // PWebCliInstallStopHandler); an ignored disposition survives exec,
+      // and the application must receive the default one - inheriting
+      // UNCHANGED means the environment, not the supervisor's signal table
+      FpSignal(SIGPIPE, SignalHandler(SIG_DFL));
       FpDup2(nul, 0);
       FpDup2(outp[1], 1);
       FpDup2(errp[1], 2);
-      FpClose(nul);
-      FpClose(outp[1]);
-      FpClose(errp[1]);
+      // nothing but the three standard descriptors and the close-on-exec
+      // status pipe crosses into the child: every other descriptor this
+      // process holds is closed here, the POSIX twin of the Windows handle
+      // list
+      for fd := 3 to 1023 do
+        if fd <> statusp[1] then
+          FpClose(fd);
       if FpChDir(PAnsiChar(dirC)) <> 0 then
       begin
         status[0] := PWEB_EXEC_STATUS_CHDIR;
@@ -2588,7 +2682,8 @@ begin
     // ---- the parent ----------------------------------------------------
     // the same call from both sides, so whichever runs first wins and the
     // group exists before anything is sent to it
-    pweb_cli_setpgid(pid, pid);
+    if Options.OwnGroup then
+      pweb_cli_setpgid(pid, pid);
     CloseFd(nul);
     CloseFd(outp[1]);
     CloseFd(errp[1]);
@@ -2614,7 +2709,10 @@ begin
     SetFdControl(outp[0], F_SETFL, GetFdControl(outp[0], F_GETFL) or O_NONBLOCK);
     SetFdControl(errp[0], F_SETFL, GetFdControl(errp[0], F_GETFL) or O_NONBLOCK);
     Child.Pid := pid;
-    Child.Group := pid;
+    if Options.OwnGroup then
+      Child.Group := pid
+    else
+      Child.Group := 0; // a probe: signalled by pid, never by group
     Child.OutRead := outp[0];
     Child.ErrRead := errp[0];
     Child.Running := True;
@@ -2649,15 +2747,19 @@ begin
   n := FpRead(fd, Buf^, Cap);
   if n > 0 then
     exit(n);
-  if n = 0 then
-    exit(-1); // EOF: every writer has closed its end
-  case fpgeterrno of
-    ESysEAGAIN,
-    ESysEINTR:
-      Result := 0;
+  if (n < 0) and
+     ((fpgeterrno = ESysEAGAIN) or (fpgeterrno = ESysEINTR)) then
+    exit(0);
+  // EOF (every writer has closed its end) or a hard error: the descriptor
+  // is closed NOW and forgotten, so a later poll never returns at once on
+  // its HUP - MEASURED as a review finding: a child that closed its stdout
+  // but kept running would have spun the supervisor at full CPU
+  FpClose(fd);
+  if Stream = pcsStdOut then
+    Child.OutRead := -1
   else
-    Result := -1;
-  end;
+    Child.ErrRead := -1;
+  Result := -1;
 end;
 
 procedure PWebCliChildPoll(var Child: TPWebCliChild; TimeoutMs: Cardinal);
@@ -2703,9 +2805,10 @@ begin
     if fpgeterrno = ESysEINTR then
       exit;
     // ECHILD: nothing to reap - the child is gone and nobody can say how.
-    // Reported as a signal death so it can never read as a clean exit 0
+    // Reported as a signal death with the MARKER -1 (no real signal is
+    // invented), so it can never read as a clean exit 0
     Child.ExitCode := -1;
-    Child.Signal := SIGKILL;
+    Child.Signal := -1;
     Child.Running := False;
     exit(True);
   end;
@@ -2728,18 +2831,23 @@ end;
 function PWebCliChildStop(var Child: TPWebCliChild): Integer;
 begin
   Result := 0;
-  if Child.Group <= 0 then
-    exit;
-  if FpKill(-Child.Group, SIGTERM) = 0 then
-    Result := 1;
+  if Child.Group > 0 then
+  begin
+    if FpKill(-Child.Group, SIGTERM) = 0 then
+      Result := 1;
+  end
+  else if Child.Running and
+          (Child.Pid > 0) then
+    // a probe (no group of its own) is asked by pid
+    if FpKill(Child.Pid, SIGTERM) = 0 then
+      Result := 1;
 end;
 
 function PWebCliChildKill(var Child: TPWebCliChild): Boolean;
 begin
   Result := False;
-  if Child.Group <= 0 then
-    exit;
-  Result := FpKill(-Child.Group, SIGKILL) = 0;
+  if Child.Group > 0 then
+    Result := FpKill(-Child.Group, SIGKILL) = 0;
   if Child.Running and
      (Child.Pid > 0) then
     Result := (FpKill(Child.Pid, SIGKILL) = 0) or Result;
@@ -2900,6 +3008,12 @@ var
 begin
   fd := Child.OutRead; CloseFd(fd);
   fd := Child.ErrRead; CloseFd(fd);
+  // the POSIX twin of closing a KILL_ON_JOB_CLOSE job: whatever the drain
+  // reported as surviving in the group is ended here, as the last resort,
+  // so a supervisor never leaves the tree it owned behind (ESRCH when the
+  // group is already empty, which is the ordinary case)
+  if Child.Group > 0 then
+    FpKill(-Child.Group, SIGKILL);
   // a last non-blocking reap so no zombie is left by a caller that gave up
   // waiting; the engine has already bounded that wait and reported it
   PWebCliChildWait(Child);
@@ -2936,6 +3050,11 @@ end;
 function PWebCliStopRequested: Boolean;
 begin
   Result := StopFlag <> 0;
+end;
+
+procedure PWebCliStopAcknowledge;
+begin
+  // POSIX has no console-close window to hold open; nothing to record
 end;
 
 function PWebCliTreeModelText: RawUtf8;

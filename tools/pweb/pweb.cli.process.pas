@@ -200,6 +200,9 @@ type
     Truncated: Boolean;
     /// a forwarded line was cut at PWEB_CLI_RUN_LINE_MAX
     LinesTruncated: Integer;
+    /// the sink raised (a closed forwarding target): forwarding stopped
+    // and the child was asked to stop, exactly as a signal would have
+    ForwardBroken: Boolean;
     Drain: TPWebCliDrainReport;
   end;
 
@@ -468,11 +471,14 @@ begin
       report.Graceful := False;
       report.Forced := True;
       MarkForced;
-      Kill(Opaque);
       forcedPasses := 0;
       while (live > 0) and
             (forcedPasses < MaxPasses) do
       begin
+        // killed on EVERY pass, not once: a member that appears after the
+        // first kill (a browser respawning a helper) must be ended too, not
+        // merely counted and marked
+        Kill(Opaque);
         Sleep(Opaque, PollMs);
         Inc(forcedPasses);
         live := Sweep;
@@ -504,8 +510,16 @@ type
     Child: TPWebCliChild;
     Res: TPWebCliExecResult;
     Streams: array[TPWebCliChildStream] of TStreamState;
+    /// the sink raised once; nothing more is delivered
+    SinkBroken: Boolean;
   end;
   PExecState = ^TExecState;
+
+const
+  /// how many reads one pass may take from one stream before the loop
+  // returns to the exit / stop / bound checks: a child that streams faster
+  // than the supervisor reads must not be able to starve them
+  PWEB_CLI_PUMP_ROUNDS = 64;
 
 // keep the last Cap bytes of Text + Chunk
 procedure RetainTail(var Text: RawUtf8; const Chunk: RawUtf8; Cap: PtrInt;
@@ -538,15 +552,30 @@ end;
 procedure DeliverLine(var S: TExecState; Stream: TPWebCliChildStream;
   var Line: RawUtf8; Truncated: Boolean);
 begin
-  // one trailing CR is the Windows newline's other half, not content
+  if Truncated then
+    Inc(S.Res.LinesTruncated);
+  if Assigned(S.Spec.Sink) and
+     not S.SinkBroken then
+    try
+      S.Spec.Sink(S.Spec.Opaque, Stream, Line, Truncated);
+    except
+      // a forwarding target that went away (EPIPE with SIGPIPE ignored, a
+      // closed console) is an error the ENGINE sees: forwarding stops and
+      // the child is asked to stop, never an exception that unwinds past
+      // a running tree
+      S.SinkBroken := True;
+      S.Res.ForwardBroken := True;
+    end;
+  Line := '';
+end;
+
+// take one trailing CR off a complete line: it is the Windows newline's
+// other half, not content, and it must not count against the line bound
+procedure StripCr(var Line: RawUtf8);
+begin
   if (Line <> '') and
      (Line[Length(Line)] = #13) then
     SetLength(Line, Length(Line) - 1);
-  if Truncated then
-    Inc(S.Res.LinesTruncated);
-  if Assigned(S.Spec.Sink) then
-    S.Spec.Sink(S.Spec.Opaque, Stream, Line, Truncated);
-  Line := '';
 end;
 
 // supervise: cut Chunk into lines, bound each, deliver complete ones
@@ -566,6 +595,7 @@ begin
       begin
         piece := Copy(Chunk, start, i - start);
         st^.Pending := st^.Pending + piece;
+        StripCr(st^.Pending);
         if Length(st^.Pending) > PWEB_CLI_RUN_LINE_MAX then
         begin
           SetLength(st^.Pending, PWEB_CLI_RUN_LINE_MAX);
@@ -606,11 +636,16 @@ var
   buf: array[0 .. 16383] of Byte;
   got: PtrInt;
   chunk: RawUtf8;
+  rounds: Integer;
 begin
   Result := False;
   if S.Streams[Stream].Closed then
     exit;
+  rounds := 0;
   repeat
+    if rounds >= PWEB_CLI_PUMP_ROUNDS then
+      exit; // back to the exit, stop and bound checks; more next pass
+    Inc(rounds);
     got := PWebCliChildRead(S.Child, Stream, @buf[0], SizeOf(buf));
     if got < 0 then
     begin
@@ -686,6 +721,8 @@ var
   refusal: TPWebCliExecRefusal;
   failure: TPWebCliSpawnFailure;
   osError: Integer;
+  placement: TPWebCliSpawnOptions;
+  excludePid: PtrInt;
 begin
   S := Default(TExecState);
   S.Spec := Spec;
@@ -701,9 +738,21 @@ begin
   stopCheck := Spec.StopCheck;
   if not Assigned(stopCheck) then
     stopCheck := @PWebCliDefaultStopCheck;
+  // a probe is bounded by definition: an unbounded one would wait on a
+  // hung tool forever, so the ratified probe bound applies when none was
+  // given
+  if (Spec.Profile = pepProbe) and
+     (S.Spec.TimeoutMs = 0) then
+    S.Spec.TimeoutMs := PWEB_CLI_PROBE_TIMEOUT_MS;
+  // how the child is placed follows the profile: a supervised tree owns a
+  // group of its own and shows its windows; a probe stays in the caller's
+  // group (a terminal's Ctrl+C reaches it, as under CAP-10A) and is hidden
+  placement.OwnGroup := Spec.Profile = pepSupervise;
+  placement.HideWindow := Spec.Profile = pepProbe;
+  placement.SeparateConsole := Spec.SeparateConsole;
   started := GetTickCount64;
   if not PWebCliChildSpawn(Spec.ExePath, Spec.Args, Spec.WorkDir,
-       Spec.SeparateConsole, S.Child, failure, osError) then
+       placement, S.Child, failure, osError) then
   begin
     S.Res.Outcome := pcoSpawnFailed;
     S.Res.Failure := failure;
@@ -731,11 +780,12 @@ begin
       case stage of
         stRunning:
           begin
-            wantsStop := (Spec.Profile = pepSupervise) and stopCheck(Spec.Opaque);
+            wantsStop := ((Spec.Profile = pepSupervise) and stopCheck(Spec.Opaque)) or
+                         S.SinkBroken;
             if wantsStop then
               S.Res.StopRequested := True
-            else if (Spec.TimeoutMs > 0) and
-                    (now64 - started > Spec.TimeoutMs) then
+            else if (S.Spec.TimeoutMs > 0) and
+                    (now64 - started > S.Spec.TimeoutMs) then
             begin
               S.Res.TimedOut := True;
               wantsStop := True;
@@ -816,15 +866,26 @@ begin
           S.Res.Outcome := pcoExited;
       end;
     end;
-    // the tree the child owned, drained by membership
+    // the tree the child owned, drained by membership. An UNREAPED child is
+    // still a member and is counted as one: only a child that actually
+    // exited is excluded from its own drain
+    if exited then
+      excludePid := S.Child.Pid
+    else
+      excludePid := 0;
     S.Res.Drain := PWebCliDrainTree(@S, @RealEnumerate, @RealStop, @RealKill,
-      @RealSleep, S.Child.Pid, PWEB_CLI_RUN_GRACE_MS,
+      @RealSleep, excludePid, PWEB_CLI_RUN_GRACE_MS,
       PWEB_CLI_RUN_DRAIN_POLL_MS, PWEB_CLI_RUN_DRAIN_PASSES, Spec.TreeRoot,
       PWebCliHostOs = pcoWindows);
     PumpBoth(S);
   finally
+    // an abnormal unwind (an exception anywhere above) must not leave a
+    // running tree behind a supervisor that is about to be gone
+    if S.Child.Running then
+      PWebCliChildKill(S.Child);
     PWebCliChildRelease(S.Child);
     S.Res.ElapsedMs := GetTickCount64 - started;
+    PWebCliStopAcknowledge;
   end;
   Result := S.Res;
 end;

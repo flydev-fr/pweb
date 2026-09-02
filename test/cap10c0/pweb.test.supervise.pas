@@ -83,6 +83,8 @@ type
     procedure LayoutRefusals;
     procedure StopSignalReachesApplication;
     procedure SupervisorTerminatedTreeDies;
+    procedure StopIgnoredIsForcedThroughRun;
+    procedure ApplicationDeathThroughRun;
   end;
 
 const
@@ -226,6 +228,20 @@ begin
   Result := False; // no zombies on Windows: a reaped handle is a closed one
 end;
 
+procedure MakeExecutable(const Path: TFileName);
+begin
+  // Windows has no execute bit
+end;
+
+procedure MakeNotExecutable(const Path: TFileName);
+begin
+end;
+
+function KillHard(Pid: PtrInt): Boolean;
+begin
+  Result := TerminatePid(Pid);
+end;
+
 function SetEnv(const Name, Value: RawUtf8): Boolean;
 begin
   Result := SetEnvironmentVariableW(PWideChar(Utf8ToSynUnicode(Name)),
@@ -279,6 +295,22 @@ begin
   // ECHILD is the proof: nothing of that pid is left for us to reap
   st := 0;
   Result := FpWaitPid(Pid, st, WNOHANG) <> -1;
+end;
+
+procedure MakeExecutable(const Path: TFileName);
+begin
+  FpChmod(PAnsiChar(RawByteString(Path)), &755);
+end;
+
+procedure MakeNotExecutable(const Path: TFileName);
+begin
+  FpChmod(PAnsiChar(RawByteString(Path)), &644);
+end;
+
+// the supervisor ended WITHOUT a chance to forward anything
+function KillHard(Pid: PtrInt): Boolean;
+begin
+  Result := FpKill(Pid, SIGKILL) = 0;
 end;
 
 function pweb_c0_setenv(name, value: PAnsiChar; overwrite: cint): cint;
@@ -402,7 +434,11 @@ begin
       SetLength(c^.OutLines, (n + 16) * 2);
     c^.OutLines[n] := Line;
     Inc(c^.OutCount);
-    if PosEx('ready {', Line) > 0 then
+    // a generated host's ready report, or the fixture's own announcement
+    // when it stands in for the application
+    if (PosEx('ready {', Line) > 0) or
+       (Copy(Line, 1, 9) = 'stubborn ') or
+       (Copy(Line, 1, 8) = 'forever ') then
       c^.Ready := True;
   end
   else
@@ -633,10 +669,10 @@ begin
   CheckEqual(r.Remaining, 1, 'the survivor is counted');
   Check(not r.Graceful, 'not graceful');
   Check(r.Forced, 'forced');
-  CheckEqual(DrainKills, 1, 'the tree is killed once');
+  CheckEqual(DrainKills, 8, 'the tree is killed on EVERY forced pass');
   CheckEqual(Length(r.Seen), 1, 'one member');
   Check(r.Seen[0].Forced, 'and it is marked forced');
-  Record_('drain|survivor|passes=13|remaining=1|graceful=false|kills=1');
+  Record_('drain|survivor|passes=13|remaining=1|graceful=false|kills=8');
   // a member that goes only after the kill: forced, remaining 0
   SetLength(DrainScript, 7);
   for i := 0 to 5 do
@@ -647,9 +683,9 @@ begin
     @ScriptSleep, 1, 1000, 250, 20, '/app', False);
   CheckEqual(r.Remaining, 0, 'gone after the kill');
   Check(r.Forced and not r.Graceful, 'forced');
-  CheckEqual(DrainKills, 1, 'killed once');
+  CheckEqual(DrainKills, 2, 'killed on each of the two forced passes it took');
   Check(r.Seen[0].Forced, 'marked forced');
-  Record_('drain|forced-then-gone|remaining=0|graceful=false|kills=1');
+  Record_('drain|forced-then-gone|remaining=0|graceful=false|kills=2');
   // nothing there at all: one pass, no request, no kill
   SetLength(DrainScript, 1);
   DrainScript[0] := [Member(1, 0, '/app/x')];
@@ -703,6 +739,7 @@ procedure TTestPWebCliSupervise.DeathIsNeverExitZero;
 var
   c: TCollector;
   r: TPWebCliExecResult;
+  p: TPWebCliProbe;
   neverZero: Boolean;
 begin
   if not ChildAvailable then
@@ -726,14 +763,30 @@ begin
   end;
   Observe('death_outcome', PWebCliChildOutcomeText(r.Outcome));
   Record_('supervise|die|never_exit_zero|' + BoolText(neverZero));
+  // the probe profile types the same death: ppoDied on POSIX, an exit code
+  // of 3 on Windows - and never a completed probe with exit 0
+  p := PWebCliRunProbe(ChildPath, ['die'], 30000);
+  if PWebCliHostOs = pcoWindows then
+  begin
+    Check(p.Outcome = ppoCompleted, 'S2: probe completed on Windows');
+    CheckEqual(p.ExitCode, 3, 'S2: with the fixture exit code');
+  end
+  else
+    Check(p.Outcome = ppoDied, 'S2: probe typed the death: ' +
+      PWebCliProbeOutcomeText(p.Outcome));
+  Check(not ((p.Outcome = ppoCompleted) and (p.ExitCode = 0)),
+    'S2: a probe death is never a clean 0');
+  Record_('probe|die|never_exit_zero|' +
+    BoolText(not ((p.Outcome = ppoCompleted) and (p.ExitCode = 0))));
 end;
 
 procedure TTestPWebCliSupervise.ArgvRoundTrip;
 const
-  ROUNDTRIP: array[0 .. 15] of RawUtf8 = (
+  ROUNDTRIP: array[0 .. 17] of RawUtf8 = (
     'plain', 'a b', '', 'x"y', '\z', 'a\\', 'tab'#9'here',
     #$C3#$A9' '#$C3#$BC#$C3#$AF' '#$E6#$97#$A5#$E6#$9C#$AC, '&', '|',
-    '%PATH%', '$HOME', '"', '\"', 'trailing\\', '--flag=va lue');
+    '%PATH%', '$HOME', '"', '\"', 'trailing\\', '--flag=va lue',
+    'new'#10'line', 'cr'#13'here');
 var
   c: TCollector;
   r: TPWebCliExecResult;
@@ -899,6 +952,22 @@ begin
     CheckEqual(Length(c.OutLines[i]), PWEB_CLI_RUN_LINE_MAX, 'S7: the bound');
   Record_('supervise|lines|3xlong|truncated=' + IntToStr(c.Truncated) +
     '|bound=' + IntToStr(PWEB_CLI_RUN_LINE_MAX));
+  // a final fragment with no newline - the shape of a crash message - is
+  // delivered once on each stream when the child exits, never lost
+  c := Default(TCollector);
+  r := RunChild(['tail'], FixtureDir, 60000, @NeverStop, c);
+  Check(r.Outcome = pcoExited, 'S7: ran');
+  CheckEqual(Length(c.OutLines), 2, 'S7: the line and the fragment');
+  if Length(c.OutLines) = 2 then
+  begin
+    CheckEqual(c.OutLines[0], 'head', 'S7: the line');
+    CheckEqual(c.OutLines[1], 'tail-out', 'S7: the stdout fragment');
+  end;
+  CheckEqual(Length(c.ErrLines), 1, 'S7: the stderr fragment');
+  if Length(c.ErrLines) = 1 then
+    CheckEqual(c.ErrLines[0], 'tail-err', 'S7: verbatim');
+  Record_('supervise|tail|out=' + IntToStr(Length(c.OutLines)) +
+    '|err=' + IntToStr(Length(c.ErrLines)));
 end;
 
 procedure TTestPWebCliSupervise.TimeoutGracefulThenForced;
@@ -1040,7 +1109,8 @@ procedure TTestPWebCliSupervise.WorkingDirectoryExplicit;
 var
   c: TCollector;
   r: TPWebCliExecResult;
-  work, other, reported, canonical: RawUtf8;
+  p: TPWebCliProbe;
+  work, other, reported, canonical, toolDir, toolName, toolCanonical: RawUtf8;
   saved: string;
 begin
   if not ChildAvailable then
@@ -1065,6 +1135,21 @@ begin
   CheckEqual(canonical, work, 'S17: the explicit directory, not the CWD');
   Check(canonical <> other, 'S17: and not where the suite stood');
   Record_('supervise|cwd|explicit=true|inherited=false');
+  // the probe profile chooses the TOOL'S OWN directory - explicit,
+  // deterministic, and never where the suite stands
+  SetCurrentDir(Utf8ToString(PWebCliDisplayPath(other)));
+  try
+    p := PWebCliRunProbe(ChildPath, ['cwd'], 30000);
+  finally
+    SetCurrentDir(saved);
+  end;
+  Check(p.Outcome = ppoCompleted, 'S17: probe ran');
+  Check(PWebCliCanonicalDir(TrimU(p.Output), canonical), 'S17: probe cwd canonical');
+  Check(PWebCliSplitLast(ChildPath, toolDir, toolName), 'S17: the tool directory');
+  Check(PWebCliCanonicalDir(toolDir, toolCanonical), 'S17: canonical tool directory');
+  CheckEqual(canonical, toolCanonical, 'S17: a probe runs in the tool''s directory');
+  Check(canonical <> other, 'S17: and not where the suite stood');
+  Record_('probe|cwd|tool_dir=true|inherited=false');
 end;
 
 procedure TTestPWebCliSupervise.EnvironmentInherited;
@@ -1120,7 +1205,11 @@ const
     '}' + #10;
 
 // a fake built project for THIS host, with the layout the rule demands
-function NewBuiltProject(out Root: RawUtf8; out ExeFile: TFileName): TFileName;
+// - RealExecutable = True puts a COPY of the fixture child where the
+// application belongs, so `pweb run` can be driven end to end against a
+// process that misbehaves on request (PWEBCHILD_MODE)
+function NewBuiltProject(out Root: RawUtf8; out ExeFile: TFileName;
+  RealExecutable: Boolean = False): TFileName;
 var
   p: TPWebCliProject;
   exe, bundle, plist: RawUtf8;
@@ -1140,7 +1229,19 @@ begin
   PWebCliRunLogicalLayout(p, PWebCliHostOs, PWebCliHostArch, exe, bundle, plist);
   ExeFile := dir + Utf8ToString(StringReplaceAll(exe, '/', PathDelim));
   MakeDir(ExtractFilePath(ExeFile));
-  FileFromString('not really an executable', ExeFile);
+  if RealExecutable then
+  begin
+    if not mormot.core.os.CopyFile(Utf8ToString(ChildPath), ExeFile, False) then
+      raise Exception.Create('fixture executable not copied');
+    if PWebCliHasFileModes then
+      MakeExecutable(ExeFile);
+  end
+  else
+    FileFromString('not really an executable', ExeFile);
+  if PWebCliHasFileModes and not RealExecutable then
+    // the walk must not refuse the placeholder for its mode: the layout
+    // cases below are about SHAPE, and the mode has its own case
+    MakeExecutable(ExeFile);
   MakeDir(ExtractFilePath(dir + Utf8ToString(StringReplaceAll(bundle, '/', PathDelim))));
   FileFromString('PK', dir + Utf8ToString(StringReplaceAll(bundle, '/', PathDelim)));
   if plist <> '' then
@@ -1202,19 +1303,38 @@ begin
   Check(PWebCliPathUnderTree(layout.ExePath, layout.ExeDir, PWebCliHostOs = pcoWindows),
     'R: the working directory holds the executable');
   Record_('run|resolve|built|' + PWebCliRunRefusalText(layout.Refusal));
+  PWebCliRunLogicalLayout(p, PWebCliHostOs, PWebCliHostArch, exe, bundle, plist);
+  // a build that lost its execute bit is a layout refusal, not a spawn
+  // failure dressed as an unavailable supervisor (POSIX only: Windows has
+  // no execute bit)
+  if PWebCliHasFileModes then
+  begin
+    MakeNotExecutable(exeFile);
+    layout := PWebCliResolveRunLayout(p, PWebCliHostOs, PWebCliHostArch);
+    Check(layout.Refusal = prrLayoutNotExecutable, 'R6: not executable: ' +
+      PWebCliRunRefusalText(layout.Refusal));
+    CheckEqual(layout.Detail, exe, 'R6: the executable is named');
+    MakeExecutable(exeFile);
+  end;
+  Record_('run|resolve|not-executable|refused-where-modes-exist');
   // not built: the executable is absent, named by its logical path
   sysutils.DeleteFile(exeFile);
   layout := PWebCliResolveRunLayout(p, PWebCliHostOs, PWebCliHostArch);
   Check(layout.Refusal = prrNotBuilt, 'R5: not built');
-  PWebCliRunLogicalLayout(p, PWebCliHostOs, PWebCliHostArch, exe, bundle, plist);
   CheckEqual(layout.Detail, exe, 'R5: the missing component is named');
   Record_('run|resolve|missing-exe|' + PWebCliRunRefusalText(layout.Refusal));
-  // the whole release directory absent
-  releaseDir := ExtractFilePath(exeFile);
-  Check(RemoveDir(ExcludeTrailingPathDelimiter(releaseDir)) or
-        DirectoryExists(releaseDir), 'fixture');
-  // (a macOS bundle has more beneath; the exe absence already refused)
-  // a case variant of `release`: refused as a case mismatch, never "not built"
+  // the wrong SHAPE: a directory where the executable must be is refused
+  // under its own cause, never handed to a spawn that would fail as 4
+  MakeDir(exeFile);
+  layout := PWebCliResolveRunLayout(p, PWebCliHostOs, PWebCliHostArch);
+  Check(layout.Refusal = prrLayoutShape, 'R6: a directory is the wrong shape: ' +
+    PWebCliRunRefusalText(layout.Refusal));
+  CheckEqual(layout.Detail, exe, 'R6: and it is named');
+  Record_('run|resolve|directory-as-exe|' + PWebCliRunRefusalText(layout.Refusal));
+  RemoveDir(exeFile);
+  // a case variant of `release`: refused as a case mismatch where the
+  // volume folds case, absent where it does not - MEASURED on the volume
+  // rather than assumed from the operating system
   dir := IncludeTrailingPathDelimiter(NewBuiltProject(root, exeFile));
   p := PWebCliOpenProject(root, root);
   // the executable's directory is .../release on Windows and Linux and
@@ -1232,12 +1352,13 @@ begin
   caseDir := ExtractFilePath(releaseDir) + 'Release';
   Check(RenameFile(releaseDir, caseDir), 'fixture: renamed to Release');
   layout := PWebCliResolveRunLayout(p, PWebCliHostOs, PWebCliHostArch);
-  if PWebCliHostOs = pcoLinux then
-    // a case-sensitive volume has no `release` at all now
-    Check(layout.Refusal = prrNotBuilt, 'R6: absent on a case-sensitive volume')
-  else
+  if DirectoryExists(releaseDir) then
+    // the volume folds case: the OS would open `release`, the walk must not
     Check(layout.Refusal = prrLayoutCase, 'R6: a case variant is refused as such: ' +
-      PWebCliRunRefusalText(layout.Refusal));
+      PWebCliRunRefusalText(layout.Refusal))
+  else
+    // the volume is case-sensitive: there is no `release` at all now
+    Check(layout.Refusal = prrNotBuilt, 'R6: absent on a case-sensitive volume');
   Check(layout.Refusal <> prrNone, 'R6: never resolved through a case fold');
   Record_('run|resolve|case-variant|resolved=false');
   Check(RenameFile(caseDir, releaseDir), 'fixture: renamed back');
@@ -1260,7 +1381,8 @@ end;
 // R10 / S11 share one driver: spawn the real `pweb run` on the staged
 // project THROUGH THE ENGINE, act once the application is ready, measure
 type
-  TDriverAction = (daSignalStop, daTerminateSupervisor);
+  TDriverAction = (daSignalStop, daTerminateSupervisor, daKillSupervisor,
+    daNothing);
 
 var
   DriverAction: TDriverAction;
@@ -1298,6 +1420,11 @@ begin
     daTerminateSupervisor:
       if not TerminatePid(c^.PwebPid) then
         Observe('s11_terminate_failure', 'true');
+    daKillSupervisor:
+      if not KillHard(c^.PwebPid) then
+        Observe('s11_kill_failure', 'true');
+    daNothing:
+      ;
   end;
 end;
 
@@ -1436,9 +1563,162 @@ begin
   else
     Observe('s11_mechanism', 'sigterm_forwarded');
   Record_('run|supervisor-terminated|tree_dies=' + BoolText(gone));
+  // the supervisor ended with NO chance to forward: Windows through the job
+  // (measured above with TerminateProcess, which is exactly that), Linux
+  // through PR_SET_PDEATHSIG - MEASURED here rather than named. macOS has
+  // no such mechanism and the contract records it; the row is skipped
+  // there by design and the observation says so
+  if PWebCliHostOs = pcoLinux then
+  begin
+    c := Default(TCollector);
+    r := DrivePweb(stage, pweb, daKillSupervisor, c);
+    Check(c.Ready, 'S11k: the application reported ready');
+    Check(c.AppPid > 0, 'S11k: pweb named the application pid');
+    started := GetTickCount64;
+    gone := False;
+    while GetTickCount64 - started < PWEB_CLI_RUN_GRACE_MS + 5000 do
+    begin
+      if (c.AppPid > 0) and not PWebCliPidAlive(c.AppPid) then
+      begin
+        gone := True;
+        break;
+      end;
+      Sleep(100);
+    end;
+    Check(gone, 'S11k: the application died with a SIGKILLed supervisor (pdeathsig)');
+    Observe('s11_sigkill_tree_gone', BoolText(gone));
+  end
+  else
+    Observe('s11_sigkill_tree_gone', 'not_measured');
+end;
+
+procedure TTestPWebCliRunCommand.StopIgnoredIsForcedThroughRun;
+var
+  root, stage, pweb: RawUtf8;
+  exeFile: TFileName;
+  c: TCollector;
+  r: TPWebCliExecResult;
+begin
+  if not StagedProject(stage, pweb) then
+  begin
+    Check(False, 'R9f: the gate must name the CLI');
+    Record_('run|interrupt-ignored|not_staged');
+    exit;
+  end;
+  // a "built" project whose application is the fixture child told to ignore
+  // every stop: the whole ladder through the REAL command, ending in the
+  // ratified forced category
+  NewBuiltProject(root, exeFile, {RealExecutable=}True);
+  Check(SetEnv('PWEBCHILD_MODE', 'stubborn'), 'R9f: mode set');
+  try
+    c := Default(TCollector);
+    r := DrivePweb(root, pweb, daSignalStop, c);
+  finally
+    UnsetEnv('PWEBCHILD_MODE');
+  end;
+  Check(c.Ready, 'R9f: the stand-in announced itself');
+  Check(c.ActedAt <> 0, 'R9f: the stop signal was sent');
+  Check(r.Outcome = pcoExited, 'R9f: pweb exited by itself: ' +
+    PWebCliChildOutcomeText(r.Outcome));
+  CheckEqual(r.ExitCode, 5, 'R9f: the forced end is category 5');
+  Check(HasLine(c.ErrLines, 'pweb: stop requested'), 'R9f: the request was seen');
+  Check(HasLine(c.ErrLines, 'pweb: application force-terminated after'),
+    'R9f: reported as forced, with the interval');
+  Record_('run|interrupt-ignored|pweb_exit=' + IntToStr(r.ExitCode) +
+    '|forced=' + BoolText(HasLine(c.ErrLines, 'pweb: application force-terminated after')));
+end;
+
+procedure TTestPWebCliRunCommand.ApplicationDeathThroughRun;
+var
+  root, stage, pweb: RawUtf8;
+  exeFile: TFileName;
+  c: TCollector;
+  r: TPWebCliExecResult;
+  neverZero: Boolean;
+begin
+  if not StagedProject(stage, pweb) then
+  begin
+    Check(False, 'R9d: the gate must name the CLI');
+    Record_('run|app-death|not_staged');
+    exit;
+  end;
+  // the application dies on its own: by SIGABRT on POSIX (a typed signal
+  // death), by exit 3 on Windows - and `pweb run` answers 5 with the real
+  // status printed, never 0
+  NewBuiltProject(root, exeFile, {RealExecutable=}True);
+  Check(SetEnv('PWEBCHILD_MODE', 'die'), 'R9d: mode set');
+  try
+    c := Default(TCollector);
+    r := DrivePweb(root, pweb, daNothing, c);
+  finally
+    UnsetEnv('PWEBCHILD_MODE');
+  end;
+  Check(r.Outcome = pcoExited, 'R9d: pweb exited by itself');
+  CheckEqual(r.ExitCode, 5, 'R9d: the death is category 5');
+  if PWebCliHostOs = pcoWindows then
+    Check(HasLine(c.ErrLines, 'pweb: application exited 3'), 'R9d: the real status')
+  else
+    Check(HasLine(c.ErrLines, 'pweb: application terminated by signal 6'),
+      'R9d: the real signal');
+  neverZero := not HasLine(c.ErrLines, 'pweb: application exited 0');
+  Check(neverZero, 'R9d: never reported as 0');
+  Record_('run|app-death|pweb_exit=' + IntToStr(r.ExitCode) +
+    '|never_zero=' + BoolText(neverZero));
+end;
+
+// a bounded recursive delete: a link is removed as an ENTRY (never followed),
+// so the junction / symlink fixtures go without touching their targets
+procedure RemoveTree(const Dir: TFileName; Depth: Integer);
+var
+  sr: TSearchRec;
+  full: TFileName;
+begin
+  if Depth > 16 then
+    exit;
+  if FindFirst(IncludeTrailingPathDelimiter(Dir) + '*',
+       faAnyFile or faSymLink, sr) = 0 then
+  try
+    repeat
+      if (sr.Name = '.') or (sr.Name = '..') then
+        continue;
+      full := IncludeTrailingPathDelimiter(Dir) + sr.Name;
+      if (sr.Attr and faSymLink) <> 0 then
+      begin
+        // a reparse point / symlink: remove the entry itself
+        if (sr.Attr and faDirectory) <> 0 then
+          RemoveDir(full)
+        else
+          sysutils.DeleteFile(full);
+      end
+      else if (sr.Attr and faDirectory) <> 0 then
+        RemoveTree(full, Depth + 1)
+      else
+        sysutils.DeleteFile(full);
+    until FindNext(sr) <> 0;
+  finally
+    sysutils.FindClose(sr);
+  end;
+  RemoveDir(Dir);
+end;
+
+// the fixture tree under the temporary directory, removed at the end - but
+// only ever the tree this process created, resolved under the temp root
+procedure RemoveFixtureTree;
+var
+  temp: TFileName;
+begin
+  if FixtureRoot = '' then
+    exit;
+  temp := IncludeTrailingPathDelimiter(GetSystemPath(spTemp));
+  if Copy(FixtureRoot, 1, Length(temp)) <> temp then
+    exit; // never a delete aimed anywhere else
+  if Pos('pweb-cap10c0-', FixtureRoot) = 0 then
+    exit;
+  RemoveTree(FixtureRoot, 0);
 end;
 
 finalization
   PWebCap10c0Flush;
+  RemoveFixtureTree;
 
 end.

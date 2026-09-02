@@ -17,8 +17,9 @@ directory)`, and nothing else:
   no command string anywhere. On Windows the command line handed to
   `CreateProcessW` is built by exactly one function,
   `PWebCliWindowsCommandLine`, implementing the C runtime's parsing rules in
-  reverse (an argument is quoted when empty or when it carries a space, tab
-  or quote; `N` backslashes before a quote become `2N+1` backslashes and an
+  reverse (an argument is quoted when empty or when it carries a space, a
+  tab, a line feed, a vertical tab or a quote; `N` backslashes before a
+  quote become `2N+1` backslashes and an
   escaped quote; `N` backslashes at the end of a quoted argument become
   `2N`; every other backslash is literal). The rule is proven by a golden
   table on all four targets and by a round trip against a child that echoes
@@ -36,7 +37,13 @@ directory)`, and nothing else:
   the supervisor waits on the other cannot deadlock it.
 - **Handle / descriptor hygiene.** Windows: inheritance is restricted to the
   three stdio handles through `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`. POSIX:
-  the supervisor's read ends and the exec-status pipe are close-on-exec.
+  between `fork` and `execve` the child closes every descriptor above 2
+  except the close-on-exec exec-status pipe, and resets `SIGPIPE` to its
+  default (the supervisor ignores it for its own sake; an ignored
+  disposition would otherwise survive `execve`). A probe stays in the
+  caller's process group, so a terminal's Ctrl+C reaches a running version
+  probe exactly as it did under CAP-10A; a supervised application leads a
+  group of its own.
 - **Environment: inherited unchanged.** The supervisor injects nothing - no
   `PWEB_*` variable, no mode flag - and reads no `.env`. This is safe only
   because the runtime consults the environment for no security decision;
@@ -48,7 +55,7 @@ directory)`, and nothing else:
 
 | platform | mechanism |
 |---|---|
-| Windows | the child is created suspended, placed in a fresh Job Object carrying `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, then resumed; every descendant is a job member; the tree dies with the supervisor's last handle whether it exits, crashes or is killed. Created with `CREATE_NEW_PROCESS_GROUP`, so a terminal's Ctrl+C reaches the supervisor and not the application. |
+| Windows | the child is created suspended, placed in a fresh Job Object carrying `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, then resumed; every descendant is a job member; the tree dies with the supervisor's last handle whether it exits, crashes or is killed. Created with `CREATE_NEW_PROCESS_GROUP`, so a terminal's Ctrl+C reaches the supervisor and not the application. Jobs nest (Windows 8 and later), so a supervisor that itself runs inside a job — a CI runner — still owns its tree; a system that refuses the assignment answers `supervision_unavailable` (4). |
 | Linux, macOS | `fork` + `setpgid(0,0)` + `execve`; the child leads a process group of its own and the group is what `SIGTERM` and `SIGKILL` are sent to. Exec failure travels back through a close-on-exec pipe and is a typed spawn failure, never an exit code that looks like the application's. Linux additionally sets `PR_SET_PDEATHSIG(SIGKILL)` on the direct child. |
 
 Measured on the dev host before the shard was planned: six WebView2
@@ -81,7 +88,9 @@ expiring means the tool is broken and the tree is terminated at once.
 **supervise** (CAP-10C0): both streams forwarded line by line through a
 sink, each line re-terminated with one LF and cut at `PWEB_CLI_RUN_LINE_MAX`
 with the remainder discarded and the line marked; the last
-`PWEB_CLI_RUN_DIAG_MAX` bytes of stderr retained for the exit report. A stop
+`PWEB_CLI_RUN_DIAG_MAX` bytes of stderr retained in the result for callers
+that want the tail beside the outcome (`pweb run` has already forwarded
+every line and prints nothing twice). A stop
 request - Ctrl+C / Ctrl+Break on Windows, `SIGINT` / `SIGTERM` / `SIGHUP` on
 POSIX, or an optional bound - starts the escalation ladder:
 
@@ -140,12 +149,18 @@ cross-checked against the constants by `check_cap10c0_contracts.ps1`.
 
 `pweb run` installs a stop handler before it spawns: on Windows it re-enables
 Ctrl+C for itself (a parent may have created it in a new process group) and
-handles `CTRL_C`, `CTRL_BREAK` and `CTRL_CLOSE`; on POSIX it handles
-`SIGINT`, `SIGTERM` and `SIGHUP` and ignores `SIGPIPE` so a closed
-forwarding target is an error the engine sees rather than a signal that kills
-the supervisor under a running tree. Every one of them becomes the graceful
-stop of section 4, and the supervisor exits with the ratified category once
-the tree is gone.
+handles every console control event — `CTRL_C` and `CTRL_BREAK` return at
+once, while a close, logoff or shutdown event holds the handler open for up
+to 4.5 s (Windows ends the process the moment such a handler returns), so
+the graceful ladder still runs; on POSIX it handles `SIGINT`, `SIGTERM` and
+`SIGHUP` and ignores `SIGPIPE` so a closed forwarding target is an error the
+engine sees (forwarding stops and the child is asked to stop) rather than a
+signal that kills the supervisor under a running tree. Every one of them
+becomes the graceful stop of section 4, and the supervisor exits with the
+ratified category once the tree is gone. A second Ctrl+C does not shorten
+the ladder: the request is recorded once, and the bounds of section 6 are
+the whole of the wait. Descendants that survive the drain make the category
+6, whatever the application's own status was.
 
 Known, recorded: a Ctrl+Break typed at a real Windows console also reaches
 the application (Windows never disables Ctrl+Break for a new group) and ends

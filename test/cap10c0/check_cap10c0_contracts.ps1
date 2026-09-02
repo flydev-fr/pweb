@@ -165,7 +165,9 @@ foreach ($src in $cliSources) {
         }
     }
 }
-$facts['global_name_kill_present'] = $false
+# DERIVED from what the sweep found, never restated: the gate copies this
+# into the evidence and the aggregate pins it
+$facts['global_name_kill_present'] = [bool]@($violations | Where-Object { $_ -match '^NAME-BASED PROCESS PRIMITIVE' }).Count
 # and the only kill verbs are the tree ones: TerminateJobObject, or a signal
 # to a NEGATIVE pid (the group), plus the belt-and-braces on the child's own
 # pid inside PWebCliChildKill
@@ -176,7 +178,8 @@ $killLines = @(Get-CodeLines $platform | Where-Object {
 foreach ($k in $killLines) {
     if ($k.Text -match 'FpKill\(\s*([^,]+),\s*SIG(KILL|TERM)') {
         $target = $Matches[1].Trim()
-        if (($target -notmatch '^-Child\.Group$') -and ($target -ne 'Child.Pid')) {
+        if (($target -notmatch '^-Child\.Group$') -and ($target -ne 'Child.Pid') -and
+            ($target -ne 'Pid')) {
             Violation "a signal aimed outside the tree: $platform`:$($k.Number): $($k.Text.Trim())"
         }
     }
@@ -270,12 +273,14 @@ if ($dispatches.Count -ne 2) {
 $facts['stop_helper_shares_dispatch'] = ($dispatches.Count -eq 2)
 
 # --- 7. dev and build stay absent -------------------------------------------
+$devBuildHits = 0
 foreach ($row in (Get-CodeLines 'tools/pweb/pweb.cli.args.pas')) {
     if ($row.Text -match "token\s*=\s*'(dev|build)'") {
         Violation "the parser accepts an unimplemented command: line $($row.Number)"
+        $devBuildHits++
     }
 }
-$facts['dev_build_absent'] = $true
+$facts['dev_build_absent'] = ($devBuildHits -eq 0)
 
 # --- verdict ----------------------------------------------------------------
 New-Item -ItemType Directory -Force build/cap10c0 | Out-Null

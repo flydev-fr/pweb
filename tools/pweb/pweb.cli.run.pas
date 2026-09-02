@@ -95,7 +95,13 @@ type
     prrLayoutEscape,
     /// a component is the wrong kind (a directory where a file must be, a
     // device, a FIFO)
-    prrLayoutShape);
+    prrLayoutShape,
+    /// POSIX: the executable exists but carries no execute bit for this
+    // process - a broken build, refused before any spawn can fail on it
+    prrLayoutNotExecutable,
+    /// this host's architecture is not one of the four ratified targets, so
+    // no layout can exist for it
+    prrTargetUnsupported);
 
   /// the resolved layout, or the reason there is none
   TPWebCliRunLayout = record
@@ -149,6 +155,8 @@ begin
     prrLayoutLink:       Result := 'layout_link';
     prrLayoutEscape:     Result := 'layout_escape';
     prrLayoutShape:      Result := 'layout_shape';
+    prrLayoutNotExecutable: Result := 'layout_not_executable';
+    prrTargetUnsupported: Result := 'target_unsupported';
   else
     Result := 'run_refused';
   end;
@@ -266,6 +274,14 @@ var
 begin
   Result := Default(TPWebCliRunLayout);
   Result.Target := PWebCliRunTargetName(Os, Arch);
+  // the four ratified targets and nothing else: an unratified host is
+  // refused by name rather than folded into "not built"
+  if Arch = pcaOther then
+  begin
+    Result.Refusal := prrTargetUnsupported;
+    Result.Detail := Result.Target;
+    exit;
+  end;
   if (Project.Refusal <> pcrNone) or
      (Project.OutputPath.Refusal <> pprNone) then
   begin
@@ -281,6 +297,16 @@ begin
   // and its directory is the working directory of the run
   if not ResolveFile(Project.Root, exeLogical, Result, Result.ExePath) then
     exit;
+  // on a platform with file modes the executable must be runnable by this
+  // process: a build that lost its execute bit is a layout refusal (3),
+  // not a spawn failure dressed as an unavailable supervisor (4)
+  if PWebCliHasFileModes and
+     not PWebCliExecutableBit(Result.ExePath) then
+  begin
+    Result.Refusal := prrLayoutNotExecutable;
+    Result.Detail := exeLogical;
+    exit;
+  end;
   if not ResolveFile(Project.Root, bundleLogical, Result, Result.BundlePath) then
     exit;
   if plistLogical <> '' then

@@ -1025,8 +1025,10 @@ if (($supervisionCorpus -ceq 'PASS') -and ($runCorpus -ceq 'PASS')) {
         }
     }
 }
+$c0Digest = "$($c0.supervision_digest)"
+if ($c0Digest.Length -gt 12) { $c0Digest = $c0Digest.Substring(0, 12) + '...' }
 Write-Host ("[CAP-10C0] supervision_corpus: $supervisionCorpus " +
-    "(digest=$("$($c0.supervision_digest)".Substring(0, 12))... lines=$($c0.supervision_corpus_lines) " +
+    "(digest=$c0Digest lines=$($c0.supervision_corpus_lines) " +
     "tree=$($c0.supervision_tree_model) stop=$($c0.graceful_stop_mechanism)) " +
     "run_corpus: $runCorpus (react=$($c0.run_react_rpc_value) pas2js=$($c0.run_pas2js_rpc_value) " +
     "listeners=$($c0.run_listener_count) descendants=$($c0.descendants_after_exit) " +

@@ -108,13 +108,17 @@ const
 procedure Emit(const Text: RawUtf8);
 begin
   // one write path for the whole CLI, so "no ANSI when redirected" is a
-  // property of the RENDERER and not of a dozen scattered WriteLn calls
+  // property of the RENDERER and not of a dozen scattered WriteLn calls.
+  // Flushed on every call: `run` forwards an application's lines as they
+  // happen, and a pipe must see them then, not when a buffer fills
   Write(string(Text));
+  Flush(Output);
 end;
 
 procedure EmitErr(const Text: RawUtf8);
 begin
   Write(StdErr, string(Text));
+  Flush(StdErr);
 end;
 
 { The compiled registry, assembled once from the generated constants. It is
@@ -416,7 +420,14 @@ begin
   project := PWebCliOpenProject(Args.ProjectPath, StartDir);
   if project.Refusal <> pcrNone then
   begin
-    RunRefused(PWebCliProjectRefusalText(project.Refusal), project.Detail);
+    // the detail of a project refusal may be a path; the doctor's report
+    // redacts paths and this command prints none at all - the cause is the
+    // machine-stable part, and a segment name carries no separator
+    if (PosExChar('/', project.Detail) = 0) and
+       (PosExChar('\', project.Detail) = 0) then
+      RunRefused(PWebCliProjectRefusalText(project.Refusal), project.Detail)
+    else
+      RunRefused(PWebCliProjectRefusalText(project.Refusal), '');
     exit(PWEB_EXIT_PROJECT);
   end;
   layout := PWebCliResolveRunLayout(project, PWebCliHostOs, PWebCliHostArch);
@@ -426,6 +437,9 @@ begin
     if layout.Refusal = prrNotBuilt then
       EmitErr('pweb: the project has not been built for ' + layout.Target +
         '; run builds nothing'#10);
+    // an unratified host is an environment fact, not a project one
+    if layout.Refusal = prrTargetUnsupported then
+      exit(PWEB_EXIT_ENVIRONMENT);
     exit(PWEB_EXIT_PROJECT);
   end;
   // the stop handler is a prerequisite of supervision, not of the
@@ -459,6 +473,8 @@ begin
         exit(PWEB_EXIT_ENVIRONMENT);
       end;
   end;
+  if r.ForwardBroken then
+    EmitErr('pweb: the output target went away; forwarding stopped'#10);
   if r.StopRequested then
     EmitErr('pweb: stop requested (' + RawUtf8(IntToStr(r.StopPosts)) +
       ' close request(s) delivered)'#10);
@@ -474,6 +490,10 @@ begin
   if r.Drain.Remaining > 0 then
     EmitErr('pweb: ' + RawUtf8(IntToStr(r.Drain.Remaining)) +
       ' descendant process(es) survived the drain'#10);
+  // the application's own status is printed below whatever the drain did;
+  // the CATEGORY is decided last, and survivors outrank every other answer
+  // (6, an invariant failure: a supervisor that could not clean up)
+  Result := PWEB_EXIT_OK;
   case r.Outcome of
     pcoExited:
       begin
@@ -493,13 +513,18 @@ begin
         else
           EmitErr('pweb: application exited ' +
             RawUtf8(IntToStr(r.ExitCode)) + #10);
-        exit(PWEB_EXIT_PROBE);
+        Result := PWEB_EXIT_PROBE;
       end;
     pcoSignaled:
       begin
-        EmitErr('pweb: application terminated by signal ' +
-          RawUtf8(IntToStr(r.Signal)) + #10);
-        exit(PWEB_EXIT_PROBE);
+        if r.Signal < 0 then
+          // the ECHILD marker: gone before this supervisor could reap it,
+          // and no signal is invented for it
+          EmitErr('pweb: application vanished before it could be reaped'#10)
+        else
+          EmitErr('pweb: application terminated by signal ' +
+            RawUtf8(IntToStr(r.Signal)) + #10);
+        Result := PWEB_EXIT_PROBE;
       end;
     pcoForced:
       begin
@@ -507,13 +532,15 @@ begin
           RawUtf8(IntToStr(PWEB_CLI_RUN_GRACE_MS)) +
           ' ms without closing; reaped in ' +
           RawUtf8(IntToStr(r.KillToReapMs)) + ' ms'#10);
-        exit(PWEB_EXIT_PROBE);
+        Result := PWEB_EXIT_PROBE;
       end;
   else
     // pcoUnreaped: the platform could not reap what it terminated
     EmitErr('pweb: application could not be reaped'#10);
-    exit(PWEB_EXIT_INTERNAL);
+    Result := PWEB_EXIT_INTERNAL;
   end;
+  if r.Drain.Remaining > 0 then
+    Result := PWEB_EXIT_INTERNAL;
 end;
 
 function Main: Integer;

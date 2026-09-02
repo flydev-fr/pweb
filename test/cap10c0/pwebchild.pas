@@ -26,6 +26,8 @@ program pwebchild;
     spawn              starts a COPY of itself in `forever` mode, prints the
                        grandchild's pid, and exits 0 at once - so whatever
                        survives is a grandchild the tree must still own (S10)
+    tail               prints one line, then a final fragment on each
+                       stream WITHOUT a newline, and exits 0 (S7)
     cwd                prints its working directory (S17)
     env <NAME>         prints `set` or `unset` for that variable (S18)
     envnames           prints every environment variable NAME it received,
@@ -35,6 +37,11 @@ program pwebchild;
     ctrlbreak <pid>    Windows: attaches to that process's console and
                        delivers Ctrl+C to it, as a terminal would - the R10
                        driver; POSIX: sends SIGINT to the pid
+
+  With NO argument the mode is read from PWEBCHILD_MODE, so a copy of this
+  program standing in for a built application (which `pweb run` starts with
+  an empty argument vector) can be told to be stubborn or to die - the way
+  the run command's forced and signalled categories are measured end to end.
 
   It reads nothing from stdin on purpose: a child that blocked on input would
   make the timeout test pass for the wrong reason.
@@ -165,11 +172,19 @@ var
 begin
   if ArgCount < 1 then
   begin
-    WriteLn(StdErr, 'pwebchild: no mode');
-    ExitCode := 64;
-    exit;
-  end;
-  mode := ArgW(1);
+    // no argument: the mode may come from PWEBCHILD_MODE, so a copy of this
+    // fixture standing in for a built application - which `pweb run`
+    // launches with NO argument - can still be told how to misbehave
+    mode := RawByteString(GetEnvironmentVariable('PWEBCHILD_MODE'));
+    if mode = '' then
+    begin
+      WriteLn(StdErr, 'pwebchild: no mode');
+      ExitCode := 64;
+      exit;
+    end;
+  end
+  else
+    mode := ArgW(1);
   if mode = 'exit' then
     ExitCode := StrToIntDef(ArgW(2), 1)
   else if mode = 'argv' then
@@ -223,7 +238,11 @@ begin
   end
   else if mode = 'forever' then
   begin
+    // flushed explicitly: a process that never exits never flushes its
+    // buffered stdout on its own, and the announcement is what a driver
+    // waits for (MEASURED on Linux: without it the line never left)
     WriteLn('forever ', GetProcessID);
+    Flush(Output);
     SleepForever;
   end
   else if mode = 'stubborn' then
@@ -234,6 +253,7 @@ begin
     FpSignal(SIGHUP, SignalHandler(SIG_IGN));
     {$endif WINDOWS}
     WriteLn('stubborn ', GetProcessID);
+    Flush(Output);
     SleepForever;
   end
   else if mode = 'spawn' then
@@ -281,6 +301,15 @@ begin
       ExitCode := 70;
     end;
     {$endif WINDOWS}
+  end
+  else if mode = 'tail' then
+  begin
+    // a last line on each stream WITHOUT its newline, as a crash message
+    // commonly ends: the supervisor must still deliver both, once each
+    WriteLn('head');
+    Write('tail-out');
+    Write(StdErr, 'tail-err');
+    ExitCode := 0;
   end
   else if mode = 'cwd' then
   begin

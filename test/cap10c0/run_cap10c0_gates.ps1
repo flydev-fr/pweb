@@ -168,7 +168,7 @@ if (Test-Path -LiteralPath $corpusPath) {
 # restated: a gate that asserted a value the suite never recorded would be a
 # second, softer suite
 function CorpusHas([string]$Prefix) { return [bool]@($corpusLines | Where-Object { $_.StartsWith($Prefix) }).Count }
-Row 'argv_roundtrip' $(if (CorpusHas 'supervise|argv|16|exact=true') { 'exact' } else { 'FAIL' })
+Row 'argv_roundtrip' $(if (CorpusHas 'supervise|argv|18|exact=true') { 'exact' } else { 'FAIL' })
 Row 'exit_propagation' $(if ((CorpusHas 'supervise|exit|0|exited|0') -and
     (CorpusHas 'supervise|exit|3|exited|3') -and (CorpusHas 'supervise|exit|255|exited|255') -and
     (CorpusHas 'probe|exit|3|probe_completed|3')) { 'exact' } else { 'FAIL' })
@@ -182,19 +182,33 @@ Row 'environment_policy' $(if (CorpusHas 'supervise|env|inherited_exact=true|inj
 Row 'batch_file_refused' (Bool (CorpusHas 'supervise|batch|spawn_refused|batch_file'))
 Row 'run_interrupt_clean' (Bool (CorpusHas 'run|interrupt|pweb_exit=0|stop_requested=true|clean_exit=true|forced=false'))
 Row 'supervisor_terminated_tree_dies' (Bool (CorpusHas 'run|supervisor-terminated|tree_dies=true'))
-# per-target OBSERVATIONS from the suite: recorded, never compared
+Require (CorpusHas 'run|interrupt-ignored|pweb_exit=5|forced=true') 'the forced category was not measured through the real command'
+Require (CorpusHas 'run|app-death|pweb_exit=5|never_zero=true') 'the death category was not measured through the real command'
+# per-target OBSERVATIONS from the suite: recorded, never compared. The keys
+# are PREFIXED so no observation can ever shadow a top-level row of this
+# record for a reader that has no notion of nesting (the POSIX emitter)
 $observed = [ordered]@{}
+$treeModel = ''
+$signalTyped = ''
 $observedPath = Join-Path $work 'supervise-observed.txt'
 if (Test-Path -LiteralPath $observedPath) {
     foreach ($line in [System.IO.File]::ReadAllLines($observedPath)) {
         $eq = $line.IndexOf('=')
-        if ($eq -gt 0) { $observed[$line.Substring(0, $eq)] = $line.Substring($eq + 1) }
+        if ($eq -gt 0) {
+            $k = $line.Substring(0, $eq); $v = $line.Substring($eq + 1)
+            $observed["obs_$k"] = $v
+            if ($k -eq 'tree_model') { $treeModel = $v }
+            if ($k -eq 'signal_outcome_typed') { $signalTyped = $v }
+        }
     }
 }
 Row 'supervision_observed' $observed
-Row 'supervision_tree_model' $(if ($observed.Contains('tree_model')) { $observed['tree_model'] } else { '' })
-Row 'signal_outcome_typed' $(if ($observed.Contains('signal_outcome_typed')) { $observed['signal_outcome_typed'] } else { '' })
+Row 'supervision_tree_model' $treeModel
+Row 'signal_outcome_typed' $signalTyped
 Row 'graceful_stop_mechanism' $(if ($IsWindows) { 'wm_close_visible_toplevel' } else { 'sigterm_process_group' })
+# the suite's verdict is the SUITE's: a run leg failing below must not
+# rewrite what the engine proved, and the two verdicts are pinned apart
+Row 'supervision_corpus' $(if (($suiteCode -eq 0) -and ($failures.Count -eq 0)) { 'PASS' } else { 'FAIL' })
 
 # --- 2. the real CLI -------------------------------------------------------
 $runCwd = Join-Path $work 'unrelated-cwd'
@@ -379,9 +393,27 @@ Row 'run_tree_unchanged' $(if ($react.Unchanged -and $pas2js.Unchanged) { 'PASS'
 Row 'run_no_ansi' (Bool (-not ($react.Ansi -or $pas2js.Ansi)))
 Row 'run_unrelated_cwd' 'true'
 Row 'run_elapsed_ms' "$($react.ElapsedMs),$($pas2js.ElapsedMs)"
-Row 'run_clean_exit' $(if ($failures.Count -eq 0) { 'true' } else { 'false' })
-Row 'run_dev_allowance_present' 'false'
-Row 'shutdown_order' 'binding_close>scheduler_drained>guard_detached>handler_detached>webview_destroyed'
+# MEASURED, not restated: the development-trust sweep's own verdict (it runs
+# before this gate in every job, and its record must exist - an absent
+# record is a failure, never a clean 'false'), and the teardown order the
+# contract gate pinned in the host's source
+$devTrust = Join-Path $repoRoot 'build/cap10a/dev-trust.txt'
+if (Test-Path -LiteralPath $devTrust) {
+    $verdict = @([System.IO.File]::ReadAllLines($devTrust) | Where-Object { $_ -match '^VERDICT: ' })
+    $devClean = ($verdict.Count -eq 1) -and ($verdict[0] -match '^VERDICT: PASS')
+    Require $devClean "the development-trust sweep did not pass: $($verdict -join ' ')"
+    Row 'run_dev_allowance_present' (Bool (-not $devClean))
+} else {
+    Require $false 'build/cap10a/dev-trust.txt is absent -- run test/cap10a/check_dev_trust.ps1 first'
+    Row 'run_dev_allowance_present' 'unmeasured'
+}
+$contractsEarly = Join-Path $work 'contracts.json'
+if (Test-Path -LiteralPath $contractsEarly) {
+    $ce = Get-Content -LiteralPath $contractsEarly -Raw | ConvertFrom-Json
+    Row 'shutdown_order' "$($ce.shutdown_order)"
+} else {
+    Row 'shutdown_order' 'unmeasured'
+}
 
 # --- R4: --project at the descriptor, from the same unrelated CWD -----------
 $r4 = RunPweb @('run', '--project', (Join-Path $reactStage 'pweb.json')) 60000 '3000'
@@ -399,6 +431,7 @@ Require ($r5.Code -eq 3) "R5: an unbuilt project must exit 3, got $($r5.Code)"
 Require ($r5.Err.Contains('run refused: not_built')) 'R5: the cause is not not_built'
 Require ($r5.Err.Contains("dist/$target/release/")) 'R5: the missing component is not named logically'
 Require ($r5.Err.Contains('run builds nothing')) 'R5: the refusal does not say that run builds nothing'
+Require (-not ($r5.Err -match '[A-Za-z]:\\|/home/|/Users/|/tmp/')) 'R5: an absolute path leaked into the refusal'
 Require ((TreeDigest $unbuilt) -ceq $unbuiltBefore) 'R5: the unbuilt project was mutated'
 Require (-not (Test-Path -LiteralPath (Join-Path $unbuilt 'dist'))) 'R5: an output directory appeared'
 Row 'run_not_built' $(if (($r5.Code -eq 3) -and $r5.Err.Contains('not_built')) { 'exit3/not_built' } else { 'FAIL' })
@@ -414,6 +447,7 @@ New-Item -ItemType $linkType -Path (Join-Path $linked "dist/$target") `
 $r6 = RunPweb @('run', '--project', $linked) 30000 ''
 Require ($r6.Code -eq 3) "R6: a linked layout must exit 3, got $($r6.Code)"
 Require ($r6.Err.Contains('run refused: layout_link')) "R6: the cause is not layout_link: $($r6.Err)"
+Require (-not ($r6.Err -match '[A-Za-z]:\\|/home/|/Users/|/tmp/')) 'R6: an absolute path leaked into the refusal'
 Row 'run_layout_link' $(if (($r6.Code -eq 3) -and $r6.Err.Contains('layout_link')) { 'exit3/layout_link' } else { 'FAIL' })
 # the escape variant: `output` naming a path outside the root is a
 # DESCRIPTOR refusal (CAP-10A), before any layout exists
@@ -425,7 +459,32 @@ $desc = [System.IO.File]::ReadAllText((Join-Path $escaped 'pweb.json'))
     $desc.Replace('"output": "dist"', '"output": "../dist"'), [System.Text.UTF8Encoding]::new($false))
 $r6b = RunPweb @('run', '--project', $escaped) 30000 ''
 Require ($r6b.Code -eq 3) "R6: an escaping output must exit 3, got $($r6b.Code)"
+Require (-not ($r6b.Err -match '[A-Za-z]:\\|/home/|/Users/|/tmp/')) 'R6: an absolute path leaked into the descriptor refusal'
 Row 'run_output_escape' $(if ($r6b.Code -eq 3) { 'exit3' } else { 'FAIL' })
+
+# --- R9: the application's own nonzero exit, through the real command ------
+# the fixture child stands in for the built application: launched with no
+# argument and no PWEBCHILD_MODE it exits 64, and `pweb run` must answer 5
+# with the real status printed (the forced and signal-death rows of the
+# same category are driven by the suite, which can deliver the stop signal)
+$exitProject = Join-Path $work 'stage/exit64'
+Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $exitProject
+Copy-Item -LiteralPath (Join-Path $repoRoot 'build/cap10b1/project/demo') -Destination $exitProject -Recurse
+$exitRelease = Join-Path $exitProject "dist/$target/release"
+$exitExe = if ($IsMacOS) { Join-Path $exitRelease 'demo.app/Contents/MacOS/demo' } else { Join-Path $exitRelease "demo$exeSuffix" }
+$exitBundle = if ($IsMacOS) { Join-Path $exitRelease 'demo.app/Contents/Resources/app.pwb' } else { Join-Path $exitRelease 'app.pwb' }
+New-Item -ItemType Directory -Force (Split-Path -Parent $exitExe), (Split-Path -Parent $exitBundle) | Out-Null
+Copy-Item -LiteralPath $child -Destination $exitExe
+[System.IO.File]::WriteAllText($exitBundle, 'PK', [System.Text.UTF8Encoding]::new($false))
+if ($IsMacOS) {
+    [System.IO.File]::WriteAllText((Join-Path $exitRelease 'demo.app/Contents/Info.plist'), '<plist/>', [System.Text.UTF8Encoding]::new($false))
+}
+Remove-Item Env:PWEBCHILD_MODE -ErrorAction SilentlyContinue
+$r9 = RunPweb @('run', '--project', $exitProject) 60000 ''
+Write-Host "----- R9 stderr -----"; Write-Host $r9.Err
+Require ($r9.Code -eq 5) "R9: an application exit 64 must map to 5, got $($r9.Code)"
+Require ($r9.Err.Contains('pweb: application exited 64')) 'R9: the real status was not printed'
+Row 'run_app_nonzero' $(if (($r9.Code -eq 5) -and $r9.Err.Contains('pweb: application exited 64')) { 'exit5/64' } else { 'FAIL' })
 
 # --- R7 / R9: a tampered bundle - the host refuses, run reports the status ----
 $tampered = Join-Path $work 'stage/tampered'
@@ -457,6 +516,9 @@ $surface = $true
 $surface = (ExpectUsage 'R14 duplicate' @('run', '--project', 'a', '--project', 'b') 2 'duplicate_option') -and $surface
 $surface = (ExpectUsage 'R14 json' @('run', '--json') 2 'option_not_for_command') -and $surface
 $surface = (ExpectUsage 'R14 verbose' @('run', '--verbose') 2 'option_not_for_command') -and $surface
+$surface = (ExpectUsage 'R14 no-color' @('run', '--no-color') 2 'option_not_for_command') -and $surface
+$surface = (ExpectUsage 'R14 with-paths' @('run', '--with-paths') 2 'option_not_for_command') -and $surface
+$surface = (ExpectUsage 'R14 ui' @('run', '--ui', 'react') 2 'option_not_for_command') -and $surface
 $surface = (ExpectUsage 'R14 operand' @('run', 'extra') 2 'extra_positional') -and $surface
 $surface = (ExpectUsage 'R14 unknown' @('run', '--watch') 2 'unknown_option') -and $surface
 $surface = (ExpectUsage 'C2 dev' @('dev') 2 'unknown_command') -and $surface
@@ -496,7 +558,7 @@ if (Test-Path -LiteralPath $contracts) {
 # --- the verdict and the evidence ---------------------------------------
 Row 'target' $target
 Row 'run_corpus' $(if ($failures.Count -eq 0) { 'PASS' } else { 'FAIL' })
-Row 'supervision_corpus' $(if (($suiteCode -eq 0) -and ($failures.Count -eq 0)) { 'PASS' } else { 'FAIL' })
+Row 'run_clean_exit' $(if ($failures.Count -eq 0) { 'true' } else { 'false' })
 $evidence = Join-Path $work "cli-$target.json"
 [System.IO.File]::WriteAllText($evidence,
     (($rows | ConvertTo-Json -Depth 6) + "`n"),

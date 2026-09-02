@@ -1,6 +1,7 @@
 # The `pweb` CLI contract (CAP-10A, CAP-10B1, CAP-10B2, CAP-10C0)
 
-The public surface frozen by CAP-10A and extended by CAP-10B1 and CAP-10B2:
+The public surface frozen by CAP-10A and extended by CAP-10B1, CAP-10B2 and
+CAP-10C0:
 what the
 executable accepts, what `pweb.json` means, what `pweb doctor --json` emits,
 what each exit code promises, and the development-trust decision CAP-10C
@@ -427,10 +428,10 @@ mapping was ratified before a line of it was written:
 |---|---|
 | 0 | the application exited 0, after a normal or a requested shutdown |
 | 2 | a duplicated, unknown or foreign option (`--json`, `--verbose`, `--no-color`), an operand |
-| 3 | the project was refused (every CAP-10A descriptor cause), or the layout beneath `output` is absent (`not_built`), reached through a link (`layout_link`), spelled in a different case (`layout_case`), outside the root (`layout_escape`) or the wrong shape (`layout_shape`) |
-| 4 | supervision could not be established: the stop handler, the pipes, the Job Object, or process creation (`supervision_unavailable`) |
+| 3 | the project was refused (every CAP-10A descriptor cause, `output_unresolved` when `output` itself did not resolve), or the layout beneath `output` is absent (`not_built`), reached through a link (`layout_link`), spelled in a different case (`layout_case`), outside the root (`layout_escape`), the wrong shape (`layout_shape`) or, where file modes exist, not executable (`layout_not_executable`) |
+| 4 | supervision could not be established: the stop handler, the pipes, the Job Object, or process creation (`supervision_unavailable`); or this host is not one of the four ratified targets (`target_unsupported`) |
 | 5 | the application exited nonzero, died by a signal, or had to be force-terminated after the grace interval — its real status is printed |
-| 6 | a spawn refusal that no ratified layout can produce, or a child the platform could not reap |
+| 6 | a spawn refusal that no ratified layout can produce, a child the platform could not reap, or descendants that survived the drain — whatever the application's own status |
 
 Human text never changes the category and the category never depends on
 what the application printed: a host that refuses a tampered `app.pwb`

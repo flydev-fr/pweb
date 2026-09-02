@@ -2,7 +2,7 @@
 title: 'CAP-10C0 — portable child-process supervision and the public `pweb run`'
 type: 'feature'
 created: '2026-09-01'
-status: 'in-progress'
+status: 'in-review'
 baseline_commit: '795e07553ac737461d3fb8e9350420e0d1d2c1cf'
 review_loop_iteration: 0
 context:

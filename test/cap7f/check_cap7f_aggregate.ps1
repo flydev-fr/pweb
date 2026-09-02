@@ -221,7 +221,9 @@ $absolutePins = @{
     run_output_escape        = 'exit3'
     run_tampered_bundle      = 'exit5/host_refused'
     dev_build_unknown        = 'true'
-    shutdown_order           = 'binding_close>scheduler_drained>guard_detached>handler_detached>webview_destroyed'
+    # the teardown order as the contract gate READ it out of the host's
+    # source after webview_run, expression by expression - never restated
+    shutdown_order           = 'binding.Close>schedulerRef.Shutdown>navGuard.Detach>assetHandler.Detach>webview_destroy(w)'
 }
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
 $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',

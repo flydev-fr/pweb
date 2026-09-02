@@ -334,6 +334,15 @@ begin
           {ProbeFailure=}True);
         exit;
       end;
+    ppoDied:
+      begin
+        // CAP-10C0: a tool that died by a signal has no exit code to read
+        // and no version to parse - its own cause, never 'unparseable'
+        Add(B, Id, pdsFail, pdvRequired, 'probe_died',
+          'the tool died by a signal during the version query', '',
+          Expected, Remediation, probe.Path, {ProbeFailure=}True);
+        exit;
+      end;
   end;
   if probe.ExitCode <> 0 then
   begin
