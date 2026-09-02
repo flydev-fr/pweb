@@ -30,6 +30,12 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..')).Path
 Set-Location $repoRoot
+# CAP-10C1 ratified this addition: the MEMBERSHIP-scoped sampler runs here
+# too, BESIDE the per-pid one below. `run_listener_count` keeps the exact
+# provenance it was ratified with ("sampled live against the APPLICATION
+# pid") and is not re-baselined; `run_listener_members_max` is the stronger
+# claim the CAP-10C0 ledger asked for, measured on the same applications.
+. (Join-Path $repoRoot 'test/cap10c1/listener_members.ps1')
 
 $exeSuffix = if ($IsWindows) { '.exe' } else { '' }
 $bin = Join-Path $repoRoot 'build/cap10c0/bin'
@@ -237,6 +243,8 @@ function RunPweb([string[]]$CliArgs, [int]$TimeoutMs, [string]$AutoCloseMs) {
     $connections = 0
     $sampled = 0
     $toolChildren = 0
+    $memberListeners = 0
+    $memberSeen = 0
     while (-not $p.HasExited -and $sw.ElapsedMilliseconds -lt $TimeoutMs) {
         Start-Sleep -Milliseconds 400
         if ($appPid -eq 0 -and (Test-Path -LiteralPath $se)) {
@@ -264,6 +272,16 @@ function RunPweb([string[]]$CliArgs, [int]$TimeoutMs, [string]$AutoCloseMs) {
                 $sampled++
                 if (($n + $u) -gt $listeners) { $listeners = $n + $u }
                 if ($c -gt $connections) { $connections = $c }
+            } catch { }
+            # CAP-10C1: the same question asked of every MEMBER of the tree
+            try {
+                foreach ($m in @(Get-PWebTreeMembers -RootPid $appPid)) {
+                    # $m is a pid; the count is what matters, not its value
+                    $mn = Get-PWebListenerCount -OwnerPid $m
+                    if ($mn -gt $memberListeners) { $memberListeners = $mn }
+                }
+                $seen = @(Get-PWebTreeMembers -RootPid $appPid).Count
+                if ($seen -gt $memberSeen) { $memberSeen = $seen }
             } catch { }
             # no tool may run under the application: the children of the
             # application pid, by name, are only ever browser processes
@@ -295,6 +313,7 @@ function RunPweb([string[]]$CliArgs, [int]$TimeoutMs, [string]$AutoCloseMs) {
         Listeners = $listeners; Connections = $connections; Sampled = $sampled
         ToolChildren = $toolChildren; ElapsedMs = [int]$sw.ElapsedMilliseconds
         HarnessKilled = $forced
+        MemberListeners = $memberListeners; MemberSeen = $memberSeen
     }
 }
 
@@ -378,6 +397,7 @@ function RunLeg([string]$Tag, [string]$Stage, [string]$Before) {
         Drained = $drained; Forced = $forcedCount; Passes = $passes; Under = $under.Count
         Unchanged = ($after -ceq $Before); ElapsedMs = $r.ElapsedMs; AppPid = $r.AppPid
         Ansi = ($r.Out.Contains([char]27) -or $r.Err.Contains([char]27))
+        MemberListeners = $r.MemberListeners; MemberSeen = $r.MemberSeen
     }
 }
 
@@ -389,6 +409,11 @@ Row 'run_pas2js_rpc_value' $pas2js.Rpc
 Row 'run_secure_origin' $(if ($react.Secure -and $pas2js.Secure) { 'PASS' } else { 'FAIL' })
 Row 'run_error_mapping' $(if ($react.Errmap -and $pas2js.Errmap) { 'PASS' } else { 'FAIL' })
 Row 'run_listener_count' ([Math]::Max($react.Listeners, $pas2js.Listeners))
+Row 'run_listener_members_max' ([Math]::Max($react.MemberListeners, $pas2js.MemberListeners))
+Row 'run_listener_members_seen' ([Math]::Max($react.MemberSeen, $pas2js.MemberSeen))
+Row 'run_listener_sampler_scope' (Get-PWebSamplerScope)
+Require ([Math]::Max($react.MemberSeen, $pas2js.MemberSeen) -gt 0) 'the membership sampler saw no tree member: run_listener_members_max would be a vacuous 0'
+Require ([Math]::Max($react.MemberListeners, $pas2js.MemberListeners) -eq 0) 'a tree member opened a listener'
 Row 'run_network_calls' ([Math]::Max($react.Connections, $pas2js.Connections))
 Row 'run_tool_calls' ($react.ToolChildren + $pas2js.ToolChildren)
 Row 'descendants_after_exit' ([Math]::Max($react.Survived, $pas2js.Survived) + [Math]::Max($react.Under, $pas2js.Under))

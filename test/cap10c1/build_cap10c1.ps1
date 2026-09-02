@@ -186,9 +186,26 @@ fpc -Px86_64 -Twin64 -Sh -B `
     test/cap10c1/c1tests.pas
 if ($LASTEXITCODE -ne 0) { throw 'c1tests.pas compile FAILED' }
 
-foreach ($exe in 'pwebpipe.exe', 'c1tests.exe') {
+# the deliberately wrong compiler the TC2/TC3 refusals are measured with,
+# named `fpc` because that is what PATH resolution has to find
+fpc -Px86_64 -Twin64 -Sh -B `
+    -FUbuild/cap10c1/test-units -FEbuild/cap10c1/bin `
+    test/cap10c1/fakefpc.pas
+if ($LASTEXITCODE -ne 0) { throw 'fakefpc.pas compile FAILED' }
+New-Item -ItemType Directory -Force build/cap10c1/fake | Out-Null
+Copy-Item -Force -LiteralPath 'build/cap10c1/bin/fakefpc.exe' `
+    -Destination 'build/cap10c1/fake/fpc.exe'
+
+foreach ($exe in 'pwebpipe.exe', 'c1tests.exe', 'fakefpc.exe') {
     if (-not (Test-Path "build/cap10c1/bin/$exe")) {
         throw "expected build/cap10c1/bin/$exe"
     }
 }
+
+# THE DRIVER LIVES IN THE SDK's OWN bin/, and that is the point: it resolves
+# the SDK root from the RUNNING IMAGE by the CAP-10B0 anchor rule, with no
+# parameter and no environment variable, exactly as the shipped `pweb` does.
+# A driver that took the root as a flag would be proving a different claim.
+Copy-Item -Force -LiteralPath 'build/cap10c1/bin/pwebpipe.exe' `
+    -Destination (Join-Path $sdk 'bin')
 Write-Host '[CAP-10C1] pwebpipe + c1tests built; layering compiles clean'
