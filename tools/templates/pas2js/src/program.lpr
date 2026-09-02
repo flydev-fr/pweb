@@ -75,6 +75,10 @@ begin
   server := nil;
   try
     WriteLn(APP_NAME, ': ', APP_VERSION, ' (', APP_BUNDLE_ID, ')');
+    // MEASURED: FPC block-buffers stdout when it is a PIPE on Linux and
+    // macOS, so this line - the first sign of life a supervisor can see -
+    // would otherwise arrive only when the process ends
+    Flush(Output);
 
     // the in-process service catalogue. sicShared is one instance for the
     // whole process; the scheduler calls it on worker threads, so keep an

@@ -243,6 +243,17 @@ type
 var
   /// the live webview handle the auto-close thread may terminate, or nil
   HostAutoCloseHandle: Pointer;
+  /// CAP-10C1: how the teardown tells the auto-close thread it is no longer
+  // needed, or nil when the bound is not armed
+  // - MEASURED at CAP-10C0: while PWEB_SMOKE_AUTOCLOSE_MS is armed the
+  // closer slept for the WHOLE bound and the teardown joined it, so a stop
+  // requested meanwhile completed only when the bound expired - five
+  // seconds of grace and then a forced termination in the first CAP-10C0
+  // stop-driver run. A bounded WAIT instead of a Sleep is semantics-neutral
+  // by construction: the event is only ever set AFTER webview_run has
+  // returned, so no auto-close that would have happened stops happening,
+  // and InterlockedExchange still guarantees exactly one terminate dispatch
+  HostAutoCloseStop: TSynEvent;
   /// this run's diagnostic prefix, for the two callbacks that cannot carry
   // an argument through the C boundary
   HostLogPrefix: RawUtf8;
@@ -331,6 +342,13 @@ begin
     pooOpened:
       WriteLn(HostLogPrefix, ': openExternal OK (uri bytes=', UriBytes, ')');
   end;
+  // CAP-10C1: MEASURED under `pweb run` (hosted run 33622404228) - FPC's
+  // text layer flushes a pipe per line on Windows but BLOCK-BUFFERS it on
+  // Linux and macOS, so a diagnostic written to stdout reaches a supervisor
+  // only when the host exits. StdErr flushes on every write and needs
+  // nothing; Output does. A line that arrives after the process it was
+  // describing has ended is not a diagnostic
+  Flush(Output);
 end;
 
 function PWebHostRuntimeBridge(const Inner: IInvocationBridge):
@@ -352,9 +370,21 @@ end;
 function PWebHostAutoCloseThread(Param: Pointer): PtrInt;
 var
   handle: Pointer;
+  stopped: Boolean;
 begin
   Result := 0;
-  Sleep(PtrInt(Param));
+  // WaitFor answers True when the teardown signalled and False on timeout.
+  // A signal means webview_run has already returned and there is nothing
+  // left to terminate; a timeout means the bound expired and this is the
+  // auto-close doing its job. Same two outcomes the Sleep had, minus the
+  // wait nobody could shorten
+  stopped := False;
+  if HostAutoCloseStop <> nil then
+    stopped := HostAutoCloseStop.WaitFor(Cardinal(PtrInt(Param)))
+  else
+    Sleep(PtrInt(Param));
+  if stopped then
+    exit;
   handle := InterlockedExchange(HostAutoCloseHandle, nil);
   if handle <> nil then
     webview_dispatch(webview_t(handle), @PWebHostTerminate, nil);
@@ -824,6 +854,9 @@ begin
         autoCloseMs := PWEB_HOST_MAX_AUTOCLOSE_MS;
       if autoCloseMs > 0 then
       begin
+        // created BEFORE the thread that waits on it, so the closer can
+        // never observe a nil it would fall back to sleeping on
+        HostAutoCloseStop := TSynEvent.Create;
         closerHandle := BeginThread(@PWebHostAutoCloseThread,
           Pointer(PtrInt(autoCloseMs)), closerId);
         closerStarted := closerHandle <> system.TThreadID(0);
@@ -844,6 +877,11 @@ begin
       if stopHelperInstalled then
         PWebHostRemoveStopHelper(stopHelper);
       {$endif OSPOSIX}
+      // webview_run has returned, so the auto-close has nothing left to
+      // terminate: the closer is released HERE, before the join, and the
+      // teardown below no longer waits out a bound nobody is using
+      if HostAutoCloseStop <> nil then
+        HostAutoCloseStop.SetEvent;
       if closerStarted then
       begin
         if WaitForThreadTerminate(closerHandle,
@@ -856,6 +894,14 @@ begin
         end;
         CloseThread(closerHandle);
       end;
+      // only after the join: the closer holds a reference to this event
+      // until it returns, and a thread that did not terminate (the branch
+      // above) still holds one - so it is freed only when nothing can be
+      // waiting on it
+      if safeToDestroy then
+        FreeAndNil(HostAutoCloseStop)
+      else
+        HostAutoCloseStop := nil;
       InterlockedExchange(HostAutoCloseHandle, nil);
       if binding <> nil then
         try

@@ -117,6 +117,12 @@ begin
     // is a REPORT and never an authorization: nothing in this payload can
     // change a principal, a window or a capability
     WriteLn(FPrefix, APP_READY_MARKER, Args);
+    // MEASURED: FPC's text layer flushes a pipe per line on Windows but
+    // BLOCK-BUFFERS it on Linux and macOS, so under a supervisor this
+    // report would arrive only when the application exits - and a tool
+    // waiting for it would be waiting for the process it is supervising to
+    // die. One flush makes the three platforms agree.
+    Flush(Output);
     Result := PWebSuccessResult(PWEB_JSON_NULL);
   end
   else
