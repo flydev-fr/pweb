@@ -3,6 +3,7 @@
 CAP-10C1 closes on hosted run **33679593696** (2026-09-02, commit
 `10868967f66f0adaa814fd0de9146b56942d7dfe`, branch
 `phase/cap-10/c1-lifecycle-pipeline`, baseline `2d5f74d`): all six jobs green,
+and re-run green on the closure commit itself (**33682939676**, `0dac9ba`),
 `cap7 aggregate` PASS with field-by-field agreement on four targets, ONE
 `pipeline_digest`
 `f890424a5ef95646b9a48355819e32f49e608c7f5ecc4e69766b4182978e839a` — 46
