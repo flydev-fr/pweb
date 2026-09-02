@@ -104,6 +104,65 @@ const
   PWEB_CLI_RUN_DRAIN_PASSES = 20;
   PWEB_CLI_RUN_DRAIN_POLL_MS = 250;
 
+  { CAP-10C1 - the lifecycle-pipeline bounds. Each one is a LIMIT on how long
+    the pipeline may wait for a toolchain it does not control, never a tuning
+    knob: a stage that has not finished inside its bound is a broken or a
+    hung tool, the whole child tree is stopped by the CAP-10C0 ladder, and no
+    later stage runs. test/cap10c1/check_cap10c1_contracts.ps1 cross-checks
+    each value against docs/pipeline-contract.md, exactly as the CAP-10C0
+    bounds are cross-checked against the supervision contract. }
+
+  /// `node <npm-cli.js> ci` - the ONE stage allowed to reach the network,
+  // and therefore the one whose bound has to cover a cold registry
+  PWEB_CLI_PIPE_NPM_MS = 600000;
+
+  /// the TypeScript typecheck
+  PWEB_CLI_PIPE_TSC_MS = 300000;
+
+  /// the frontend production build: `vite build` (react) or the pinned
+  // Pas2JS compiler (pas2js)
+  PWEB_CLI_PIPE_BUILD_MS = 300000;
+
+  /// the frozen CAP-6 bundler packing app.pwb
+  PWEB_CLI_PIPE_PACK_MS = 120000;
+
+  /// the native compile. It is the longest bound in this unit because `-B`
+  // rebuilds every mORMot unit the program reaches, from source, on a cold
+  // output directory
+  PWEB_CLI_PIPE_FPC_MS = 900000;
+
+  /// ceiling on ONE file the pipeline itself reads or copies, in bytes
+  // - the pipeline's copy primitive is PWebCliReadSmallFile with this bound,
+  // so a native executable and a staged static library are covered while an
+  // unbounded read remains impossible. A file past it is a typed refusal,
+  // never a partial copy
+  PWEB_CLI_PIPE_MAX_FILE_BYTES = 268435456;
+
+  /// bounds on the project-tree digest walk that guards the mutation set
+  // - a bound, not a policy: a generated project holds a few dozen files,
+  // and an unbounded walk over a pathological tree is not a thing a build
+  // tool should be able to do
+  PWEB_CLI_PIPE_MAX_TREE_FILES = 4096;
+  PWEB_CLI_PIPE_MAX_TREE_DEPTH = 24;
+
+  { CAP-10C1 - the platform artifacts the SDK root carries, spelled ONCE.
+    Every one of them is cross-checked against webview.lock by
+    test/cap10c1/check_cap10c1_contracts.ps1, the same single-source idiom
+    PWEB_CLI_MACOS_MIN already uses against `macos-deployment-target`. }
+
+  /// the webview library shipped beside a Windows release
+  // - built by tools/build-webview-dll.ps1 from the pinned upstream commit
+  PWEB_CLI_WEBVIEW_LIB_WINDOWS = 'webview.dll';
+  /// webview.lock `linux-soname` - what FPC records as DT_NEEDED, which is
+  // why it and not the chet LibraryName is the file a release ships
+  PWEB_CLI_WEBVIEW_LIB_LINUX = 'libwebview.so.0.12';
+  /// webview.lock `macos-dylib-versioned` - what the LC_LOAD_DYLIB command
+  // ends up naming, exactly as DT_NEEDED records the SONAME on Linux
+  PWEB_CLI_WEBVIEW_LIB_MACOS = 'libwebview.0.12.dylib';
+  /// the compiled production Cocoa bridge, linked into every macOS binary
+  // that uses it - an object file, never a second dylib (CAP-7M1)
+  PWEB_CLI_MACOS_BRIDGE_OBJ = 'pweb_cocoa_bridge.o';
+
 implementation
 
 end.
