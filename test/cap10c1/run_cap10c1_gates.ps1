@@ -248,7 +248,11 @@ Row 'lifecycle_script_policy' "$($react.Report['lifecycle_script_policy'])"
 Require ("$($react.Report['cmd.install'])".Contains('--ignore-scripts')) `
     'ST14: the install command does not carry --ignore-scripts'
 Row 'network_stages' "$($react.Report['network_stages'])"
-Row 'network_stages_pas2js' "$($pas2js.Report['network_stages'])"
+# `none`, never an empty string: an absolute pin the aggregate compares has
+# to be a value somebody wrote rather than the absence of one
+Row 'network_stages_pas2js' $(
+    if ("$($pas2js.Report['network_stages'])" -eq '') { 'none' }
+    else { "$($pas2js.Report['network_stages'])" })
 Require ("$($pas2js.Report['network_stages'])" -ceq '') `
     'ST13: a Pas2JS pipeline declared a network stage'
 Row 'npm_cli_path' "$($react.Report['npm_cli_path'])"
@@ -309,7 +313,7 @@ if (Test-Path -LiteralPath $linked) {
     else { $actualTarget = CanonicalDir $linked }
 }
 $linkOk = $actualTarget -ceq (CanonicalDir $stagedSdk)
-Row 'runtime_from_sdk_root' (Bool $linkOk)
+Row 'c1_runtime_from_sdk_root' (Bool $linkOk)
 Require $linkOk `
     "ST3: @pweb/runtime resolved to '$actualTarget', expected the staged SDK"
 
@@ -328,8 +332,8 @@ foreach ($ui in 'react', 'pas2js') {
         (Test-Path -LiteralPath $harness[$ui])) {
         $mine = Sha256Bytes $appPwb[$ui]
         $theirs = Sha256Bytes $harness[$ui]
-        Row "app_pwb_${ui}_sha256" $mine
-        Row "app_pwb_${ui}_parity" (Bool ($mine -ceq $theirs))
+        Row "c1_app_pwb_${ui}_sha256" $mine
+        Row "c1_app_pwb_${ui}_parity" (Bool ($mine -ceq $theirs))
         Require ($mine -ceq $theirs) `
             ("ST6: the $ui app.pwb differs from the CAP-10B$(if ($ui -eq 'react') { '1' } else { '2' }) " +
              "harness's: $mine vs $theirs")
@@ -357,14 +361,14 @@ foreach ($ui in 'react', 'pas2js') {
                 $zipRows.Add("entry=$name size=$($bytes.Length) sha256=$hex")
             }
         } finally { $zip.Dispose() }
-        Row "app_pwb_${ui}_semantic_digest" (Sha256Text (($zipRows -join "`n") + "`n"))
-        Row "app_pwb_${ui}_entries" $zipRows.Count
+        Row "c1_app_pwb_${ui}_semantic_digest" (Sha256Text (($zipRows -join "`n") + "`n"))
+        Row "c1_app_pwb_${ui}_entries" $zipRows.Count
     }
 }
 # ST5: two runs of the same project produce the same archive
 $reactTwice = (Sha256Bytes $appPwb['react'])
-Row 'build_deterministic' (Bool ($reactTwice -ceq $rows['app_pwb_react_sha256']))
-Require ($reactTwice -ceq $rows['app_pwb_react_sha256']) `
+Row 'build_deterministic' (Bool ($reactTwice -ceq $rows['c1_app_pwb_react_sha256']))
+Require ($reactTwice -ceq $rows['c1_app_pwb_react_sha256']) `
     'ST5: two runs of the react pipeline produced different app.pwb bytes'
 
 Row 'native_compile_react' $(

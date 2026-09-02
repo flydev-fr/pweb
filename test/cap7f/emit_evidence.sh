@@ -1247,6 +1247,77 @@ run_error_mapping="$(c0_str run_error_mapping)"
 run_listener_count="$(c0_num run_listener_count)"
 run_network_calls="$(c0_num run_network_calls)"
 run_tool_calls="$(c0_num run_tool_calls)"
+run_listener_members_max="$(c0_num run_listener_members_max)"
+run_listener_members_seen="$(c0_num run_listener_members_seen)"
+run_listener_sampler_scope="$(c0_str run_listener_sampler_scope)"
+
+# ----------------------------- CAP-10C1 -------------------------------------
+# the private lifecycle pipeline: the headless suite's decision corpus, the
+# two REAL pipelines, the app.pwb byte parity against the CAP-10B1/B2
+# harnesses on this same job, and `pweb run` on what was assembled.
+c1_file="${repo_root}/build/cap10c1/cli-${target}.json"
+[ -f "${c1_file}" ] ||
+    die "cap10c1/cli-${target}.json missing -- the CAP-10C1 gates have not run in this workspace"
+c1_str() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*//p" \n        "${c1_file}" | head -n 1
+}
+c1_num() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*//p" \n        "${c1_file}" | head -n 1
+}
+pipeline_available="$(c1_str pipeline_available)"
+pipeline_suite="$(c1_str pipeline_suite)"
+pipeline_digest="$(c1_str pipeline_digest)"
+pipeline_corpus="$(c1_str pipeline_corpus)"
+npm_invocation="$(c1_str npm_invocation)"
+lifecycle_script_policy="$(c1_str lifecycle_script_policy)"
+network_stages="$(c1_str network_stages)"
+network_stages_pas2js="$(c1_str network_stages_pas2js)"
+npm_cli_path="$(c1_str npm_cli_path)"
+npm_version="$(c1_str npm_version)"
+node_version="$(c1_str node_version)"
+fpc_version="$(c1_str fpc_version)"
+fpc_target="$(c1_str fpc_target)"
+pas2js_version="$(c1_str pas2js_version)"
+pas2js_normalised="$(c1_str pas2js_normalised)"
+sdk_stage_parity="$(c1_str sdk_stage_parity)"
+sdk_stage_stale_removed="$(c1_str sdk_stage_stale_removed)"
+c1_runtime_from_sdk_root="$(c1_str c1_runtime_from_sdk_root)"
+c1_app_pwb_react_sha256="$(c1_str c1_app_pwb_react_sha256)"
+c1_app_pwb_react_parity="$(c1_str c1_app_pwb_react_parity)"
+c1_app_pwb_react_semantic_digest="$(c1_str c1_app_pwb_react_semantic_digest)"
+c1_app_pwb_pas2js_sha256="$(c1_str c1_app_pwb_pas2js_sha256)"
+c1_app_pwb_pas2js_parity="$(c1_str c1_app_pwb_pas2js_parity)"
+c1_app_pwb_pas2js_semantic_digest="$(c1_str c1_app_pwb_pas2js_semantic_digest)"
+build_deterministic="$(c1_str build_deterministic)"
+native_compile_react="$(c1_str native_compile_react)"
+native_compile_pas2js="$(c1_str native_compile_pas2js)"
+listener_sampler_scope="$(c1_str listener_sampler_scope)"
+flush_live_lines="$(c1_str flush_live_lines)"
+layout_accepted_by_run="$(c1_str layout_accepted_by_run)"
+tc_version_mismatch="$(c1_str tc_version_mismatch)"
+tc_inside_project="$(c1_str tc_inside_project)"
+tc_inside_project_executed="$(c1_str tc_inside_project_executed)"
+tc_doctor_refusal="$(c1_str tc_doctor_refusal)"
+typecheck_failure="$(c1_str typecheck_failure)"
+partial_layout_on_failure="$(c1_str partial_layout_on_failure)"
+sdk_root_unchanged="$(c1_str sdk_root_unchanged)"
+template_supersession_recorded="$(c1_str template_supersession_recorded)"
+project_tree_unchanged="$(c1_str project_tree_unchanged)"
+driver_no_ansi="$(c1_str driver_no_ansi)"
+pipeline_units_linked="$(c1_str pipeline_units_linked)"
+pipeline_corpus_lines="$(c1_num pipeline_corpus_lines)"
+lockfile_install_scripts="$(c1_num lockfile_install_scripts)"
+c1_app_pwb_react_entries="$(c1_num c1_app_pwb_react_entries)"
+c1_app_pwb_pas2js_entries="$(c1_num c1_app_pwb_pas2js_entries)"
+run_rpc_value_react="$(c1_num run_rpc_value_react)"
+run_rpc_value_pas2js="$(c1_num run_rpc_value_pas2js)"
+listener_members_max="$(c1_num listener_members_max)"
+listener_members_seen="$(c1_num listener_members_seen)"
+run_connections_max="$(c1_num run_connections_max)"
+case "${pipeline_corpus}" in
+    PASS | FAIL) ;;
+    *) die "the CAP-10C1 record carries an unexpected verdict: ${pipeline_corpus}" ;;
+esac
 run_dev_allowance_present="$(c0_str run_dev_allowance_present)"
 run_tree_unchanged="$(c0_str run_tree_unchanged)"
 run_no_ansi="$(c0_str run_no_ansi)"
@@ -1509,6 +1580,59 @@ cat > "${work}/evidence.json" <<EOF
   "run_listener_count": "${run_listener_count}",
   "run_network_calls": "${run_network_calls}",
   "run_tool_calls": "${run_tool_calls}",
+  "run_listener_members_max": "${run_listener_members_max}",
+  "run_listener_members_seen": "${run_listener_members_seen}",
+  "run_listener_sampler_scope": "${run_listener_sampler_scope}",
+  "pipeline_available": "${pipeline_available}",
+  "pipeline_suite": "${pipeline_suite}",
+  "pipeline_digest": "${pipeline_digest}",
+  "pipeline_corpus": "${pipeline_corpus}",
+  "npm_invocation": "${npm_invocation}",
+  "lifecycle_script_policy": "${lifecycle_script_policy}",
+  "network_stages": "${network_stages}",
+  "network_stages_pas2js": "${network_stages_pas2js}",
+  "npm_cli_path": "${npm_cli_path}",
+  "npm_version": "${npm_version}",
+  "node_version": "${node_version}",
+  "fpc_version": "${fpc_version}",
+  "fpc_target": "${fpc_target}",
+  "pas2js_version": "${pas2js_version}",
+  "pas2js_normalised": "${pas2js_normalised}",
+  "sdk_stage_parity": "${sdk_stage_parity}",
+  "sdk_stage_stale_removed": "${sdk_stage_stale_removed}",
+  "c1_runtime_from_sdk_root": "${c1_runtime_from_sdk_root}",
+  "c1_app_pwb_react_sha256": "${c1_app_pwb_react_sha256}",
+  "c1_app_pwb_react_parity": "${c1_app_pwb_react_parity}",
+  "c1_app_pwb_react_semantic_digest": "${c1_app_pwb_react_semantic_digest}",
+  "c1_app_pwb_pas2js_sha256": "${c1_app_pwb_pas2js_sha256}",
+  "c1_app_pwb_pas2js_parity": "${c1_app_pwb_pas2js_parity}",
+  "c1_app_pwb_pas2js_semantic_digest": "${c1_app_pwb_pas2js_semantic_digest}",
+  "build_deterministic": "${build_deterministic}",
+  "native_compile_react": "${native_compile_react}",
+  "native_compile_pas2js": "${native_compile_pas2js}",
+  "listener_sampler_scope": "${listener_sampler_scope}",
+  "flush_live_lines": "${flush_live_lines}",
+  "layout_accepted_by_run": "${layout_accepted_by_run}",
+  "tc_version_mismatch": "${tc_version_mismatch}",
+  "tc_inside_project": "${tc_inside_project}",
+  "tc_inside_project_executed": "${tc_inside_project_executed}",
+  "tc_doctor_refusal": "${tc_doctor_refusal}",
+  "typecheck_failure": "${typecheck_failure}",
+  "partial_layout_on_failure": "${partial_layout_on_failure}",
+  "sdk_root_unchanged": "${sdk_root_unchanged}",
+  "template_supersession_recorded": "${template_supersession_recorded}",
+  "project_tree_unchanged": "${project_tree_unchanged}",
+  "driver_no_ansi": "${driver_no_ansi}",
+  "pipeline_units_linked": "${pipeline_units_linked}",
+  "pipeline_corpus_lines": "${pipeline_corpus_lines}",
+  "lockfile_install_scripts": "${lockfile_install_scripts}",
+  "c1_app_pwb_react_entries": "${c1_app_pwb_react_entries}",
+  "c1_app_pwb_pas2js_entries": "${c1_app_pwb_pas2js_entries}",
+  "run_rpc_value_react": "${run_rpc_value_react}",
+  "run_rpc_value_pas2js": "${run_rpc_value_pas2js}",
+  "listener_members_max": "${listener_members_max}",
+  "listener_members_seen": "${listener_members_seen}",
+  "run_connections_max": "${run_connections_max}",
   "run_dev_allowance_present": "${run_dev_allowance_present}",
   "run_tree_unchanged": "${run_tree_unchanged}",
   "run_no_ansi": "${run_no_ansi}",
@@ -1529,7 +1653,7 @@ cat > "${work}/evidence.json" <<EOF
   "release_layout": "${release_layout}",
   "no_listener": "${no_listener}",
   "no_listener_provenance": "${no_listener_prov}",
-  "app_pwb_react_sha256": "${react_pwb_sha}",
+  "c1_app_pwb_react_sha256": "${react_pwb_sha}",
   "logical_inventory_sha256_react": "${react_inventory_sha}",
   "logical_inventory_sha256_pas2js": "${p2j_inventory_sha}",
   "github_sha": "${github_sha}",

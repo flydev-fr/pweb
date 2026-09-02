@@ -150,6 +150,34 @@ $required = @(
     'run_elapsed_ms', 'run_descendants_drained', 'run_descendants_forced',
     'run_drain_passes', 'stage_react_release_digest',
     'stage_pas2js_release_digest',
+    # CAP-10C0's membership-scoped sampler rows, added by CAP-10C1 BESIDE
+    # run_listener_count rather than replacing it: a closed shard's absolute
+    # pin keeps the provenance it was ratified with.
+    'run_listener_members_max', 'run_listener_members_seen',
+    'run_listener_sampler_scope',
+    # CAP-10C1: the private lifecycle pipeline. The decision corpus
+    # (digested), the two REAL pipelines on the generated projects, the
+    # app.pwb byte parity against the CAP-10B1/B2 harnesses ON THE SAME JOB,
+    # the run of what was assembled, the refusals, and the closed debts.
+    'pipeline_available', 'pipeline_suite', 'pipeline_corpus',
+    'pipeline_digest', 'pipeline_corpus_lines',
+    'npm_invocation', 'npm_cli_path', 'npm_version', 'node_version',
+    'fpc_version', 'fpc_target', 'pas2js_version', 'pas2js_normalised',
+    'lifecycle_script_policy', 'lockfile_install_scripts',
+    'network_stages', 'network_stages_pas2js',
+    'sdk_stage_parity', 'sdk_stage_stale_removed', 'c1_runtime_from_sdk_root',
+    'c1_app_pwb_react_sha256', 'c1_app_pwb_react_parity',
+    'c1_app_pwb_react_semantic_digest', 'c1_app_pwb_react_entries',
+    'c1_app_pwb_pas2js_sha256', 'c1_app_pwb_pas2js_parity',
+    'c1_app_pwb_pas2js_semantic_digest', 'c1_app_pwb_pas2js_entries',
+    'build_deterministic', 'native_compile_react', 'native_compile_pas2js',
+    'layout_accepted_by_run', 'run_rpc_value_react', 'run_rpc_value_pas2js',
+    'listener_members_max', 'listener_members_seen', 'listener_sampler_scope',
+    'run_connections_max', 'flush_live_lines',
+    'tc_version_mismatch', 'tc_inside_project', 'tc_inside_project_executed',
+    'tc_doctor_refusal', 'typecheck_failure', 'partial_layout_on_failure',
+    'sdk_root_unchanged', 'template_supersession_recorded',
+    'project_tree_unchanged', 'driver_no_ansi', 'pipeline_units_linked',
     'release_layout', 'no_listener', 'app_pwb_react_sha256',
     'logical_inventory_sha256_react', 'github_sha', 'github_run_id', 'waivers'
 )
@@ -224,6 +252,46 @@ $absolutePins = @{
     # the teardown order as the contract gate READ it out of the host's
     # source after webview_run, expression by expression - never restated
     shutdown_order           = 'binding.Close>schedulerRef.Shutdown>navGuard.Detach>assetHandler.Detach>webview_destroy(w)'
+    # CAP-10C0's membership sampler, added by CAP-10C1: the per-pid pin above
+    # said nothing about a browser helper, and this one does
+    run_listener_members_max = '0'
+    # CAP-10C1: the facts four targets could agree on and still be wrong
+    # about. The pipeline is PRIVATE and stays private; npm is reached through
+    # node and no lifecycle script runs; the SDK staging is byte-identical to
+    # the script it replaces and a stale one does not survive; @pweb/runtime
+    # is a LINK; BOTH archives are byte-identical to what the CAP-10B1/B2
+    # harnesses produced on the same job; both applications answer 42 through
+    # the real `pweb run` with no member of the tree opening anything; a
+    # failed build leaves no layout; and the project and the SDK root come out
+    # of a build exactly as they went in.
+    pipeline_available             = 'true'
+    npm_invocation                 = 'node_npm_cli'
+    lifecycle_script_policy        = 'ignore_scripts'
+    lockfile_install_scripts       = '1'
+    network_stages                 = 'npm_ci'
+    network_stages_pas2js          = 'none'
+    sdk_stage_parity               = 'true'
+    sdk_stage_stale_removed        = 'true'
+    c1_runtime_from_sdk_root       = 'true'
+    c1_app_pwb_react_parity        = 'true'
+    c1_app_pwb_pas2js_parity       = 'true'
+    build_deterministic            = 'true'
+    run_rpc_value_react            = '42'
+    run_rpc_value_pas2js           = '42'
+    listener_members_max           = '0'
+    run_connections_max            = '0'
+    flush_live_lines               = 'true'
+    tc_version_mismatch            = 'exit4/version_too_old'
+    tc_inside_project              = 'exit4/tool_inside_project'
+    tc_inside_project_executed     = 'false'
+    tc_doctor_refusal              = 'exit4/lockfile_absent'
+    typecheck_failure              = 'exit5/typecheck'
+    partial_layout_on_failure      = 'false'
+    sdk_root_unchanged             = 'true'
+    template_supersession_recorded = 'true'
+    project_tree_unchanged         = 'true'
+    driver_no_ansi                 = 'true'
+    pipeline_units_linked          = 'false'
 }
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
 $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
@@ -277,7 +345,14 @@ $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
     # CAP-10C0: the two verdicts and the sub-claims a green pair is made of
     'supervision_corpus', 'run_corpus', 'run_secure_origin',
     'run_error_mapping', 'run_tree_unchanged', 'run_option_matrix',
-    'run_project_descriptor_form')
+    'run_project_descriptor_form',
+    # CAP-10C1: the pipeline verdict and the four sub-claims a green one is
+    # made of, named individually so the aggregate can refuse ONE by name -
+    # 'the rules drifted', 'the native compile broke on one UI' and 'the
+    # assembled layout stopped being runnable' are different defects with
+    # different fixes.
+    'pipeline_corpus', 'pipeline_suite', 'native_compile_react',
+    'native_compile_pas2js', 'layout_accepted_by_run')
 # fields that must agree, value-for-value, across all four targets
 # (capability_policy_digest is the CAP-8A structured policy-decision corpus and
 # navigation_policy_digest the CAP-8B one: four targets, one byte-identical
@@ -419,7 +494,30 @@ $equalityFields = @(
     # four targets. Mechanism names, intervals and pids are deliberately
     # outside it (supervision_tree_model, graceful_stop_mechanism and the
     # rest are per-target observations, validated against the OS below).
-    'supervision_digest', 'supervision_corpus_lines'
+    'supervision_digest', 'supervision_corpus_lines',
+    # CAP-10C1: the pipeline's DECISION corpus - the four target command
+    # tables, the canonical SDK manifest, the Info.plist, the mutation set and
+    # the exit mapping, all pure functions computed for ALL FOUR targets on
+    # whichever one is running - and the SEMANTIC inventory of each archive.
+    #
+    # c1_app_pwb_react_sha256 and c1_app_pwb_pas2js_sha256 are DELIBERATELY
+    # ABSENT, for the reason pas2js_app_pwb_bytes is: mORMot stamps the
+    # creating OS into the ZIP `version made by` field (MEASURED, run
+    # 33093385300) and the static DEFLATE object emits different bytes per
+    # toolchain, so archive BYTES are an OS-family property. The byte claim is
+    # made where it is real - against the harness's archive on the SAME job -
+    # by c1_app_pwb_react_parity and c1_app_pwb_pas2js_parity, both
+    # absolute-pinned above.
+    #
+    # Absent for other reasons: every tool version and npm_cli_path (facts
+    # about the runner), fpc_target (a Windows installation's default is
+    # whichever compiler the installer wrote last), pas2js_normalised (it
+    # records what the HOST's compiler emitted, and is EXPECTED to differ -
+    # that is the whole finding), listener_sampler_scope and
+    # listener_members_seen (a per-platform mechanism and a host count).
+    'pipeline_digest', 'pipeline_corpus_lines',
+    'c1_app_pwb_react_semantic_digest', 'c1_app_pwb_react_entries',
+    'c1_app_pwb_pas2js_semantic_digest', 'c1_app_pwb_pas2js_entries'
 )
 # the CAP-9C2 semantic gate names, carried in ONE place across the two
 # emitters and this aggregator (see test/cap7f/emit_evidence.ps1)

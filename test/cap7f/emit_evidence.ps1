@@ -1004,6 +1004,24 @@ if (-not (Test-Path $c0File)) {
     throw '[CAP-7F] cap10c0/cli-windows-x86_64.json missing -- the CAP-10C0 gates have not run in this workspace'
 }
 $c0 = Get-Content $c0File -Raw | ConvertFrom-Json
+
+# --- CAP-10C1: the private lifecycle pipeline -------------------------------
+# build/cap10c1/cli-<target>.json is ONE record: the headless suite's decision
+# corpus (digested), the two REAL pipelines on the generated projects, the
+# app.pwb byte parity against what the CAP-10B1 and CAP-10B2 harnesses
+# produced ON THIS SAME JOB, `pweb run` on what the pipeline assembled, and
+# the refusals. Archive BYTES are per-target and never compared across them
+# (mORMot stamps the creating OS into the ZIP `version made by` field, and the
+# static DEFLATE object differs per toolchain); the SEMANTIC inventories are
+# what four targets agree on.
+$c1File = Join-Path $repoRoot 'build/cap10c1/cli-windows-x86_64.json'
+if (-not (Test-Path $c1File)) {
+    throw '[CAP-7F] cap10c1/cli-windows-x86_64.json missing -- the CAP-10C1 gates have not run in this workspace'
+}
+$c1 = Get-Content $c1File -Raw | ConvertFrom-Json
+if ("$($c1.pipeline_corpus)" -notin @('PASS', 'FAIL')) {
+    throw "[CAP-7F] the CAP-10C1 record carries an unexpected verdict: $($c1.pipeline_corpus)"
+}
 $supervisionCorpus = "$($c0.supervision_corpus)"
 $runCorpus = "$($c0.run_corpus)"
 foreach ($pair in @(@('supervision_corpus', $supervisionCorpus),
@@ -1249,6 +1267,59 @@ $evidence = [ordered]@{
     run_listener_count              = "$($c0.run_listener_count)"
     run_network_calls               = "$($c0.run_network_calls)"
     run_tool_calls                  = "$($c0.run_tool_calls)"
+    run_listener_members_max        = "$($c0.run_listener_members_max)"
+    run_listener_members_seen       = "$($c0.run_listener_members_seen)"
+    run_listener_sampler_scope      = "$($c0.run_listener_sampler_scope)"
+    pipeline_available              = "$($c1.pipeline_available)"
+    pipeline_suite                  = "$($c1.pipeline_suite)"
+    pipeline_digest                 = "$($c1.pipeline_digest)"
+    pipeline_corpus                 = "$($c1.pipeline_corpus)"
+    npm_invocation                  = "$($c1.npm_invocation)"
+    lifecycle_script_policy         = "$($c1.lifecycle_script_policy)"
+    network_stages                  = "$($c1.network_stages)"
+    network_stages_pas2js           = "$($c1.network_stages_pas2js)"
+    npm_cli_path                    = "$($c1.npm_cli_path)"
+    npm_version                     = "$($c1.npm_version)"
+    node_version                    = "$($c1.node_version)"
+    fpc_version                     = "$($c1.fpc_version)"
+    fpc_target                      = "$($c1.fpc_target)"
+    pas2js_version                  = "$($c1.pas2js_version)"
+    pas2js_normalised               = "$($c1.pas2js_normalised)"
+    sdk_stage_parity                = "$($c1.sdk_stage_parity)"
+    sdk_stage_stale_removed         = "$($c1.sdk_stage_stale_removed)"
+    c1_runtime_from_sdk_root           = "$($c1.c1_runtime_from_sdk_root)"
+    c1_app_pwb_react_sha256            = "$($c1.c1_app_pwb_react_sha256)"
+    c1_app_pwb_react_parity            = "$($c1.c1_app_pwb_react_parity)"
+    c1_app_pwb_react_semantic_digest   = "$($c1.c1_app_pwb_react_semantic_digest)"
+    c1_app_pwb_pas2js_sha256           = "$($c1.c1_app_pwb_pas2js_sha256)"
+    c1_app_pwb_pas2js_parity           = "$($c1.c1_app_pwb_pas2js_parity)"
+    c1_app_pwb_pas2js_semantic_digest  = "$($c1.c1_app_pwb_pas2js_semantic_digest)"
+    build_deterministic             = "$($c1.build_deterministic)"
+    native_compile_react            = "$($c1.native_compile_react)"
+    native_compile_pas2js           = "$($c1.native_compile_pas2js)"
+    listener_sampler_scope          = "$($c1.listener_sampler_scope)"
+    flush_live_lines                = "$($c1.flush_live_lines)"
+    layout_accepted_by_run          = "$($c1.layout_accepted_by_run)"
+    tc_version_mismatch             = "$($c1.tc_version_mismatch)"
+    tc_inside_project               = "$($c1.tc_inside_project)"
+    tc_inside_project_executed      = "$($c1.tc_inside_project_executed)"
+    tc_doctor_refusal               = "$($c1.tc_doctor_refusal)"
+    typecheck_failure               = "$($c1.typecheck_failure)"
+    partial_layout_on_failure       = "$($c1.partial_layout_on_failure)"
+    sdk_root_unchanged              = "$($c1.sdk_root_unchanged)"
+    template_supersession_recorded  = "$($c1.template_supersession_recorded)"
+    project_tree_unchanged          = "$($c1.project_tree_unchanged)"
+    driver_no_ansi                  = "$($c1.driver_no_ansi)"
+    pipeline_units_linked           = "$($c1.pipeline_units_linked)"
+    pipeline_corpus_lines           = "$($c1.pipeline_corpus_lines)"
+    lockfile_install_scripts        = "$($c1.lockfile_install_scripts)"
+    c1_app_pwb_react_entries           = "$($c1.c1_app_pwb_react_entries)"
+    c1_app_pwb_pas2js_entries          = "$($c1.c1_app_pwb_pas2js_entries)"
+    run_rpc_value_react             = "$($c1.run_rpc_value_react)"
+    run_rpc_value_pas2js            = "$($c1.run_rpc_value_pas2js)"
+    listener_members_max            = "$($c1.listener_members_max)"
+    listener_members_seen           = "$($c1.listener_members_seen)"
+    run_connections_max             = "$($c1.run_connections_max)"
     run_dev_allowance_present       = "$($c0.run_dev_allowance_present)"
     run_tree_unchanged              = "$($c0.run_tree_unchanged)"
     run_no_ansi                     = "$($c0.run_no_ansi)"

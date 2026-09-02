@@ -1635,6 +1635,107 @@ $e.signal_outcome_typed = 'not_applicable'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap10c0-signal-typed' 'SIGNAL-NOT-TYPED'
 
+# --- CAP-10C1: the lifecycle-pipeline refusal branches -----------------------
+# Every new aggregator rule is proven RED on a fixture before the real
+# aggregation is trusted with it. Each leg names the branch it targets, so a
+# leg that passes on an unrelated refusal proves nothing.
+
+# (c44) the pipeline verdict rewritten to FAIL -> mustPass refusal
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.pipeline_corpus = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c1-corpus' 'pipeline_corpus'
+
+# (c45) the app.pwb BYTE parity against the CAP-10B1 harness lost -> the one
+# claim this whole shard exists to make
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.c1_app_pwb_react_parity = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c1-parity' 'c1_app_pwb_react_parity'
+
+# (c46) the Pas2JS SEMANTIC inventory diverging on one target -> the equality
+# that survives the archive bytes differing per OS family
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.c1_app_pwb_pas2js_semantic_digest = 'deadbeef' +
+    "$($e.c1_app_pwb_pas2js_semantic_digest)".Substring(8)
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c1-semantic-divergence' 'c1_app_pwb_pas2js_semantic_digest'
+
+# (c47) a MEMBER of the supervised tree opening a listener -> the upgrade the
+# CAP-10C0 ledger asked for, refused where the per-pid count said nothing
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.listener_members_max = '1'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c1-listener-member' 'listener_members_max'
+
+# (c48) the lifecycle-script policy relaxed -> an unreviewed install script
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.lifecycle_script_policy = 'allow'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c1-script-policy' 'lifecycle_script_policy'
+
+# (c49) a network stage where a Pas2JS build must have none
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.network_stages_pas2js = 'npm_ci'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c1-offline-pas2js' 'network_stages_pas2js'
+
+# (c50) a failed build leaving a layout behind
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.partial_layout_on_failure = 'true'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c1-partial-layout' 'partial_layout_on_failure'
+
+# (c51) the pipeline LINKED into the shipped CLI -> `dev`/`build` one step
+# from existing, which CAP-10C1 does not permit
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.pipeline_units_linked = 'true'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c1-private-surface' 'pipeline_units_linked'
+
+# (c52) the project mutated outside its ratified writable set
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.project_tree_unchanged = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c1-project-mutation' 'project_tree_unchanged'
+
+# (c53) the assembled layout answering something other than 42
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.run_rpc_value_pas2js = '41'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c1-rpc-drift' 'run_rpc_value_pas2js'
+
+# (c54) the pipeline's DECISION corpus diverging on one target -> the four
+# target command tables, the canonical manifest and the exit mapping are pure
+# functions, so a divergence is a rule that moved rather than a host that
+# differs
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.pipeline_digest = 'deadbeef' + "$($e.pipeline_digest)".Substring(8)
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c1-decision-divergence' 'pipeline_digest'
+
 # --- (d) divergence sweep must refuse an off-allowlist conditional -----------
 $fixturePas = 'src/zz_cap7f_selftest_fixture.pas'
 Remove-Item -Force -ErrorAction SilentlyContinue $fixturePas
@@ -1695,9 +1796,9 @@ Remove-Item -Force -ErrorAction SilentlyContinue $matrix
 # a floor, so a leg that silently stops running is caught. It is deliberately
 # NOT an equality: adding a refusal branch is normal and should not require
 # editing this line, while LOSING one is the failure worth naming
-if ($script:AggRefusals -lt 73) {
+if ($script:AggRefusals -lt 84) {
     throw ("selftest: only $($script:AggRefusals) aggregator refusals fired, " +
-        'expected at least 73 -- a negative leg stopped running')
+        'expected at least 84 -- a negative leg stopped running')
 }
 if ($script:SweepRefusals -lt 2) {
     throw ("selftest: only $($script:SweepRefusals) divergence refusals fired, " +

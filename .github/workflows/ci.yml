@@ -2017,6 +2017,45 @@ jobs:
             build/cap10c0/run-*-stdout.txt
             build/cap10c0/run-*-stderr.txt
             build/cap10c0-gates.log
+
+      - name: CAP-10C1 complete the SDK root and build the pipeline driver
+        shell: pwsh
+        timeout-minutes: 20
+        run: |
+          pwsh -NoProfile -File test/cap10c1/build_cap10c1.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10C1 build FAILED' }
+
+      - name: CAP-10C1 contract cross-checks (bounds, library names, linkage, no conditional, no env read)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10c1/check_cap10c1_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10C1 contract cross-checks FAILED' }
+
+      - name: CAP-10C1 lifecycle pipeline gates + app.pwb parity + evidence
+        shell: bash
+        timeout-minutes: 45
+        run: |
+          pwsh -NoProfile -File test/cap10c1/run_cap10c1_gates.ps1 2>&1 |
+            tee build/cap10c1-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10C1 upload the pipeline corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10c1-pipeline-windows
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10c1/cli-windows-x86_64.json
+            build/cap10c1/contracts.json
+            build/cap10c1/pipeline-corpus.txt
+            build/cap10c1/pipeline-observed.txt
+            build/cap10c1/c1tests.log
+            build/cap10c1/report-*.txt
+            build/cap10c1/pipe-*-stderr.txt
+            build/cap10c1/run-*-stdout.txt
+            build/cap10c1-gates.log
       - name: CAP-7F emit the Windows evidence artifact
         shell: pwsh
         timeout-minutes: 10
@@ -2749,6 +2788,43 @@ jobs:
             build/cap10c0/run-*-stdout.txt
             build/cap10c0/run-*-stderr.txt
             build/cap10c0-gates.log
+
+      - name: CAP-10C1 complete the SDK root and build the pipeline driver
+        shell: bash
+        timeout-minutes: 20
+        run: test/cap10c1/build_cap10c1.sh
+
+      - name: CAP-10C1 contract cross-checks (bounds, library names, linkage, no conditional, no env read)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10c1/check_cap10c1_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10C1 contract cross-checks FAILED' }
+
+      - name: CAP-10C1 lifecycle pipeline gates + app.pwb parity + evidence
+        shell: bash
+        timeout-minutes: 45
+        run: |
+          xvfb-run -a pwsh -NoProfile -File test/cap10c1/run_cap10c1_gates.ps1 2>&1 |
+            tee build/cap10c1-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10C1 upload the pipeline corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10c1-pipeline-linux
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10c1/cli-linux-x86_64.json
+            build/cap10c1/contracts.json
+            build/cap10c1/pipeline-corpus.txt
+            build/cap10c1/pipeline-observed.txt
+            build/cap10c1/c1tests.log
+            build/cap10c1/report-*.txt
+            build/cap10c1/pipe-*-stderr.txt
+            build/cap10c1/run-*-stdout.txt
+            build/cap10c1-gates.log
       - name: CAP-7F emit the Linux evidence artifact
         shell: bash
         timeout-minutes: 10
@@ -3516,6 +3592,43 @@ jobs:
             build/cap10c0/run-*-stdout.txt
             build/cap10c0/run-*-stderr.txt
             build/cap10c0-gates.log
+
+      - name: CAP-10C1 complete the SDK root and build the pipeline driver
+        shell: bash
+        timeout-minutes: 20
+        run: test/cap10c1/build_cap10c1.sh
+
+      - name: CAP-10C1 contract cross-checks (bounds, library names, linkage, no conditional, no env read)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10c1/check_cap10c1_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10C1 contract cross-checks FAILED' }
+
+      - name: CAP-10C1 lifecycle pipeline gates + app.pwb parity + evidence
+        shell: bash
+        timeout-minutes: 45
+        run: |
+          pwsh -NoProfile -File test/cap10c1/run_cap10c1_gates.ps1 2>&1 |
+            tee build/cap10c1-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10C1 upload the pipeline corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10c1-pipeline-macos-x64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10c1/cli-macos-x86_64.json
+            build/cap10c1/contracts.json
+            build/cap10c1/pipeline-corpus.txt
+            build/cap10c1/pipeline-observed.txt
+            build/cap10c1/c1tests.log
+            build/cap10c1/report-*.txt
+            build/cap10c1/pipe-*-stderr.txt
+            build/cap10c1/run-*-stdout.txt
+            build/cap10c1-gates.log
       - name: CAP-7F emit the macOS x64 evidence artifact
         shell: bash
         timeout-minutes: 10
@@ -4211,6 +4324,43 @@ jobs:
             build/cap10c0/run-*-stdout.txt
             build/cap10c0/run-*-stderr.txt
             build/cap10c0-gates.log
+
+      - name: CAP-10C1 complete the SDK root and build the pipeline driver
+        shell: bash
+        timeout-minutes: 20
+        run: test/cap10c1/build_cap10c1.sh
+
+      - name: CAP-10C1 contract cross-checks (bounds, library names, linkage, no conditional, no env read)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10c1/check_cap10c1_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10C1 contract cross-checks FAILED' }
+
+      - name: CAP-10C1 lifecycle pipeline gates + app.pwb parity + evidence
+        shell: bash
+        timeout-minutes: 45
+        run: |
+          pwsh -NoProfile -File test/cap10c1/run_cap10c1_gates.ps1 2>&1 |
+            tee build/cap10c1-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10C1 upload the pipeline corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10c1-pipeline-macos-arm64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10c1/cli-macos-arm64.json
+            build/cap10c1/contracts.json
+            build/cap10c1/pipeline-corpus.txt
+            build/cap10c1/pipeline-observed.txt
+            build/cap10c1/c1tests.log
+            build/cap10c1/report-*.txt
+            build/cap10c1/pipe-*-stderr.txt
+            build/cap10c1/run-*-stdout.txt
+            build/cap10c1-gates.log
       - name: CAP-7F emit the macOS arm64 evidence artifact
         shell: bash
         timeout-minutes: 10
