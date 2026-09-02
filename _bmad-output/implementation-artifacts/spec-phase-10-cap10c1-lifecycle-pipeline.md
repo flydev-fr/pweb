@@ -2,7 +2,7 @@
 title: 'CAP-10C1 — the private lifecycle pipeline: sources to the C0 run layout, in Pascal, through the C0 engine'
 type: 'feature'
 created: '2026-09-02'
-status: 'in-review'
+status: 'done'
 baseline_commit: '2d5f74d2774ec182c3c24f93b18a19c99adf7e72'
 review_loop_iteration: 0
 context:
