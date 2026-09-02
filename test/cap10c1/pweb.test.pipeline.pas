@@ -583,10 +583,17 @@ var
   end;
 
 begin
-  os_ := PWebCliHostOs;
-  arch := PWebCliHostArch;
-  if arch = pcaOther then
-    exit; // an unratified host has no layout to refuse component by component
+  // ONE target on every host, and macos-arm64 because it is the RICHEST
+  // ladder: it is the only one that also demands the Cocoa bridge object.
+  // The resolver is a pure function of a directory tree plus (Os, Arch) -
+  // building the fixture is creating directories and files, which no
+  // platform makes special - so running it against the HOST's target was
+  // the mistake: it recorded one extra decision on macOS and made
+  // pipeline_digest, a four-target equality field, unsatisfiable.
+  // MEASURED on hosted run 33676507937: 45 lines on Linux, 46 on both
+  // macOS targets.
+  os_ := pcoMacos;
+  arch := pcaArm64;
   Check(FixtureDir('sdklayout', root), 'the fixture root was not created');
 
   Step(pslShareTree, 'no_share');
