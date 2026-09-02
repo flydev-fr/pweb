@@ -830,24 +830,34 @@ var
   root, frontend, nm: RawUtf8;
   refusal: TPWebCliStageRefusal;
   found: RawUtf8;
+  unreadable: Boolean;
+  excludes: TRawUtf8DynArray;
+  project: TPWebCliProject;
 begin
   Check(FixtureDir('registry', root), 'the fixture root was not created');
+  // the writable set comes from the DESCRIPTOR, never from literals here: a
+  // project whose frontend.root is not  still has its own
+  // node_modules excluded
+  project := FixtureProject(puiReact);
+  excludes := PWebCliMutationSet(project);
   Check(WriteFixtureFile(root, 'pweb.json', '{}'));
   Check(PWebCliPipeEnsureDir(root, 'frontend', frontend, refusal));
   Check(WriteFixtureFile(frontend, 'package.json', '{}'));
-  Check(not PWebCliRegistryOverridePresent(root, found),
+  Check(not PWebCliRegistryOverridePresent(root, excludes, found, unreadable),
     'a clean project was reported as carrying a registry override');
   // one inside node_modules is npm's own business and is NOT the project's
   Check(PWebCliPipeEnsureDir(frontend, PWEB_FE_NODE_MODULES, nm, refusal));
   Check(WriteFixtureFile(nm, '.npmrc', 'registry=http://evil'));
-  Check(not PWebCliRegistryOverridePresent(root, found),
+  Check(not PWebCliRegistryOverridePresent(root, excludes, found, unreadable),
     'an .npmrc inside node_modules was treated as the project''s');
   Record_('pipe|registry|node_modules_ignored|true');
   // one the project carries is a REFUSAL
   Check(WriteFixtureFile(frontend, '.npmrc', 'registry=http://evil'));
-  Check(PWebCliRegistryOverridePresent(root, found),
+  Check(PWebCliRegistryOverridePresent(root, excludes, found, unreadable),
     'a project .npmrc was not detected');
   CheckEqual(found, 'frontend/.npmrc', 'the wrong path was named');
+  Check(not unreadable, 'a readable tree was reported unreadable');
+  Record_('pipe|registry|fail_closed|unreadable_is_a_refusal');
   Record_('pipe|registry|project_npmrc|refused');
 end;
 

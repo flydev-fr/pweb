@@ -370,6 +370,7 @@ end;
 function PWebHostAutoCloseThread(Param: Pointer): PtrInt;
 var
   handle: Pointer;
+  stop: TSynEvent;
   stopped: Boolean;
 begin
   Result := 0;
@@ -378,9 +379,12 @@ begin
   // left to terminate; a timeout means the bound expired and this is the
   // auto-close doing its job. Same two outcomes the Sleep had, minus the
   // wait nobody could shorten
+  // ONE read of the global, into a local: the teardown nils and frees it
+  // after the join, and two reads of it are two different answers
+  stop := HostAutoCloseStop;
   stopped := False;
-  if HostAutoCloseStop <> nil then
-    stopped := HostAutoCloseStop.WaitFor(Cardinal(PtrInt(Param)))
+  if stop <> nil then
+    stopped := stop.WaitFor(Cardinal(PtrInt(Param)))
   else
     Sleep(PtrInt(Param));
   if stopped then

@@ -340,12 +340,15 @@ var
   res: TPWebCliPipeResult;
   ctx: TPipeContext;
   excludes, prefixes, tokens: TRawUtf8DynArray;
-  outputDir, targetDir, unitDir, binDir, distDir, appPwb, exePath: RawUtf8;
+  outputDir, targetDir, unitDir, binDir, distDir, assetsDir: RawUtf8;
+  appPwb, exePath: RawUtf8;
   frontendRoot, sdkStageParent, found: RawUtf8;
+  unreadable: Boolean;
   stageRefusal: TPWebCliStageRefusal;
   feRefusal: TPWebCliFrontendRefusal;
   cmd: TPWebCliCommand;
   layoutResult: TPWebCliLayoutResult;
+  verifyLayout: TPWebCliRunLayout;
   staged: Integer;
   digest: RawUtf8;
   k: TPWebCliStageKind;
@@ -519,14 +522,26 @@ begin
       PWebCliStageRefusalText(stageRefusal));
     exit;
   end;
-  res.TreeAfter := res.TreeBefore;
+  // deliberately NOT seeded from TreeBefore: a value that starts equal and is
+  // only re-assigned once it has been PROVED equal is a row that cannot read
+  // false however the gate around it is weakened. It stays empty until a
+  // stage actually re-measures, and an empty one is not `unchanged`
+  res.TreeAfter := '';
   // a package-manager configuration inside the project could redirect the
   // registry `npm ci` fetches from. The templates ship none; this is the
   // lock that makes that a REFUSAL rather than an observation
-  if PWebCliRegistryOverridePresent(Project.Root, found) then
+  if PWebCliRegistryOverridePresent(Project.Root, excludes, found,
+       unreadable) then
   begin
     Refuse(pskOpen, ppcProject,
       PWebCliFrontendRefusalText(pfrRegistryOverride), found);
+    exit;
+  end;
+  if unreadable then
+  begin
+    // the check could not look, which is not the same answer as "nothing
+    // is there" and must never be reported as one
+    Refuse(pskOpen, ppcInternal, 'pipeline_tree_unreadable', 'registry');
     exit;
   end;
   frontendRoot := Project.FrontendRootPath.Full;
@@ -548,10 +563,12 @@ begin
         PWebCliToolKindText(res.Toolset.Failed));
     exit;
   end;
-  res.Sdk := PWebCliSdkLayoutIn(
-    {Root=}'', Os, Arch, Project.Ui = puiPas2js);
   if not PWebCliSdkLayout(Os, Arch, Project.Ui = puiPas2js, res.Sdk) then
   begin
+    // the target is restored AFTER the failed resolution, because that
+    // call clears the record it fills: an evidence row that lost its
+    // target on the one refusal that needs naming one is worse than none
+    res.Sdk.Target := PWebCliRunTargetName(Os, Arch);
     Refuse(pskToolchain, ppcUnavailable,
       PWebSdkLayoutRefusalText(res.Sdk.Refusal), res.Sdk.Detail);
     exit;
@@ -656,12 +673,20 @@ begin
     if not RunStage(pskBuild, cmd, PWEB_CLI_PIPE_BUILD_MS) then
       exit;
     distDir := PWebCliJoin(frontendRoot, PWEB_FE_DIST);
+    if (PWebCliEntry(frontendRoot, PWEB_FE_DIST) <> pcnDirectory) or
+       (PWebCliEntry(distDir, PWEB_FE_INDEX) <> pcnFile) then
+    begin
+      Refuse(pskBuild, ppcStageFailed,
+        PWebCliFrontendRefusalText(pfrOutputMissing),
+        Project.FrontendRoot + '/' + PWEB_FE_DIST);
+      exit;
+    end;
   end
   else
   begin
     if not PWebCliPipeRemoveTree(targetDir, PWEB_FE_DIST, stageRefusal) or
        not PWebCliPipeEnsurePath(targetDir,
-         PWEB_FE_DIST + '/' + PWEB_FE_ASSETS, distDir, stageRefusal) then
+         PWEB_FE_DIST + '/' + PWEB_FE_ASSETS, assetsDir, stageRefusal) then
     begin
       Refuse(pskBuild, ppcInternal, 'build_dist_reclaim',
         PWebCliStageRefusalText(stageRefusal));
@@ -766,13 +791,20 @@ begin
   if not TreeStillClean(pskLayout) then
     exit;
   Done(pskLayout);
+  if not StillRunning(pskLayout) then
+    exit;
 
   { --- 10. verify: the CAP-10C0 resolver's own verdict --------------------- }
   Enter(pskVerify);
-  if layoutResult.RunRefusal <> prrNone then
+  verifyLayout := PWebCliResolveRunLayout(Project, Os, Arch);
+  if verifyLayout.Refusal <> prrNone then
   begin
+    // an INDEPENDENT resolution, not a re-reading of what stage 9 already
+    // checked: between the commit and here the layout is on a disk other
+    // things can touch, and the run command's own resolver is the only
+    // authority on whether it will accept it
     Refuse(pskVerify, ppcInternal,
-      PWebCliRunRefusalText(layoutResult.RunRefusal), '');
+      PWebCliRunRefusalText(verifyLayout.Refusal), '');
     exit;
   end;
   Say(Notify, Opaque, 'verify: ' + Project.Output + '/' +

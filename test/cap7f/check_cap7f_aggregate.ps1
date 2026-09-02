@@ -178,6 +178,10 @@ $required = @(
     'tc_doctor_refusal', 'typecheck_failure', 'partial_layout_on_failure',
     'sdk_root_unchanged', 'template_supersession_recorded',
     'project_tree_unchanged', 'driver_no_ansi', 'pipeline_units_linked',
+    'interrupt_clean', 'interrupt_mechanism',
+    'c0_supervision_digest_unchanged', 'cli_digest_unchanged',
+    'doctor_schema_digest_unchanged',
+    'autoclose_stop_honoured',
     'release_layout', 'no_listener', 'app_pwb_react_sha256',
     'logical_inventory_sha256_react', 'github_sha', 'github_run_id', 'waivers'
 )
@@ -292,6 +296,11 @@ $absolutePins = @{
     project_tree_unchanged         = 'true'
     driver_no_ansi                 = 'true'
     pipeline_units_linked          = 'false'
+    # the three frozen digests CAP-10C1 must not have moved, compared with
+    # their closure values by the gate that reads each one back
+    c0_supervision_digest_unchanged = 'true'
+    cli_digest_unchanged            = 'true'
+    doctor_schema_digest_unchanged  = 'true'
 }
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
 $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',

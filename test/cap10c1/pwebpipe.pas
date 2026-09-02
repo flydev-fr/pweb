@@ -217,10 +217,14 @@ begin
         redacted := PWebCliChildOutcomeText(res.Stages[k].Outcome)
       else
         redacted := 'no_child';
+      // the SIGNAL travels too: the engine types a death by signal apart
+      // from an exit code, and a record that dropped it would flatten the
+      // distinction the supervision contract exists to keep
       Row('stage.' + arg, Bool(res.Stages[k].Applicable) + '|' +
         Bool(res.Stages[k].Entered) + '|' + Bool(res.Stages[k].Ok) + '|' +
         res.Stages[k].Cause + '|' + redacted + '|' +
         IntText(res.Stages[k].ExitCode) + '|' +
+        IntText(res.Stages[k].Signal) + '|' +
         IntText(res.Stages[k].ElapsedMs));
       if res.Stages[k].Command <> '' then
         Row('cmd.' + arg, res.Stages[k].Command);

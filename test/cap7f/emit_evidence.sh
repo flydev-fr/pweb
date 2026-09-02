@@ -1259,10 +1259,12 @@ c1_file="${repo_root}/build/cap10c1/cli-${target}.json"
 [ -f "${c1_file}" ] ||
     die "cap10c1/cli-${target}.json missing -- the CAP-10C1 gates have not run in this workspace"
 c1_str() {
-    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*//p" \n        "${c1_file}" | head -n 1
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+        "${c1_file}" | head -n 1
 }
 c1_num() {
-    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*//p" \n        "${c1_file}" | head -n 1
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p" \
+        "${c1_file}" | head -n 1
 }
 pipeline_available="$(c1_str pipeline_available)"
 pipeline_suite="$(c1_str pipeline_suite)"
@@ -1305,6 +1307,12 @@ template_supersession_recorded="$(c1_str template_supersession_recorded)"
 project_tree_unchanged="$(c1_str project_tree_unchanged)"
 driver_no_ansi="$(c1_str driver_no_ansi)"
 pipeline_units_linked="$(c1_str pipeline_units_linked)"
+interrupt_clean="$(c1_str interrupt_clean)"
+interrupt_mechanism="$(c1_str interrupt_mechanism)"
+c0_supervision_digest_unchanged="$(c1_str c0_supervision_digest_unchanged)"
+cli_digest_unchanged="$(c1_str cli_digest_unchanged)"
+doctor_schema_digest_unchanged="$(c1_str doctor_schema_digest_unchanged)"
+autoclose_stop_honoured="$(c1_str autoclose_stop_honoured)"
 pipeline_corpus_lines="$(c1_num pipeline_corpus_lines)"
 lockfile_install_scripts="$(c1_num lockfile_install_scripts)"
 c1_app_pwb_react_entries="$(c1_num c1_app_pwb_react_entries)"
@@ -1624,6 +1632,12 @@ cat > "${work}/evidence.json" <<EOF
   "project_tree_unchanged": "${project_tree_unchanged}",
   "driver_no_ansi": "${driver_no_ansi}",
   "pipeline_units_linked": "${pipeline_units_linked}",
+  "interrupt_clean": "${interrupt_clean}",
+  "interrupt_mechanism": "${interrupt_mechanism}",
+  "c0_supervision_digest_unchanged": "${c0_supervision_digest_unchanged}",
+  "cli_digest_unchanged": "${cli_digest_unchanged}",
+  "doctor_schema_digest_unchanged": "${doctor_schema_digest_unchanged}",
+  "autoclose_stop_honoured": "${autoclose_stop_honoured}",
   "pipeline_corpus_lines": "${pipeline_corpus_lines}",
   "lockfile_install_scripts": "${lockfile_install_scripts}",
   "c1_app_pwb_react_entries": "${c1_app_pwb_react_entries}",
@@ -1653,7 +1667,7 @@ cat > "${work}/evidence.json" <<EOF
   "release_layout": "${release_layout}",
   "no_listener": "${no_listener}",
   "no_listener_provenance": "${no_listener_prov}",
-  "c1_app_pwb_react_sha256": "${react_pwb_sha}",
+  "app_pwb_react_sha256": "${react_pwb_sha}",
   "logical_inventory_sha256_react": "${react_inventory_sha}",
   "logical_inventory_sha256_pas2js": "${p2j_inventory_sha}",
   "github_sha": "${github_sha}",

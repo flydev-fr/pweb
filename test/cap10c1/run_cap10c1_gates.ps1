@@ -22,10 +22,18 @@
 #            type error, determinism across two runs, app.pwb byte parity,
 #            the native compile, `pweb run` on the assembled layout, no
 #            release directory after a failure or an interrupt, the project
-#            tree unchanged, and the SDK root unwritten;
+#            tree unchanged, and the SDK root unwritten. ST10 (the interrupt)
+#            is measured on POSIX and RECORDED as not_measured on Windows,
+#            where a console control event needs the helper CAP-10C0's stop
+#            driver owns inside the suite - said plainly rather than skipped;
 #   DB1-DB3  the closed debts: the host's lines arriving LIVE, the template
 #            supersession recorded, and the membership-scoped sampler;
-#   SF1-SF3  the public surface: help unchanged, dev and build still unknown.
+#   SF1-SF3  the public surface: help unchanged, dev and build still unknown,
+#            the pipeline units NOT linked into the shipped CLI (read back
+#            from the contract gate's own measurement), and the three frozen
+#            digests this shard must not move - supervision_digest,
+#            cli_digest and doctor_schema_digest - compared with their
+#            closure values.
 #
 # Emits build/cap10c1/cli-<target>.json.
 #
@@ -201,6 +209,14 @@ Row 'pipeline_suite' $(if ($suiteCode -eq 0) { 'PASS' } else { 'FAIL' })
 $react = RunPipe $reactProject 'react'
 Write-Host "----- react driver -----"; Write-Host $react.Err
 Require ($react.Code -eq 0) "react: the pipeline exited $($react.Code)"
+# the FIRST run's archive, hashed BEFORE anything re-runs the pipeline. ST5
+# below compares it with the second run's; hashing the same file twice after
+# both runs is a tautology, which is what the first draft of this gate did.
+$reactFirstPwb = ''
+$reactFirstPath = Join-Path $reactProject "dist/$target/app.pwb"
+if (Test-Path -LiteralPath $reactFirstPath) {
+    $reactFirstPwb = Sha256Bytes $reactFirstPath
+}
 $pas2js = RunPipe $pas2jsProject 'pas2js'
 Write-Host "----- pas2js driver -----"; Write-Host $pas2js.Err
 Require ($pas2js.Code -eq 0) "pas2js: the pipeline exited $($pas2js.Code)"
@@ -269,9 +285,12 @@ $lockText = [System.IO.File]::ReadAllText(
     (Join-Path $reactProject 'frontend/package-lock.json'))
 $installScripts = @([regex]::Matches($lockText, '"hasInstallScript"\s*:\s*true')).Count
 Row 'lockfile_install_scripts' $installScripts
-Require ($installScripts -le 1) `
-    ("ST14: the pinned tree now carries $installScripts install script(s); " +
-     'the --ignore-scripts ratification was measured against exactly one')
+Require ($installScripts -eq 1) `
+    ("ST14: the pinned tree carries $installScripts install script(s); the " +
+     '--ignore-scripts ratification was measured against EXACTLY one ' +
+     '(fsevents, dev + optional + darwin-only). Both directions matter: a ' +
+     'second one is unreviewed, and zero means the measurement this policy ' +
+     'rests on no longer describes the tree')
 
 # --- 3. ST1/ST2: the staged SDK ---------------------------------------------
 $stagedSdk = Join-Path $reactProject 'frontend/.pweb/sdk/typescript'
@@ -365,11 +384,15 @@ foreach ($ui in 'react', 'pas2js') {
         Row "c1_app_pwb_${ui}_entries" $zipRows.Count
     }
 }
-# ST5: two runs of the same project produce the same archive
-$reactTwice = (Sha256Bytes $appPwb['react'])
-Row 'build_deterministic' (Bool ($reactTwice -ceq $rows['c1_app_pwb_react_sha256']))
-Require ($reactTwice -ceq $rows['c1_app_pwb_react_sha256']) `
-    'ST5: two runs of the react pipeline produced different app.pwb bytes'
+# ST5: two runs of the same project produce the same archive. The second
+# run happened in ST2 above; this compares ITS archive with the first run's,
+# captured before it.
+Require ($reactFirstPwb -ne '') 'ST5: the first run produced no app.pwb to compare'
+Row 'build_deterministic' (Bool (($reactFirstPwb -ne '') -and
+    ($reactFirstPwb -ceq $rows['c1_app_pwb_react_sha256'])))
+Require ($reactFirstPwb -ceq $rows['c1_app_pwb_react_sha256']) `
+    ("ST5: two runs of the react pipeline produced different app.pwb bytes: " +
+     "$reactFirstPwb vs $($rows['c1_app_pwb_react_sha256'])")
 
 Row 'native_compile_react' $(
     if ("$($react.Report['stage.compile'])" -match '\|true\|') { 'PASS' } else { 'FAIL' })
@@ -541,6 +564,117 @@ Require (-not (Test-Path -LiteralPath $st9Release)) `
 Require (-not (Test-Path -LiteralPath $st9Stage)) `
     'ST9: a failed pipeline left its staging directory'
 
+# --- 7b. ST10: a real interrupt mid-stage leaves no layout ------------------
+# POSIX only, and said so rather than skipped silently: a gate can send a
+# real SIGINT to a real process, but a Windows console control event needs a
+# helper that attaches to a console of its own - the mechanism CAP-10C0's
+# stop driver owns, inside the suite rather than in a script. On Windows the
+# row records `not_measured` and the CAP-10C0 R10 leg remains the interrupt
+# measurement for this repository.
+$st10Project = StageProject 'st10' 'cap10b1'
+if ($IsWindows) {
+    Row 'interrupt_clean' 'not_measured'
+    Row 'interrupt_mechanism' 'windows_console_helper_owned_by_cap10c0'
+} else {
+    $so = Join-Path $work 'pipe-st10-stdout.txt'
+    $se = Join-Path $work 'pipe-st10-stderr.txt'
+    Remove-Item -Force -ErrorAction SilentlyContinue $so, $se
+    $p10 = Start-Process -FilePath $pipe -PassThru -NoNewWindow `
+        -ArgumentList @('--project', $st10Project) -WorkingDirectory $repoRoot `
+        -RedirectStandardOutput $so -RedirectStandardError $se
+    # wait until a stage that OWNS a child tree is actually running, so the
+    # signal lands mid-stage rather than before the first spawn
+    $armed = $false
+    for ($i = 0; ($i -lt 150) -and (-not $p10.HasExited); $i++) {
+        Start-Sleep -Milliseconds 400
+        if (Test-Path -LiteralPath $se) {
+            $txt = Get-Content -LiteralPath $se -Raw -ErrorAction SilentlyContinue
+            if ($txt -match '(?m)^pweb: (install|typecheck|build|compile): start') {
+                $armed = $true
+                break
+            }
+        }
+    }
+    Require $armed 'ST10: no stage with a child tree started inside the arming window'
+    Start-Sleep -Milliseconds 500
+    & kill -INT $p10.Id 2>$null
+    if (-not $p10.WaitForExit(120000)) {
+        try { $p10.Kill() } catch { }
+        $p10.WaitForExit(10000) | Out-Null
+        Require $false 'ST10: the pipeline did not stop within 120 s of a SIGINT'
+    }
+    $p10.WaitForExit()
+    $st10Release = Join-Path $st10Project "dist/$target/release"
+    $st10Stage = Join-Path $st10Project "dist/$target/.pweb-release.tmp"
+    Row 'interrupt_clean' (Bool ((-not (Test-Path -LiteralPath $st10Release)) -and
+        (-not (Test-Path -LiteralPath $st10Stage))))
+    Row 'interrupt_mechanism' 'sigint'
+    Require (-not (Test-Path -LiteralPath $st10Release)) `
+        'ST10: an interrupted pipeline left a release directory'
+    Require (-not (Test-Path -LiteralPath $st10Stage)) `
+        'ST10: an interrupted pipeline left its staging directory'
+    Require ($p10.ExitCode -ne 0) `
+        "ST10: an interrupted pipeline exited $($p10.ExitCode), expected a failure category"
+}
+
+# --- 7c. DB4: the closer honours a stop while the auto-close bound is armed --
+# The CAP-10C0 ledger measured the reusable host's closer SLEEPING the whole
+# bound while the teardown joined it, so a stop requested meanwhile finished
+# only when the bound expired - five seconds of grace and then a FORCED
+# termination. CAP-10C1 made the closer wait on an event. Without this leg
+# the fix could be reverted with nothing going red: every other autoclose
+# gate in the tree lets the bound expire, and the CAP-10C0 stop driver
+# deliberately unsets the knob.
+#
+# POSIX only, for ST10's reason: a real console control event on Windows
+# needs the helper the CAP-10C0 suite owns.
+if ($IsWindows) {
+    Row 'autoclose_stop_honoured' 'not_measured'
+} else {
+    $so = Join-Path $work 'run-db4-stdout.txt'
+    $se = Join-Path $work 'run-db4-stderr.txt'
+    Remove-Item -Force -ErrorAction SilentlyContinue $so, $se
+    # a bound FAR longer than the grace window, so "it exited quickly" can
+    # only mean the closer was released rather than the bound expiring
+    $env:PWEB_SMOKE_AUTOCLOSE_MS = '55000'
+    $runCwd = Join-Path $work 'unrelated-cwd'
+    New-Item -ItemType Directory -Force $runCwd | Out-Null
+    $sw4 = [System.Diagnostics.Stopwatch]::StartNew()
+    $p4 = Start-Process -FilePath $pweb -PassThru -NoNewWindow `
+        -ArgumentList @('run', '--project', $reactProject) `
+        -WorkingDirectory $runCwd -RedirectStandardOutput $so -RedirectStandardError $se
+    $ready = $false
+    for ($i = 0; ($i -lt 100) -and (-not $p4.HasExited); $i++) {
+        Start-Sleep -Milliseconds 400
+        if (Test-Path -LiteralPath $so) {
+            $t = Get-Content -LiteralPath $so -Raw -ErrorAction SilentlyContinue
+            if ($t -match 'demo: ready \{') { $ready = $true; break }
+        }
+    }
+    Require $ready 'DB4: the application never reported ready inside the arming window'
+    & kill -INT $p4.Id 2>$null
+    $stopped = $p4.WaitForExit(40000)
+    if (-not $stopped) { try { $p4.Kill() } catch { } ; $p4.WaitForExit(10000) | Out-Null }
+    $sw4.Stop()
+    Remove-Item Env:PWEB_SMOKE_AUTOCLOSE_MS -ErrorAction SilentlyContinue
+    $out4 = if (Test-Path $so) { [System.IO.File]::ReadAllText($so) } else { '' }
+    $err4 = if (Test-Path $se) { [System.IO.File]::ReadAllText($se) } else { '' }
+    Write-Host "----- DB4 -----"; Write-Host $out4; Write-Host $err4
+    $clean = $stopped -and ($p4.ExitCode -eq 0) -and
+        $out4.Contains('demo: clean exit') -and
+        (-not $err4.Contains('force-terminated')) -and
+        ($sw4.Elapsed.TotalMilliseconds -lt 40000)
+    Row 'autoclose_stop_honoured' (Bool $clean)
+    Row 'autoclose_stop_ms' ([int]$sw4.Elapsed.TotalMilliseconds)
+    Require $stopped 'DB4: pweb did not exit within 40 s of a stop, with a 55 s bound armed'
+    Require ($p4.ExitCode -eq 0) "DB4: pweb exited $($p4.ExitCode) after a graceful stop"
+    Require ($out4.Contains('demo: clean exit')) `
+        'DB4: the host did not report a clean exit'
+    Require (-not $err4.Contains('force-terminated')) `
+        ('DB4: the application was FORCE-TERMINATED - the closer waited out ' +
+         'the armed bound, which is the defect CAP-10C1 closed')
+}
+
 # --- 8. ST12: the SDK root is READ-ONLY to a build ---------------------------
 $sdkAfter = TreeDigest $sdk
 Row 'sdk_root_unchanged' (Bool ($sdkBefore -ceq $sdkAfter))
@@ -571,7 +705,58 @@ foreach ($absent in 'dev', 'build') {
         "SF1: pweb $absent exited $LASTEXITCODE, expected 2 (unknown command)"
 }
 Row 'dev_build_unknown' 'true'
-Row 'pipeline_units_linked' 'false'
+# MEASURED, never asserted: check_cap10c1_contracts.ps1 reads the CLI's own
+# compiled unit set and writes its verdict here. A literal 'false' would be
+# an absolute pin guarding a constant - exactly the vacuous row CAP-10C0
+# removed when run_dev_allowance_present and shutdown_order became derived.
+$contractsFile = Join-Path $work 'contracts.json'
+Require (Test-Path -LiteralPath $contractsFile) `
+    'SF2: build/cap10c1/contracts.json is absent -- run check_cap10c1_contracts.ps1 first'
+if (Test-Path -LiteralPath $contractsFile) {
+    $contracts = Get-Content $contractsFile -Raw | ConvertFrom-Json
+    Row 'pipeline_units_linked' $(
+        if ($contracts.pipeline_units_linked) { 'true' } else { 'false' })
+    Require (-not $contracts.pipeline_units_linked) `
+        'SF2: the CLI LINKS a lifecycle-pipeline unit'
+    Require ("$($contracts.verdict)" -ceq 'PASS') `
+        "SF2: the CAP-10C1 contract cross-checks report $($contracts.verdict)"
+} else {
+    Row 'pipeline_units_linked' 'unmeasured'
+}
+
+# SF2/SF3: the two frozen digests this shard must not have moved, read back
+# from the gates that own them and compared with their CLOSURE values.
+$c0Closure = '120f6769c155c59b8bc0cbc8b96e7faee14091628a5af49833f5b4fb96db11c0'
+$cliClosure = '1341221df25aa1db922666fa89542411142765db3a378b83c1287d017dfdd208'
+$c0File = Join-Path $repoRoot "build/cap10c0/cli-$target.json"
+if (Test-Path -LiteralPath $c0File) {
+    $c0 = Get-Content $c0File -Raw | ConvertFrom-Json
+    Row 'c0_supervision_digest_unchanged' (Bool ("$($c0.supervision_digest)" -ceq $c0Closure))
+    Require ("$($c0.supervision_digest)" -ceq $c0Closure) `
+        ("SF3: supervision_digest moved to $($c0.supervision_digest); CAP-10C0 " +
+         "closed on $c0Closure")
+} else {
+    Row 'c0_supervision_digest_unchanged' 'unmeasured'
+    Require $false 'SF3: the CAP-10C0 record is absent -- its gates have not run here'
+}
+$c10aFile = Join-Path $repoRoot "build/cap10a/cli-$target.json"
+if (Test-Path -LiteralPath $c10aFile) {
+    $c10a = Get-Content $c10aFile -Raw | ConvertFrom-Json
+    Row 'cli_digest_unchanged' (Bool ("$($c10a.cli_digest)" -ceq $cliClosure))
+    Require ("$($c10a.cli_digest)" -ceq $cliClosure) `
+        ("SF2: cli_digest moved to $($c10a.cli_digest); CAP-10C0 closed on " +
+         "$cliClosure -- the public parser surface must not move in CAP-10C1")
+    Row 'doctor_schema_digest_unchanged' (Bool (
+        "$($c10a.doctor_schema_digest)" -ceq '2dda57baa324708ebc6d709556fc2a4ae865d820e29069c47a0e0d412fa8c7aa'))
+    Require ("$($c10a.doctor_schema_digest)" -ceq `
+        '2dda57baa324708ebc6d709556fc2a4ae865d820e29069c47a0e0d412fa8c7aa') `
+        ("SF2: doctor_schema_digest moved to $($c10a.doctor_schema_digest); " +
+         'CAP-10C1 ratified leaving the npm row a presence row')
+} else {
+    Row 'cli_digest_unchanged' 'unmeasured'
+    Row 'doctor_schema_digest_unchanged' 'unmeasured'
+    Require $false 'SF2: the CAP-10A record is absent -- its gates have not run here'
+}
 
 # --- 10. the verdict and the evidence ---------------------------------------
 Row 'target' $target

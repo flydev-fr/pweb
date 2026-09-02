@@ -68,10 +68,21 @@ Set-Location $repoRoot
 # If a future shard changes the React template deliberately, this constant
 # moves in the same commit, with the reason recorded in that shard's
 # artifact. It is not maintenance noise; it is the closure.
+#
+# SUPERSEDED BY CAP-10C1, which is that shard. It added `Flush(Output)` after
+# the starter's ready report in src/app.services.pas and after the banner in
+# src/program.lpr, in BOTH public templates: FPC's text layer flushes a pipe
+# per line on Windows and BLOCK-BUFFERS it on Linux and macOS, so a
+# supervisor read a generated host's lines only when the host exited. The
+# file count is unchanged at 15; the projection moved from
+# 1ca77cbb8dc0fed5844fa6aa958ca2727ea560f5bda0b50b23e1bd9b360f3230 and the
+# total from 65765 bytes, and hosted run 33665009021 measured the new pair
+# IDENTICALLY on all four targets - which is what makes it a template change
+# rather than a host difference.
 $CAP10B1_REACT_INVENTORY_DIGEST =
-    '1ca77cbb8dc0fed5844fa6aa958ca2727ea560f5bda0b50b23e1bd9b360f3230'
+    'ef5c09d08f69a62f7603eddd6d49a9762fa602f81fe94f8e0e2db5a470505917'
 $CAP10B1_REACT_FILE_COUNT = 15
-$CAP10B1_REACT_TOTAL_BYTES = 65765
+$CAP10B1_REACT_TOTAL_BYTES = 66355
 
 $exeSuffix = if ($IsWindows) { '.exe' } else { '' }
 $work = Join-Path $repoRoot 'build/cap10b2'

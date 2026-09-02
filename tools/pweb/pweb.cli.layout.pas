@@ -304,8 +304,14 @@ begin
   Result.RunRefusal := layout.Refusal;
   if layout.Refusal <> prrNone then
   begin
+    // the commit has already happened, so THIS is the one path that can
+    // leave a release the run command refuses. It is reclaimed: an absent
+    // release is `not_built`, which is a correct answer, and a committed
+    // one that `pweb run` will not accept is not
+    PWebCliPipeRemoveTree(TargetDir, PWEB_CLI_RUN_RELEASE, stage);
     Result.Refusal := plrVerify;
     Result.Detail := PWebCliRunRefusalText(layout.Refusal);
+    Result.ReleaseDir := '';
     exit;
   end;
   Result.ReleaseDir := PWebCliJoin(TargetDir, PWEB_CLI_RUN_RELEASE);

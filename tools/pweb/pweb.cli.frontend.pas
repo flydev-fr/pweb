@@ -80,6 +80,7 @@ interface
 uses
   sysutils,
   mormot.core.base,
+  mormot.core.unicode,
   pweb.cli.platform,
   pweb.cli.toolchain,
   pweb.cli.project,
@@ -170,8 +171,18 @@ function PWebCliPas2jsCommand(const Pas2jsPath, FrontendRoot, SdkPas2js,
 /// redirect a registry
 // - the templates ship none, and the mutation gate proves the tree is the
 // generated one; this is the third lock, and the only one that is a REFUSAL
+// - Unreadable is True when the WALK failed (an unreadable directory, a tree
+// past its bound). A caller must treat that as a refusal too: a check that
+// answers "nothing found" when it could not look is a check that disappears
+// on exactly the trees worth checking
+// - Excludes is the caller's writable set, DERIVED from the descriptor
+// (PWebCliMutationSet) and never restated here. A project whose
+// frontend.root is `web` and whose output is `out` populates `web/...`, and
+// a scan with `frontend/...` written into it would walk a real node_modules
+// - hashing thousands of files and refusing on an .npmrc a DEPENDENCY ships
 function PWebCliRegistryOverridePresent(const Root: RawUtf8;
-  out Found: RawUtf8): Boolean;
+  const Excludes: TRawUtf8DynArray; out Found: RawUtf8;
+  out Unreadable: Boolean): Boolean;
 
 /// normalise the compiler's output and assemble the ratified static set
 // - DistDir must already exist and hold assets/app.js and nothing else
@@ -318,12 +329,12 @@ begin
 end;
 
 function PWebCliRegistryOverridePresent(const Root: RawUtf8;
-  out Found: RawUtf8): Boolean;
+  const Excludes: TRawUtf8DynArray; out Found: RawUtf8;
+  out Unreadable: Boolean): Boolean;
 const
   NAMES: array[0 .. 3] of RawUtf8 = (
     '.npmrc', '.yarnrc', '.yarnrc.yml', '.pnpmfile.cjs');
 var
-  excludes: TRawUtf8DynArray;
   lines: RawUtf8;
   files: Integer;
   refusal: TPWebCliStageRefusal;
@@ -331,17 +342,16 @@ var
   row, name: RawUtf8;
 begin
   Found := '';
+  Unreadable := False;
   Result := False;
   // the whole project tree minus what a build itself populates: an .npmrc
   // npm would read can sit anywhere from the frontend root upward inside
   // the project, and node_modules legitimately contains dozens
-  SetLength(excludes, 4);
-  excludes[0] := 'frontend/node_modules';
-  excludes[1] := 'frontend/.pweb';
-  excludes[2] := 'frontend/dist';
-  excludes[3] := 'dist';
-  if not PWebCliPipeTreeLines(Root, excludes, lines, files, refusal) then
+  if not PWebCliPipeTreeLines(Root, Excludes, lines, files, refusal) then
+  begin
+    Unreadable := True;
     exit;
+  end;
   start := 1;
   for i := 1 to Length(lines) + 1 do
     if (i > Length(lines)) or
@@ -363,7 +373,9 @@ begin
           break;
         end;
       for j := 0 to High(NAMES) do
-        if name = NAMES[j] then
+        // ASCII case-insensitively: npm reads `.NPMRC` on a case-folding
+        // volume, and a byte-exact comparison would miss it there
+        if LowerCaseU(name) = NAMES[j] then
         begin
           Found := row;
           Result := True;
@@ -377,7 +389,7 @@ function PWebCliAssemblePas2jsDist(const FrontendRoot, DistDir: RawUtf8;
   out Refusal: TPWebCliFrontendRefusal): Boolean;
 var
   assetsDir, outJs: RawUtf8;
-  raw, normalised: RawByteString;
+  raw, normalised, stripped: RawByteString;
   tooBig: Boolean;
   stage: TPWebCliStageRefusal;
   i, n: PtrInt;
@@ -401,17 +413,21 @@ begin
   normalised := raw;
   if Normalisation.HadBom then
     normalised := Copy(normalised, 4, Length(normalised) - 3);
+  // a SEPARATE destination: writing back into `raw` while iterating
+  // `normalised` - its own refcounted alias - is correct only because
+  // SetLength uniquifies, and a rule that rests on copy-on-write timing is
+  // a rule nobody should have to re-derive
   n := 0;
-  SetLength(raw, Length(normalised));
+  SetLength(stripped, Length(normalised));
   for i := 1 to Length(normalised) do
     if normalised[i] = #13 then
       Normalisation.HadCr := True
     else
     begin
       Inc(n);
-      raw[n] := normalised[i];
+      stripped[n] := normalised[i];
     end;
-  SetLength(raw, n);
+  SetLength(stripped, n);
   if Normalisation.HadBom or
      Normalisation.HadCr then
   begin
@@ -419,7 +435,7 @@ begin
     // normalised one is created, so a half-written rewrite is impossible
     if not PWebCliDeleteFile(outJs) then
       exit;
-    if not PWebCliWriteNewFile(outJs, raw, {SetExecBit=}False) then
+    if not PWebCliWriteNewFile(outJs, stripped, {SetExecBit=}False) then
       exit;
   end;
 

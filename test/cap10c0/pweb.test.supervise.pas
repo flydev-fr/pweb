@@ -1465,11 +1465,16 @@ var
   spec: TPWebCliExecSpec;
 begin
   DriverAction := Action;
-  // the host's auto-close bound is a SMOKE knob: while it is armed the
-  // host's closer thread sleeps for the whole bound and the teardown joins
-  // it, so a stop requested meanwhile completes only when the bound
-  // expires (MEASURED: 5 s of grace, then forced). The drivers bound the
-  // run themselves, through the engine, and inherit no such knob
+  // the host's auto-close bound is a SMOKE knob and these drivers bound the
+  // run themselves, through the engine, so they inherit no such knob.
+  //
+  // CAP-10C0 MEASURED a second reason and CAP-10C1 removed it: the closer
+  // thread used to SLEEP the whole bound while the teardown joined it, so a
+  // stop requested meanwhile completed only when the bound expired (5 s of
+  // grace, then forced). It now waits on an event the teardown sets the
+  // moment webview_run returns. The unset below therefore isolates these
+  // drivers from a knob they do not want, and no longer works around a
+  // defect - test/cap10c1 measures the armed-and-interrupted case directly.
   UnsetEnv('PWEB_SMOKE_AUTOCLOSE_MS');
   spec := Default(TPWebCliExecSpec);
   spec.ExePath := Pweb;
