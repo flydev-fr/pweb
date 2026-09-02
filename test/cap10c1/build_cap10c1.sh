@@ -59,10 +59,19 @@ darwin)
         aarch64) target='macos-arm64';  fpc_target='aarch64-darwin' ;;
         *) die "unsupported macOS CPU ${target_cpu}" ;;
     esac
-    lib_src="${PWEB_MACOS_DIST}/${PWEB_MACOS_DYLIB_VERSIONED}"
+    # THREE NAMES, and the difference is load-bearing. The release ships the
+    # VERSIONED dylib (what LC_LOAD_DYLIB names through @rpath); the LINK
+    # needs the plain `libwebview.dylib`, because `-k-lwebview` is what puts
+    # the library on the line and that is the name ld resolves; the REAL file
+    # is what both of those are. An SDK that staged only the shipped name
+    # would produce a release nobody can link.
+    lib_dir_src="${PWEB_MACOS_DIST}"
     lib_name="${PWEB_MACOS_DYLIB_VERSIONED}"
+    lib_files=( "${PWEB_MACOS_DYLIB_VERSIONED}" "${PWEB_MACOS_DYLIB}"
+                "${PWEB_MACOS_DYLIB_REAL}" )
     bridge_src="${PWEB_MACOS_BRIDGE_OBJ}"
-    [ -f "${lib_src}" ] || die "staged dylib missing: ${lib_src}"
+    [ -f "${lib_dir_src}/${lib_name}" ] ||
+        die "staged dylib missing: ${lib_dir_src}/${lib_name}"
     [ -f "${bridge_src}" ] ||
         die "production Cocoa bridge object missing: ${bridge_src} -- run test/cap7m/build_cap7m.sh first"
     ;;
@@ -71,10 +80,18 @@ linux)
         die "CAP-10C1 Linux is ratified for x86_64 only, fpc targets ${target_cpu}"
     target='linux-x86_64'
     fpc_target='x86_64-linux'
+    # TWO NAMES, and the difference is load-bearing. libwebview.so.0.12 is
+    # the SONAME - the file a release ships and the one DT_NEEDED records -
+    # while libwebview.so is the dev-only LINK-TIME name FPC's
+    # `external 'libwebview.so'` makes the linker resolve. tools/
+    # build-webview-so.sh produces both for exactly that reason, and an SDK
+    # that staged only the first produces a release nobody can link.
+    lib_dir_src="${repo_root}/build/cap7l/webview-dist"
     lib_name='libwebview.so.0.12'
-    lib_src="${repo_root}/build/cap7l/webview-dist/${lib_name}"
+    lib_files=( 'libwebview.so.0.12' 'libwebview.so' )
     bridge_src=''
-    [ -f "${lib_src}" ] || die "staged webview library missing: ${lib_src}"
+    [ -f "${lib_dir_src}/${lib_name}" ] ||
+        die "staged webview library missing: ${lib_dir_src}/${lib_name}"
     ;;
 *)
     die "unsupported FPC target OS ${target_os}"
@@ -108,9 +125,17 @@ step "the ${target} platform artifacts, into the SDK root"
 lib_dir="${sdk}/share/pweb/lib/${target}"
 rm -rf -- "${lib_dir}"
 mkdir -p -- "${lib_dir}"
-cp -f -- "${lib_src}" "${lib_dir}/${lib_name}"
+for f in "${lib_files[@]}"; do
+    if [ -f "${lib_dir_src}/${f}" ]; then
+        cp -f -- "${lib_dir_src}/${f}" "${lib_dir}/${f}"
+    fi
+done
+[ -f "${lib_dir}/${lib_name}" ] ||
+    die "the SDK lib directory holds no ${lib_name}"
 if [ -n "${bridge_src}" ]; then
     cp -f -- "${bridge_src}" "${lib_dir}/pweb_cocoa_bridge.o"
+    [ -f "${lib_dir}/pweb_cocoa_bridge.o" ] ||
+        die 'the SDK lib directory holds no pweb_cocoa_bridge.o'
 fi
 
 for artifact in "${sdk}/bin/pwebbundle" \

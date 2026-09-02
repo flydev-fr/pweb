@@ -2054,6 +2054,7 @@ jobs:
             build/cap10c1/c1tests.log
             build/cap10c1/report-*.txt
             build/cap10c1/pipe-*-stderr.txt
+            build/cap10c1/pipe-*-stdout.txt
             build/cap10c1/run-*-stdout.txt
             build/cap10c1-gates.log
       - name: CAP-7F emit the Windows evidence artifact
@@ -2823,6 +2824,7 @@ jobs:
             build/cap10c1/c1tests.log
             build/cap10c1/report-*.txt
             build/cap10c1/pipe-*-stderr.txt
+            build/cap10c1/pipe-*-stdout.txt
             build/cap10c1/run-*-stdout.txt
             build/cap10c1-gates.log
       - name: CAP-7F emit the Linux evidence artifact
@@ -3627,6 +3629,7 @@ jobs:
             build/cap10c1/c1tests.log
             build/cap10c1/report-*.txt
             build/cap10c1/pipe-*-stderr.txt
+            build/cap10c1/pipe-*-stdout.txt
             build/cap10c1/run-*-stdout.txt
             build/cap10c1-gates.log
       - name: CAP-7F emit the macOS x64 evidence artifact
@@ -4359,6 +4362,7 @@ jobs:
             build/cap10c1/c1tests.log
             build/cap10c1/report-*.txt
             build/cap10c1/pipe-*-stderr.txt
+            build/cap10c1/pipe-*-stdout.txt
             build/cap10c1/run-*-stdout.txt
             build/cap10c1-gates.log
       - name: CAP-7F emit the macOS arm64 evidence artifact

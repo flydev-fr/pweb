@@ -206,8 +206,20 @@ Row 'pipeline_available' 'true'
 Row 'pipeline_suite' $(if ($suiteCode -eq 0) { 'PASS' } else { 'FAIL' })
 
 # --- 2. the two real pipelines ---------------------------------------------
+# A FAILING PIPELINE MUST PRINT ITS CHILD'S WORDS. The driver forwards a
+# stage's own lines to stdout and writes only its own to stderr, so a gate
+# that echoed stderr alone reported `compile: FAILED stage_exited 1` and
+# threw away the compiler's error - which is exactly what hosted run
+# 33670746536 did, on all three POSIX targets at once.
+function ShowPipe([string]$Tag, $R) {
+    Write-Host "----- $Tag driver -----"; Write-Host $R.Err
+    if ($R.Code -ne 0) {
+        Write-Host "----- $Tag stage transcript (exit $($R.Code)) -----"
+        Write-Host $R.Out
+    }
+}
 $react = RunPipe $reactProject 'react'
-Write-Host "----- react driver -----"; Write-Host $react.Err
+ShowPipe 'react' $react
 Require ($react.Code -eq 0) "react: the pipeline exited $($react.Code)"
 # the FIRST run's archive, hashed BEFORE anything re-runs the pipeline. ST5
 # below compares it with the second run's; hashing the same file twice after
@@ -218,7 +230,7 @@ if (Test-Path -LiteralPath $reactFirstPath) {
     $reactFirstPwb = Sha256Bytes $reactFirstPath
 }
 $pas2js = RunPipe $pas2jsProject 'pas2js'
-Write-Host "----- pas2js driver -----"; Write-Host $pas2js.Err
+ShowPipe 'pas2js' $pas2js
 Require ($pas2js.Code -eq 0) "pas2js: the pipeline exited $($pas2js.Code)"
 
 foreach ($pair in @(@('react', $react), @('pas2js', $pas2js))) {
@@ -308,6 +320,7 @@ Require $parity `
 $stale = Join-Path $stagedSdk 'STALE.d.ts'
 [System.IO.File]::WriteAllText($stale, "export declare const gone: 1;`n")
 $reactAgain = RunPipe $reactProject 'react2'
+ShowPipe 'react2' $reactAgain
 Require ($reactAgain.Code -eq 0) "ST2: the second react pipeline exited $($reactAgain.Code)"
 Row 'sdk_stage_stale_removed' (Bool (-not (Test-Path -LiteralPath $stale)))
 Require (-not (Test-Path -LiteralPath $stale)) `
