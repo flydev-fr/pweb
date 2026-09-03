@@ -721,8 +721,15 @@ begin
     Row('kill_pweb_outcome', PWebCliChildOutcomeText(r.Outcome));
     Row('kill_pweb_exit', RawUtf8(IntToStr(r.ExitCode)));
     Row('kill_descendants_remaining', RawUtf8(IntToStr(r.Drain.Remaining)));
+    // ALWAYS emitted, 0 when no kill was delivered: the aggregator requires
+    // every field it carries to be non-empty, so a row that is only
+    // sometimes written is a required-field failure on the run where the
+    // thing it measures did not happen - which is a confusing way to report
+    // a scenario that did not reach its kill
     if Acted <> 0 then
-      Row('kill_to_exit_ms', RawUtf8(IntToStr(Int64(GetTickCount64()) - Acted)));
+      Row('kill_to_exit_ms', RawUtf8(IntToStr(Int64(GetTickCount64()) - Acted)))
+    else
+      Row('kill_to_exit_ms', '0');
     Row('driver_ansi_seen', Bool(AnsiSeen));
     Row('driver_step', RawUtf8(IntToStr(Ord(Step))));
     lines := '';

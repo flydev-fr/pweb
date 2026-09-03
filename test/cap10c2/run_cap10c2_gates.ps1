@@ -211,7 +211,14 @@ if (($relExe.Count -eq 1) -and ($devExe.Count -eq 1)) {
     foreach ($banned in 'ws:', 'wss:', 'localhost', '127.0.0.1', 'http:') {
         if ($cspRelease.Contains($banned)) { $bad += $banned }
     }
-    Row 'csp_transport_terms' ($bad -join ',')
+    # `none`, never the empty string. The aggregator requires every field it
+    # carries to be NON-EMPTY - which is how a field a target silently failed
+    # to emit is told apart from one it measured - so a row whose ratified
+    # value is "nothing found" has to SAY nothing found, exactly as
+    # `network_stages_pas2js` says `none`. An empty value here failed the
+    # required-field check on all four targets at once.
+    Row 'csp_transport_terms' $(if ($bad.Count -eq 0) { 'none' }
+                                else { $bad -join ',' })
     Require ($bad.Count -eq 0) `
         "T1: the CSP carries $($bad -join ',')"
     # T5: the ONE origin, in both binaries

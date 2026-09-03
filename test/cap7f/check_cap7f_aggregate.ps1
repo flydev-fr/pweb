@@ -363,7 +363,10 @@ $absolutePins = @{
     # project is refused with nothing started and nothing written.
     dev_origin                     = 'pweb://app/'
     csp_identical                  = 'true'
-    csp_transport_terms            = ''
+    # `none` rather than '': every required field must be non-empty, so a row
+    # that means "nothing found" states it, and a target that silently failed
+    # to emit the row is still told apart from one that measured no term
+    csp_transport_terms            = 'none'
     release_dev_unit_absent        = 'true'
     dev_marker_in_release          = 'false'
     dev_marker_in_dev              = 'true'
@@ -511,7 +514,12 @@ $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
     # assembled layout stopped being runnable' are different defects with
     # different fixes.
     'pipeline_corpus', 'pipeline_suite', 'native_compile_react',
-    'native_compile_pas2js', 'layout_accepted_by_run')
+    'native_compile_pas2js', 'layout_accepted_by_run',
+    # CAP-10C2: the development verdict and the headless suite behind it. A
+    # verdict field belongs HERE and not merely in the absolute pins: the
+    # pins say what a value must be, and this says that a target which
+    # measured the thing and found it broken cannot report anything else.
+    'dev_corpus', 'dev_suite', 'dev_option_matrix')
 # fields that must agree, value-for-value, across all four targets
 # (capability_policy_digest is the CAP-8A structured policy-decision corpus and
 # navigation_policy_digest the CAP-8B one: four targets, one byte-identical

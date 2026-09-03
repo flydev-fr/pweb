@@ -1700,12 +1700,23 @@ $e.partial_layout_on_failure = 'true'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap10c1-partial-layout' 'partial_layout_on_failure'
 
-# (c51) the pipeline LINKED into the shipped CLI -> `dev`/`build` one step
-# from existing, which CAP-10C1 does not permit
+# (c51) the pipeline NOT linked into the shipped CLI.
+#
+# INVERTED BY CAP-10C2, exactly as the pin it guards was. CAP-10C1 froze the
+# lifecycle pipeline as PRIVATE and this leg perturbed `pipeline_units_linked`
+# to `true` to prove the aggregator refused a pipeline that had leaked into
+# the executable. `pweb dev` calls that pipeline, so the pin is now `true`
+# and the OLD mutation is no longer a mutation at all - the leg passed
+# vacuously and then failed, because the aggregator correctly exited 0 on a
+# fixture it had no reason to refuse.
+#
+# The claim is the same one, read the other way: the measurement must still
+# be MADE, and a build whose CLI does not carry the units it now needs is
+# refused. A shard that inverts a pin owns its negative leg too.
 Reset-Fixture
 $f = Join-Path $fx 'ev/macos-arm64/evidence.json'
 $e = Get-Content $f -Raw | ConvertFrom-Json
-$e.pipeline_units_linked = 'true'
+$e.pipeline_units_linked = 'false'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap10c1-private-surface' 'pipeline_units_linked'
 
