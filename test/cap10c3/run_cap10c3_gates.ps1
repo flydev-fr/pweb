@@ -59,6 +59,35 @@ function TargetName {
 $target = TargetName
 Row 'target' $target
 
+# THE PINNED Pas2JS IS PUT ON PATH BY THIS GATE, deliberately and visibly,
+# exactly as the CAP-10B2 and CAP-10C1 gates do it and for the same reason:
+# the loop resolves tools on PATH by ratified design, and every CI job
+# fetches the pinned compiler into deps/ without putting it there.
+#
+# MEASURED, on hosted run 33787727548: without this block the whole Pas2JS
+# driver run answered `tool_not_found frontend.pas2js` in under a second and
+# fifteen PD rows read false at once. It passed locally only because the
+# LOCAL invocation set PATH in its wrapper - a harness more generous than the
+# one under test, which is the CAP-10C2 "stale binary" lesson wearing
+# different clothes. The refusal below makes the absence say so at the top.
+$pinnedPas2js = @('deps/pas2js/bin', 'deps/pas2js-linux/bin',
+    'deps/pas2js-darwin/bin') |
+    ForEach-Object { Join-Path $repoRoot $_ } |
+    Where-Object { Test-Path -LiteralPath $_ }
+if ($pinnedPas2js.Count -gt 0) {
+    $env:PATH = (($pinnedPas2js -join [System.IO.Path]::PathSeparator) +
+        [System.IO.Path]::PathSeparator + $env:PATH)
+    Write-Host "[CAP-10C3] pinned pas2js on PATH: $($pinnedPas2js -join ', ')"
+}
+$pas2jsOnPath = $null -ne (Get-Command pas2js -ErrorAction SilentlyContinue)
+Row 'pas2js_on_path' $(if ($pas2jsOnPath) { 'true' } else { 'false' })
+if (-not $pas2jsOnPath) {
+    throw ('CAP-10C3 preconditions FAILED: pas2js is not on PATH and no ' +
+        'pinned copy exists under deps/ -- every PD leg would read false ' +
+        'for one reason, and a gate that reports fifteen failures for one ' +
+        'missing tool is a gate nobody can read')
+}
+
 # READ A FILE A LIVE PROCESS IS STILL WRITING - the CAP-10C2 lesson, and the
 # reason it is a function: `Start-Process -RedirectStandardError` holds the
 # file on Windows, and ReadAllText on it throws a sharing violation for as

@@ -1548,6 +1548,7 @@ $evidence = [ordered]@{
     rd1_dev_suite                       = "$($c3.rd1_dev_suite)"
     c3_pipeline_digest_unchanged        = "$($c3.c3_pipeline_digest_unchanged)"
     dev_pas2js_normalised               = "$($c3.dev_pas2js_normalised)"
+    pas2js_on_path                      = "$($c3.pas2js_on_path)"
     autoclose_stop_honoured         = "$($c1.autoclose_stop_honoured)"
     doctor_platform_webview         = "$($c1.doctor_platform_webview)"
     pipeline_corpus_lines           = "$($c1.pipeline_corpus_lines)"

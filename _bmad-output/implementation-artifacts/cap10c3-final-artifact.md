@@ -91,7 +91,25 @@ C1 pipeline and its stages, `pweb.cli.frontend`, both templates, schema 1,
 the seven interfaces, the adapters and every pin are unchanged — and each is
 re-measured rather than assumed.
 
-## Two defects found before the first push, and what each cost
+## One defect the first hosted run found, and two the local runs did
+
+**The gate never put the pinned `pas2js` on `PATH`, and the local harness
+hid it.** Hosted run 33787727548 failed the Linux leg with fifteen PD rows
+false at once; the driver's own forwarded lines said why in three:
+`pweb: toolchain: FAILED tool_not_found frontend.pas2js`. The loop resolves
+tools on PATH by ratified design and every CI job fetches the pinned compiler
+into `deps/` *without* putting it there — which is why `test/cap10b2` and
+`test/cap10c1` each carry an explicit block that prepends it. The CAP-10C3
+gate had none. It passed locally on every run because the **local invocation**
+set PATH in its wrapper: a harness more generous than the one under test,
+which is the CAP-10C2 stale-binary lesson wearing different clothes. The fix
+is the sibling gates' own block, a refusal at the top when no `pas2js` can be
+found at all, and a `pas2js_on_path` row pinned true on four targets with its
+own negative self-test leg — so the next occurrence says one thing instead of
+fifteen. The gate was then re-run locally with **no PATH help at all**, which
+is the only run that proves the block works.
+
+
 
 **A source that does not compile was rebuilt forever.** The first working
 loop answered a broken `const` by recompiling the whole frontend every few

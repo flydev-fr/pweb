@@ -281,6 +281,7 @@ $required = @(
     'dev_pas2js_listener_members_seen', 'dev_pas2js_listener_members_max',
     'rd1_dev_digest_unchanged', 'rd1_dev_suite',
     'c3_pipeline_digest_unchanged', 'dev_pas2js_normalised',
+    'pas2js_on_path',
     'release_layout', 'no_listener', 'app_pwb_react_sha256',
     'logical_inventory_sha256_react', 'github_sha', 'github_run_id', 'waivers'
 )
@@ -515,6 +516,11 @@ $absolutePins = @{
     # 1's archive is the CAP-10C1 pipeline's, byte for byte; the input-set
     # refusals happen before anything is started or written; and the CAP-10C
     # ledger has no orphan.
+    # the pinned compiler was actually on PATH when the loop ran. MEASURED
+    # necessary: without it every PD row reads false for one reason, and a
+    # matrix of fifteen failures for one missing tool is a matrix nobody can
+    # read
+    pas2js_on_path                 = 'true'
     dev_pas2js_available           = 'true'
     change_detection_model         = 'cli_content_fingerprint_poll'
     # the WHOLE advertised set for `dev`, in one canonical bytewise order, so

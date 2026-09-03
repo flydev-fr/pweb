@@ -2112,6 +2112,15 @@ $e.pd9_cause = 'other'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap10c3-input-link-cause' 'pd9_cause'
 
+# (C3-20) the pinned compiler not on PATH when the loop ran - the reason
+# every other PD row would read false, named once instead of fifteen times
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.pas2js_on_path = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c3-pas2js-path' 'pas2js_on_path'
+
 # (C3-19) the advertised frontend set losing a kind or growing one
 Reset-Fixture
 $f = Join-Path $fx 'ev/macos-x64/evidence.json'
@@ -2180,9 +2189,9 @@ Remove-Item -Force -ErrorAction SilentlyContinue $matrix
 # a floor, so a leg that silently stops running is caught. It is deliberately
 # NOT an equality: adding a refusal branch is normal and should not require
 # editing this line, while LOSING one is the failure worth naming
-if ($script:AggRefusals -lt 179) {
+if ($script:AggRefusals -lt 180) {
     throw ("selftest: only $($script:AggRefusals) aggregator refusals fired, " +
-        'expected at least 179 -- a negative leg stopped running')
+        'expected at least 180 -- a negative leg stopped running')
 }
 if ($script:SweepRefusals -lt 2) {
     throw ("selftest: only $($script:SweepRefusals) divergence refusals fired, " +

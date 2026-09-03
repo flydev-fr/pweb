@@ -1460,7 +1460,7 @@ for f in dev_pas2js_corpus dev_pas2js_suite dev_pas2js_digest \
          dev_pas2js_app_pwb_parity dev_pas2js_listener_sampler_scope \
          dev_pas2js_listener_members_seen dev_pas2js_listener_members_max \
          rd1_dev_digest_unchanged rd1_dev_suite c3_pipeline_digest_unchanged \
-         dev_pas2js_normalised
+         dev_pas2js_normalised pas2js_on_path
 do
     # every CAP-10C3 row is a STRING in its record, so one loop reads them
     # all rather than eighty near-identical assignments nobody can diff
@@ -1965,6 +1965,7 @@ cat > "${work}/evidence.json" <<EOF
   "rd1_dev_suite": "${rd1_dev_suite}",
   "c3_pipeline_digest_unchanged": "${c3_pipeline_digest_unchanged}",
   "dev_pas2js_normalised": "${dev_pas2js_normalised}",
+  "pas2js_on_path": "${pas2js_on_path}",
   "autoclose_stop_honoured": "${autoclose_stop_honoured}",
   "doctor_platform_webview": "${doctor_platform_webview}",
   "pipeline_corpus_lines": "${pipeline_corpus_lines}",
