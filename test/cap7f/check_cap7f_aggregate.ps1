@@ -224,11 +224,63 @@ $required = @(
     'dev6_no_partial_generation', 'dev6_interrupt_delivered',
     'dev6_interrupt_to_exit_ms', 'dev9_exit', 'dev9_refused',
     'dev9_never_loaded_beside_bundle', 'dev10_release_unchanged',
-    'dev11_exit', 'dev11_cause', 'dev11_nothing_written', 'dev13_no_ansi',
+    # CAP-10C3 INVERTED this rather than removing it: CAP-10C2 measured that
+    # `pweb dev` refused a pas2js project, and CAP-10C3 implements that loop,
+    # so the same leg now measures that both frontend kinds are advertised.
+    # The refusal PATH survives for a future kind and is pinned in source by
+    # test/cap10c3 and exercised as a rule by its headless suite
+    'dev11_pas2js_supported', 'dev13_no_ansi',
     'dev13_no_absolute_path', 'dev13_generation_lines',
     'dev13_exact_one_line_per_generation', 'dev14_install_record_written',
     'dev14_second_run_skipped_install', 'dev_sentinel_in_template',
     'network_stages_dev', 'c1_pipeline_digest_unchanged',
+    # CAP-10C3: the PAS2JS development loop, and the CAP-10C closure. The
+    # decision corpus (digested), the real `pweb dev` on the generated Pas2JS
+    # project, the two Pas2JS host binaries' CSP bytes, the input-set
+    # refusals, the archive parity with the CAP-10C1 pipeline, and the
+    # ledger disposition that makes "the phase is closed" a measurement.
+    'dev_pas2js_corpus', 'dev_pas2js_suite', 'dev_pas2js_digest',
+    'dev_pas2js_corpus_lines', 'dev_pas2js_available',
+    'change_detection_model', 'advertised_ui_dev',
+    'dev_pas2js_option_matrix', 'build_still_unknown_c3',
+    'advertised_commands_c3', 'dev_pas2js_csp_identical',
+    'dev_pas2js_release_dev_free', 'dev_pas2js_transport_hits',
+    'dev_pas2js_watch_api_hits', 'dev_region_in_pas2js_template',
+    'cap10c_ledger_entries', 'cap10c_ledger_orphans',
+    'cap10c_closure_recorded',
+    'pd9_link_planted', 'pd9_exit', 'pd9_cause', 'pd9_nothing_written',
+    'pd10_exit', 'pd10_cause', 'pd10_nothing_written',
+    'pd1_generation_ready', 'pd1_generation_loaded', 'pd1_rpc_and_secure',
+    'pd2_generation_ready', 'pd2_host_pid_unchanged',
+    'pd3_generation_ready', 'pd3_styles_applied', 'pd4_generation_ready',
+    'pd5_broken_published', 'pd5_error_forwarded', 'pd5_recovered',
+    'pd5_compile_failures',
+    'pd6_burst_edits', 'pd6_monotonic', 'pd6_all_generations_loaded',
+    'pd6_final_value', 'pd6_final_content_correct',
+    'pd7_discarded', 'pd7_moving_writes', 'pd7_inconsistent_discarded',
+    'pd7_recovered', 'pd8_outside_published',
+    'pd11_stop_requested', 'pd11_pweb_outcome', 'pd11_pweb_exit',
+    'pd11_descendants_remaining', 'pd11_interrupt_delivered',
+    'pd11_interrupt_to_exit_ms', 'pd11_no_partial_generation',
+    'pd12_set_was_up', 'pd12_kill_delivered', 'pd12_pweb_outcome',
+    'pd12_pweb_exit', 'pd12_descendants_remaining',
+    'pd12_kill_to_exit_ms', 'pd12_no_partial_generation',
+    'pd13_release_seeded', 'pd13_release_unchanged',
+    'pd15_generation_lines', 'pd15_exact_one_line_per_generation',
+    'pd15_no_ansi', 'pd15_no_absolute_path',
+    'dev_pas2js_error_keeps_previous_generation',
+    'dev_pas2js_inconsistent_generation_discarded',
+    'dev_pas2js_partial_generation_published',
+    'dev_pas2js_generations_observed', 'dev_pas2js_rpc_value',
+    'dev_pas2js_rpc_after_switch', 'dev_pas2js_interrupt_clean',
+    'dev_pas2js_descendants_after_stop', 'dev_pas2js_network_stages',
+    'dev_pas2js_network_calls', 'dev_pas2js_watched_input_count',
+    'dev_pas2js_app_dir_names', 'dev_pas2js_generation_holds_only_archive',
+    'dev_pas2js_loose_assets_used', 'dev_pas2js_gen1_sha256',
+    'dev_pas2js_app_pwb_parity', 'dev_pas2js_listener_sampler_scope',
+    'dev_pas2js_listener_members_seen', 'dev_pas2js_listener_members_max',
+    'rd1_dev_digest_unchanged', 'rd1_dev_suite',
+    'c3_pipeline_digest_unchanged', 'dev_pas2js_normalised',
     'release_layout', 'no_listener', 'app_pwb_react_sha256',
     'logical_inventory_sha256_react', 'github_sha', 'github_run_id', 'waivers'
 )
@@ -441,9 +493,9 @@ $absolutePins = @{
     dev9_refused                   = 'true'
     dev9_never_loaded_beside_bundle = 'true'
     dev10_release_unchanged        = 'true'
-    dev11_exit                     = '3'
-    dev11_cause                    = 'dev_ui_unsupported'
-    dev11_nothing_written          = 'true'
+    # INVERTED AT CAP-10C3, not deleted: was exit 3 / dev_ui_unsupported /
+    # nothing written, and is now "both frontend kinds are implemented"
+    dev11_pas2js_supported         = 'true'
     dev13_no_ansi                  = 'true'
     dev13_no_absolute_path         = 'true'
     dev13_exact_one_line_per_generation = 'true'
@@ -454,6 +506,101 @@ $absolutePins = @{
     c0_supervision_digest_unchanged = 'true'
     cli_digest_unchanged            = 'true'
     doctor_schema_digest_unchanged  = 'true'
+    # CAP-10C3: the facts four targets could agree on and still be wrong
+    # about. `pweb dev` implements BOTH ratified frontend kinds; detection is
+    # a bounded content fingerprint this CLI walks and NOT a platform
+    # watcher; a Pas2JS session reaches the network at no stage and opens no
+    # listener; a broken source keeps the previous generation live and is
+    # answered once; a generation whose inputs moved is discarded; generation
+    # 1's archive is the CAP-10C1 pipeline's, byte for byte; the input-set
+    # refusals happen before anything is started or written; and the CAP-10C
+    # ledger has no orphan.
+    dev_pas2js_available           = 'true'
+    change_detection_model         = 'cli_content_fingerprint_poll'
+    # the WHOLE advertised set for `dev`, in one canonical bytewise order, so
+    # a build that grew a third kind or lost one is refused here rather than
+    # merely disagreeing with its neighbours
+    advertised_ui_dev              = 'pas2js,react'
+    advertised_commands_c3         = 'create,doctor,run,dev'
+    build_still_unknown_c3         = 'true'
+    dev_pas2js_option_matrix       = 'PASS'
+    dev_pas2js_csp_identical       = 'true'
+    dev_pas2js_release_dev_free    = 'true'
+    dev_pas2js_transport_hits      = '0'
+    # POLLING WAS RATIFIED. A target that grew ReadDirectoryChangesW,
+    # inotify or FSEvents would be running a different detector
+    dev_pas2js_watch_api_hits      = '0'
+    dev_region_in_pas2js_template  = 'true'
+    # the ledger is CLOSED: 54 CAP-10C0/C1/C2 entries, every one disposed of
+    cap10c_ledger_entries          = '54'
+    cap10c_ledger_orphans          = '0'
+    cap10c_closure_recorded        = 'true'
+    # the input set refuses BEFORE the toolchain, and writes nothing
+    pd9_link_planted               = 'true'
+    pd9_exit                       = '3'
+    pd9_cause                      = 'dev_input_link'
+    pd9_nothing_written            = 'true'
+    pd10_exit                      = '3'
+    pd10_cause                     = 'dev_input_bound'
+    pd10_nothing_written           = 'true'
+    pd1_generation_ready           = 'true'
+    pd1_generation_loaded          = 'true'
+    pd1_rpc_and_secure             = 'true'
+    pd2_generation_ready           = 'true'
+    pd2_host_pid_unchanged         = 'true'
+    pd3_generation_ready           = 'true'
+    pd3_styles_applied             = 'true'
+    pd4_generation_ready           = 'true'
+    pd5_broken_published           = 'false'
+    pd5_error_forwarded            = 'true'
+    pd5_recovered                  = 'true'
+    pd6_burst_edits                = '5'
+    pd6_monotonic                  = 'true'
+    pd6_all_generations_loaded     = 'true'
+    # `value` is 20 + SUM_B and the burst's last edit sets SUM_B = 27, so 47
+    # is the only report that says the LAST edit is the one still standing
+    pd6_final_value                = '47'
+    pd6_final_content_correct      = 'true'
+    pd7_inconsistent_discarded     = 'true'
+    pd7_recovered                  = 'true'
+    pd8_outside_published          = 'false'
+    pd11_stop_requested            = 'true'
+    pd11_pweb_outcome              = 'exited'
+    pd11_pweb_exit                 = '0'
+    pd11_descendants_remaining     = '0'
+    pd11_interrupt_delivered       = 'true'
+    pd11_no_partial_generation     = 'true'
+    pd12_set_was_up                = 'true'
+    pd12_kill_delivered            = 'true'
+    pd12_pweb_outcome              = 'exited'
+    pd12_pweb_exit                 = '5'
+    pd12_descendants_remaining     = '0'
+    pd12_no_partial_generation     = 'true'
+    pd13_release_seeded            = 'true'
+    pd13_release_unchanged         = 'true'
+    pd15_exact_one_line_per_generation = 'true'
+    pd15_no_ansi                   = 'true'
+    pd15_no_absolute_path          = 'true'
+    dev_pas2js_error_keeps_previous_generation   = 'true'
+    dev_pas2js_inconsistent_generation_discarded = 'true'
+    dev_pas2js_partial_generation_published      = 'false'
+    # the template's own arithmetic on generation 1, and the LAST edit's
+    # after the burst: two different claims, and both are pinned
+    dev_pas2js_rpc_value           = '42'
+    dev_pas2js_rpc_after_switch    = '47'
+    dev_pas2js_interrupt_clean     = 'true'
+    dev_pas2js_descendants_after_stop = '0'
+    dev_pas2js_network_stages      = 'none'
+    dev_pas2js_network_calls       = '0'
+    dev_pas2js_generation_holds_only_archive = 'true'
+    dev_pas2js_loose_assets_used   = 'false'
+    dev_pas2js_listener_members_max = '0'
+    # THE CLAIM THIS SHARD EXISTS TO MAKE about the archive: a development
+    # generation is the pipeline's release archive, for the same sources
+    dev_pas2js_app_pwb_parity      = 'true'
+    # and the React loop did not move while the Pas2JS one was added
+    rd1_dev_digest_unchanged       = 'true'
+    c3_pipeline_digest_unchanged   = 'true'
 }
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
 $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
@@ -519,7 +666,14 @@ $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
     # verdict field belongs HERE and not merely in the absolute pins: the
     # pins say what a value must be, and this says that a target which
     # measured the thing and found it broken cannot report anything else.
-    'dev_corpus', 'dev_suite', 'dev_option_matrix')
+    'dev_corpus', 'dev_suite', 'dev_option_matrix',
+    # CAP-10C3: the Pas2JS development verdict, its headless suite, its
+    # option matrix, and the React suite READ BACK - because "the Pas2JS
+    # loop works" and "the React loop still works" are two different claims
+    # and a shard that broke the second while shipping the first must be
+    # refused by name
+    'dev_pas2js_corpus', 'dev_pas2js_suite', 'dev_pas2js_option_matrix',
+    'rd1_dev_suite')
 # fields that must agree, value-for-value, across all four targets
 # (capability_policy_digest is the CAP-8A structured policy-decision corpus and
 # navigation_policy_digest the CAP-8B one: four targets, one byte-identical
@@ -699,7 +853,26 @@ $equalityFields = @(
     # OS), dev_interrupt_mechanism (a console event on Windows, a signal on
     # POSIX), dev5_generations_after_burst (what the debounce coalesced,
     # which is a timing observation), and every *_ms.
-    'dev_digest', 'dev_corpus_lines'
+    'dev_digest', 'dev_corpus_lines',
+    # CAP-10C3: the Pas2JS loop's own DECISION corpus - the four-target
+    # pas2js generation command table, the supported-UI predicate and the
+    # refusal it keeps alive, the change-detection model per UI, the input
+    # set and its bounds, and the content-fingerprint rules. Pure functions
+    # and fixture walks, computed on whichever target is running, so a
+    # divergence here is a RULE that moved and never a host that differs.
+    #
+    # Deliberately ABSENT: dev_pas2js_gen1_sha256 (archive BYTES are a
+    # toolchain and OS-family property - the same CAP-6/CAP-7L measurement
+    # that keeps c1_app_pwb_*_sha256 out; the byte claim is made where it is
+    # real, against the pipeline's archive on the SAME job, by
+    # dev_pas2js_app_pwb_parity), dev_pas2js_app_dir_names (the engine
+    # library is named differently on each OS),
+    # dev_pas2js_listener_sampler_scope and _listener_members_seen (a
+    # per-platform mechanism and a host count), dev_pas2js_watched_input_count
+    # and pd15_generation_lines (observations), pd7_discarded /
+    # pd7_moving_writes / pd5_compile_failures (timing-shaped counts), and
+    # every *_ms.
+    'dev_pas2js_digest', 'dev_pas2js_corpus_lines'
 )
 # the CAP-9C2 semantic gate names, carried in ONE place across the two
 # emitters and this aggregator (see test/cap7f/emit_evidence.ps1)

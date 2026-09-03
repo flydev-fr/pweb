@@ -2101,6 +2101,55 @@ jobs:
             build/cap10c2/dev14-stderr.txt
             build/cap10c2/dev9-stderr.txt
             build/cap10c2-gates.log
+      - name: CAP-10C3 build the pas2js development suite, the driver and both host binaries
+        shell: pwsh
+        timeout-minutes: 25
+        run: |
+          pwsh -NoProfile -File test/cap10c3/build_cap10c3.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10C3 build FAILED' }
+      - name: CAP-10C3 contract cross-checks (bounds, detector linkage, no watch API, pas2js CSP + dev-free release)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10c3/check_cap10c3_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10C3 contract cross-checks FAILED' }
+      - name: CAP-10C3 the CAP-10C ledger disposition (CL2, CL3)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10c3/check_cap10c_ledger.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10C ledger disposition FAILED' }
+
+      - name: CAP-10C3 pas2js development-loop gates (PD1-PD15, RD1, T1-T5, CL1-CL3) + evidence
+        shell: bash
+        timeout-minutes: 70
+        run: |
+          pwsh -NoProfile -File test/cap10c3/run_cap10c3_gates.ps1 2>&1 |
+            tee build/cap10c3-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10C3 upload the pas2js development corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10c3-devpas2js-windows
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10c3/cli-windows-x86_64.json
+            build/cap10c3/contracts.json
+            build/cap10c3/ledger.json
+            build/cap10c3/devpas2js-corpus.txt
+            build/cap10c3/devpas2js-observed.txt
+            build/cap10c3/c3tests.log
+            build/cap10c3/p2jdrv-report.txt
+            build/cap10c3/p2jdrv-report.txt.lines
+            build/cap10c3/p2jdrv-stdout.txt
+            build/cap10c3/p2jdrv-stderr.txt
+            build/cap10c3/p2jdrv-killhost.txt
+            build/cap10c3/p2jdrv-killhost.txt.lines
+            build/cap10c3/p2j-live-stderr.txt
+            build/cap10c3/pipe-stdout.txt
+            build/cap10c3/pipe-stderr.txt
+            build/cap10c3-gates.log
       - name: CAP-7F emit the Windows evidence artifact
         shell: pwsh
         timeout-minutes: 10
@@ -2913,6 +2962,53 @@ jobs:
             build/cap10c2/dev14-stderr.txt
             build/cap10c2/dev9-stderr.txt
             build/cap10c2-gates.log
+      - name: CAP-10C3 build the pas2js development suite, the driver and both host binaries
+        shell: bash
+        timeout-minutes: 25
+        run: test/cap10c3/build_cap10c3.sh
+      - name: CAP-10C3 contract cross-checks (bounds, detector linkage, no watch API, pas2js CSP + dev-free release)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10c3/check_cap10c3_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10C3 contract cross-checks FAILED' }
+      - name: CAP-10C3 the CAP-10C ledger disposition (CL2, CL3)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10c3/check_cap10c_ledger.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10C ledger disposition FAILED' }
+
+      - name: CAP-10C3 pas2js development-loop gates (PD1-PD15, RD1, T1-T5, CL1-CL3) + evidence
+        shell: bash
+        timeout-minutes: 70
+        run: |
+          xvfb-run -a pwsh -NoProfile -File test/cap10c3/run_cap10c3_gates.ps1 2>&1 |
+            tee build/cap10c3-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10C3 upload the pas2js development corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10c3-devpas2js-linux
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10c3/cli-linux-x86_64.json
+            build/cap10c3/contracts.json
+            build/cap10c3/ledger.json
+            build/cap10c3/devpas2js-corpus.txt
+            build/cap10c3/devpas2js-observed.txt
+            build/cap10c3/c3tests.log
+            build/cap10c3/p2jdrv-report.txt
+            build/cap10c3/p2jdrv-report.txt.lines
+            build/cap10c3/p2jdrv-stdout.txt
+            build/cap10c3/p2jdrv-stderr.txt
+            build/cap10c3/p2jdrv-killhost.txt
+            build/cap10c3/p2jdrv-killhost.txt.lines
+            build/cap10c3/p2j-live-stderr.txt
+            build/cap10c3/pipe-stdout.txt
+            build/cap10c3/pipe-stderr.txt
+            build/cap10c3-gates.log
       - name: CAP-7F emit the Linux evidence artifact
         shell: bash
         timeout-minutes: 10
@@ -3760,6 +3856,53 @@ jobs:
             build/cap10c2/dev14-stderr.txt
             build/cap10c2/dev9-stderr.txt
             build/cap10c2-gates.log
+      - name: CAP-10C3 build the pas2js development suite, the driver and both host binaries
+        shell: bash
+        timeout-minutes: 25
+        run: test/cap10c3/build_cap10c3.sh
+      - name: CAP-10C3 contract cross-checks (bounds, detector linkage, no watch API, pas2js CSP + dev-free release)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10c3/check_cap10c3_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10C3 contract cross-checks FAILED' }
+      - name: CAP-10C3 the CAP-10C ledger disposition (CL2, CL3)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10c3/check_cap10c_ledger.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10C ledger disposition FAILED' }
+
+      - name: CAP-10C3 pas2js development-loop gates (PD1-PD15, RD1, T1-T5, CL1-CL3) + evidence
+        shell: bash
+        timeout-minutes: 70
+        run: |
+          pwsh -NoProfile -File test/cap10c3/run_cap10c3_gates.ps1 2>&1 |
+            tee build/cap10c3-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10C3 upload the pas2js development corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10c3-devpas2js-macos-x64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10c3/cli-macos-x86_64.json
+            build/cap10c3/contracts.json
+            build/cap10c3/ledger.json
+            build/cap10c3/devpas2js-corpus.txt
+            build/cap10c3/devpas2js-observed.txt
+            build/cap10c3/c3tests.log
+            build/cap10c3/p2jdrv-report.txt
+            build/cap10c3/p2jdrv-report.txt.lines
+            build/cap10c3/p2jdrv-stdout.txt
+            build/cap10c3/p2jdrv-stderr.txt
+            build/cap10c3/p2jdrv-killhost.txt
+            build/cap10c3/p2jdrv-killhost.txt.lines
+            build/cap10c3/p2j-live-stderr.txt
+            build/cap10c3/pipe-stdout.txt
+            build/cap10c3/pipe-stderr.txt
+            build/cap10c3-gates.log
       - name: CAP-7F emit the macOS x64 evidence artifact
         shell: bash
         timeout-minutes: 10
@@ -4535,6 +4678,53 @@ jobs:
             build/cap10c2/dev14-stderr.txt
             build/cap10c2/dev9-stderr.txt
             build/cap10c2-gates.log
+      - name: CAP-10C3 build the pas2js development suite, the driver and both host binaries
+        shell: bash
+        timeout-minutes: 25
+        run: test/cap10c3/build_cap10c3.sh
+      - name: CAP-10C3 contract cross-checks (bounds, detector linkage, no watch API, pas2js CSP + dev-free release)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10c3/check_cap10c3_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10C3 contract cross-checks FAILED' }
+      - name: CAP-10C3 the CAP-10C ledger disposition (CL2, CL3)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10c3/check_cap10c_ledger.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10C ledger disposition FAILED' }
+
+      - name: CAP-10C3 pas2js development-loop gates (PD1-PD15, RD1, T1-T5, CL1-CL3) + evidence
+        shell: bash
+        timeout-minutes: 70
+        run: |
+          pwsh -NoProfile -File test/cap10c3/run_cap10c3_gates.ps1 2>&1 |
+            tee build/cap10c3-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10C3 upload the pas2js development corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10c3-devpas2js-macos-arm64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10c3/cli-macos-arm64.json
+            build/cap10c3/contracts.json
+            build/cap10c3/ledger.json
+            build/cap10c3/devpas2js-corpus.txt
+            build/cap10c3/devpas2js-observed.txt
+            build/cap10c3/c3tests.log
+            build/cap10c3/p2jdrv-report.txt
+            build/cap10c3/p2jdrv-report.txt.lines
+            build/cap10c3/p2jdrv-stdout.txt
+            build/cap10c3/p2jdrv-stderr.txt
+            build/cap10c3/p2jdrv-killhost.txt
+            build/cap10c3/p2jdrv-killhost.txt.lines
+            build/cap10c3/p2j-live-stderr.txt
+            build/cap10c3/pipe-stdout.txt
+            build/cap10c3/pipe-stderr.txt
+            build/cap10c3-gates.log
       - name: CAP-7F emit the macOS arm64 evidence artifact
         shell: bash
         timeout-minutes: 10

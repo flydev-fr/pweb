@@ -254,6 +254,46 @@ const
   // string to read
   PWEB_CLI_DEV_SMALL_FILE_MAX = 4096;
 
+  { CAP-10C3 - the Pas2JS change detector's bounds. Pas2JS has no watch mode
+    and no writeBundle, so the CLI owns detection: one bounded walk of the
+    ratified input set, fingerprinted by CONTENT. Every value below is a
+    LIMIT on a walk this loop repeats forever, never a tuning knob, and
+    test/cap10c3/check_cap10c3_contracts.ps1 cross-checks each against
+    docs/dev-contract.md exactly as the C0, C1 and C2 bounds are. }
+
+  /// how often the CLI walks the Pas2JS input set
+  // - the Pas2JS twin of PWEB_CLI_DEV_SENTINEL_POLL_MS, and deliberately
+  // slower: reading one small sentinel is not the same cost as digesting a
+  // source tree, and 250 ms is already far below the time one generation
+  // takes to compile, assemble and pack
+  PWEB_CLI_DEV_POLL_MS = 250;
+
+  /// how many files the input set may hold before the loop refuses it
+  // - a Pas2JS frontend past this is a fact to report, not a tree to hash
+  // four times a second. Refused BEFORE the first compile
+  PWEB_CLI_DEV_MAX_INPUT_FILES = 512;
+
+  /// how deep the input-set walk may go
+  // - its own bound rather than the C1 tree bound: the pipeline's walk runs
+  // once per stage and this one runs forever
+  PWEB_CLI_DEV_MAX_INPUT_DEPTH = 16;
+
+  /// ceiling on ONE file of the input set, in bytes
+  // - the C1 PWEB_CLI_PIPE_MAX_FILE_BYTES is 256 MB, which is right for a
+  // mutation gate that runs once and wrong for a poll: a source file past
+  // this is refused rather than re-read every quarter second
+  PWEB_CLI_DEV_INPUT_FILE_MAX = 4194304;
+
+  /// ceiling on the LOGICAL path of one input, in bytes
+  PWEB_CLI_DEV_INPUT_PATH_MAX = 512;
+
+  /// the two frontend-root files a Pas2JS frontend contributes beside its
+  /// sources, and its compiler configuration
+  // - NOT restated here: they are PWEB_FE_INDEX, PWEB_FE_APP_CSS,
+  // PWEB_FE_PAS2JS_CFG and PWEB_FE_SRC in pweb.cli.frontend, which is where
+  // the C1 plan already names them. A second spelling of an input set is a
+  // second input set
+
 implementation
 
 end.

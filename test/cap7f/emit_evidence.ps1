@@ -1048,6 +1048,36 @@ if ("$($c2.dev_corpus)" -ceq 'PASS') {
         }
     }
 }
+# --- CAP-10C3: the Pas2JS development loop, and the CAP-10C closure ---------
+# build/cap10c3/cli-<target>.json is ONE record: the headless suite's decision
+# corpus (digested), the REAL `pweb dev` on the real generated PAS2JS project
+# driven through pwebp2jdrv, the two Pas2JS host binaries' CSP bytes, the
+# input-set refusals, the archive parity with the CAP-10C1 pipeline, and the
+# ledger disposition that makes "CAP-10C is closed" a measurement.
+$c3File = Join-Path $repoRoot 'build/cap10c3/cli-windows-x86_64.json'
+if (-not (Test-Path $c3File)) {
+    throw '[CAP-7F] cap10c3/cli-windows-x86_64.json missing -- the CAP-10C3 gates have not run in this workspace'
+}
+$c3 = Get-Content $c3File -Raw | ConvertFrom-Json
+if ("$($c3.dev_pas2js_corpus)" -notin @('PASS', 'FAIL')) {
+    throw "[CAP-7F] the CAP-10C3 record carries an unexpected verdict: $($c3.dev_pas2js_corpus)"
+}
+if ("$($c3.dev_pas2js_corpus)" -ceq 'PASS') {
+    if ("$($c3.dev_pas2js_digest)" -eq '') {
+        throw '[CAP-7F] the CAP-10C3 record records PASS with an empty dev_pas2js_digest'
+    }
+    foreach ($pair in @(@('dev_pas2js_csp_identical', 'true'),
+                        @('dev_pas2js_app_pwb_parity', 'true'),
+                        @('pd2_host_pid_unchanged', 'true'),
+                        @('pd5_broken_published', 'false'),
+                        @('pd7_inconsistent_discarded', 'true'),
+                        @('pd11_descendants_remaining', '0'),
+                        @('cap10c_ledger_orphans', '0'))) {
+        if ("$($c3.($pair[0]))" -ne $pair[1]) {
+            throw "[CAP-7F] the CAP-10C3 record records PASS with $($pair[0])=$($c3.($pair[0]))"
+        }
+    }
+}
 if ("$($c1.pipeline_corpus)" -notin @('PASS', 'FAIL')) {
     throw "[CAP-7F] the CAP-10C1 record carries an unexpected verdict: $($c1.pipeline_corpus)"
 }
@@ -1418,9 +1448,7 @@ $evidence = [ordered]@{
     dev9_refused                        = "$($c2.dev9_refused)"
     dev9_never_loaded_beside_bundle     = "$($c2.dev9_never_loaded_beside_bundle)"
     dev10_release_unchanged             = "$($c2.dev10_release_unchanged)"
-    dev11_exit                          = "$($c2.dev11_exit)"
-    dev11_cause                         = "$($c2.dev11_cause)"
-    dev11_nothing_written               = "$($c2.dev11_nothing_written)"
+    dev11_pas2js_supported              = "$($c2.dev11_pas2js_supported)"
     dev13_no_ansi                       = "$($c2.dev13_no_ansi)"
     dev13_no_absolute_path              = "$($c2.dev13_no_absolute_path)"
     dev13_generation_lines              = "$($c2.dev13_generation_lines)"
@@ -1430,6 +1458,96 @@ $evidence = [ordered]@{
     dev_sentinel_in_template            = "$($c2.dev_sentinel_in_template)"
     network_stages_dev                  = "$($c2.network_stages_dev)"
     c1_pipeline_digest_unchanged        = "$($c2.c1_pipeline_digest_unchanged)"
+    dev_pas2js_corpus                   = "$($c3.dev_pas2js_corpus)"
+    dev_pas2js_suite                    = "$($c3.dev_pas2js_suite)"
+    dev_pas2js_digest                   = "$($c3.dev_pas2js_digest)"
+    dev_pas2js_corpus_lines             = "$($c3.dev_pas2js_corpus_lines)"
+    dev_pas2js_available                = "$($c3.dev_pas2js_available)"
+    change_detection_model              = "$($c3.change_detection_model)"
+    advertised_ui_dev                   = "$($c3.advertised_ui_dev)"
+    dev_pas2js_option_matrix            = "$($c3.dev_pas2js_option_matrix)"
+    build_still_unknown_c3              = "$($c3.build_still_unknown_c3)"
+    advertised_commands_c3              = "$($c3.advertised_commands_c3)"
+    dev_pas2js_csp_identical            = "$($c3.dev_pas2js_csp_identical)"
+    dev_pas2js_release_dev_free         = "$($c3.dev_pas2js_release_dev_free)"
+    dev_pas2js_transport_hits           = "$($c3.dev_pas2js_transport_hits)"
+    dev_pas2js_watch_api_hits           = "$($c3.dev_pas2js_watch_api_hits)"
+    dev_region_in_pas2js_template       = "$($c3.dev_region_in_pas2js_template)"
+    cap10c_ledger_entries               = "$($c3.cap10c_ledger_entries)"
+    cap10c_ledger_orphans               = "$($c3.cap10c_ledger_orphans)"
+    cap10c_closure_recorded             = "$($c3.cap10c_closure_recorded)"
+    pd9_link_planted                    = "$($c3.pd9_link_planted)"
+    pd9_exit                            = "$($c3.pd9_exit)"
+    pd9_cause                           = "$($c3.pd9_cause)"
+    pd9_nothing_written                 = "$($c3.pd9_nothing_written)"
+    pd10_exit                           = "$($c3.pd10_exit)"
+    pd10_cause                          = "$($c3.pd10_cause)"
+    pd10_nothing_written                = "$($c3.pd10_nothing_written)"
+    pd1_generation_ready                = "$($c3.pd1_generation_ready)"
+    pd1_generation_loaded               = "$($c3.pd1_generation_loaded)"
+    pd1_rpc_and_secure                  = "$($c3.pd1_rpc_and_secure)"
+    pd2_generation_ready                = "$($c3.pd2_generation_ready)"
+    pd2_host_pid_unchanged              = "$($c3.pd2_host_pid_unchanged)"
+    pd3_generation_ready                = "$($c3.pd3_generation_ready)"
+    pd3_styles_applied                  = "$($c3.pd3_styles_applied)"
+    pd4_generation_ready                = "$($c3.pd4_generation_ready)"
+    pd5_broken_published                = "$($c3.pd5_broken_published)"
+    pd5_error_forwarded                 = "$($c3.pd5_error_forwarded)"
+    pd5_recovered                       = "$($c3.pd5_recovered)"
+    pd5_compile_failures                = "$($c3.pd5_compile_failures)"
+    pd6_burst_edits                     = "$($c3.pd6_burst_edits)"
+    pd6_monotonic                       = "$($c3.pd6_monotonic)"
+    pd6_all_generations_loaded          = "$($c3.pd6_all_generations_loaded)"
+    pd6_final_value                     = "$($c3.pd6_final_value)"
+    pd6_final_content_correct           = "$($c3.pd6_final_content_correct)"
+    pd7_discarded                       = "$($c3.pd7_discarded)"
+    pd7_moving_writes                   = "$($c3.pd7_moving_writes)"
+    pd7_inconsistent_discarded          = "$($c3.pd7_inconsistent_discarded)"
+    pd7_recovered                       = "$($c3.pd7_recovered)"
+    pd8_outside_published               = "$($c3.pd8_outside_published)"
+    pd11_stop_requested                 = "$($c3.pd11_stop_requested)"
+    pd11_pweb_outcome                   = "$($c3.pd11_pweb_outcome)"
+    pd11_pweb_exit                      = "$($c3.pd11_pweb_exit)"
+    pd11_descendants_remaining          = "$($c3.pd11_descendants_remaining)"
+    pd11_interrupt_delivered            = "$($c3.pd11_interrupt_delivered)"
+    pd11_interrupt_to_exit_ms           = "$($c3.pd11_interrupt_to_exit_ms)"
+    pd11_no_partial_generation          = "$($c3.pd11_no_partial_generation)"
+    pd12_set_was_up                     = "$($c3.pd12_set_was_up)"
+    pd12_kill_delivered                 = "$($c3.pd12_kill_delivered)"
+    pd12_pweb_outcome                   = "$($c3.pd12_pweb_outcome)"
+    pd12_pweb_exit                      = "$($c3.pd12_pweb_exit)"
+    pd12_descendants_remaining          = "$($c3.pd12_descendants_remaining)"
+    pd12_kill_to_exit_ms                = "$($c3.pd12_kill_to_exit_ms)"
+    pd12_no_partial_generation          = "$($c3.pd12_no_partial_generation)"
+    pd13_release_seeded                 = "$($c3.pd13_release_seeded)"
+    pd13_release_unchanged              = "$($c3.pd13_release_unchanged)"
+    pd15_generation_lines               = "$($c3.pd15_generation_lines)"
+    pd15_exact_one_line_per_generation  = "$($c3.pd15_exact_one_line_per_generation)"
+    pd15_no_ansi                        = "$($c3.pd15_no_ansi)"
+    pd15_no_absolute_path               = "$($c3.pd15_no_absolute_path)"
+    dev_pas2js_error_keeps_previous_generation   = "$($c3.dev_pas2js_error_keeps_previous_generation)"
+    dev_pas2js_inconsistent_generation_discarded = "$($c3.dev_pas2js_inconsistent_generation_discarded)"
+    dev_pas2js_partial_generation_published      = "$($c3.dev_pas2js_partial_generation_published)"
+    dev_pas2js_generations_observed     = "$($c3.dev_pas2js_generations_observed)"
+    dev_pas2js_rpc_value                = "$($c3.dev_pas2js_rpc_value)"
+    dev_pas2js_rpc_after_switch         = "$($c3.dev_pas2js_rpc_after_switch)"
+    dev_pas2js_interrupt_clean          = "$($c3.dev_pas2js_interrupt_clean)"
+    dev_pas2js_descendants_after_stop   = "$($c3.dev_pas2js_descendants_after_stop)"
+    dev_pas2js_network_stages           = "$($c3.dev_pas2js_network_stages)"
+    dev_pas2js_network_calls            = "$($c3.dev_pas2js_network_calls)"
+    dev_pas2js_watched_input_count      = "$($c3.dev_pas2js_watched_input_count)"
+    dev_pas2js_app_dir_names            = "$($c3.dev_pas2js_app_dir_names)"
+    dev_pas2js_generation_holds_only_archive = "$($c3.dev_pas2js_generation_holds_only_archive)"
+    dev_pas2js_loose_assets_used        = "$($c3.dev_pas2js_loose_assets_used)"
+    dev_pas2js_gen1_sha256              = "$($c3.dev_pas2js_gen1_sha256)"
+    dev_pas2js_app_pwb_parity           = "$($c3.dev_pas2js_app_pwb_parity)"
+    dev_pas2js_listener_sampler_scope   = "$($c3.dev_pas2js_listener_sampler_scope)"
+    dev_pas2js_listener_members_seen    = "$($c3.dev_pas2js_listener_members_seen)"
+    dev_pas2js_listener_members_max     = "$($c3.dev_pas2js_listener_members_max)"
+    rd1_dev_digest_unchanged            = "$($c3.rd1_dev_digest_unchanged)"
+    rd1_dev_suite                       = "$($c3.rd1_dev_suite)"
+    c3_pipeline_digest_unchanged        = "$($c3.c3_pipeline_digest_unchanged)"
+    dev_pas2js_normalised               = "$($c3.dev_pas2js_normalised)"
     autoclose_stop_honoured         = "$($c1.autoclose_stop_honoured)"
     doctor_platform_webview         = "$($c1.doctor_platform_webview)"
     pipeline_corpus_lines           = "$($c1.pipeline_corpus_lines)"

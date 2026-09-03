@@ -25,16 +25,20 @@ program pweb;
   here. It is not a stub, not a "not implemented in this build" placeholder,
   and it is not listed in --help - because a command that parses is a
   promise, and a lifecycle CLI that promises a build it cannot perform is
-  worse than one that has not got there yet. `dev` on a `pas2js` project is
-  refused with its own typed cause for the same reason.
+  worse than one that has not got there yet. `dev` on a project whose `ui` is
+  neither of the two ratified kinds is refused with its own typed cause for
+  the same reason - CAP-10C2 implemented react and CAP-10C3 pas2js, and the
+  refusal stays for the next one.
 
   THE PROCESS OPENS NO SOCKET, resolves no host and listens on nothing - in
   development exactly as in production. `dev` starts no development server,
   no proxy and no HMR transport: the completion signal is a file the build
-  writes, the switch is a directory rename, and the reload is a native
-  re-navigation to pweb://app, which is the only origin this framework has.
-  The ONE stage that may reach the network is the dependency install, which
-  is skipped whenever the lockfile and node_modules already agree.
+  writes (react) or a bounded content fingerprint of the ratified input set
+  this CLI walks itself (pas2js), the switch is a directory rename, and the
+  reload is a native re-navigation to pweb://app, which is the only origin
+  this framework has. The ONE stage that may reach the network is the react
+  dependency install, which is skipped whenever the lockfile and node_modules
+  already agree; a pas2js session has no such stage at all.
 
   `create` writes exactly one tree - the project it was asked for, through
   the frozen CAP-10B0 transaction - and writes nothing anywhere else: not a
@@ -119,6 +123,12 @@ uses
   pweb.cli.layout,
   pweb.cli.pipeline,
   pweb.cli.devlayout,
+  { CAP-10C3 adds the Pas2JS change detector beside them, and names it here
+    rather than leaving it to reach the link through pweb.cli.dev: the
+    linkage claim is a measurement over this executable's compiled unit set,
+    and a unit that is only there transitively is a unit whose presence is an
+    inference. }
+  pweb.cli.devinputs,
   pweb.cli.dev,
   pweb.cli.args;
 

@@ -1,17 +1,21 @@
 {
-  pweb.cli.dev - the React development loop: rebuild, pack, publish, reload
-  (CAP-10C2).
+  pweb.cli.dev - the development loop: rebuild, pack, publish, reload
+  (CAP-10C2 React, CAP-10C3 Pas2JS).
 
   THE ONLY UNIT OF THE DEV LOOP THAT RUNS A CHILD, exactly as
-  pweb.cli.pipeline is for the build. `npm`, `tsc`, `vite`, `pwebbundle`,
-  `fpc` and the dev host all go through PWebCliExecute in the CAP-10C0
-  supervise profile, with an exact executable path, an argument vector and
-  an explicit working directory. There is no shell, no command string, no
-  .cmd/.bat, no environment injection and no second execution path.
+  pweb.cli.pipeline is for the build. `npm`, `tsc`, `vite`, `pas2js`,
+  `pwebbundle`, `fpc` and the dev host all go through PWebCliExecute in the
+  CAP-10C0 supervise profile, with an exact executable path, an argument
+  vector and an explicit working directory. There is no shell, no command
+  string, no .cmd/.bat, no environment injection and no second execution
+  path.
 
   ---------------------------------------------------------------------------
   WHAT THE LOOP IS, IN ONE PICTURE
   ---------------------------------------------------------------------------
+
+  REACT - the build says when it finished, and a watcher lives beside the
+  host:
 
     main thread                       watcher thread        host thread
     prerequisites (C1's, verbatim)
@@ -21,6 +25,21 @@
     start host                                          --> the dev binary
     loop: sentinel -> snapshot -> pack -> publish -> read `generation N loaded`
 
+  PAS2JS - the compiler has no watch mode and no writeBundle, so THE CLI
+  OWNS DETECTION (pweb.cli.devinputs) and there is no watcher child at all:
+
+    main thread                                           host thread
+    prerequisites (toolchain and the dev compile; no npm, no tsc, no SDK
+    staging - a Pas2JS project needs Node at no point)
+    scan the input set; compile + assemble + pack gen-1
+    start host                                        --> the dev binary
+    loop: fingerprint -> pas2js -> C1 assembly -> pack -> publish -> ack
+
+  So the SUPERVISED SET is two long-lived members for React and ONE for
+  Pas2JS. That is not a second ladder and not a second supervisor: the stop
+  flag, DevStopCheck, the C0 graceful-then-forced ladder, the join and the
+  drain are the same code reached with an empty watcher slot.
+
   PWebCliExecute runs ONE child to completion, so each long-lived member
   gets a thread of its own. That is legal without touching the engine
   because the engine is re-entrant - no unit-level mutable state, the
@@ -28,9 +47,9 @@
   and the POSIX spawn touches no heap between fork and execve and closes
   every descriptor above 2.
 
-  ONE STOP FLAG is the StopCheck of BOTH long-lived executions. It is set by
+  ONE STOP FLAG is the StopCheck of every long-lived execution. It is set by
   the console / signal handler, by the host exiting, by the watcher exiting,
-  or by an internal failure - so one request runs both C0 ladders
+  or by an internal failure - so one request runs the C0 ladders
   concurrently (graceful WM_CLOSE / SIGTERM to the group, then forced, then
   drained by membership), inside the C0 bounds, and there is no second
   ladder anywhere in this unit.
@@ -45,6 +64,26 @@
   a bounded forward-only poll; the reload is a native re-navigation to
   pweb://app. There is no ws://, no wss://, no localhost and no 127.0.0.1
   anywhere in this shard's source, and no CSP moves.
+
+  ---------------------------------------------------------------------------
+  THE PAS2JS COMPLETION SIGNAL: THERE ISN'T ONE, SO THE CLI DECIDES
+  ---------------------------------------------------------------------------
+
+  React is TOLD when a build finished. Pas2JS is not: there is no watch mode
+  to report one and no writeBundle to hook, and the CAP-10C1 assembly runs
+  in this CLI rather than in the build. So the loop asks the question the
+  other way round - it watches the INPUTS instead of waiting for an output -
+  and pweb.cli.devinputs is the whole of that rule: one bounded walk of the
+  ratified input set every PWEB_CLI_DEV_POLL_MS, fingerprinted by CONTENT
+  (never by mtime, which is second-granular through FPC's portable layer and
+  would miss two edits inside one second).
+
+  THE CONSISTENCY RULE IS THE PAS2JS TWIN OF THE SNAPSHOT PROOF. The
+  fingerprint is taken BEFORE the compile and re-taken AFTER the assembly:
+  if it moved, the generation is discarded and rebuilt, bounded by the same
+  PWEB_CLI_DEV_SNAPSHOT_TRIES. Only a generation whose inputs were stable
+  across compile AND assembly is packed - which is the mechanical answer to
+  "can a mixed generation reach the host", over the correct subject.
 
   ---------------------------------------------------------------------------
   THE SENTINEL, AND WHY IT IS NOT LINE PARSING
@@ -79,9 +118,14 @@
     the host exits 0 by itself             the loop stops, exit 0
     the host exits any other way           the loop stops, exit 5, real status
     the watcher exits at all               the loop stops, exit 5, real status
+                                           (React only - Pas2JS has none)
     a build or a pack child fails          THE LOOP DOES NOT STOP - the
                                            previous generation stays live and
                                            the error is forwarded
+    the input set becomes unwalkable       THE LOOP DOES NOT STOP either: it
+    mid-session (a link, a bound)          is reported ONCE and the previous
+                                           generation stays live. At START-UP
+                                           the same fact is a refusal, exit 3
 
   The last one is the whole point of a development loop: a syntax error is
   something a developer fixes in the next keystroke, and a tool that closed
@@ -113,6 +157,7 @@ uses
   pweb.cli.native,
   pweb.cli.layout,
   pweb.cli.devlayout,
+  pweb.cli.devinputs,
   pweb.cli.pipeline;
 
 type
@@ -177,15 +222,32 @@ type
     /// True when a stop was requested before the loop ended by itself
     Interrupted: Boolean;
     /// `npm_ci` when the install stage ran, `none` when it was skipped
+    // - always `none` for a Pas2JS project: no stage of that loop reaches
+    // the network, and there is no stage that could
     NetworkStages: RawUtf8;
     /// why the install ran, '' when it was skipped
     InstallReason: RawUtf8;
+    /// the frontend kind this session developed
+    Ui: TPWebCliUi;
+    /// how this session learned that a rebuild was due - `vite_sentinel`
+    /// for React, `cli_content_fingerprint_poll` for Pas2JS
+    ChangeDetection: RawUtf8;
+    /// how many files the ratified input set held (Pas2JS only, 0 for
+    /// React, whose completion signal is the build's own)
+    WatchedInputs: Integer;
+    /// what the Pas2JS assembly had to normalise, recorded per target
+    Normalisation: TPWebCliPas2jsNormalisation;
+    /// pas2js children that failed - the previous generation stayed live
+    BuildFailures: Integer;
     /// generations PUBLISHED, and generations the host ACKNOWLEDGED
     Published_: Integer;
     Acknowledged: Integer;
     /// how many generations the bounded cleanup removed
     Removed: Integer;
-    /// snapshots discarded because the sentinel moved during the copy
+    /// generations discarded because the inputs moved underneath them -
+    // React: the sentinel moved during the dist copy; Pas2JS: the input-set
+    // fingerprint moved across the compile and the assembly. One counter,
+    // because it is one rule measured over each loop's own subject
     RetakenSnapshots: Integer;
     /// rebuilds the watcher completed, from the sentinel
     Rebuilds: Integer;
@@ -211,6 +273,9 @@ type
     HostCommand: RawUtf8;
     CompileCommand: RawUtf8;
     PackCommand: RawUtf8;
+    /// the Pas2JS generation command - '' for React, whose generation
+    /// command is the watcher's and is recorded as WatcherCommand
+    BuildCommand: RawUtf8;
     /// the read-only project tree, before the first stage and at the end
     TreeBefore: RawUtf8;
     TreeAfter: RawUtf8;
@@ -225,6 +290,20 @@ function PWebCliDevStageName(Stage: TPWebCliDevStage): RawUtf8;
 
 /// the ratified exit code of a category
 function PWebCliDevExitCode(Code: TPWebCliDevCode): Integer;
+
+/// does THIS BUILD's development loop implement that frontend kind
+// - the ONE place the question is asked, so `dev_ui_unsupported` stays a
+// live, tested path for the next UI kind rather than an unreachable branch
+// nobody notices has rotted. CAP-10C2 implemented react, CAP-10C3 pas2js;
+// anything else is refused with the PROJECT cause and exit 3, before
+// anything is resolved, started or written
+function PWebCliDevUiSupported(Ui: TPWebCliUi): Boolean;
+
+/// how a session of that frontend kind learns a rebuild is due
+// - `vite_sentinel` (the build writes it) or `cli_content_fingerprint_poll`
+// (this CLI walks the ratified input set). Recorded per target and compared
+// across the four, so a target running a different detector is a divergence
+function PWebCliDevChangeDetection(Ui: TPWebCliUi): RawUtf8;
 
 /// remove every ANSI escape sequence from a line
 // - MEASURED necessary: Vite colours its output whenever the inherited
@@ -293,6 +372,29 @@ begin
   else
     Result := 6;
   end;
+end;
+
+function PWebCliDevUiSupported(Ui: TPWebCliUi): Boolean;
+begin
+  // an explicit CASE over the ratified kinds with a refusing ELSE, rather
+  // than `Ui in [puiReact, puiPas2js]`: the day schema 1 ratifies a third
+  // kind, this answers False for it until a shard implements the loop, and
+  // the refusal path stays exercised
+  case Ui of
+    puiReact,
+    puiPas2js:
+      Result := True;
+  else
+    Result := False;
+  end;
+end;
+
+function PWebCliDevChangeDetection(Ui: TPWebCliUi): RawUtf8;
+begin
+  if Ui = puiPas2js then
+    Result := 'cli_content_fingerprint_poll'
+  else
+    Result := 'vite_sentinel';
 end;
 
 function PWebCliDevStripAnsi(const Line: RawUtf8): RawUtf8;
@@ -666,6 +768,10 @@ begin
   Result := RawUtf8(IntToStr(Value));
 end;
 
+const
+  /// the two words a Boolean observation is reported with, spelled once
+  BOOL_TEXT: array[Boolean] of RawUtf8 = ('false', 'true');
+
 function PWebCliRunDev(const Project: TPWebCliProject;
   Os: TPWebCliOs; Arch: TPWebCliArch; Notify: TPWebCliDevNotify;
   Opaque: Pointer): TPWebCliDevResult;
@@ -675,14 +781,22 @@ var
   sharedInit: Boolean;
   excludes, prefixes, tokens: TRawUtf8DynArray;
   outputDir, targetDir, frontendRoot, sdkStageParent: RawUtf8;
-  distDir, tmpDist, sentinel, found: RawUtf8;
+  distDir, tmpDist, tmpAssets, sentinel, found: RawUtf8;
   lockDigest, installReason: RawUtf8;
   lastSentinel, seenSentinel: RawUtf8;
+  // CAP-10C3: True for react - the branch that has a watcher child, a
+  // sentinel, a Node toolchain and a staged TypeScript SDK. False is the
+  // Pas2JS loop, which has none of those and owns its own detection
+  isReact: Boolean;
+  // the last input-set refusal REPORTED, so a set that stays unwalkable is
+  // said once rather than four times a second
+  lastInputRefusal: RawUtf8;
   stageRefusal: TPWebCliStageRefusal;
   devRefusal: TPWebCliDevLayoutRefusal;
   feRefusal: TPWebCliFrontendRefusal;
   cmd: TPWebCliCommand;
   layout: TPWebCliDevLayout;
+  inputs: TPWebCliDevInputs;
   unreadable: Boolean;
   staged, files, i: Integer;
   digest: RawUtf8;
@@ -923,6 +1037,282 @@ var
     Settle := Current;
   end;
 
+  { --- CAP-10C3: the Pas2JS half ---------------------------------------- }
+
+  // ONE walk of the ratified input set, answering the CONTENT fingerprint.
+  // A refusal answers '' and is REPORTED once per distinct cause: at
+  // start-up the caller turns that into exit 3, and inside the loop it means
+  // "no change I can see", which keeps the previous generation live exactly
+  // as a compile error does
+  function ScanInputs: RawUtf8;
+  var
+    scan: TPWebCliDevInputs;
+    text: RawUtf8;
+  begin
+    if PWebCliDevInputScan(frontendRoot, scan) then
+    begin
+      res.WatchedInputs := scan.Files;
+      lastInputRefusal := '';
+      ScanInputs := scan.Fingerprint;
+      exit;
+    end;
+    text := PWebCliDevInputRefusalText(scan.Refusal) + ' ' + scan.Detail;
+    if text <> lastInputRefusal then
+    begin
+      lastInputRefusal := text;
+      Say('the input set could not be read: ' + text);
+    end;
+    ScanInputs := '';
+  end;
+
+  // wait until the input fingerprint differs from Last, or the bound expires
+  function WaitForInputs(const Last: RawUtf8; BoundMs: Int64;
+    out Current: RawUtf8): Boolean;
+  var
+    limit: Int64;
+  begin
+    limit := GetTickCount64() + BoundMs;
+    repeat
+      Current := ScanInputs;
+      if (Current <> '') and
+         (Current <> Last) then
+        exit(True);
+      if DevStopCheck(@shared) then
+        exit(False);
+      Sleep(PWEB_CLI_DEV_POLL_MS);
+    until GetTickCount64() > limit;
+    Current := ScanInputs;
+    Result := (Current <> '') and
+      (Current <> Last);
+  end;
+
+  // the DEBOUNCE, over the fingerprint instead of the sentinel: identical
+  // rule, identical bounds, identical reason - an editor's save is not one
+  // write, and a developer's five keystrokes are not five generations
+  function SettleInputs(var Current: RawUtf8): RawUtf8;
+  var
+    hardLimit, quietUntil: Int64;
+    latest: RawUtf8;
+  begin
+    hardLimit := GetTickCount64() + PWEB_CLI_DEV_DEBOUNCE_MAX_MS;
+    quietUntil := GetTickCount64() + PWEB_CLI_DEV_DEBOUNCE_MS;
+    while (GetTickCount64() < quietUntil) and
+          (GetTickCount64() < hardLimit) do
+    begin
+      if DevStopCheck(@shared) then
+        break;
+      Sleep(PWEB_CLI_DEV_POLL_MS);
+      latest := ScanInputs;
+      if (latest <> '') and
+         (latest <> Current) then
+      begin
+        Current := latest;
+        Inc(res.Rebuilds);
+        quietUntil := GetTickCount64() + PWEB_CLI_DEV_DEBOUNCE_MS;
+      end;
+    end;
+    SettleInputs := Current;
+  end;
+
+  // ONE Pas2JS generation: fingerprint, compile with the EXACT CAP-10C1
+  // argument vector, run the EXACT CAP-10C1 assembly, prove the inputs did
+  // not move across either, pack with the frozen bundler and publish by ONE
+  // rename
+  // - a failure here NEVER stops the loop; it is reported and the previous
+  // generation stays live
+  function MakePas2jsGeneration(N: Integer): Boolean;
+  var
+    childRes: TPWebCliExecResult;
+    before, after: RawUtf8;
+    attempt: Integer;
+    t0: Int64;
+  begin
+    MakePas2jsGeneration := False;
+    after := '';
+    t0 := GetTickCount64();
+    for attempt := 1 to PWEB_CLI_DEV_SNAPSHOT_TRIES do
+    begin
+      if not PWebCliDevBeginGeneration(layout, tmpDist, devRefusal) then
+      begin
+        Say('generation ' + IntText(N) + ' refused: ' +
+          PWebCliDevLayoutRefusalText(devRefusal));
+        exit;
+      end;
+      // the compiler writes STRAIGHT INTO the generation under
+      // construction. React needs a copy because `vite --watch` owns
+      // frontend/dist and may be writing it; pas2js has no concurrent
+      // writer, so the generation IS the output directory and the
+      // consistency question is about the INPUTS instead
+      if not PWebCliPipeEnsureDir(tmpDist, PWEB_FE_ASSETS, tmpAssets,
+           stageRefusal) then
+      begin
+        Say('generation ' + IntText(N) + ' refused: ' +
+          PWebCliStageRefusalText(stageRefusal));
+        PWebCliDevDiscardGeneration(layout, devRefusal);
+        exit;
+      end;
+      before := ScanInputs;
+      if before = '' then
+      begin
+        PWebCliDevDiscardGeneration(layout, devRefusal);
+        exit;
+      end;
+      // THE INPUT STATE THIS ATTEMPT ANSWERS, recorded before the attempt
+      // rather than after it. Every failure path below leaves it standing,
+      // and the loop treats it as consumed - so a source that does not
+      // compile is answered ONCE and not rebuilt every few seconds forever.
+      // MEASURED on windows-x86_64 before this line existed: one broken
+      // `const` recompiled the whole frontend indefinitely, printing the
+      // same failure each time. React needs no equivalent because Vite's
+      // `writeBundle` does not fire on a failed build, so a broken source
+      // produces no new sentinel at all.
+      // It is `before` and never a fresh scan taken afterwards: a fix that
+      // landed DURING the failed compile must still look like a change on
+      // the next pass, and it does exactly because this value predates it
+      seenSentinel := before;
+      if not PWebCliPas2jsCommand(res.Toolset.Pas2js.Path, frontendRoot,
+           res.Sdk.Pas2jsSdk, PWebCliJoin(tmpAssets, PWEB_FE_APP_JS),
+           Project, cmd, feRefusal) then
+      begin
+        Say('generation ' + IntText(N) + ' refused: ' +
+          PWebCliFrontendRefusalText(feRefusal));
+        PWebCliDevDiscardGeneration(layout, devRefusal);
+        exit;
+      end;
+      res.BuildCommand := PWebCliCommandText(cmd, prefixes, tokens);
+      // A COMPILE ERROR IS SOMETHING A DEVELOPER FIXES IN THE NEXT
+      // KEYSTROKE. The compiler's own output has already been forwarded,
+      // prefixed and stripped of ANSI, by the sink
+      if not RunOnce(pdvLoop, cmd, PWEB_CLI_PIPE_BUILD_MS, 'pas2js: ',
+           childRes) then
+      begin
+        Inc(res.BuildFailures);
+        Say('generation ' + IntText(N) + ' compile failed (' +
+          PWebCliChildOutcomeText(childRes.Outcome) + ' ' +
+          IntText(childRes.ExitCode) +
+          '); the previous generation stays live');
+        PWebCliDevDiscardGeneration(layout, devRefusal);
+        // reset the refusal the caller would otherwise inherit: a compile
+        // failure is a fact, never this run's exit category
+        res.Code := pdcOk;
+        res.Cause := '';
+        res.Detail := '';
+        exit;
+      end;
+      // THE CAP-10C1 ASSEMBLY, called and never re-implemented: strip the
+      // BOM, strip EVERY CR, write assets/boot.js byte-exactly and place
+      // index.html and assets/app.css. This is what makes generation 1's
+      // archive byte-identical to the pipeline's for the same sources
+      if not PWebCliAssemblePas2jsDist(frontendRoot, tmpDist,
+           res.Normalisation, feRefusal) then
+      begin
+        Say('generation ' + IntText(N) + ' assembly failed: ' +
+          PWebCliFrontendRefusalText(feRefusal));
+        PWebCliDevDiscardGeneration(layout, devRefusal);
+        exit;
+      end;
+      // WHAT THE ASSEMBLY HAD TO NORMALISE, said ONCE per session. CAP-10B2
+      // measured that the compiler writes through the host's text layer -
+      // BOM and CRLF on Windows, LF on POSIX - and this is the line that
+      // says the development loop stripped the same bytes the pipeline
+      // strips, on this target, rather than leaving it to be inferred from
+      // an archive digest that happens to match
+      if N = 1 then
+        Say('assembly: bom=' + BOOL_TEXT[res.Normalisation.HadBom] +
+          ' cr=' + BOOL_TEXT[res.Normalisation.HadCr]);
+      // THE CONSISTENCY RULE: the fingerprint is re-taken AFTER the
+      // assembly, so a generation is packed only when its inputs were
+      // stable across the compile AND the assembly
+      after := ScanInputs;
+      if after = '' then
+      begin
+        PWebCliDevDiscardGeneration(layout, devRefusal);
+        exit;
+      end;
+      if after = before then
+        break;
+      Inc(res.RetakenSnapshots);
+      Say('generation ' + IntText(N) +
+        ' discarded: the inputs moved during the build (' +
+        IntText(attempt) + '/' + IntText(PWEB_CLI_DEV_SNAPSHOT_TRIES) + ')');
+      PWebCliDevDiscardGeneration(layout, devRefusal);
+      if attempt = PWEB_CLI_DEV_SNAPSHOT_TRIES then
+      begin
+        Say('generation ' + IntText(N) +
+          ' abandoned: the sources changed faster than they could be built');
+        exit;
+      end;
+    end;
+    seenSentinel := after;
+    // THE FROZEN CAP-6 BUNDLER, with the whole of its argument contract and
+    // nothing added - the same call the React branch makes, over a dist the
+    // compiler wrote instead of one that was copied
+    cmd := PWebCliPackCommand(res.Sdk.Bundler, tmpDist,
+      PWebCliDevTmpBundle(layout), Project.Root);
+    res.PackCommand := PWebCliCommandText(cmd, prefixes, tokens);
+    if not RunOnce(pdvLoop, cmd, PWEB_CLI_PIPE_PACK_MS, 'pack: ',
+         childRes) then
+    begin
+      Inc(res.PackFailures);
+      Say('generation ' + IntText(N) + ' pack failed (' +
+        PWebCliChildOutcomeText(childRes.Outcome) + ' ' +
+        IntText(childRes.ExitCode) + '); the previous generation stays live');
+      PWebCliDevDiscardGeneration(layout, devRefusal);
+      res.Code := pdcOk;
+      res.Cause := '';
+      res.Detail := '';
+      exit;
+    end;
+    if not PWebCliDevTrimGeneration(layout, devRefusal) then
+    begin
+      Say('generation ' + IntText(N) + ' trim failed: ' +
+        PWebCliDevLayoutRefusalText(devRefusal));
+      PWebCliDevDiscardGeneration(layout, devRefusal);
+      exit;
+    end;
+    if not PWebCliDevPublishGeneration(layout, N, devRefusal) then
+    begin
+      Say('generation ' + IntText(N) + ' publish failed: ' +
+        PWebCliDevLayoutRefusalText(devRefusal));
+      PWebCliDevDiscardGeneration(layout, devRefusal);
+      exit;
+    end;
+    res.Published_ := N;
+    // EXACTLY ONE LINE PER GENERATION, in the ratified shape - the same
+    // line the React branch prints, because a developer reading it should
+    // not have to know which frontend produced it
+    Say('generation ' + IntText(N) + ' ready (' +
+      IntText(GetTickCount64() - t0) + ' ms)');
+    MakePas2jsGeneration := True;
+  end;
+
+  { --- the two branches, behind one loop -------------------------------- }
+
+  function WaitForChange(const Last: RawUtf8; BoundMs: Int64;
+    out Current: RawUtf8): Boolean;
+  begin
+    if isReact then
+      WaitForChange := WaitForSentinel(Last, BoundMs, Current)
+    else
+      WaitForChange := WaitForInputs(Last, BoundMs, Current);
+  end;
+
+  function SettleChange(var Current: RawUtf8): RawUtf8;
+  begin
+    if isReact then
+      SettleChange := Settle(Current)
+    else
+      SettleChange := SettleInputs(Current);
+  end;
+
+  function MakeAnyGeneration(N: Integer): Boolean;
+  begin
+    if isReact then
+      MakeAnyGeneration := MakeGeneration(N)
+    else
+      MakeAnyGeneration := MakePas2jsGeneration(N);
+  end;
+
 begin
   res := Default(TPWebCliDevResult);
   res.Code := pdcOk;
@@ -950,16 +1340,21 @@ begin
         PWebCliProjectRefusalText(Project.Refusal), Project.Detail);
       exit;
     end;
-    // THE PAS2JS REFUSAL, before anything is resolved, started or written.
-    // The command line was well formed and the destination is a real
-    // project: what this build's dev loop does not implement is the
-    // declared `ui`, which is a PROJECT fact and exit 3
-    if Project.Ui <> puiReact then
+    // THE UNSUPPORTED-UI REFUSAL, before anything is resolved, started or
+    // written. The command line was well formed and the destination is a
+    // real project: what this build's dev loop does not implement is the
+    // declared `ui`, which is a PROJECT fact and exit 3. CAP-10C2
+    // implemented react and CAP-10C3 pas2js, so no ratified kind reaches it
+    // today - and it stays here, and under test, for the next one
+    if not PWebCliDevUiSupported(Project.Ui) then
     begin
       Refuse(pdvOpen, pdcProject, 'dev_ui_unsupported',
         PWebCliUiText(Project.Ui));
       exit;
     end;
+    res.Ui := Project.Ui;
+    isReact := Project.Ui = puiReact;
+    res.ChangeDetection := PWebCliDevChangeDetection(Project.Ui);
     excludes := PWebCliMutationSet(Project);
     if not PWebCliPipeTreeDigest(Project.Root, excludes, res.TreeBefore,
          stageRefusal) then
@@ -984,6 +1379,20 @@ begin
     frontendRoot := Project.FrontendRootPath.Full;
     distDir := PWebCliJoin(frontendRoot, PWEB_FE_DIST);
     sentinel := PWebCliDevSentinelPath(frontendRoot);
+    // THE INPUT SET IS WALKED ONCE, HERE, BEFORE ANYTHING IS RESOLVED,
+    // STARTED OR WRITTEN. A link inside it, a set past its bounds or a
+    // directory nobody can enumerate is a PROJECT fact and exit 3 - and it
+    // is discovered before the toolchain, not four minutes into a compile
+    if not isReact then
+    begin
+      if not PWebCliDevInputScan(frontendRoot, inputs) then
+      begin
+        Refuse(pdvOpen, pdcProject,
+          PWebCliDevInputRefusalText(inputs.Refusal), inputs.Detail);
+        exit;
+      end;
+      res.WatchedInputs := inputs.Files;
+    end;
 
     { --- 2. toolchain: refuse before any write --------------------------- }
     Say(PWebCliDevStageName(pdvToolchain) + ': start');
@@ -999,7 +1408,10 @@ begin
           PWebCliToolKindText(res.Toolset.Failed));
       exit;
     end;
-    if not PWebCliSdkLayout(Os, Arch, {Pas2js=}False, res.Sdk) then
+    // the SDK a Pas2JS build needs is a DIFFERENT one: sdk/pas2js/
+    // pweb.native.pas rather than the TypeScript tree, and the layout
+    // resolver is told which by the descriptor's own `ui`
+    if not PWebCliSdkLayout(Os, Arch, Project.Ui = puiPas2js, res.Sdk) then
     begin
       res.Sdk.Target := PWebCliRunTargetName(Os, Arch);
       Refuse(pdvToolchain, pdcUnavailable,
@@ -1018,6 +1430,19 @@ begin
     Say(PWebCliDevStageName(pdvToolchain) + ': ok');
     if not StillRunning(pdvToolchain) then
       exit;
+
+    { --- 3, 4 and 5 are the REACT prerequisites, and a Pas2JS project has
+            none of them: no TypeScript SDK to stage, no lockfile to install
+            from, no Node at any point, and therefore NO STAGE THAT COULD
+            REACH THE NETWORK. `network_stages` stays `none` by construction
+            rather than by policy -------------------------------------------}
+    if not isReact then
+      Say(PWebCliDevStageName(pdvStageSdk) + ', ' +
+        PWebCliDevStageName(pdvInstall) + ' and ' +
+        PWebCliDevStageName(pdvTypecheck) +
+        ': not applicable (pas2js needs no node toolchain)');
+    if isReact then
+    begin
 
     { --- 3. the staged TypeScript SDK, on EVERY start --------------------- }
     Say(PWebCliDevStageName(pdvStageSdk) + ': start');
@@ -1111,6 +1536,8 @@ begin
     if not StillRunning(pdvTypecheck) then
       exit;
 
+    end; { isReact }
+
     { --- 6. the DEV native compile, into its OWN directories -------------- }
     Say(PWebCliDevStageName(pdvCompile) + ': start');
     layout := PWebCliDevEnsureLayout(Project, Os, Arch, targetDir);
@@ -1145,62 +1572,81 @@ begin
     if not StillRunning(pdvCompile) then
       exit;
 
-    { --- 7. the watcher --------------------------------------------------- }
-    // the sentinel is REMOVED first, so the watcher's own initial build is
-    // generation 1 rather than a one-shot build plus an identical rebuild
-    PWebCliDeleteFile(sentinel);
-    if not PWebCliViteCommand(res.Toolset.Node.Path, frontendRoot, cmd,
-         feRefusal) then
+    { --- 7. the change source --------------------------------------------- }
+    // REACT: a supervised watcher child, whose completed builds ARE the
+    // signal. PAS2JS: no child at all - this CLI walks the ratified input
+    // set itself, so the supervised set has ONE long-lived member and the
+    // detector is a loop rather than a process
+    if isReact then
     begin
-      Refuse(pdvWatch, pdcUnavailable,
-        PWebCliFrontendRefusalText(feRefusal), '');
-      exit;
-    end;
-    // the RELEASE vector plus one element, so the watcher is provably the
-    // same build the pipeline runs and not a second configuration
-    SetLength(cmd.Args, Length(cmd.Args) + 1);
-    cmd.Args[High(cmd.Args)] := '--watch';
-    shared.WatcherCmd := cmd;
-    shared.WatcherTreeRoot := PWebCliDisplayPath(frontendRoot);
-    res.WatcherCommand := PWebCliCommandText(cmd, prefixes, tokens);
-    Say(PWebCliDevStageName(pdvWatch) + ': ' + res.WatcherCommand);
-    watcherHandle := BeginThread(@DevWatcherThread, @shared, watcherId);
-    watcherStarted := watcherHandle <> system.TThreadID(0);
-    if not watcherStarted then
-    begin
-      Refuse(pdvWatch, pdcUnavailable, 'dev_thread_unavailable', 'watcher');
-      exit;
-    end;
+      // the sentinel is REMOVED first, so the watcher's own initial build is
+      // generation 1 rather than a one-shot build plus an identical rebuild
+      PWebCliDeleteFile(sentinel);
+      if not PWebCliViteCommand(res.Toolset.Node.Path, frontendRoot, cmd,
+           feRefusal) then
+      begin
+        Refuse(pdvWatch, pdcUnavailable,
+          PWebCliFrontendRefusalText(feRefusal), '');
+        exit;
+      end;
+      // the RELEASE vector plus one element, so the watcher is provably the
+      // same build the pipeline runs and not a second configuration
+      SetLength(cmd.Args, Length(cmd.Args) + 1);
+      cmd.Args[High(cmd.Args)] := '--watch';
+      shared.WatcherCmd := cmd;
+      shared.WatcherTreeRoot := PWebCliDisplayPath(frontendRoot);
+      res.WatcherCommand := PWebCliCommandText(cmd, prefixes, tokens);
+      Say(PWebCliDevStageName(pdvWatch) + ': ' + res.WatcherCommand);
+      watcherHandle := BeginThread(@DevWatcherThread, @shared, watcherId);
+      watcherStarted := watcherHandle <> system.TThreadID(0);
+      if not watcherStarted then
+      begin
+        Refuse(pdvWatch, pdcUnavailable, 'dev_thread_unavailable',
+          'watcher');
+        exit;
+      end;
+    end
+    else
+      Say(PWebCliDevStageName(pdvWatch) + ': ' + res.ChangeDetection +
+        ' over ' + IntText(res.WatchedInputs) + ' input(s)');
 
     { --- 8. the first generation, BEFORE the host ------------------------- }
     lastSentinel := '';
-    if not WaitForSentinel(lastSentinel, PWEB_CLI_DEV_FIRST_BUILD_MS,
-         seenSentinel) then
+    if isReact then
     begin
-      if PWebCliStopRequested then
+      if not WaitForSentinel(lastSentinel, PWEB_CLI_DEV_FIRST_BUILD_MS,
+           seenSentinel) then
       begin
-        res.Interrupted := True;
-        res.Cause := 'dev_interrupted';
-        Say('interrupted before the first generation');
-      end
-      else
-        Refuse(pdvFirstGeneration, pdcSetFailed, 'dev_first_build',
-          IntText(PWEB_CLI_DEV_FIRST_BUILD_MS));
-      shared.Stop := True;
-      exit;
-    end;
-    Inc(res.Rebuilds);
-    seenSentinel := Settle(seenSentinel);
-    if not MakeGeneration(1) then
+        if PWebCliStopRequested then
+        begin
+          res.Interrupted := True;
+          res.Cause := 'dev_interrupted';
+          Say('interrupted before the first generation');
+        end
+        else
+          Refuse(pdvFirstGeneration, pdcSetFailed, 'dev_first_build',
+            IntText(PWEB_CLI_DEV_FIRST_BUILD_MS));
+        shared.Stop := True;
+        exit;
+      end;
+      Inc(res.Rebuilds);
+      seenSentinel := Settle(seenSentinel);
+    end
+    else
+      // PAS2JS: there is nothing to wait FOR. The first generation is
+      // simply the first build, and it happens here - before the host
+      // starts, so the host never opens on an empty store
+      Inc(res.Rebuilds);
+    if not MakeAnyGeneration(1) then
     begin
       Refuse(pdvFirstGeneration, pdcSetFailed, 'dev_first_generation', '');
       shared.Stop := True;
       exit;
     end;
-    // CONSUMED MEANS PACKED. `MakeGeneration` sets seenSentinel to the value
-    // its CONSISTENT snapshot corresponds to, and that - never the value the
-    // debounce last saw - is what this loop may treat as done. See the loop
-    // below for the race this closes.
+    // CONSUMED MEANS PACKED. The generation builder sets seenSentinel to
+    // the value its CONSISTENT snapshot corresponds to, and that - never
+    // the value the debounce last saw - is what this loop may treat as
+    // done. See the loop below for the race this closes.
     lastSentinel := seenSentinel;
 
     { --- 9. the host ------------------------------------------------------ }
@@ -1232,7 +1678,7 @@ begin
     i := 1;
     while not DevStopCheck(@shared) do
     begin
-      if WaitForSentinel(lastSentinel, PWEB_CLI_DEV_SENTINEL_POLL_MS * 4,
+      if WaitForChange(lastSentinel, PWEB_CLI_DEV_SENTINEL_POLL_MS * 4,
            seenSentinel) then
       begin
         Inc(res.Rebuilds);
@@ -1250,7 +1696,7 @@ begin
         // was whole and internally consistent; it simply was not the last
         // thing the developer wrote, which is the one property a
         // rebuild-and-reload loop cannot get wrong.
-        seenSentinel := Settle(seenSentinel);
+        seenSentinel := SettleChange(seenSentinel);
         if DevStopCheck(@shared) then
           break;
         Inc(i);
@@ -1259,13 +1705,16 @@ begin
           Refuse(pdvLoop, pdcInternal, 'dev_generation_bound', IntText(i));
           break;
         end;
-        if MakeGeneration(i) then
+        if MakeAnyGeneration(i) then
         begin
-          // CONSUMED MEANS PACKED: the sentinel this generation's snapshot
-          // actually corresponds to. A build that finished after the
-          // snapshot leaves a NEWER value behind, and the next pass sees it
-          // as a change and publishes it - which is how the developer's last
-          // edit always reaches the window, however fast the edits came
+          // CONSUMED MEANS PACKED: the value this generation's CONSISTENT
+          // snapshot actually corresponds to - the sentinel Vite last wrote
+          // for React, the input fingerprint proved stable across the
+          // compile and the assembly for Pas2JS. A build or an edit that
+          // landed after it leaves a NEWER value behind, and the next pass
+          // sees that as a change and publishes it - which is how the
+          // developer's last edit always reaches the window, however fast
+          // the edits came
           lastSentinel := seenSentinel;
           // the acknowledgement, from the engine's own line sink. It is
           // BOUNDED and never fatal: a switch that was not acknowledged is
@@ -1283,18 +1732,26 @@ begin
               ' was published but not acknowledged inside the bound');
         end
         else
+        begin
           // the publish did not happen, so the counter must not move: the
           // next rebuild reuses this number and the host still counts
           // forward from the generation it has
           Dec(i);
+          // PAS2JS ONLY: the input state that failed is recorded as
+          // ANSWERED, so the loop waits for the next edit instead of
+          // rebuilding a broken source forever. See MakePas2jsGeneration
+          if not isReact then
+            lastSentinel := seenSentinel;
+        end;
       end;
     end;
     res.Acknowledged := shared.Acked;
   finally
-    // THE STOP, and there is only one. Setting the flag is what runs BOTH
-    // C0 ladders - graceful, then forced, then drained by membership -
-    // concurrently and inside the C0 bounds. This unit has no ladder of
-    // its own and must never grow one
+    // THE STOP, and there is only one. Setting the flag is what runs the C0
+    // ladder for every long-lived member - graceful, then forced, then
+    // drained by membership - concurrently and inside the C0 bounds. Two
+    // members for React, ONE for Pas2JS, and the same code either way: this
+    // unit has no ladder of its own and must never grow one
     if sharedInit then
       shared.Stop := True;
     if watcherStarted then

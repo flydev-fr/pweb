@@ -167,6 +167,15 @@
 #         dist directory instead of over the archive
 #   (c8-c107 additionally assert the refusal came through the EXPECTED branch
 #    where one is named)
+#   (C3-1 .. C3-19) CAP-10C3, one leg per refusal the Pas2JS development
+#    aggregation names: the verdict itself, SKIP promotion, a decision-corpus
+#    divergence, pas2js dev unavailable, a different detection model, a
+#    platform file-watch API, the RPC value after a switch, a partial or
+#    inconsistent generation, the consistency rule not firing, a network
+#    call, a listener, a loose asset, dev code in the pas2js release, `build`
+#    exposed, a LEDGER ORPHAN, the archive parity with the CAP-10C1
+#    pipeline, a React regression, the typed input-set cause, and the
+#    advertised frontend set
 #   (e) a count-preserving directive swap in an allowlisted file
 #                                          -> divergence sweep refuses via the
 #                                             FINGERPRINT branch, restore -> green
@@ -1916,13 +1925,16 @@ $e.build_still_unknown = 'false'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap10c2-build-exposed' 'build_still_unknown'
 
-# (c75) `pweb dev` on a pas2js project NOT refused with its typed cause
+# (c75) a target on which `pweb dev` does NOT implement the second frontend
+# kind. CAP-10C2 asserted the opposite here - that a pas2js project was
+# refused with its typed cause - and CAP-10C3 inverted the row rather than
+# deleting it, so the negative leg is inverted with it
 Reset-Fixture
 $f = Join-Path $fx 'ev/macos-x64/evidence.json'
 $e = Get-Content $f -Raw | ConvertFrom-Json
-$e.dev11_cause = 'internal_error'
+$e.dev11_pas2js_supported = 'false'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
-Invoke-AggExpectFail 'cap10c2-pas2js-refusal' 'dev11_cause'
+Invoke-AggExpectFail 'cap10c2-pas2js-supported' 'dev11_pas2js_supported'
 
 # (c76) the development binary loading the bundle BESIDE it -> the fallback
 # DEV9 exists to prove absent
@@ -1949,6 +1961,164 @@ $e = Get-Content $f -Raw | ConvertFrom-Json
 $e.c1_pipeline_digest_unchanged = 'false'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap10c2-c1-digest-moved' 'c1_pipeline_digest_unchanged'
+
+# --- CAP-10C3: one negative leg per refusal the aggregator now names --------
+# Every row the CAP-10C3 aggregation refuses on is proved RED here, on a
+# fixture, before the real aggregation is trusted with it - the discipline
+# CAP-10C2 paid for by shipping pins with no matching legs.
+
+# (C3-1) the Pas2JS development verdict itself
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev_pas2js_corpus = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c3-corpus-fail' 'dev_pas2js_corpus'
+
+# (C3-2) SKIP is never promoted, for the new verdict either
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev_pas2js_suite = 'SKIP'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c3-suite-skip' 'dev_pas2js_suite'
+
+# (C3-3) one target's DECISION corpus drifting from the other three
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev_pas2js_digest = ('0' * 64)
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c3-digest-divergence' 'dev_pas2js_digest'
+
+# (C3-4) pas2js development UNAVAILABLE on a target
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev_pas2js_available = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c3-unavailable' 'dev_pas2js_available'
+
+# (C3-5) a target running a DIFFERENT detection model
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.change_detection_model = 'native_watcher'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c3-detection-model' 'change_detection_model'
+
+# (C3-6) a platform file-watch API appearing in the tree
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev_pas2js_watch_api_hits = '1'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c3-watch-api' 'dev_pas2js_watch_api_hits'
+
+# (C3-7) the page's own arithmetic wrong after a generation switch
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev_pas2js_rpc_after_switch = '41'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c3-rpc-after-switch' 'dev_pas2js_rpc_after_switch'
+
+# (C3-8) a PARTIAL or INCONSISTENT generation reaching the host
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev_pas2js_partial_generation_published = 'true'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c3-partial-generation' 'dev_pas2js_partial_generation_published'
+
+# (C3-9) the consistency rule silently no longer firing
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev_pas2js_inconsistent_generation_discarded = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c3-consistency-rule' 'dev_pas2js_inconsistent_generation_discarded'
+
+# (C3-10) a Pas2JS session reaching the NETWORK, which it has no stage for
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev_pas2js_network_calls = '1'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c3-network' 'dev_pas2js_network_calls'
+
+# (C3-11) a member of the live set holding a LISTENER
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev_pas2js_listener_members_max = '1'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c3-listener' 'dev_pas2js_listener_members_max'
+
+# (C3-12) a LOOSE asset in development
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev_pas2js_loose_assets_used = 'true'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c3-loose-assets' 'dev_pas2js_loose_assets_used'
+
+# (C3-13) DEV CODE IN THE PAS2JS RELEASE binary
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev_pas2js_release_dev_free = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c3-release-dev-code' 'dev_pas2js_release_dev_free'
+
+# (C3-14) `build` EXPOSED, measured again by the shard that closes the phase
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_still_unknown_c3 = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c3-build-exposed' 'build_still_unknown_c3'
+
+# (C3-15) A LEDGER ORPHAN - the gate over the disposition table
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.cap10c_ledger_orphans = '1'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c3-ledger-orphan' 'cap10c_ledger_orphans'
+
+# (C3-16) the development archive DIFFERING from the pipeline's - the claim
+# this shard exists to make about what a generation is
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev_pas2js_app_pwb_parity = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c3-archive-parity' 'dev_pas2js_app_pwb_parity'
+
+# (C3-17) the REACT loop regressing while the Pas2JS one was added
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.rd1_dev_digest_unchanged = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c3-react-regression' 'rd1_dev_digest_unchanged'
+
+# (C3-18) the typed input-set refusal drifting to an untyped one
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.pd9_cause = 'other'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c3-input-link-cause' 'pd9_cause'
+
+# (C3-19) the advertised frontend set losing a kind or growing one
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.advertised_ui_dev = 'react'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c3-advertised-ui' 'advertised_ui_dev'
 
 # --- (d) divergence sweep must refuse an off-allowlist conditional -----------
 $fixturePas = 'src/zz_cap7f_selftest_fixture.pas'
@@ -2010,9 +2180,9 @@ Remove-Item -Force -ErrorAction SilentlyContinue $matrix
 # a floor, so a leg that silently stops running is caught. It is deliberately
 # NOT an equality: adding a refusal branch is normal and should not require
 # editing this line, while LOSING one is the failure worth naming
-if ($script:AggRefusals -lt 84) {
+if ($script:AggRefusals -lt 179) {
     throw ("selftest: only $($script:AggRefusals) aggregator refusals fired, " +
-        'expected at least 84 -- a negative leg stopped running')
+        'expected at least 179 -- a negative leg stopped running')
 }
 if ($script:SweepRefusals -lt 2) {
     throw ("selftest: only $($script:SweepRefusals) divergence refusals fired, " +

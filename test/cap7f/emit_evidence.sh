@@ -1399,9 +1399,7 @@ dev9_exit="$(c2_str dev9_exit)"
 dev9_refused="$(c2_str dev9_refused)"
 dev9_never_loaded_beside_bundle="$(c2_str dev9_never_loaded_beside_bundle)"
 dev10_release_unchanged="$(c2_str dev10_release_unchanged)"
-dev11_exit="$(c2_str dev11_exit)"
-dev11_cause="$(c2_str dev11_cause)"
-dev11_nothing_written="$(c2_str dev11_nothing_written)"
+dev11_pas2js_supported="$(c2_str dev11_pas2js_supported)"
 dev13_no_ansi="$(c2_str dev13_no_ansi)"
 dev13_no_absolute_path="$(c2_str dev13_no_absolute_path)"
 dev13_generation_lines="$(c2_str dev13_generation_lines)"
@@ -1411,6 +1409,63 @@ dev14_second_run_skipped_install="$(c2_str dev14_second_run_skipped_install)"
 dev_sentinel_in_template="$(c2_str dev_sentinel_in_template)"
 network_stages_dev="$(c2_str network_stages_dev)"
 c1_pipeline_digest_unchanged="$(c2_str c1_pipeline_digest_unchanged)"
+
+# CAP-10C3: the PAS2JS development loop, and the CAP-10C closure. ONE record:
+# the headless suite's decision corpus (digested), the real `pweb dev` on the
+# real generated pas2js project through the driver, the two pas2js host
+# binaries' CSP bytes, the input-set refusals, the archive parity with the
+# CAP-10C1 pipeline, and the ledger disposition.
+c3_file="${repo_root}/build/cap10c3/cli-${target}.json"
+[ -f "${c3_file}" ] ||
+    die "cap10c3/cli-${target}.json missing -- the CAP-10C3 gates have not run in this workspace"
+c3_str() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+        "${c3_file}" | head -n 1
+}
+for f in dev_pas2js_corpus dev_pas2js_suite dev_pas2js_digest \
+         dev_pas2js_corpus_lines dev_pas2js_available change_detection_model \
+         advertised_ui_dev dev_pas2js_option_matrix build_still_unknown_c3 \
+         advertised_commands_c3 dev_pas2js_csp_identical \
+         dev_pas2js_release_dev_free dev_pas2js_transport_hits \
+         dev_pas2js_watch_api_hits dev_region_in_pas2js_template \
+         cap10c_ledger_entries cap10c_ledger_orphans cap10c_closure_recorded \
+         pd9_link_planted pd9_exit pd9_cause pd9_nothing_written \
+         pd10_exit pd10_cause pd10_nothing_written \
+         pd1_generation_ready pd1_generation_loaded pd1_rpc_and_secure \
+         pd2_generation_ready pd2_host_pid_unchanged \
+         pd3_generation_ready pd3_styles_applied pd4_generation_ready \
+         pd5_broken_published pd5_error_forwarded pd5_recovered \
+         pd5_compile_failures pd6_burst_edits pd6_monotonic \
+         pd6_all_generations_loaded pd6_final_value pd6_final_content_correct \
+         pd7_discarded pd7_moving_writes pd7_inconsistent_discarded \
+         pd7_recovered pd8_outside_published \
+         pd11_stop_requested pd11_pweb_outcome pd11_pweb_exit \
+         pd11_descendants_remaining pd11_interrupt_delivered \
+         pd11_interrupt_to_exit_ms pd11_no_partial_generation \
+         pd12_set_was_up pd12_kill_delivered pd12_pweb_outcome \
+         pd12_pweb_exit pd12_descendants_remaining pd12_kill_to_exit_ms \
+         pd12_no_partial_generation pd13_release_seeded \
+         pd13_release_unchanged pd15_generation_lines \
+         pd15_exact_one_line_per_generation pd15_no_ansi \
+         pd15_no_absolute_path \
+         dev_pas2js_error_keeps_previous_generation \
+         dev_pas2js_inconsistent_generation_discarded \
+         dev_pas2js_partial_generation_published \
+         dev_pas2js_generations_observed dev_pas2js_rpc_value \
+         dev_pas2js_rpc_after_switch dev_pas2js_interrupt_clean \
+         dev_pas2js_descendants_after_stop dev_pas2js_network_stages \
+         dev_pas2js_network_calls dev_pas2js_watched_input_count \
+         dev_pas2js_app_dir_names dev_pas2js_generation_holds_only_archive \
+         dev_pas2js_loose_assets_used dev_pas2js_gen1_sha256 \
+         dev_pas2js_app_pwb_parity dev_pas2js_listener_sampler_scope \
+         dev_pas2js_listener_members_seen dev_pas2js_listener_members_max \
+         rd1_dev_digest_unchanged rd1_dev_suite c3_pipeline_digest_unchanged \
+         dev_pas2js_normalised
+do
+    # every CAP-10C3 row is a STRING in its record, so one loop reads them
+    # all rather than eighty near-identical assignments nobody can diff
+    printf -v "${f}" '%s' "$(c3_str "${f}")"
+done
 autoclose_stop_honoured="$(c1_str autoclose_stop_honoured)"
 doctor_platform_webview="$(c1_str doctor_platform_webview)"
 pipeline_corpus_lines="$(c1_num pipeline_corpus_lines)"
@@ -1810,9 +1865,7 @@ cat > "${work}/evidence.json" <<EOF
   "dev9_refused": "${dev9_refused}",
   "dev9_never_loaded_beside_bundle": "${dev9_never_loaded_beside_bundle}",
   "dev10_release_unchanged": "${dev10_release_unchanged}",
-  "dev11_exit": "${dev11_exit}",
-  "dev11_cause": "${dev11_cause}",
-  "dev11_nothing_written": "${dev11_nothing_written}",
+  "dev11_pas2js_supported": "${dev11_pas2js_supported}",
   "dev13_no_ansi": "${dev13_no_ansi}",
   "dev13_no_absolute_path": "${dev13_no_absolute_path}",
   "dev13_generation_lines": "${dev13_generation_lines}",
@@ -1822,6 +1875,96 @@ cat > "${work}/evidence.json" <<EOF
   "dev_sentinel_in_template": "${dev_sentinel_in_template}",
   "network_stages_dev": "${network_stages_dev}",
   "c1_pipeline_digest_unchanged": "${c1_pipeline_digest_unchanged}",
+  "dev_pas2js_corpus": "${dev_pas2js_corpus}",
+  "dev_pas2js_suite": "${dev_pas2js_suite}",
+  "dev_pas2js_digest": "${dev_pas2js_digest}",
+  "dev_pas2js_corpus_lines": "${dev_pas2js_corpus_lines}",
+  "dev_pas2js_available": "${dev_pas2js_available}",
+  "change_detection_model": "${change_detection_model}",
+  "advertised_ui_dev": "${advertised_ui_dev}",
+  "dev_pas2js_option_matrix": "${dev_pas2js_option_matrix}",
+  "build_still_unknown_c3": "${build_still_unknown_c3}",
+  "advertised_commands_c3": "${advertised_commands_c3}",
+  "dev_pas2js_csp_identical": "${dev_pas2js_csp_identical}",
+  "dev_pas2js_release_dev_free": "${dev_pas2js_release_dev_free}",
+  "dev_pas2js_transport_hits": "${dev_pas2js_transport_hits}",
+  "dev_pas2js_watch_api_hits": "${dev_pas2js_watch_api_hits}",
+  "dev_region_in_pas2js_template": "${dev_region_in_pas2js_template}",
+  "cap10c_ledger_entries": "${cap10c_ledger_entries}",
+  "cap10c_ledger_orphans": "${cap10c_ledger_orphans}",
+  "cap10c_closure_recorded": "${cap10c_closure_recorded}",
+  "pd9_link_planted": "${pd9_link_planted}",
+  "pd9_exit": "${pd9_exit}",
+  "pd9_cause": "${pd9_cause}",
+  "pd9_nothing_written": "${pd9_nothing_written}",
+  "pd10_exit": "${pd10_exit}",
+  "pd10_cause": "${pd10_cause}",
+  "pd10_nothing_written": "${pd10_nothing_written}",
+  "pd1_generation_ready": "${pd1_generation_ready}",
+  "pd1_generation_loaded": "${pd1_generation_loaded}",
+  "pd1_rpc_and_secure": "${pd1_rpc_and_secure}",
+  "pd2_generation_ready": "${pd2_generation_ready}",
+  "pd2_host_pid_unchanged": "${pd2_host_pid_unchanged}",
+  "pd3_generation_ready": "${pd3_generation_ready}",
+  "pd3_styles_applied": "${pd3_styles_applied}",
+  "pd4_generation_ready": "${pd4_generation_ready}",
+  "pd5_broken_published": "${pd5_broken_published}",
+  "pd5_error_forwarded": "${pd5_error_forwarded}",
+  "pd5_recovered": "${pd5_recovered}",
+  "pd5_compile_failures": "${pd5_compile_failures}",
+  "pd6_burst_edits": "${pd6_burst_edits}",
+  "pd6_monotonic": "${pd6_monotonic}",
+  "pd6_all_generations_loaded": "${pd6_all_generations_loaded}",
+  "pd6_final_value": "${pd6_final_value}",
+  "pd6_final_content_correct": "${pd6_final_content_correct}",
+  "pd7_discarded": "${pd7_discarded}",
+  "pd7_moving_writes": "${pd7_moving_writes}",
+  "pd7_inconsistent_discarded": "${pd7_inconsistent_discarded}",
+  "pd7_recovered": "${pd7_recovered}",
+  "pd8_outside_published": "${pd8_outside_published}",
+  "pd11_stop_requested": "${pd11_stop_requested}",
+  "pd11_pweb_outcome": "${pd11_pweb_outcome}",
+  "pd11_pweb_exit": "${pd11_pweb_exit}",
+  "pd11_descendants_remaining": "${pd11_descendants_remaining}",
+  "pd11_interrupt_delivered": "${pd11_interrupt_delivered}",
+  "pd11_interrupt_to_exit_ms": "${pd11_interrupt_to_exit_ms}",
+  "pd11_no_partial_generation": "${pd11_no_partial_generation}",
+  "pd12_set_was_up": "${pd12_set_was_up}",
+  "pd12_kill_delivered": "${pd12_kill_delivered}",
+  "pd12_pweb_outcome": "${pd12_pweb_outcome}",
+  "pd12_pweb_exit": "${pd12_pweb_exit}",
+  "pd12_descendants_remaining": "${pd12_descendants_remaining}",
+  "pd12_kill_to_exit_ms": "${pd12_kill_to_exit_ms}",
+  "pd12_no_partial_generation": "${pd12_no_partial_generation}",
+  "pd13_release_seeded": "${pd13_release_seeded}",
+  "pd13_release_unchanged": "${pd13_release_unchanged}",
+  "pd15_generation_lines": "${pd15_generation_lines}",
+  "pd15_exact_one_line_per_generation": "${pd15_exact_one_line_per_generation}",
+  "pd15_no_ansi": "${pd15_no_ansi}",
+  "pd15_no_absolute_path": "${pd15_no_absolute_path}",
+  "dev_pas2js_error_keeps_previous_generation": "${dev_pas2js_error_keeps_previous_generation}",
+  "dev_pas2js_inconsistent_generation_discarded": "${dev_pas2js_inconsistent_generation_discarded}",
+  "dev_pas2js_partial_generation_published": "${dev_pas2js_partial_generation_published}",
+  "dev_pas2js_generations_observed": "${dev_pas2js_generations_observed}",
+  "dev_pas2js_rpc_value": "${dev_pas2js_rpc_value}",
+  "dev_pas2js_rpc_after_switch": "${dev_pas2js_rpc_after_switch}",
+  "dev_pas2js_interrupt_clean": "${dev_pas2js_interrupt_clean}",
+  "dev_pas2js_descendants_after_stop": "${dev_pas2js_descendants_after_stop}",
+  "dev_pas2js_network_stages": "${dev_pas2js_network_stages}",
+  "dev_pas2js_network_calls": "${dev_pas2js_network_calls}",
+  "dev_pas2js_watched_input_count": "${dev_pas2js_watched_input_count}",
+  "dev_pas2js_app_dir_names": "${dev_pas2js_app_dir_names}",
+  "dev_pas2js_generation_holds_only_archive": "${dev_pas2js_generation_holds_only_archive}",
+  "dev_pas2js_loose_assets_used": "${dev_pas2js_loose_assets_used}",
+  "dev_pas2js_gen1_sha256": "${dev_pas2js_gen1_sha256}",
+  "dev_pas2js_app_pwb_parity": "${dev_pas2js_app_pwb_parity}",
+  "dev_pas2js_listener_sampler_scope": "${dev_pas2js_listener_sampler_scope}",
+  "dev_pas2js_listener_members_seen": "${dev_pas2js_listener_members_seen}",
+  "dev_pas2js_listener_members_max": "${dev_pas2js_listener_members_max}",
+  "rd1_dev_digest_unchanged": "${rd1_dev_digest_unchanged}",
+  "rd1_dev_suite": "${rd1_dev_suite}",
+  "c3_pipeline_digest_unchanged": "${c3_pipeline_digest_unchanged}",
+  "dev_pas2js_normalised": "${dev_pas2js_normalised}",
   "autoclose_stop_honoured": "${autoclose_stop_honoured}",
   "doctor_platform_webview": "${doctor_platform_webview}",
   "pipeline_corpus_lines": "${pipeline_corpus_lines}",

@@ -143,8 +143,8 @@ begin
     '                 it in the foreground (pweb run --help)' + CRLF_NONE +
     '  dev            build, launch and reload on every change' +
       CRLF_NONE +
-    '                 (' + PWEB_CLI_UI_REACT + ' only; pweb dev --help)' +
-      CRLF_NONE +
+    '                 (' + PWEB_CLI_UI_REACT + ' and ' +
+      PWEB_CLI_UI_PAS2JS + '; pweb dev --help)' + CRLF_NONE +
     CRLF_NONE +
     'options:' + CRLF_NONE +
     '  --ui <kind>    the frontend kind to scaffold (create only)' +
@@ -278,38 +278,53 @@ begin
     '                 working directory' + CRLF_NONE +
     '  --help         show this text' + CRLF_NONE +
     CRLF_NONE +
-    // the limit, stated where a reader looks for it rather than discovered
-    // by running the command on the wrong kind of project
-    'THIS BUILD IMPLEMENTS `ui: ' + PWEB_CLI_UI_REACT + '` ONLY. A `' +
-      PWEB_CLI_UI_PAS2JS + '` project is refused with dev_ui_unsupported' +
-      CRLF_NONE +
-    'and nothing is started or written.' + CRLF_NONE +
+    // both frontend kinds, and what differs between them, stated where a
+    // reader looks for it rather than discovered by running the command
+    'BOTH FRONTEND KINDS ARE IMPLEMENTED: `ui: ' + PWEB_CLI_UI_REACT +
+      '` and `ui: ' + PWEB_CLI_UI_PAS2JS + '`.' + CRLF_NONE +
+    'A project declaring any other kind is refused with' + CRLF_NONE +
+    'dev_ui_unsupported and nothing is started or written.' + CRLF_NONE +
     CRLF_NONE +
-    'what it does, in order: resolve the toolchain and refuse before any' +
+    'what it does, in order. Common to both: resolve the toolchain and' +
       CRLF_NONE +
-    'write, stage the TypeScript SDK, install dependencies when the' +
+    'refuse before any write, compile a development build of the native' +
       CRLF_NONE +
-    'lockfile or node_modules asks for it, typecheck once, compile a' +
-      CRLF_NONE +
-    'development build of the native host, then watch the frontend. Every' +
+    'host, build the first generation, then launch and watch. Every' +
       CRLF_NONE +
     'completed rebuild is packed into an immutable generation and the' +
       CRLF_NONE +
     'running window reloads it - the application is never restarted.' +
       CRLF_NONE +
     CRLF_NONE +
+    '  ' + PWEB_CLI_UI_REACT +
+      '   also stages the TypeScript SDK, installs dependencies when' +
+      CRLF_NONE +
+    '          the lockfile or node_modules asks for it, and typechecks' +
+      CRLF_NONE +
+    '          once; the frontend build reports its own completions' +
+      CRLF_NONE +
+    '  ' + PWEB_CLI_UI_PAS2JS +
+      '  needs no node toolchain at any point, so none of those stages' +
+      CRLF_NONE +
+    '          exist; this CLI watches the frontend sources itself and' +
+      CRLF_NONE +
+    '          rebuilds when their contents change' + CRLF_NONE +
+    CRLF_NONE +
     'the application origin is pweb://app, in development exactly as in' +
       CRLF_NONE +
     'production. No development server, no proxy, no port and no network' +
       CRLF_NONE +
-    'listener of any kind is opened; the only stage that reaches the' +
+    'listener of any kind is opened; the only stage that can reach the' +
       CRLF_NONE +
-    'network is the dependency install, and it is skipped when it can be.' +
-      CRLF_NONE +
+    'network is the ' + PWEB_CLI_UI_REACT +
+      ' dependency install, and it is skipped when it' + CRLF_NONE +
+    'can be. A ' + PWEB_CLI_UI_PAS2JS +
+      ' session runs entirely offline.' + CRLF_NONE +
     CRLF_NONE +
-    'Ctrl+C stops the watcher and the application together, through the' +
+    'Ctrl+C stops everything this command started - the application, and' +
       CRLF_NONE +
-    'same graceful-then-forced ladder `pweb run` uses.' + CRLF_NONE +
+    'the frontend watcher where there is one - through the same' + CRLF_NONE +
+    'graceful-then-forced ladder `pweb run` uses.' + CRLF_NONE +
     CRLF_NONE +
     'exit codes:' + CRLF_NONE +
     '  0 the loop stopped cleanly   2 usage   3 project, or a frontend' +

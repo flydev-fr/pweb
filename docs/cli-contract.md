@@ -38,16 +38,19 @@ already-built application in production mode and supervises it; it builds
 nothing. It takes `--project` and nothing else, and passes the application
 no argument at all.
 
-**CAP-10C2 adds `dev`** (section 5 and [dev-contract.md](dev-contract.md)).
-`dev` builds a React project, launches it, watches the frontend, and on every
-completed rebuild publishes an immutable generation the running window loads
-**without the application restarting**. It takes `--project` and `--help` and
-nothing else, adds no usage cause, and refuses `ui = pas2js` with the project
-cause `dev_ui_unsupported` (exit 3) rather than pretending to a loop it does
-not implement. It opens no listener, no development server and no proxy; the
-privileged origin stays `pweb://app`. The lifecycle pipeline CAP-10C1 froze as
-private is linked into this executable to serve it — which is not the same
-thing as advertising a build, and `build` stays unknown.
+**CAP-10C2 adds `dev`, and CAP-10C3 completes it** (section 5 and
+[dev-contract.md](dev-contract.md)). `dev` builds a project, launches it,
+watches the frontend, and on every completed rebuild publishes an immutable
+generation the running window loads **without the application restarting**.
+It takes `--project` and `--help` and nothing else and adds no usage cause.
+**Both ratified frontend kinds are implemented** — `react` since CAP-10C2 and
+`pas2js` since CAP-10C3 — and a project declaring any other kind is refused
+with the project cause `dev_ui_unsupported` (exit 3) rather than pretending
+to a loop this build does not implement. It opens no listener, no development
+server and no proxy; the privileged origin stays `pweb://app`. The lifecycle
+pipeline CAP-10C1 froze as private is linked into this executable to serve it
+— which is not the same thing as advertising a build, and `build` stays
+unknown.
 
 **CAP-10B2 adds the second frontend and nothing else.** It ships one more
 trusted public template, widens the compiled `--ui` allowlist to the two kinds
@@ -451,7 +454,7 @@ exits 1 on its own, and `run` reports `application exited 1` and answers 5.
 
 ---
 
-## 5. The development-trust decision (ratified at CAP-10A, implemented at CAP-10C2)
+## 5. The development-trust decision (ratified at CAP-10A, implemented at CAP-10C2 and CAP-10C3)
 
 **The privileged application origin is `pweb://app` in development and in
 production alike.**
@@ -488,22 +491,33 @@ allowance is added "temporarily" to the shared profile, and by the time
 anyone looks the production CSP has a localhost entry nobody can date. Since
 CAP-10C2 the same gate also pins the development half.
 
-### What CAP-10C2 shipped, and what it deliberately did not
+### What CAP-10C shipped, and what it deliberately did not
 
-**`pweb dev` is rebuild-and-reload for React in v1**, and
+**`pweb dev` is rebuild-and-reload for BOTH UIs**, and
 [dev-contract.md](dev-contract.md) is the whole of its contract. Every
-completed `vite build --watch` is packed by the frozen CAP-6 bundler into an
-immutable generation, published by one directory rename, discovered by a
-bounded forward-only poll and loaded by one native re-navigation to
-`pweb://app`. There is no listener, no development server, no proxy and no
-HMR transport anywhere in it, and `PWEB_NATIVE_CSP` is byte-identical in the
-development binary and the release one.
+completed rebuild — a `vite build --watch` for React, one supervised `pas2js`
+run plus the CAP-10C1 assembly for Pas2JS — is packed by the frozen CAP-6
+bundler into an immutable generation, published by one directory rename,
+discovered by a bounded forward-only poll and loaded by one native
+re-navigation to `pweb://app`. There is no listener, no development server,
+no proxy and no HMR transport anywhere in it, and `PWEB_NATIVE_CSP` is
+byte-identical in the development binary and the release one — measured for a
+React project at CAP-10C2 and for a Pas2JS project at CAP-10C3.
+
+The two loops differ only in how the CLI learns a rebuild is due: Vite writes
+a completion sentinel from `writeBundle`, and Pas2JS — which has neither a
+watch mode nor a `writeBundle` — is answered by a bounded content
+fingerprint of the ratified input set, walked by the CLI itself. No platform
+file-watch API exists anywhere in the repository.
 
 **The `ws://127.0.0.1:<native-selected-port>` allowance above stays
-ratified, unused, and pinned absent from every profile.** Nothing in the
-shipped dev loop needs it, and a ratification is not an implementation: a
-reader must be able to tell the two apart, so the gate pins the absence on
-every leg exactly as it did before the loop existed.
+ratified, unused, and pinned absent from every profile — for both UIs.**
+Nothing in either shipped loop needs it: rebuild-and-reload was chosen for
+React on the model-A spike data below, and Pas2JS development needed no
+WebSocket even in the CAP-10A ratification. A ratification is not an
+implementation, and a reader must be able to tell the two apart, so
+`test/cap10a/check_dev_trust.ps1` pins the absence on every leg exactly as it
+did before any development code existed.
 
 **A model-A shard — serving Vite's own module graph behind `pweb://app` —
 was measured and refused**, and the evidence is
@@ -529,6 +543,11 @@ ratified allowance, which is exactly the condition this rule refuses on.
 Finding 3 is recorded because it is what an HMR shard would have to solve
 first: **an HMR shard needs the spike's data**, and the spike is the record
 it should start from rather than a fresh guess.
+
+CAP-10C is closed. The consolidated evidence — the four hosted green runs,
+every recorded digest supersession, a disposition for every deferred item and
+the CAP-10D handoff — is
+`_bmad-output/implementation-artifacts/cap10c-closure-artifact.md`.
 
 ---
 

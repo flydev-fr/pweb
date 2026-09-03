@@ -290,7 +290,9 @@ foreach ($case in @(
 $devHelp = RunCli @('dev', '--help') $cwd
 Require ($devHelp.Code -eq 0) 'DEV12: dev --help did not exit 0'
 Require ($devHelp.Out.Contains('react')) 'DEV12: dev --help does not advertise React'
-Require ($devHelp.Out.Contains('pas2js')) 'DEV12: dev --help does not name the refusal'
+# CAP-10C3 changed what this line means, not whether it holds: `pas2js` was
+# named here as the REFUSED kind and is named now as an implemented one
+Require ($devHelp.Out.Contains('pas2js')) 'DEV12: dev --help does not name pas2js'
 Require (-not $devHelp.Out.Contains([char]27)) 'DEV12: dev --help emitted ANSI'
 $mainHelp = RunCli @('--help') $cwd
 Require ($mainHelp.Out.Contains('pweb dev ')) '--help does not advertise dev'
@@ -327,24 +329,37 @@ Row 'dev_sentinel_in_template' (Bool ($viteConfig.Contains('pweb-dev-sentinel'))
 Require ($viteConfig.Contains('pweb-dev-sentinel')) `
     'the generated vite.config.ts carries no pweb-dev-sentinel plugin'
 
-# --- 6. DEV11: a pas2js project is refused, and NOTHING is written ----------
+# --- 6. DEV11, INVERTED BY CAP-10C3 -----------------------------------------
+# CAP-10C2 measured that `pweb dev` REFUSED a pas2js project with
+# dev_ui_unsupported and exit 3. CAP-10C3 implements that loop, so the claim
+# is no longer true - and the leg is INVERTED rather than deleted, which is
+# the discipline `pipeline_units_linked` already got: "the second UI is
+# refused" becomes "the second UI is implemented", measured on the same
+# command.
+#
+# IT IS NOT MEASURED BY RUNNING `pweb dev` ON THE PROJECT. That would start a
+# real development loop and never return - MEASURED, and it is how this
+# regression was found: the leg hung for eighteen minutes with a live host
+# before anything else could run. What is measured instead is the public
+# surface, which is where a user meets the change; that the refusal PATH
+# survives for a future frontend kind is pinned in SOURCE by
+# test/cap10c3/check_cap10c3_contracts.ps1 and exercised as a rule by the
+# CAP-10C3 headless suite, which reaches it with an unratified UI ordinal.
 if (Test-Path -LiteralPath $p2j) {
-    $before = @(Get-ChildItem -LiteralPath $p2j -Recurse -File -Force |
-        ForEach-Object { "$($_.FullName)|$($_.Length)" }) -join "`n"
-    $r = RunCli @('dev', '--project', $p2j) $cwd
-    $after = @(Get-ChildItem -LiteralPath $p2j -Recurse -File -Force |
-        ForEach-Object { "$($_.FullName)|$($_.Length)" }) -join "`n"
-    Row 'dev11_exit' "$($r.Code)"
-    Row 'dev11_cause' $(if ($r.Err.Contains('dev_ui_unsupported')) { 'dev_ui_unsupported' } else { 'other' })
-    Row 'dev11_nothing_written' (Bool ($before -ceq $after))
-    Require ($r.Code -eq 3) "DEV11: pweb dev on a pas2js project exited $($r.Code), expected 3"
-    Require ($r.Err.Contains('dev_ui_unsupported')) `
-        'DEV11: the refusal does not name dev_ui_unsupported'
-    Require ($before -ceq $after) 'DEV11: the refused run wrote into the project'
+    $bothAdvertised = $devHelp.Out.Contains('pas2js') -and
+                      $devHelp.Out.Contains('react')
+    Row 'dev11_pas2js_supported' (Bool $bothAdvertised)
+    Require $bothAdvertised `
+        ('DEV11: `pweb dev --help` does not advertise both frontend kinds; ' +
+         'CAP-10C3 implements pas2js and the surface has to say so')
+    # and the project this shard scaffolds is still a real one the loop
+    # could take - the descriptor reads pas2js, which is what makes the row
+    # above a statement about THIS project rather than about a help string
+    $descriptor = [System.IO.File]::ReadAllText((Join-Path $p2j 'pweb.json'))
+    Require ($descriptor.Contains('"ui": "pas2js"')) `
+        'DEV11: the scaffolded project does not declare ui = pas2js'
 } else {
-    Row 'dev11_exit' 'unmeasured'
-    Row 'dev11_cause' 'unmeasured'
-    Row 'dev11_nothing_written' 'unmeasured'
+    Row 'dev11_pas2js_supported' 'unmeasured'
     Require $false 'DEV11: the Pas2JS project was not scaffolded'
 }
 

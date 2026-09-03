@@ -157,10 +157,11 @@ foreach ($phrase in 'pweb://app', 'ws://127.0.0.1', 'never an origin exception',
 $devHost = 'src/webview/pweb.webview.devhost.pas'
 $devLoop = 'tools/pweb/pweb.cli.dev.pas'
 $devLayout = 'tools/pweb/pweb.cli.devlayout.pas'
+$devInputs = 'tools/pweb/pweb.cli.devinputs.pas'
 $devContract = 'docs/dev-contract.md'
-foreach ($f in $devHost, $devLoop, $devLayout, $devContract) {
+foreach ($f in $devHost, $devLoop, $devLayout, $devInputs, $devContract) {
     if (-not (Test-Path $f)) {
-        $violations.Add("CAP-10C2 development surface is missing: $f")
+        $violations.Add("CAP-10C development surface is missing: $f")
     }
 }
 if (Test-Path $devHost) {
@@ -228,13 +229,23 @@ foreach ($file in $surface) {
 # THE PRODUCTION TEMPLATE STILL SELECTS THE PRODUCTION HOST. The generated
 # program.lpr may name the development composition only inside its
 # PWEB_DEV region, which is what makes a release build unable to link it.
-$tpl = 'tools/templates/react/src/program.lpr'
-if (Test-Path $tpl) {
+# BOTH templates, since CAP-10C3: `pweb dev` implements both ratified
+# frontend kinds, so both generated programs carry the region and both have
+# to keep it fenced. Checking one would leave the other free to drift.
+foreach ($tpl in 'tools/templates/react/src/program.lpr',
+                 'tools/templates/pas2js/src/program.lpr') {
+    if (-not (Test-Path $tpl)) {
+        $violations.Add("a generated program template is missing: $tpl")
+        continue
+    }
     $inDev = $false
+    $sawRegion = $false
     $lineNo = 0
     foreach ($line in [System.IO.File]::ReadLines($tpl)) {
         $lineNo++
-        if ($line -match '\{\$ifdef\s+PWEB_DEV\}') { $inDev = $true; continue }
+        if ($line -match '\{\$ifdef\s+PWEB_DEV\}') {
+            $inDev = $true; $sawRegion = $true; continue
+        }
         if ($line -match '\{\$else\}') { $inDev = $false; continue }
         if ($line -match '\{\$endif\s+PWEB_DEV\}') { $inDev = $false; continue }
         if ((-not $inDev) -and
@@ -243,6 +254,11 @@ if (Test-Path $tpl) {
                 "composition OUTSIDE its PWEB_DEV region: ${tpl}:${lineNo}"))
         }
     }
+    if (-not $sawRegion) {
+        $violations.Add(("$tpl carries no PWEB_DEV region: `pweb dev` " +
+            'implements both frontend kinds and neither generated program ' +
+            'can be built in development mode without one'))
+    }
 }
 # THE RATIFIED-BUT-UNUSED ALLOWANCE. CAP-10C2 chose rebuild-and-reload, so
 # ws://127.0.0.1:<port> is still ratified in the contract, still unused, and
@@ -250,13 +266,35 @@ if (Test-Path $tpl) {
 # (section 4); its absence from every SOURCE profile is section 2. This pins
 # the third thing: the contract must record that the shipped dev loop does
 # not use it, so a reader cannot mistake a ratification for an implementation.
-foreach ($phrase in 'rebuild-and-reload', 'ratified, unused') {
+#
+# CAP-10C3 pins the FINAL wording, now that both loops exist. Three claims,
+# and the document must carry each of them as text a reader can find:
+#
+#   both UIs use rebuild-and-reload  - not "react does and pas2js will"
+#   the allowance is ratified, unused and pinned absent - for BOTH
+#   the model-A spike is the REASON  - a refusal on measured data, cited by
+#                                      file, so the next shard starts from it
+foreach ($phrase in 'rebuild-and-reload',
+                    'rebuild-and-reload for BOTH UIs',
+                    'ratified, unused',
+                    'pinned absent from every profile — for both UIs',
+                    'cap10c2-model-a-spike.md') {
     if (-not $contractText.Contains($phrase)) {
-        $violations.Add(("docs/cli-contract.md does not record the CAP-10C2 " +
-            "decision: `"$phrase`" is absent"))
+        $violations.Add(("docs/cli-contract.md does not record the final " +
+            "CAP-10C development-trust wording: `"$phrase`" is absent"))
     }
 }
-$report.Add('CAP-10C2: rebuild-and-reload; the ws:// allowance stays ratified, unused and absent')
+# and the DEV CONTRACT must say the same of the Pas2JS half: no WebSocket,
+# no listener, and a detector that is a bounded poll rather than a transport
+foreach ($phrase in 'cli_content_fingerprint_poll',
+                    'No platform file-watch API exists anywhere') {
+    $devContractText = [System.IO.File]::ReadAllText($devContract)
+    if (-not $devContractText.Contains($phrase)) {
+        $violations.Add(("docs/dev-contract.md does not record the CAP-10C3 " +
+            "detection decision: `"$phrase`" is absent"))
+    }
+}
+$report.Add('CAP-10C: rebuild-and-reload for BOTH UIs; the ws:// allowance stays ratified, unused and absent')
 
 # --- verdict ----------------------------------------------------------------
 New-Item -ItemType Directory -Force build/cap10a | Out-Null
