@@ -10,7 +10,10 @@ aggregate` PASS with field-by-field agreement on four targets, ONE
 decisions — equal on windows-x86_64, linux-x86_64, macos-x86_64 and
 macos-arm64, six generations published and six acknowledged on every target,
 and `dev_digest` and `pipeline_digest` re-measured **unchanged** at
-`09cc2b1c…ce0b7df6` and `f890424a…978e839a`.
+`09cc2b1c…ce0b7df6` and `f890424a…978e839a`. Re-run green on the closure
+commit itself (**33799537793**, `7d582d6`), after one re-run of its Windows
+job: the pinned Lazarus/FPC installer step timed out at 20 minutes before any
+code of this shard ran, which is infrastructure and not drift.
 
 `pweb --help` advertises `create doctor run dev`, and `pweb dev --help`
 advertises **both** frontend kinds. `build` is still an unknown command.
