@@ -2,7 +2,7 @@
 title: 'CAP-10C2 — public `pweb dev` for React: rebuild-and-reload behind pweb://app, over the C1 pipeline and the C0 engine'
 type: 'feature'
 created: '2026-09-03'
-status: 'in-progress'
+status: 'done'
 baseline_commit: '94694bcaf17ba6fdcab29875f66e3b9a1d6cad42'
 review_loop_iteration: 0
 context:
