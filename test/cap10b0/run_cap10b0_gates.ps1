@@ -284,9 +284,12 @@ if (Test-Path -LiteralPath $pweb) {
     Require ($p.ExitCode -eq 0) '--help did not exit 0'
     Require ($help.Contains('pweb create ')) `
         '--help does not advertise create'
-    # CAP-10C0 moved `run` out of this list: it is advertised because it
-    # is implemented, and the CAP-10C0 gates measure it
-    foreach ($absent in 'dev ', 'build') {
+    # CAP-10C0 moved `run` out of this list and CAP-10C2 moved `dev`: each is
+    # advertised because it is implemented, and the shard that implemented it
+    # measures it. The RULE is unchanged - help advertises exactly the
+    # commands the binary implements - and only the membership moved.
+    # `build` stays here, alone.
+    foreach ($absent in 'build') {
         Require (-not $help.Contains("pweb $absent")) `
             "--help advertises an unimplemented command: $absent"
     }

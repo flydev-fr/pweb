@@ -177,8 +177,9 @@ $help = RunCli $pweb $repoRoot @('--help')
 Require ($help.Code -eq 0) '--help did not exit 0'
 Require ($help.Out.Contains('pweb create NAME --ui react|pas2js')) `
     'the global help does not advertise create with both frontend kinds'
-# (`pweb run` left this list with CAP-10C0, which implements and measures it)
-foreach ($absent in 'pweb dev', 'pweb build') {
+# (`pweb run` left this list with CAP-10C0 and `pweb dev` with CAP-10C2, each
+# implemented and measured by the shard that added it; `build` stays alone)
+foreach ($absent in 'pweb build') {
     Require (-not $help.Out.Contains($absent)) `
         "the global help advertises an unimplemented command: $absent"
 }
@@ -222,10 +223,10 @@ Require ($supported -ceq 'pas2js,react') `
     "create --help advertises '$advertised', expected 'react|pas2js'"
 Row 'supported_uis' $supported
 
-# dev/build must still be UNKNOWN COMMANDS, not merely unadvertised (`run`
-# is a command since CAP-10C0 and is refused differently: it needs no
-# operand and answers about the project instead)
-foreach ($absent in 'dev', 'build') {
+# `build` must still be an UNKNOWN COMMAND, not merely unadvertised. `run` is
+# a command since CAP-10C0 and `dev` since CAP-10C2, and each is refused
+# differently: it needs no operand and answers about the project instead.
+foreach ($absent in 'build') {
     $r = RunCli $pweb $repoRoot @($absent)
     Require ($r.Code -eq 2) `
         "'pweb $absent' must be an unknown command (exit 2), got $($r.Code)"
@@ -363,6 +364,14 @@ Row 'create_deterministic' $(
 # --- 4. the EXACT generated set, in both directions -----------------------
 # named here in full and compared as a set: a project that grew a file and a
 # project that lost one are both failures, and neither shows up in a count
+#
+# SUPERSEDED BY CAP-10C2, which added `frontend/pweb-build.d.ts`: the four
+# Node built-in declarations the development completion sentinel in
+# vite.config.ts needs, declared in the template rather than pulled in as
+# @types/node so the typecheck that also covers src/ gains no Node surface.
+# A shard that changes a template moves this literal in the same commit -
+# the rule CAP-10C1's supersession states - and CAP-10B2's copy of it moved
+# with this one.
 $expected = @(
     '.gitattributes'
     '.gitignore'
@@ -370,6 +379,7 @@ $expected = @(
     'frontend/index.html'
     'frontend/package-lock.json'
     'frontend/package.json'
+    'frontend/pweb-build.d.ts'
     'frontend/src/App.tsx'
     'frontend/src/app.css'
     'frontend/src/main.tsx'

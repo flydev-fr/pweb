@@ -31,8 +31,12 @@ if (-not (Test-Path 'deps/mormot2/src/core/mormot.core.base.pas')) {
     throw 'deps/mormot2 missing -- run tools/get-mormot.ps1 first'
 }
 
-$targetOs = (fpc -iTO).Trim().ToLowerInvariant()
-$targetCpu = (fpc -iTP).Trim().ToLowerInvariant()
+# CAP-10C2: the SELECTED target, not the compiler.s default - every compile
+# below names it explicitly, so the default decides nothing, and on a Windows
+# host carrying both compilers it is regularly win32/i386. CAP-10C1 ratified
+# the rule; this script simply had not followed it.
+$targetOs = (fpc -Px86_64 -Twin64 -iTO).Trim().ToLowerInvariant()
+$targetCpu = (fpc -Px86_64 -Twin64 -iTP).Trim().ToLowerInvariant()
 if (($targetOs -cne 'win64') -or ($targetCpu -cne 'x86_64')) {
     throw "CAP-10A expects FPC target Win64/x86_64, got $targetOs/$targetCpu"
 }
@@ -49,7 +53,7 @@ $mormotTest = $mormotCore + @('-Fudeps/mormot2/src/net')
 $statics = '-Fldeps/mormot2/static/x86_64-win64'
 
 # --- 1. layering: the reusable runtime-command layer is webview-free -------
-fpc -MObjFPC -Sh -B -FUbuild/cap10a/iso `
+fpc -Px86_64 -Twin64 -MObjFPC -Sh -B -FUbuild/cap10a/iso `
     -Fusrc/rpc -Fusrc/security -Fusrc/assets @mormotCore `
     src/rpc/pweb.rpc.command.pas
 if ($LASTEXITCODE -ne 0) {
