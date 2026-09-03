@@ -1079,6 +1079,19 @@ begin
     // Windows, serveTask: on macOS); this is the Linux half of that parity.
     soup_message_headers_append(soupHeaders, 'Content-Type',
       PAnsiChar(mime));
+    // CAP-10C2: the engine must not answer a later request for this URL out
+    // of its own cache. The WebView2 adapter has sent this since CAP-4W and
+    // the two WebKit adapters did not. MEASURED here, on this adapter, with
+    // the dev host and three archives and no CLI involved: without the
+    // header the handler is asked for `assets/app.js` EXACTLY ONCE, at the
+    // first document load, and every later re-navigation re-runs the page
+    // against the previous bundle's JavaScript - the archive changes, the
+    // window does not. With it the store is asked on every navigation and
+    // the page tracks the archive (42 -> 47 -> 42 over three generations).
+    // Not a development affordance: `app.pwb` is a replaceable, privileged
+    // bundle and an engine cache is not something this runtime can
+    // invalidate.
+    soup_message_headers_append(soupHeaders, 'Cache-Control', 'no-store');
     for i := 0 to headers.Count - 1 do
       soup_message_headers_append(soupHeaders,
         PAnsiChar(headers.Items[i].Name), PAnsiChar(headers.Items[i].Value));

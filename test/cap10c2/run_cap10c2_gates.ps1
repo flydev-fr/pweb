@@ -524,12 +524,39 @@ if (Test-Path -LiteralPath $react) {
     $supervisorLines = @($lines | Where-Object { $_ -match '^E\| pweb: ' })
     $readyLines = @($supervisorLines | Where-Object {
         $_ -match 'pweb: generation \d+ ready \(\d+ ms\)$' })
+    # EXACTLY ONE LINE PER GENERATION, and the sequence has no gap and no
+    # repeat. Comparing the line count with the number of DIRECTORIES was
+    # wrong by construction and only looked right while a session published
+    # no more than PWEB_CLI_DEV_KEEP_GENERATIONS: the bounded cleanup removes
+    # generations behind the keep window, so the directories on disk are a
+    # SUFFIX of the announced sequence and never the whole of it. MEASURED on
+    # linux-x86_64: four announced, three on disk, and a gate that called
+    # that a defect.
+    $announced = @($readyLines | ForEach-Object {
+        if ($_ -match 'pweb: generation (\d+) ready \(') { [int]$Matches[1] } })
+    $maxGen = 0
+    if ($announced.Count -gt 0) {
+        $maxGen = ($announced | Measure-Object -Maximum).Maximum
+    }
+    $exact = ($announced.Count -eq $maxGen) -and
+             (@($announced | Sort-Object -Unique).Count -eq $maxGen) -and
+             ($maxGen -gt 0)
     Row 'dev13_generation_lines' "$($readyLines.Count)"
-    Row 'dev13_exact_one_line_per_generation' `
-        (Bool ($readyLines.Count -eq $gens.Count))
-    Require ($readyLines.Count -eq $gens.Count) `
-        ("DEV13: $($readyLines.Count) `generation N ready` line(s) for " +
-         "$($gens.Count) published generation(s)")
+    Row 'dev13_generations_announced' ($announced -join ',')
+    Row 'dev13_exact_one_line_per_generation' (Bool $exact)
+    Require $exact `
+        ("DEV13: the announced generations are not 1..N exactly once: " +
+         "$($announced -join ',')")
+    # and what survived on disk is a suffix of it, inside the keep window
+    $keep = 3
+    $survivors = @($gens | Sort-Object)
+    $suffixOk = ($survivors.Count -le ($keep + 1)) -and
+                (($survivors.Count -eq 0) -or
+                 ($survivors[-1] -eq $maxGen))
+    Row 'dev13_survivors_are_a_suffix' (Bool $suffixOk)
+    Require $suffixOk `
+        ("DEV13: the surviving generations $($survivors -join ',') are not " +
+         "the newest $keep..$($keep + 1) of 1..$maxGen")
     $ansi = ($supervisorLines -join "`n").Contains([char]27)
     Row 'dev13_no_ansi' (Bool (-not $ansi))
     Require (-not $ansi) 'DEV13: the supervisor emitted ANSI'

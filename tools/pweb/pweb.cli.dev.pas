@@ -1190,13 +1190,18 @@ begin
       exit;
     end;
     Inc(res.Rebuilds);
-    lastSentinel := Settle(seenSentinel);
+    seenSentinel := Settle(seenSentinel);
     if not MakeGeneration(1) then
     begin
       Refuse(pdvFirstGeneration, pdcSetFailed, 'dev_first_generation', '');
       shared.Stop := True;
       exit;
     end;
+    // CONSUMED MEANS PACKED. `MakeGeneration` sets seenSentinel to the value
+    // its CONSISTENT snapshot corresponds to, and that - never the value the
+    // debounce last saw - is what this loop may treat as done. See the loop
+    // below for the race this closes.
+    lastSentinel := seenSentinel;
 
     { --- 9. the host ------------------------------------------------------ }
     shared.HostCmd := Default(TPWebCliCommand);
@@ -1231,7 +1236,21 @@ begin
            seenSentinel) then
       begin
         Inc(res.Rebuilds);
-        lastSentinel := Settle(seenSentinel);
+        // THE DEBOUNCE DOES NOT CONSUME. It waits for quiet and reports the
+        // newest sentinel it saw, and `lastSentinel` is deliberately NOT
+        // advanced to it here: a value the debounce observed is not a value
+        // this loop has PACKED.
+        //
+        // MEASURED on linux-x86_64, and intermittent, which is what made it
+        // worth chasing: under five edits arriving faster than one rebuild,
+        // the debounce would settle on the newest sentinel, the pack would
+        // take a consistent snapshot of an EARLIER build, and the newest
+        // build's output would then never be packed at all - the loop had
+        // already recorded its sentinel as seen. The published generation
+        // was whole and internally consistent; it simply was not the last
+        // thing the developer wrote, which is the one property a
+        // rebuild-and-reload loop cannot get wrong.
+        seenSentinel := Settle(seenSentinel);
         if DevStopCheck(@shared) then
           break;
         Inc(i);
@@ -1242,6 +1261,12 @@ begin
         end;
         if MakeGeneration(i) then
         begin
+          // CONSUMED MEANS PACKED: the sentinel this generation's snapshot
+          // actually corresponds to. A build that finished after the
+          // snapshot leaves a NEWER value behind, and the next pass sees it
+          // as a change and publishes it - which is how the developer's last
+          // edit always reaches the window, however fast the edits came
+          lastSentinel := seenSentinel;
           // the acknowledgement, from the engine's own line sink. It is
           // BOUNDED and never fatal: a switch that was not acknowledged is
           // a fact worth printing, not a reason to stop a live application

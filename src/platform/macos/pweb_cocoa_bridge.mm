@@ -361,6 +361,16 @@ static PWebCocoaSchemeHandler *g_handler = nil;
      Content-Type would be a sniffing hole reachable by editing one string, and
      an ordering that makes that impossible costs nothing. */
   [headers setObject:mime forKey:@"Content-Type"];
+  /* CAP-10C2: the engine must not answer a later request for this URL out of
+     its own cache. The WebView2 adapter has sent this since CAP-4W; the two
+     WebKit adapters did not, and MEASURED on WebKitGTK the consequence is
+     exact: after the first document load the engine stops asking the store
+     for `assets/app.js` at all, so a `pweb dev` generation switch re-runs the
+     page against the PREVIOUS bundle's JavaScript. With the header the store
+     is asked on every navigation and the page tracks the archive. It is not a
+     development affordance: `app.pwb` is a replaceable, privileged bundle,
+     and an engine cache is not something this runtime can invalidate. */
+  [headers setObject:@"no-store" forKey:@"Cache-Control"];
   [headers setObject:[NSString stringWithFormat:@"%lld", (long long)[data length]]
               forKey:@"Content-Length"];
   NSHTTPURLResponse *response =

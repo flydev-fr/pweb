@@ -90,7 +90,16 @@ const
   // - the interval is deliberately SHORTER than any rebuild: the point of
   // this leg is that the edits arrive while the loop is still working
   DRIVER_BURST_EDITS = 5;
-  DRIVER_BURST_GAP_MS = 50;
+  // MEASURED on linux-x86_64 at 50 ms: the burst's last edit was never seen,
+  // the page kept reporting 42 and the step timed out. This driver replaces a
+  // file by DELETE-then-CREATE, which is what an editor's atomic save looks
+  // like, and chokidar - the watcher underneath `vite build --watch` - folds
+  // an unlink immediately followed by an add into one event inside a 100 ms
+  // window. Five of them 50 ms apart are inside that window and collapse.
+  // 150 ms is outside it and still far below the ~310 ms a rebuild takes
+  // (measured at the CAP-10C2 checkpoint), so the edits still arrive FASTER
+  // THAN THE LOOP CAN ANSWER THEM - which is the whole of what DEV5 claims.
+  DRIVER_BURST_GAP_MS = 150;
   DRIVER_BURST_SETTLE_MS = 15000;
   /// the template's own summand, and the text the burst rewrites it to
   // - a COMMENT would prove the generations moved and nothing about what

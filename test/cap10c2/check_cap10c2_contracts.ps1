@@ -390,6 +390,38 @@ foreach ($phrase in 'pweb dev [--project <path>]', 'dev_ui_unsupported',
     }
 }
 
+# --- 9. `Cache-Control: no-store`, on ALL THREE adapters ---------------------
+# MEASURED on WebKitGTK with the development host and three archives, no CLI
+# involved: WITHOUT the header the handler is asked for `assets/app.js`
+# exactly ONCE - at the first document load - and every later re-navigation
+# re-runs the page against the previous bundle's JavaScript. The archive
+# changes and the window does not, which is acceptance criterion 4 failing
+# silently. WITH it the store is asked on every navigation and the page
+# tracks the archive.
+#
+# The WebView2 adapter has sent it since CAP-4W; this pins the other two so
+# the parity cannot drift back. It is checked in the SOURCE because it is a
+# property of what each adapter constructs, and the three construct it in
+# three languages.
+$adapters = [ordered]@{
+    'src/platform/windows/pweb.platform.webview2.pas' = "'Cache-Control: no-store'"
+    'src/platform/linux/pweb.platform.webkitgtk.pas'  = "'Cache-Control', 'no-store'"
+    'src/platform/macos/pweb_cocoa_bridge.mm'         = '@"no-store" forKey:@"Cache-Control"'
+}
+foreach ($file in $adapters.Keys) {
+    if (-not (Test-Path -LiteralPath $file)) {
+        Violation "missing adapter: $file"
+        continue
+    }
+    $text = [System.IO.File]::ReadAllText($file)
+    if (-not $text.Contains($adapters[$file])) {
+        Violation ("$file does not send Cache-Control: no-store -- a served " +
+                   'asset the engine may cache is a generation switch that ' +
+                   'silently does nothing')
+    }
+}
+$facts['cache_control_adapters'] = $adapters.Count
+
 # --- verdict -----------------------------------------------------------------
 New-Item -ItemType Directory -Force build/cap10c2 | Out-Null
 $facts['violations'] = $violations.Count
