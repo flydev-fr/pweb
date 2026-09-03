@@ -27,11 +27,11 @@ Each row is the shard's closure HEAD and the hosted run that was green on it.
 | CAP-10C0 | `28349ef4bd8e42629512f33e606ebef29aa0a09f` | 33625058683 | six jobs green on the first attempt; one `supervision_digest` `120f6769…6db11c0`, 58 decisions, equal on four targets; `Add(20,22)=42` through the real `pweb run` on both built projects |
 | CAP-10C1 | `94694bcaf17ba6fdcab29875f66e3b9a1d6cad42` | 33685847062 | the closure commit's own green aggregation; one `pipeline_digest` `f890424a…978e839a`, 46 decisions, equal on four targets; both `app.pwb` byte-identical to the CAP-10B1/B2 harnesses' |
 | CAP-10C2 | `36ef6881c818ad3aae3dfb000ba434cbc05c661e` | 33751306417 | the closure commit's own green aggregation; one `dev_digest` `09cc2b1c…ce0b7df6`, 71 decisions, equal on four targets; `dev2_host_pid_unchanged` true and `pipeline_digest` re-measured unchanged |
-| CAP-10C3 | `pending` | pending | one `dev_pas2js_digest` equal on four targets; `pweb dev` on a real Pas2JS project answering 42 after every switch; generation 1's `app.pwb` byte-identical to the CAP-10C1 pipeline's |
+| CAP-10C3 | `99bee05b8247c0ef7f99121d709f21f42c50c12c` | 33794370400 | all six jobs green, `cap7 aggregate` PASS on four targets; one `dev_pas2js_digest` `410415c2…ba28fad2`, 37 decisions, equal on windows-x86_64, linux-x86_64, macos-x86_64 and macos-arm64; six generations published and six acknowledged on every target; `dev_digest` and `pipeline_digest` re-measured **unchanged** at their CAP-10C2 and CAP-10C1 closure values |
 
-The CAP-10C3 row is filled by the commit that carries this artifact, exactly
-as CAP-10C1's and CAP-10C2's were: a closure cites the run that was green on
-the tree it closes, and the artifact's own commit is re-run behind it.
+Each row cites the run that was green on the tree it closes; the commit that
+carries this artifact is re-run behind it, exactly as CAP-10C1's and
+CAP-10C2's closures were.
 
 ---
 

@@ -2,7 +2,7 @@
 title: 'CAP-10C3 — public `pweb dev` for Pas2JS: CLI-owned change detection over the C1 assembly, and the CAP-10C closure'
 type: 'feature'
 created: '2026-09-03'
-status: 'in-progress'
+status: 'done'
 baseline_commit: '36ef6881c818ad3aae3dfb000ba434cbc05c661e'
 review_loop_iteration: 0
 context:

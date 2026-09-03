@@ -1,8 +1,16 @@
 # CAP-10C3 — Final Artifact: `pweb dev` for Pas2JS, and the CAP-10C closure
 
-CAP-10C3 closes on hosted run **pending** (commit `pending`, branch
+CAP-10C3 closes on hosted run **33794370400** (2026-09-03, commit
+`99bee05b8247c0ef7f99121d709f21f42c50c12c`, branch
 `phase/cap-10/c3-pas2js-dev-loop`, baseline
-`36ef6881c818ad3aae3dfb000ba434cbc05c661e`).
+`36ef6881c818ad3aae3dfb000ba434cbc05c661e`): all six jobs green, `cap7
+aggregate` PASS with field-by-field agreement on four targets, ONE
+`dev_pas2js_digest`
+`410415c289011fc08a655019d1a34e7b78c1ca9eefac366ecc2f73f5ba28fad2` — 37
+decisions — equal on windows-x86_64, linux-x86_64, macos-x86_64 and
+macos-arm64, six generations published and six acknowledged on every target,
+and `dev_digest` and `pipeline_digest` re-measured **unchanged** at
+`09cc2b1c…ce0b7df6` and `f890424a…978e839a`.
 
 `pweb --help` advertises `create doctor run dev`, and `pweb dev --help`
 advertises **both** frontend kinds. `build` is still an unknown command.
