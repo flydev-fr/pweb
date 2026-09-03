@@ -168,6 +168,16 @@ template = react
     content = text
     mode = normal
 
+  # CAP-10C2: the four Node built-in declarations vite.config.ts needs for
+  # the development completion sentinel it writes. Declared here rather than
+  # pulled in as @types/node, so the typecheck that also covers src/ - where
+  # nothing may touch a filesystem - does not gain a Node surface it has no
+  # business offering a frontend
+  file = frontend/pweb-build.d.ts
+    out = frontend/pweb-build.d.ts
+    content = text
+    mode = normal
+
   file = frontend/src/main.tsx
     out = frontend/src/main.tsx
     content = text

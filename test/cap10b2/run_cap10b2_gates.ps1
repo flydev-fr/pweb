@@ -69,20 +69,43 @@ Set-Location $repoRoot
 # moves in the same commit, with the reason recorded in that shard's
 # artifact. It is not maintenance noise; it is the closure.
 #
-# SUPERSEDED BY CAP-10C1, which is that shard. It added `Flush(Output)` after
-# the starter's ready report in src/app.services.pas and after the banner in
-# src/program.lpr, in BOTH public templates: FPC's text layer flushes a pipe
-# per line on Windows and BLOCK-BUFFERS it on Linux and macOS, so a
-# supervisor read a generated host's lines only when the host exited. The
-# file count is unchanged at 15; the projection moved from
+# SUPERSEDED BY CAP-10C1, which was that shard. It added `Flush(Output)`
+# after the starter's ready report in src/app.services.pas and after the
+# banner in src/program.lpr, in BOTH public templates: FPC's text layer
+# flushes a pipe per line on Windows and BLOCK-BUFFERS it on Linux and macOS,
+# so a supervisor read a generated host's lines only when the host exited.
+# The file count was unchanged at 15; the projection moved from
 # 1ca77cbb8dc0fed5844fa6aa958ca2727ea560f5bda0b50b23e1bd9b360f3230 and the
 # total from 65765 bytes, and hosted run 33665009021 measured the new pair
 # IDENTICALLY on all four targets - which is what makes it a template change
 # rather than a host difference.
+#
+# SUPERSEDED AGAIN BY CAP-10C2, which is the shard that adds `pweb dev`. It
+# moves the React template in three ways, and the FILE COUNT moves with it -
+# 15 -> 16:
+#
+#   frontend/vite.config.ts   gains the `pweb-dev-sentinel` writeBundle
+#                             plugin, which writes
+#                             <frontend>/.pweb/dev/build-id on every
+#                             completed build. That file is the dev loop's
+#                             completion signal, it is written OUTSIDE dist/
+#                             so no app.pwb digest moves, and .pweb/ is
+#                             already inside the ratified mutation set;
+#   frontend/pweb-build.d.ts  NEW: ambient declarations for the four Node
+#                             built-ins that config now imports, so the
+#                             typecheck stays strict without @types/node
+#                             entering a lockfile shared with src/;
+#   frontend/tsconfig.json    includes it;
+#   src/program.lpr           selects pweb.webview.devhost under
+#                             {$ifdef PWEB_DEV} - the ONE place the build
+#                             mode is chosen, and it is native-controlled.
+#
+# The Pas2JS template is UNTOUCHED by this shard, which is why only the
+# React trio moves here.
 $CAP10B1_REACT_INVENTORY_DIGEST =
-    'ef5c09d08f69a62f7603eddd6d49a9762fa602f81fe94f8e0e2db5a470505917'
-$CAP10B1_REACT_FILE_COUNT = 15
-$CAP10B1_REACT_TOTAL_BYTES = 66355
+    'ef9a9312f3d18efd80dd10bab5baa0774454ee99263b5f06427d01e753d5a617'
+$CAP10B1_REACT_FILE_COUNT = 16
+$CAP10B1_REACT_TOTAL_BYTES = 71416
 
 $exeSuffix = if ($IsWindows) { '.exe' } else { '' }
 $work = Join-Path $repoRoot 'build/cap10b2'
@@ -247,8 +270,9 @@ foreach ($line in ($createHelp.Out -split "`n")) {
 $supported = (SortOrdinal @($advertised -split '\|')) -join ','
 Require ($supported -ceq 'pas2js,react') `
     "create --help advertises '$advertised', expected 'react|pas2js'"
-# and the commands that must still not exist (`run` exists since CAP-10C0)
-foreach ($absent in 'dev', 'build') {
+# and the command that must still not exist (`run` exists since CAP-10C0 and
+# `dev` since CAP-10C2)
+foreach ($absent in 'build') {
     $r = RunCli $pweb $repoRoot @($absent)
     Require ($r.Code -eq 2) `
         "'pweb $absent' must be an unknown command (exit 2), got $($r.Code)"
@@ -475,10 +499,44 @@ foreach ($f in 'src/app.services.pas', '.gitattributes') {
     Require ($a -ceq $b) `
         "$f differs between the generated react and pas2js projects"
 }
-$reactCode = CodeText (Join-Path $reactProject 'src/demo.lpr')
+# CAP-10C2: the React program now carries a PWEB_DEV region - the ONE place
+# a build's mode is selected, and the reason `pweb dev` can compile a
+# development host without the production one learning a single new name.
+# The parity claim is unchanged and is about the PRODUCTION application, so
+# the React program is reduced to its production form (every $ifdef PWEB_DEV
+# body dropped, every $else body kept, the directives themselves removed)
+# and THAT is what must equal the Pas2JS one byte for byte. Comparing the
+# raw text instead would have made the claim "the two templates are the same
+# file", which was never what it said.
+function ProductionForm([string]$Text) {
+    $out = New-Object System.Collections.Generic.List[string]
+    $state = 'code'   # code | devbody | prodbody
+    foreach ($line in ($Text -split "`r?`n")) {
+        if ($line -match '\{\$ifdef\s+PWEB_DEV\}') { $state = 'devbody'; continue }
+        if (($state -ne 'code') -and ($line -match '\{\$else\}')) {
+            $state = 'prodbody'; continue
+        }
+        if (($state -ne 'code') -and ($line -match '\{\$endif\s+PWEB_DEV\}')) {
+            $state = 'code'; continue
+        }
+        if ($state -eq 'devbody') { continue }
+        $out.Add($line)
+    }
+    return ($out -join "`n")
+}
+$reactRaw = [System.IO.File]::ReadAllText((Join-Path $reactProject 'src/demo.lpr'))
+$reactProd = Join-Path $work 'react-demo-production.lpr'
+[System.IO.File]::WriteAllText($reactProd, (ProductionForm $reactRaw),
+    [System.Text.UTF8Encoding]::new($false))
+$reactCode = CodeText $reactProd
 $p2jCode = CodeText (Join-Path $p2jProject 'src/demo.lpr')
+Row 'react_dev_region_present' $(
+    if ($reactRaw -match '\{\$ifdef\s+PWEB_DEV\}') { 'true' } else { 'false' })
+Require ($reactRaw -match '\{\$ifdef\s+PWEB_DEV\}') `
+    'the generated React program carries no PWEB_DEV region (CAP-10C2)'
 Require ($reactCode -ceq $p2jCode) `
-    'the generated src/demo.lpr differs in CODE between the two UIs'
+    ('the generated src/demo.lpr differs in PRODUCTION code between the two ' +
+     'UIs (the PWEB_DEV region is excluded by construction)')
 Row 'shared_native_source_digest' (Sha256Text (
     $reactCode + (CodeText (Join-Path $reactProject 'src/app.services.pas'))))
 # pweb.json differs in `ui` and in nothing else

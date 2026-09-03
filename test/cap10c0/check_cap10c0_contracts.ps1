@@ -272,10 +272,14 @@ if ($dispatches.Count -ne 2) {
 }
 $facts['stop_helper_shares_dispatch'] = ($dispatches.Count -eq 2)
 
-# --- 7. dev and build stay absent -------------------------------------------
+# --- 7. build stays absent ---------------------------------------------------
+# CAP-10C2 moved `dev` out of this sweep and `build` stays in it. The rule is
+# unchanged - the parser must not accept a command this build cannot perform -
+# and only the membership moved, in the shard that made `dev` a command doing
+# the whole of what its name says.
 $devBuildHits = 0
 foreach ($row in (Get-CodeLines 'tools/pweb/pweb.cli.args.pas')) {
-    if ($row.Text -match "token\s*=\s*'(dev|build)'") {
+    if ($row.Text -match "token\s*=\s*'(build)'") {
         Violation "the parser accepts an unimplemented command: line $($row.Number)"
         $devBuildHits++
     }

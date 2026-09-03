@@ -733,22 +733,28 @@ Require $supersession `
 $help = (& $pweb '--help' 2>&1 | Out-String)
 $helpCode = $LASTEXITCODE
 $advertised = @()
-foreach ($c in 'create', 'doctor', 'run') {
+# CAP-10C2 added `dev` to the advertised set. `build` stays unknown, and the
+# leg below is what still measures that
+foreach ($c in 'create', 'doctor', 'run', 'dev') {
     if ($help -match "(?m)^\s+$c\s") { $advertised += $c }
 }
 Row 'advertised_commands' ($advertised -join ',')
-Require (($advertised -join ',') -ceq 'create,doctor,run') `
+Require (($advertised -join ',') -ceq 'create,doctor,run,dev') `
     "SF1: pweb advertises $($advertised -join ',')"
-foreach ($absent in 'dev', 'build') {
+foreach ($absent in 'build') {
     & $pweb $absent 2>&1 | Out-Null
     Require ($LASTEXITCODE -eq 2) `
         "SF1: pweb $absent exited $LASTEXITCODE, expected 2 (unknown command)"
 }
-Row 'dev_build_unknown' 'true'
+Row 'dev_build_unknown' 'build_only'
 # MEASURED, never asserted: check_cap10c1_contracts.ps1 reads the CLI's own
-# compiled unit set and writes its verdict here. A literal 'false' would be
-# an absolute pin guarding a constant - exactly the vacuous row CAP-10C0
+# compiled unit set and writes its verdict here. A literal would be an
+# absolute pin guarding a constant - exactly the vacuous row CAP-10C0
 # removed when run_dev_allowance_present and shutdown_order became derived.
+#
+# CAP-10C2 INVERTED THE REQUIREMENT, not the measurement: `pweb dev` calls
+# the lifecycle pipeline, so every unit of it must now reach the shipped
+# executable. The same directory is read and the other verdict is demanded.
 $contractsFile = Join-Path $work 'contracts.json'
 Require (Test-Path -LiteralPath $contractsFile) `
     'SF2: build/cap10c1/contracts.json is absent -- run check_cap10c1_contracts.ps1 first'
@@ -756,8 +762,8 @@ if (Test-Path -LiteralPath $contractsFile) {
     $contracts = Get-Content $contractsFile -Raw | ConvertFrom-Json
     Row 'pipeline_units_linked' $(
         if ($contracts.pipeline_units_linked) { 'true' } else { 'false' })
-    Require (-not $contracts.pipeline_units_linked) `
-        'SF2: the CLI LINKS a lifecycle-pipeline unit'
+    Require ($contracts.pipeline_units_linked) `
+        'SF2: the CLI does NOT link a lifecycle-pipeline unit (CAP-10C2 needs it)'
     Require ("$($contracts.verdict)" -ceq 'PASS') `
         "SF2: the CAP-10C1 contract cross-checks report $($contracts.verdict)"
 } else {
@@ -767,7 +773,13 @@ if (Test-Path -LiteralPath $contractsFile) {
 # SF2/SF3: the two frozen digests this shard must not have moved, read back
 # from the gates that own them and compared with their CLOSURE values.
 $c0Closure = '120f6769c155c59b8bc0cbc8b96e7faee14091628a5af49833f5b4fb96db11c0'
-$cliClosure = '1341221df25aa1db922666fa89542411142765db3a378b83c1287d017dfdd208'
+# SUPERSEDED BY CAP-10C2, which is the shard that exposes `pweb dev`. The
+# CAP-10A parser corpus records `args|dev|ok` where it recorded
+# `args|dev|unknown_command`, plus the seven option rows the new command
+# brings, so cli_digest moves exactly as CAP-10C0 moved it for `run` - a
+# RECORDED supersession, never a silent re-baseline. It was
+# 1341221df25aa1db922666fa89542411142765db3a378b83c1287d017dfdd208.
+$cliClosure = 'c4c54b3c758e2e680ccae14d3cafb6a3f3410475c94d24e71b7c503dd14f2e01'
 $c0File = Join-Path $repoRoot "build/cap10c0/cli-$target.json"
 if (Test-Path -LiteralPath $c0File) {
     $c0 = Get-Content $c0File -Raw | ConvertFrom-Json
@@ -784,8 +796,9 @@ if (Test-Path -LiteralPath $c10aFile) {
     $c10a = Get-Content $c10aFile -Raw | ConvertFrom-Json
     Row 'cli_digest_unchanged' (Bool ("$($c10a.cli_digest)" -ceq $cliClosure))
     Require ("$($c10a.cli_digest)" -ceq $cliClosure) `
-        ("SF2: cli_digest moved to $($c10a.cli_digest); CAP-10C0 closed on " +
-         "$cliClosure -- the public parser surface must not move in CAP-10C1")
+        ("SF2: cli_digest moved to $($c10a.cli_digest); CAP-10C2 closed on " +
+         "$cliClosure -- the public parser surface moves only in the shard " +
+         'that adds a command, and only with the supersession recorded')
     Row 'doctor_schema_digest_unchanged' (Bool (
         "$($c10a.doctor_schema_digest)" -ceq '2dda57baa324708ebc6d709556fc2a4ae865d820e29069c47a0e0d412fa8c7aa'))
     Require ("$($c10a.doctor_schema_digest)" -ceq `

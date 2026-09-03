@@ -1736,6 +1736,209 @@ $e.pipeline_digest = 'deadbeef' + "$($e.pipeline_digest)".Substring(8)
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap10c1-decision-divergence' 'pipeline_digest'
 
+# --- CAP-10C2: the development-loop refusal branches -------------------------
+# Same rule as every shard before it: a new aggregator refusal is proven RED on
+# a fixture before the real aggregation is trusted with it, and each leg names
+# the branch it targets so a leg that passes on an unrelated refusal proves
+# nothing. The legs are chosen one per CLAIM rather than one per pin: the pins
+# share a code path, the claims do not.
+
+# (c55) the development verdict rewritten to FAIL -> mustPass refusal
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev_corpus = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c2-corpus' 'dev_corpus'
+
+# (c56) the headless suite's verdict rewritten to FAIL
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev_suite = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c2-suite' 'dev_suite'
+
+# (c57) THE DEV MODEL DIVERGING on one target -> the loop's decision corpus is
+# a pure function, so a difference is a rule that moved
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev_digest = 'deadbeef' + "$($e.dev_digest)".Substring(8)
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c2-decision-divergence' 'dev_digest'
+
+# (c58) a target running a DIFFERENT loop model -> the spike's verdict bypassed
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev_loop_model = 'vite_proxy'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c2-loop-model' 'dev_loop_model'
+
+# (c59) the CSP diverging between the development and the release binary
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.csp_identical = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c2-csp-divergence' 'csp_identical'
+
+# (c60) a TRANSPORT allowance appearing -> the `ws://127.0.0.1` the model-A
+# spike refused, added "temporarily" to a profile
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev_transport_hits = '1'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c2-transport' 'dev_transport_hits'
+
+# (c61) DEVELOPMENT CODE IN THE RELEASE BINARY
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.release_dev_unit_absent = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c2-release-dev-unit' 'release_dev_unit_absent'
+
+# (c62) the development MARKER string found in the release binary
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev_marker_in_release = 'true'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c2-release-dev-marker' 'dev_marker_in_release'
+
+# (c63) a generation switch that RESTARTED the host -> the whole claim
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev2_host_pid_unchanged = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c2-host-restarted' 'dev2_host_pid_unchanged'
+
+# (c64) a BROKEN rebuild reaching the host
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev4_broken_published = 'true'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c2-broken-published' 'dev4_broken_published'
+
+# (c65) the burst's LAST edit not being the one that survived
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev5_final_content_correct = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c2-burst-content' 'dev5_final_content_correct'
+
+# (c66) the generations no longer strictly one apart -> a gap or a repeat
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev5_burst_monotonic = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c2-burst-monotonic' 'dev5_burst_monotonic'
+
+# (c67) A PARTIAL GENERATION surviving a stop
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev6_no_partial_generation = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c2-partial-generation' 'dev6_no_partial_generation'
+
+# (c68) DESCENDANTS SURVIVING the stop
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev6_descendants_remaining = '2'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c2-descendants' 'dev6_descendants_remaining'
+
+# (c69) THE INTERRUPT NOT MEASURED CLEAN -> the row CAP-10C1 could not write
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev_interrupt_clean = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c2-interrupt' 'dev_interrupt_clean'
+
+# (c70) a member of the LIVE development set opening a listener
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev_listener_members_max = '1'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c2-listener' 'dev_listener_members_max'
+
+# (c71) a LOOSE ASSET in the development layout
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev_loose_assets_used = 'true'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c2-loose-assets' 'dev_loose_assets_used'
+
+# (c72) A MEMBER ENDED FROM OUTSIDE answering something other than 5
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev7_pweb_exit = '0'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c2-host-death-category' 'dev7_pweb_exit'
+
+# (c73) the WATCHER dying and the loop carrying on regardless
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev8_pweb_exit = '0'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c2-watcher-death-category' 'dev8_pweb_exit'
+
+# (c74) `build` EXPOSED -> the one command this shard must not ship
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_still_unknown = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c2-build-exposed' 'build_still_unknown'
+
+# (c75) `pweb dev` on a pas2js project NOT refused with its typed cause
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev11_cause = 'internal_error'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c2-pas2js-refusal' 'dev11_cause'
+
+# (c76) the development binary loading the bundle BESIDE it -> the fallback
+# DEV9 exists to prove absent
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev9_never_loaded_beside_bundle = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c2-beside-bundle' 'dev9_never_loaded_beside_bundle'
+
+# (c77) a development session that TOUCHED the release tree
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.dev10_release_unchanged = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c2-release-touched' 'dev10_release_unchanged'
+
+# (c78) the CAP-10C1 pipeline decision corpus moved under this shard -> the
+# one row that says CAP-10C2 changed nothing it promised not to
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.c1_pipeline_digest_unchanged = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10c2-c1-digest-moved' 'c1_pipeline_digest_unchanged'
+
 # --- (d) divergence sweep must refuse an off-allowlist conditional -----------
 $fixturePas = 'src/zz_cap7f_selftest_fixture.pas'
 Remove-Item -Force -ErrorAction SilentlyContinue $fixturePas

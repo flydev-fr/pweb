@@ -1,11 +1,11 @@
-# The `pweb` CLI contract (CAP-10A, CAP-10B1, CAP-10B2, CAP-10C0)
+# The `pweb` CLI contract (CAP-10A, CAP-10B1, CAP-10B2, CAP-10C0, CAP-10C2)
 
-The public surface frozen by CAP-10A and extended by CAP-10B1, CAP-10B2 and
-CAP-10C0:
+The public surface frozen by CAP-10A and extended by CAP-10B1, CAP-10B2,
+CAP-10C0 and CAP-10C2:
 what the
 executable accepts, what `pweb.json` means, what `pweb doctor --json` emits,
-what each exit code promises, and the development-trust decision CAP-10C
-will implement.
+what each exit code promises, and the development-trust decision CAP-10C2
+implements.
 
 Everything here is a **contract**. The human report may be reworded freely;
 the command grammar, the descriptor schema, the JSON document, the status
@@ -23,19 +23,31 @@ pweb create --help
 pweb doctor [--json] [--with-paths] [--project <path>] [--no-color] [--verbose]
 pweb run [--project <path>]
 pweb run --help
+pweb dev [--project <path>]
+pweb dev --help
 ```
 
-That is the whole of it in this build. `dev` and `build` are **unknown
-commands** — not stubs, not "not implemented" placeholders, and not listed in
-`--help`. A command that parses is a promise, and a lifecycle CLI that
-promises a build it cannot perform is worse than one that has not got there
-yet.
+That is the whole of it in this build. `build` is an **unknown command** —
+not a stub, not a "not implemented" placeholder, and not listed in `--help`.
+A command that parses is a promise, and a lifecycle CLI that promises a build
+it cannot perform is worse than one that has not got there yet.
 
 **CAP-10C0 adds `run` and the engine under it** (section 7 and
 [supervision-contract.md](supervision-contract.md)). `run` launches an
 already-built application in production mode and supervises it; it builds
 nothing. It takes `--project` and nothing else, and passes the application
 no argument at all.
+
+**CAP-10C2 adds `dev`** (section 5 and [dev-contract.md](dev-contract.md)).
+`dev` builds a React project, launches it, watches the frontend, and on every
+completed rebuild publishes an immutable generation the running window loads
+**without the application restarting**. It takes `--project` and `--help` and
+nothing else, adds no usage cause, and refuses `ui = pas2js` with the project
+cause `dev_ui_unsupported` (exit 3) rather than pretending to a loop it does
+not implement. It opens no listener, no development server and no proxy; the
+privileged origin stays `pweb://app`. The lifecycle pipeline CAP-10C1 froze as
+private is linked into this executable to serve it — which is not the same
+thing as advertising a build, and `build` stays unknown.
 
 **CAP-10B2 adds the second frontend and nothing else.** It ships one more
 trusted public template, widens the compiled `--ui` allowlist to the two kinds
@@ -439,7 +451,7 @@ exits 1 on its own, and `run` reports `application exited 1` and answers 5.
 
 ---
 
-## 5. The development-trust decision (ratified, implemented at CAP-10C)
+## 5. The development-trust decision (ratified at CAP-10A, implemented at CAP-10C2)
 
 **The privileged application origin is `pweb://app` in development and in
 production alike.**
@@ -469,11 +481,54 @@ build/run mode is native-controlled. A production artifact must mechanically
 prove it carries no development proxy, no HMR URL, no `ws://127.0.0.1`
 allowance and no dependency on a frontend development server.
 
-`test/cap10a/check_dev_trust.ps1` pins the production half of this today, on
-every CI leg, before any development code exists — because the rule dies the
-other way round: a dev mode is written, an allowance is added "temporarily" to
-the shared profile, and by the time anyone looks the production CSP has a
-localhost entry nobody can date.
+`test/cap10a/check_dev_trust.ps1` pinned the production half of this from
+CAP-10A onward, on every CI leg, before any development code existed —
+because the rule dies the other way round: a dev mode is written, an
+allowance is added "temporarily" to the shared profile, and by the time
+anyone looks the production CSP has a localhost entry nobody can date. Since
+CAP-10C2 the same gate also pins the development half.
+
+### What CAP-10C2 shipped, and what it deliberately did not
+
+**`pweb dev` is rebuild-and-reload for React in v1**, and
+[dev-contract.md](dev-contract.md) is the whole of its contract. Every
+completed `vite build --watch` is packed by the frozen CAP-6 bundler into an
+immutable generation, published by one directory rename, discovered by a
+bounded forward-only poll and loaded by one native re-navigation to
+`pweb://app`. There is no listener, no development server, no proxy and no
+HMR transport anywhere in it, and `PWEB_NATIVE_CSP` is byte-identical in the
+development binary and the release one.
+
+**The `ws://127.0.0.1:<native-selected-port>` allowance above stays
+ratified, unused, and pinned absent from every profile.** Nothing in the
+shipped dev loop needs it, and a ratification is not an implementation: a
+reader must be able to tell the two apart, so the gate pins the absence on
+every leg exactly as it did before the loop existed.
+
+**A model-A shard — serving Vite's own module graph behind `pweb://app` —
+was measured and refused**, and the evidence is
+`_bmad-output/implementation-artifacts/cap10c2-model-a-spike.md`. Three
+findings decided it, and each is a measurement rather than a preference:
+
+1. **the query is load-bearing and the frozen URI layer cuts it.**
+   `/src/app.css` is 2563 bytes of `text/javascript`; `/src/app.css?direct`
+   is 1938 bytes of `text/css` — one path, two bodies. Model A would need
+   `PWebParseAppUri` to preserve and forward the query, which is a grammar
+   relaxation;
+2. **the MIME type would have to come from the proxied response.** `.tsx`
+   and `.css` modules are served `text/javascript`, while `PWebAssetMimeType`
+   derives `application/octet-stream` from `.tsx`, which every engine's
+   module MIME check refuses — a change to the frozen asset-serving path;
+3. **HMR would not connect and has nothing to connect for.** The client
+   derives its socket host from the page URL, giving `ws://app:/` under
+   `pweb://app`; and with no `@vitejs/plugin-react` in the template there is
+   no Fast Refresh, so a `.tsx` edit already ends in a full reload.
+
+Findings 1 and 2 are each a grammar or handler relaxation beyond the single
+ratified allowance, which is exactly the condition this rule refuses on.
+Finding 3 is recorded because it is what an HMR shard would have to solve
+first: **an HMR shard needs the spike's data**, and the spike is the record
+it should start from rather than a fresh guess.
 
 ---
 

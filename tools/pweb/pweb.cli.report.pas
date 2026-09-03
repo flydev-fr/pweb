@@ -88,6 +88,12 @@ function PWebCliCreateHelp: RawUtf8;
 /// the `pweb run --help` text
 function PWebCliRunHelp: RawUtf8;
 
+/// the `pweb dev --help` text
+// - it advertises REACT ONLY, in as many words, because that is what this
+// build's dev loop implements: a help text that omitted the limit would be
+// a promise the command refuses to keep on the very next line
+function PWebCliDevHelp: RawUtf8;
+
 /// the --version line
 function PWebCliVersionLine: RawUtf8;
 
@@ -109,11 +115,11 @@ end;
 
 function PWebCliUsageBanner: RawUtf8;
 begin
-  // dev/build are absent ON PURPOSE. This build does not implement them,
-  // and a command listed in help that answers "not implemented" is a
-  // contract nobody can rely on either way. `create` appeared here in
-  // CAP-10B1 and `run` in CAP-10C0, each in the shard that made it a
-  // command that does the whole of what its name says.
+  // `build` is absent ON PURPOSE. This build does not implement it, and a
+  // command listed in help that answers "not implemented" is a contract
+  // nobody can rely on either way. `create` appeared here in CAP-10B1,
+  // `run` in CAP-10C0 and `dev` in CAP-10C2, each in the shard that made it
+  // a command that does the whole of what its name says.
   Result :=
     'pweb - the PWeb application lifecycle CLI' + CRLF_NONE +
     CRLF_NONE +
@@ -125,6 +131,7 @@ begin
     '  pweb doctor [--json] [--with-paths] [--project <path>]' + CRLF_NONE +
     '              [--no-color] [--verbose]' + CRLF_NONE +
     '  pweb run [--project <path>]' + CRLF_NONE +
+    '  pweb dev [--project <path>]' + CRLF_NONE +
     CRLF_NONE +
     'commands:' + CRLF_NONE +
     '  create         create a new PWeb project (pweb create --help)' +
@@ -134,6 +141,10 @@ begin
     '  run            launch the already-built application and supervise' +
       CRLF_NONE +
     '                 it in the foreground (pweb run --help)' + CRLF_NONE +
+    '  dev            build, launch and reload on every change' +
+      CRLF_NONE +
+    '                 (' + PWEB_CLI_UI_REACT + ' only; pweb dev --help)' +
+      CRLF_NONE +
     CRLF_NONE +
     'options:' + CRLF_NONE +
     '  --ui <kind>    the frontend kind to scaffold (create only)' +
@@ -249,6 +260,65 @@ begin
     '  4 supervision unavailable   5 the application exited nonzero, died' +
       CRLF_NONE +
     '    or had to be terminated   6 internal' + CRLF_NONE;
+end;
+
+function PWebCliDevHelp: RawUtf8;
+begin
+  Result :=
+    'pweb dev - build, launch, watch, rebuild and reload' + CRLF_NONE +
+    CRLF_NONE +
+    'usage:' + CRLF_NONE +
+    '  pweb dev [--project <path>]' + CRLF_NONE +
+    CRLF_NONE +
+    'options:' + CRLF_NONE +
+    '  --project <p>  use this pweb.json, or the project rooted at this' +
+      CRLF_NONE +
+    '                 directory, instead of searching upward from the' +
+      CRLF_NONE +
+    '                 working directory' + CRLF_NONE +
+    '  --help         show this text' + CRLF_NONE +
+    CRLF_NONE +
+    // the limit, stated where a reader looks for it rather than discovered
+    // by running the command on the wrong kind of project
+    'THIS BUILD IMPLEMENTS `ui: ' + PWEB_CLI_UI_REACT + '` ONLY. A `' +
+      PWEB_CLI_UI_PAS2JS + '` project is refused with dev_ui_unsupported' +
+      CRLF_NONE +
+    'and nothing is started or written.' + CRLF_NONE +
+    CRLF_NONE +
+    'what it does, in order: resolve the toolchain and refuse before any' +
+      CRLF_NONE +
+    'write, stage the TypeScript SDK, install dependencies when the' +
+      CRLF_NONE +
+    'lockfile or node_modules asks for it, typecheck once, compile a' +
+      CRLF_NONE +
+    'development build of the native host, then watch the frontend. Every' +
+      CRLF_NONE +
+    'completed rebuild is packed into an immutable generation and the' +
+      CRLF_NONE +
+    'running window reloads it - the application is never restarted.' +
+      CRLF_NONE +
+    CRLF_NONE +
+    'the application origin is pweb://app, in development exactly as in' +
+      CRLF_NONE +
+    'production. No development server, no proxy, no port and no network' +
+      CRLF_NONE +
+    'listener of any kind is opened; the only stage that reaches the' +
+      CRLF_NONE +
+    'network is the dependency install, and it is skipped when it can be.' +
+      CRLF_NONE +
+    CRLF_NONE +
+    'Ctrl+C stops the watcher and the application together, through the' +
+      CRLF_NONE +
+    'same graceful-then-forced ladder `pweb run` uses.' + CRLF_NONE +
+    CRLF_NONE +
+    'exit codes:' + CRLF_NONE +
+    '  0 the loop stopped cleanly   2 usage   3 project, or a frontend' +
+      CRLF_NONE +
+    '    kind this build cannot develop   4 the machine cannot build it' +
+      CRLF_NONE +
+    '  5 a start-up stage failed, or the application or the watcher died' +
+      CRLF_NONE +
+    '  6 internal' + CRLF_NONE;
 end;
 
 { ---------------------------------------------------------------------------

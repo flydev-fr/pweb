@@ -54,6 +54,20 @@ uses
   pweb.rpc.mormot,
   pweb.capabilities.policy,
   pweb.webview.host,
+  {$ifdef PWEB_DEV}
+  { THE DEVELOPMENT COMPOSITION, and the ONLY place this build's mode is
+    selected. PWEB_DEV is defined by the COMPILER COMMAND `pweb dev` builds
+    with (-dPWEB_DEV, into its own unit and object directories); no frontend
+    file, no descriptor field, no manifest and no environment variable can
+    reach it. A release build never defines it, so the unit below is not on
+    the release binary's compiled unit set at all.
+
+    Development changes exactly one thing: the asset store is the generation
+    the CLI last published, rather than the app.pwb beside this executable.
+    The origin stays pweb://app, the CSP is the same bytes, the policy is
+    the same policy and the bridge chain is the same chain. }
+  pweb.webview.devhost,
+  {$endif PWEB_DEV}
   app.services;
 
 const
@@ -102,7 +116,15 @@ begin
     policyRef := policy;
 
     options := PWebDefaultHostOptions(APP_TITLE, APP_NAME);
+    {$ifdef PWEB_DEV}
+    // the development host: --pweb-dev-root=<dir> is REQUIRED, generation 1
+    // is opened through the production loader, and every later generation
+    // is swapped in and re-navigated to pweb://app without this process
+    // restarting
+    ExitCode := PWebDevHostRun(options, policy, bridge);
+    {$else}
     ExitCode := PWebHostRun(options, policy, bridge);
+    {$endif PWEB_DEV}
   except
     on E: Exception do
     begin

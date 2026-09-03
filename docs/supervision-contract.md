@@ -4,9 +4,15 @@ The `pweb` CLI runs child processes through **one** execution engine,
 `tools/pweb/pweb.cli.process.pas`, over the raw platform primitives in
 `tools/pweb/pweb.cli.platform.pas`. `pweb doctor` (CAP-10A) probes tools
 through it, `pweb run` (CAP-10C0) supervises the built application through
-it, and `pweb dev` (CAP-10C1/C2) and `pweb build` (CAP-10D) will run their
-toolchains through it. There is no second execution path, and this document
-is the contract every caller gets.
+it, the CAP-10C1 lifecycle pipeline runs every build stage through it, and
+`pweb dev` (CAP-10C2) supervises **two long-lived children concurrently**
+through it — one thread each, which is legal without the engine moving
+because it is re-entrant: no unit-level mutable state, the Windows spawn
+restricts inheritance with `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`, and the
+POSIX spawn touches no heap between `fork` and `execve` and closes every
+descriptor above 2. `pweb build` (CAP-10D) will run its toolchain through it
+too. There is no second execution path, and this document is the contract
+every caller gets.
 
 ## 1. What a spawn is
 

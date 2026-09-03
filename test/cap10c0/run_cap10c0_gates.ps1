@@ -553,26 +553,39 @@ $surface = (ExpectUsage 'R14 with-paths' @('run', '--with-paths') 2 'option_not_
 $surface = (ExpectUsage 'R14 ui' @('run', '--ui', 'react') 2 'option_not_for_command') -and $surface
 $surface = (ExpectUsage 'R14 operand' @('run', 'extra') 2 'extra_positional') -and $surface
 $surface = (ExpectUsage 'R14 unknown' @('run', '--watch') 2 'unknown_option') -and $surface
-$surface = (ExpectUsage 'C2 dev' @('dev') 2 'unknown_command') -and $surface
+# CAP-10C2 MOVED `dev` OUT OF THIS SET, and `build` stays in it. CAP-10C0
+# pinned both as unknown commands because neither existed; `pweb dev` is a
+# command that does the whole of what its name says since CAP-10C2, so what
+# this leg pins now is that `build` is STILL unknown and that `dev` is not -
+# which is the same measurement with one row moved, never a deleted check.
 $surface = (ExpectUsage 'C2 build' @('build') 2 'unknown_command') -and $surface
-$surface = (ExpectUsage 'C2 dev --help' @('dev', '--help') 2 'unknown_command') -and $surface
 $help = RunPweb @('--help') 30000 ''
 Require ($help.Code -eq 0) '--help did not exit 0'
-foreach ($cmd in 'pweb create ', 'pweb doctor ', 'pweb run ') {
+foreach ($cmd in 'pweb create ', 'pweb doctor ', 'pweb run ', 'pweb dev ') {
     Require ($help.Out.Contains($cmd)) "--help does not list $cmd"
 }
-foreach ($absent in 'pweb dev', 'pweb build') {
+foreach ($absent in 'pweb build') {
     Require (-not $help.Out.Contains($absent)) "--help advertises $absent"
 }
+$devHelp = RunPweb @('dev', '--help') 30000 ''
+Require ($devHelp.Code -eq 0) 'dev --help did not exit 0 (CAP-10C2)'
+Require ($devHelp.Out.Contains('pweb dev [--project <path>]')) `
+    'dev --help does not state the grammar'
+Require (-not $devHelp.Out.Contains([char]27)) 'dev --help emitted ANSI'
 $runHelp = RunPweb @('run', '--help') 30000 ''
 Require ($runHelp.Code -eq 0) 'run --help did not exit 0'
 Require ($runHelp.Out.Contains('pweb run [--project <path>]')) 'run --help does not state the grammar'
 Require ($runHelp.Out.Contains('Run builds nothing')) 'run --help does not state that run builds nothing'
 Require (-not $runHelp.Out.Contains([char]27)) 'run --help emitted ANSI'
 Row 'cli_run_available' (Bool ($runHelp.Code -eq 0))
-Row 'advertised_commands' 'create,doctor,run'
+# CAP-10C2 added `dev`; `build` is still an unknown command, which the
+# surface matrix above measures rather than this literal asserts
+Row 'advertised_commands' 'create,doctor,run,dev'
 Row 'run_option_matrix' $(if ($surface) { 'PASS' } else { 'FAIL' })
-Row 'dev_build_unknown' (Bool $surface)
+# CAP-10C2 exposed `dev`, so this row says WHICH of the two is still unknown
+# rather than answering a question that no longer has one answer. It is the
+# surface matrix's own verdict, never a literal
+Row 'dev_build_unknown' $(if ($surface) { 'build_only' } else { 'false' })
 
 # --- the shell-free proof at the source and the link (S13 / S16) ----------
 $contracts = Join-Path $work 'contracts.json'

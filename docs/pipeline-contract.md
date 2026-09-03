@@ -5,12 +5,19 @@ The `pweb` CLI turns a generated project into the CAP-10C0 run layout through
 plan builders beneath it and over the **one** child-process engine
 (`pweb.cli.process.pas`, [supervision-contract.md](supervision-contract.md)).
 
-The pipeline is **private** at CAP-10C1. `pweb --help` advertises `create`,
-`doctor` and `run`; `dev` and `build` are unknown commands and exit 2. Nothing
-here is reachable from the shipped executable — the pipeline units are not
-linked into it, which `test/cap10c1/check_cap10c1_contracts.ps1` measures at
-the link. CAP-10C2 will call this pipeline from `pweb dev` and CAP-10D will
-expose it as `pweb build`; this document is the contract both of them get.
+The pipeline was **private** at CAP-10C1: `pweb --help` advertised `create`,
+`doctor` and `run`, and `test/cap10c1/check_cap10c1_contracts.ps1` measured
+the pipeline units' ABSENCE from the shipped executable's compiled unit set
+at the link.
+
+**CAP-10C2 made it public.** `pweb dev` runs these prerequisites — the
+toolchain refusal, the SDK staging, a conditional `npm ci`, one `tsc`, and
+the frozen bundler — so every unit named below is now linked into `pweb`,
+and that same measurement is required to come out the other way. Nothing
+about the ten stages, the mutation set, the network policy or the failure
+semantics moved; `docs/dev-contract.md` records what the development loop
+adds on top. CAP-10D will expose the whole of it as `pweb build`, which is
+**still an unknown command** and exits 2.
 
 ## 1. The units, and why they are shaped this way
 

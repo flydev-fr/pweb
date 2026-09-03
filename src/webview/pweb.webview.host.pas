@@ -143,6 +143,15 @@ const
   PWEB_HOST_MAX_AUTOCLOSE_MS = 60000;
   /// how much longer than its own bound the closer thread may take
   PWEB_HOST_CLOSER_MARGIN_MS = 10000;
+  /// CAP-10C2: how long the teardown waits for a reload dispatch that had
+  // already read the handle, and the interval it re-checks on
+  // - the closer thread is JOINED before the handle is disowned, which is
+  // what makes its dispatch safe. A composition's reload caller is not a
+  // thread this unit owns, so the same guarantee has to be a DRAIN: after
+  // the handle is nil no new dispatch can start, and this is the bounded
+  // wait for the ones already past the read
+  PWEB_HOST_RELOAD_DRAIN_MS = 2000;
+  PWEB_HOST_RELOAD_POLL_MS = 5;
   /// the verdict line a clean run writes
   PWEB_HOST_VERDICT_OK = 'ok';
 
@@ -162,6 +171,16 @@ type
     MaxQueueSize: Integer;
     /// prefix for this host's own diagnostic lines - never a decision
     LogPrefix: RawUtf8;
+    /// CAP-10C2: argv strings a COMPOSITION has already consumed and
+    // validated, matched BYTE-EXACTLY and skipped by the argument parser
+    // - the production template leaves this empty, so the refusal set is
+    // byte-for-byte what it always was and an unknown argument still
+    // raises. It exists because "the host refuses every argument it does
+    // not own" has to be composable for a composition to own one, and an
+    // exact-string list is stricter than a prefix: a composition declares
+    // the argv strings it actually saw, never a shape a future argument
+    // might also match
+    ConsumedArgs: TRawUtf8DynArray;
   end;
 
 /// the ratified defaults: one 900x650 window, principal `window:main`,
@@ -188,7 +207,30 @@ function PWebHostRuntimeBridge(const Inner: IInvocationBridge):
 // message loop returned and every teardown step succeeded
 function PWebHostRun(const Options: TPWebHostOptions;
   const Policy: TPWebCapabilityPolicy;
-  const Bridge: IInvocationBridge): Integer;
+  const Bridge: IInvocationBridge): Integer; overload;
+
+/// the same run, with the asset store supplied by the composition
+// - CAP-10C2. Store = nil means the PRODUCTION rule and nothing else:
+// PWebHostLoadBundle, app.pwb beside the executable, never the working
+// directory. The three-argument form above delegates here with nil, so a
+// production host reaches byte-for-byte the same code it always did
+// - a non-nil store is still an IAssetStore and nothing more: it is read
+// through the frozen interface by the frozen platform handler, and no
+// serving rule, MIME derivation, path grammar or CSP moves because of it
+function PWebHostRun(const Options: TPWebHostOptions;
+  const Policy: TPWebCapabilityPolicy;
+  const Bridge: IInvocationBridge;
+  const Store: IAssetStore): Integer; overload;
+
+/// ask the running host to re-navigate to the privileged origin
+// - CAP-10C2, and the mirror image of the auto-close thread's terminate:
+// one webview_dispatch of a callback that calls webview_navigate with
+// PWEB_HOST_ORIGIN, which is the ONLY destination that exists. It takes no
+// parameter, injects no script and calls no location.reload()
+// - False when there is no live webview to ask (before it is created, or
+// after the teardown has disowned it). PRODUCTION NEVER CALLS THIS and
+// gains no string from it
+function PWebHostRequestReload: Boolean;
 
 
 implementation
@@ -243,6 +285,13 @@ type
 var
   /// the live webview handle the auto-close thread may terminate, or nil
   HostAutoCloseHandle: Pointer;
+  /// CAP-10C2: reload dispatches that have read the handle and not yet
+  // returned from webview_dispatch
+  // - the teardown disowns the handle FIRST, so this can only ever fall to
+  // zero afterwards, and it is what the destroy waits on. Without it a
+  // caller that read a live handle one instruction before the disown could
+  // dispatch onto a webview this teardown had already destroyed
+  HostReloadBusy: LongInt;
   /// CAP-10C1: how the teardown tells the auto-close thread it is no longer
   // needed, or nil when the bound is not armed
   // - MEASURED at CAP-10C0: while PWEB_SMOKE_AUTOCLOSE_MS is armed the
@@ -364,6 +413,40 @@ begin
     webview_terminate(w);
   except
     { Pascal exceptions never cross a C callback. }
+  end;
+end;
+
+{ CAP-10C2: PWebHostTerminate with webview_terminate replaced, and nothing
+  else. It carries no parameter and no destination of its own because
+  PWEB_HOST_ORIGIN is the only origin this host has ever navigated to - in
+  development and in production alike - so a re-navigation cannot become an
+  origin change however it is called. }
+procedure PWebHostReNavigate(w: webview_t; arg: Pointer); cdecl;
+begin
+  try
+    webview_navigate(w, PWEB_HOST_ORIGIN);
+  except
+    { Pascal exceptions never cross a C callback. }
+  end;
+end;
+
+function PWebHostRequestReload: Boolean;
+var
+  handle: Pointer;
+begin
+  // the busy count is raised BEFORE the handle is read and lowered after
+  // the dispatch returns, so the teardown's drain cannot complete around a
+  // caller that is between the two. Unlike the terminate path this does NOT
+  // exchange the handle away: a reload leaves the host running, and the
+  // next one has to find the same handle
+  InterlockedIncrement(HostReloadBusy);
+  try
+    handle := HostAutoCloseHandle;
+    Result := handle <> nil;
+    if Result then
+      webview_dispatch(webview_t(handle), @PWebHostReNavigate, nil);
+  finally
+    InterlockedDecrement(HostReloadBusy);
   end;
 end;
 
@@ -637,11 +720,28 @@ begin
   end;
 end;
 
+{ CAP-10C2: an argv string the COMPOSITION declared it had already consumed
+  and validated. The comparison is BYTE-EXACT against the whole argument -
+  never a prefix - so a composition can own `--pweb-dev-root=/x` without
+  also owning every future `--pweb-dev-*` somebody adds. An empty list (the
+  production template's) makes this function answer False for everything,
+  which is the behaviour that existed before it did. }
+function PWebHostArgConsumed(const Consumed: TRawUtf8DynArray;
+  const Arg: string): Boolean;
+var
+  i: Integer;
+begin
+  for i := 0 to High(Consumed) do
+    if string(Consumed[i]) = Arg then
+      exit(True);
+  Result := False;
+end;
+
 { The two ratified arguments, parsed strictly in TWO PASSES - see the unit
   header for why pass 1 raises nothing. AAutoCloseMs stays -1 when the
   argument is absent, so a caller can tell "not given" from "given as 0". }
-procedure PWebHostParseArguments(out AVerdictFile: TFileName;
-  out AAutoCloseMs: Integer);
+procedure PWebHostParseArguments(const Consumed: TRawUtf8DynArray;
+  out AVerdictFile: TFileName; out AAutoCloseMs: Integer);
 var
   i: Integer;
   arg, value: string;
@@ -654,6 +754,8 @@ begin
   for i := 1 to ParamCount do
   begin
     arg := ParamStr(i);
+    if PWebHostArgConsumed(Consumed, arg) then
+      continue;
     if Copy(arg, 1, Length(PWEB_HOST_ARG_VERDICT)) =
          string(PWEB_HOST_ARG_VERDICT) then
     begin
@@ -668,6 +770,8 @@ begin
   for i := 1 to ParamCount do
   begin
     arg := ParamStr(i);
+    if PWebHostArgConsumed(Consumed, arg) then
+      continue;
     if Copy(arg, 1, Length(PWEB_HOST_ARG_VERDICT)) =
          string(PWEB_HOST_ARG_VERDICT) then
     begin
@@ -734,9 +838,19 @@ end;
 function PWebHostRun(const Options: TPWebHostOptions;
   const Policy: TPWebCapabilityPolicy;
   const Bridge: IInvocationBridge): Integer;
+begin
+  // the production form, and the ONE place nil means "the production rule":
+  // app.pwb beside the executable, through PWebHostLoadBundle
+  Result := PWebHostRun(Options, Policy, Bridge, nil);
+end;
+
+function PWebHostRun(const Options: TPWebHostOptions;
+  const Policy: TPWebCapabilityPolicy;
+  const Bridge: IInvocationBridge;
+  const Store: IAssetStore): Integer;
 var
   w: webview_t;
-  store: IAssetStore;
+  assets: IAssetStore;
   assetHandler: TPWebHostAssetHandler;
   navGuard: TPWebHostNavGuard;
   policyRef: ICapabilityPolicy;
@@ -751,6 +865,7 @@ var
   verdictFile: TFileName;
   closerId, closerHandle: system.TThreadID; // mormot.core.os shadows it
   closerStarted, safeToDestroy, schedulerDrained: Boolean;
+  reloadWaited: Integer; // CAP-10C2: the reload drain's bounded wait
   {$ifdef OSPOSIX}
   stopHelper: system.TThreadID;
   stopHelperInstalled: Boolean;
@@ -779,8 +894,17 @@ begin
   try
     // parsed FIRST, so the verdict file is known before anything can fail:
     // a refused bundle still leaves a FAIL verdict when one was asked for
-    PWebHostParseArguments(verdictFile, argAutoCloseMs);
-    store := PWebHostLoadBundle;
+    PWebHostParseArguments(Options.ConsumedArgs, verdictFile,
+      argAutoCloseMs);
+    // nil is the PRODUCTION rule and the only rule this unit knows: the
+    // bundle beside the executable, through the frozen loader with the
+    // frozen refusals. A composition that supplies a store has already
+    // opened it through that same loader; nothing here serves a folder,
+    // a directory or a path of any kind
+    if Store <> nil then
+      assets := Store
+    else
+      assets := PWebHostLoadBundle;
 
     // the policy is installed at the ONE frozen call site; the plumbing
     // below is the Phase-2 plumbing, untouched
@@ -798,7 +922,7 @@ begin
     // THE ONE FORCED ORDERING DIFFERENCE: Cocoa's pweb://app seam is armed
     // by CONSTRUCTION, and only a webview created after it can be served.
     // Attach below proves the seam actually ran for the view that came back.
-    assetHandler := TCocoaAssetHandler.Create(store);
+    assetHandler := TCocoaAssetHandler.Create(assets);
     {$endif DARWIN}
 
     w := WebViewCheckCreated(webview_create(0, nil));
@@ -829,9 +953,9 @@ begin
       // native seam, then navigate - never any injected HTML
       {$ifndef DARWIN}
       {$ifdef LINUX}
-      assetHandler := TWebKitGtkAssetHandler.Create(w, store);
+      assetHandler := TWebKitGtkAssetHandler.Create(w, assets);
       {$else}
-      assetHandler := TWebView2AssetHandler.Create(w, store);
+      assetHandler := TWebView2AssetHandler.Create(w, assets);
       {$endif LINUX}
       {$endif DARWIN}
       // CAP-8B: the guard is installed AFTER the handler that can serve
@@ -907,6 +1031,29 @@ begin
       else
         HostAutoCloseStop := nil;
       InterlockedExchange(HostAutoCloseHandle, nil);
+      // CAP-10C2: the handle is disowned, so no NEW reload dispatch can
+      // start; this drains the ones already past their read. It is placed
+      // HERE - immediately after the disown and before the first teardown
+      // step - so the CAP-9 shutdown order below is reached unchanged, and
+      // it is bounded so a caller that never returns cannot park a host.
+      // In production nothing calls PWebHostRequestReload and the count is
+      // zero on the first look
+      reloadWaited := 0;
+      while (InterlockedExchangeAdd(HostReloadBusy, 0) <> 0) and
+            (reloadWaited < PWEB_HOST_RELOAD_DRAIN_MS) do
+      begin
+        Sleep(PWEB_HOST_RELOAD_POLL_MS);
+        Inc(reloadWaited, PWEB_HOST_RELOAD_POLL_MS);
+      end;
+      if InterlockedExchangeAdd(HostReloadBusy, 0) <> 0 then
+      begin
+        // a dispatch that never returned: destroying the webview under it
+        // is the one thing this drain exists to prevent
+        WriteLn(StdErr, HostLogPrefix,
+          ': FAIL a reload dispatch did not drain');
+        safeToDestroy := False;
+        Result := 1;
+      end;
       if binding <> nil then
         try
           binding.Close;
@@ -1011,7 +1158,7 @@ begin
     schedulerRef := nil;
     scheduler := nil;
     policyRef := nil;
-    store := nil;
+    assets := nil;
   except
     on E: Exception do
     begin

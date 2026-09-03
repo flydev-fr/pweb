@@ -55,8 +55,17 @@ foreach ($f in 'sdk/typescript/dist/src/index.js',
     }
 }
 
-$targetOs = (fpc -iTO).Trim().ToLowerInvariant()
-$targetCpu = (fpc -iTP).Trim().ToLowerInvariant()
+# CAP-10C2: the SELECTED target, not the compiler's default. One Windows FPC
+# installation routinely carries both the i386 and the x86_64 compiler and the
+# default is whichever the installer wrote last, which on a dev host is
+# regularly win32/i386 - so this script refused to run there while every
+# compile it performs names its target explicitly. That is the rule CAP-10C1
+# ratified (`build_cap10c1.ps1` checks the selected target for the same
+# reason); the bundler compile below was the one that did not name it, and
+# now does. On the CI runner the default IS win64, so nothing this script
+# produces there changes.
+$targetOs = (fpc -Px86_64 -Twin64 -iTO).Trim().ToLowerInvariant()
+$targetCpu = (fpc -Px86_64 -Twin64 -iTP).Trim().ToLowerInvariant()
 if (($targetOs -cne 'win64') -or ($targetCpu -cne 'x86_64')) {
     throw "CAP-10B1 expects FPC target Win64/x86_64, got $targetOs/$targetCpu"
 }
@@ -93,7 +102,8 @@ fpc -Px86_64 -Twin64 -MObjFPC -Sh -B `
 if ($LASTEXITCODE -ne 0) { throw 'the CAP-10B1 CLI compile FAILED' }
 
 # --- 3. the frozen bundler, unchanged ---------------------------------------
-fpc -MObjFPC -Sh -B -FUbuild/cap10b1/bundler-units -FEbuild/cap10b1/bin `
+fpc -Px86_64 -Twin64 -MObjFPC -Sh -B `
+    -FUbuild/cap10b1/bundler-units -FEbuild/cap10b1/bin `
     -Fusrc/assets -Fusrc/rpc @mormotCore $statics `
     tools/bundler/pwebbundle.pas
 if ($LASTEXITCODE -ne 0) { throw 'the CAP-6 bundler compile FAILED' }

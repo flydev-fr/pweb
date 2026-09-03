@@ -26,6 +26,8 @@
                 [--verbose]
     pweb run [--project <path>]
     pweb run --help
+    pweb dev [--project <path>]
+    pweb dev --help
 
   Long options only. There are no short forms in v1 - not because they are
   bad, but because every alias is a second spelling of one contract and this
@@ -60,6 +62,15 @@
   nothing typed after `run` ever reaches the application, because the
   application is launched in production mode with an empty argument vector.
 
+  CAP-10C2 ADDS `dev`, with EXACTLY the same option set and no new usage
+  cause anywhere. Every way of getting it wrong is a refusal that already
+  existed - `option_not_for_command`, `duplicate_option`, `extra_positional`
+  - and the ONE thing `dev` can refuse that `run` cannot is the project's
+  declared `ui`, which is not a command-line fact at all and is answered by
+  the dev loop with its own PROJECT cause. `build` is STILL an unknown
+  command: this build cannot perform one, and a command that parses is a
+  promise.
+
   DELIBERATELY NOT IMPLEMENTED: response files (`@file` is an ordinary
   positional and is never expanded), `--` as an argument terminator (it is
   simply an unknown option), and any option that can be set from the
@@ -91,11 +102,15 @@ const
 
 type
   /// the commands this build exposes
-  // - dev/build are NOT here: an unimplemented command that parses is a
-  // promise the binary cannot keep, so they are unknown commands and are
+  // - `build` is NOT here: an unimplemented command that parses is a
+  // promise the binary cannot keep, so it is an unknown command and is
   // refused like any other. CAP-10C0 added `run`, which does the whole of
-  // what its name says: it launches an already-built application
-  TPWebCliCommand = (pccNone, pccCreate, pccDoctor, pccRun);
+  // what its name says: it launches an already-built application.
+  // CAP-10C2 adds `dev`, which does the whole of what ITS name says for
+  // `ui = react` - it builds, launches, watches, rebuilds and reloads - and
+  // refuses `ui = pas2js` with a typed PROJECT cause rather than pretending
+  // to a loop it does not implement
+  TPWebCliCommand = (pccNone, pccCreate, pccDoctor, pccRun, pccDev);
 
   /// why a command line was refused - ordinal 0 is the accepted state
   TPWebCliUsage = (
@@ -432,6 +447,8 @@ begin
           Result.Command := pccDoctor
         else if token = 'run' then
           Result.Command := pccRun
+        else if token = 'dev' then
+          Result.Command := pccDev
         else
         begin
           Refuse(Result, pcuUnknownCommand, token);
@@ -487,7 +504,13 @@ begin
   // verbose diagnostics and no machine report, and the application it
   // launches receives NO argument - so each of these is an option this
   // command does not have, rather than one it quietly ignores or forwards
-  if Result.Command = pccRun then
+  // dev takes exactly what run takes and for the same reasons: it is a
+  // foreground supervisor rather than a report, it emits no colour and no
+  // verbose diagnostics, and NOTHING typed after it reaches the
+  // application - the dev host receives one argument, and that argument is
+  // this CLI's own, never the user's
+  if (Result.Command = pccRun) or
+     (Result.Command = pccDev) then
   begin
     if Result.Verbose then
     begin

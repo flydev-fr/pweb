@@ -183,6 +183,52 @@ $required = @(
     'doctor_schema_digest_unchanged',
     'autoclose_stop_honoured',
     'doctor_platform_webview',
+    # CAP-10C2: the public development loop. The decision corpus
+    # (digested), the real `pweb dev` on the generated project, the two
+    # host binaries' CSP bytes, and the refusals. The pids and the
+    # elapsed times travel beside them and are recorded per target.
+    'dev_corpus', 'dev_suite', 'dev_digest', 'dev_corpus_lines',
+    'dev_option_matrix', 'advertised_commands_c2', 'build_still_unknown',
+    'csp_identical', 'csp_transport_terms', 'dev_origin',
+    'release_dev_unit_absent', 'dev_marker_in_release', 'dev_marker_in_dev',
+    'dev_units_linked', 'dev_transport_hits', 'dev_conditionals',
+    'dev_env_reads', 'dev1_generation_ready', 'dev1_generation_loaded',
+    'dev1_rpc_and_secure', 'dev2_generation_ready',
+    'dev2_generation_loaded', 'dev2_rpc_and_secure',
+    'dev2_host_pid_unchanged', 'dev3_generation_ready',
+    'dev3_generation_loaded', 'dev3_styles_applied',
+    'dev4_broken_published', 'dev4_recovered',
+    'dev4_generation_holds_only_archive', 'dev5_monotonic',
+    'dev5_generation_count',
+    # DEV5 driven rather than inferred: five edits faster than the loop can
+    # answer them, and the page's own arithmetic afterwards. DEV7 and DEV8
+    # are two further supervised runs, each ending the way only it can
+    'dev5_burst_edits', 'dev5_burst_monotonic',
+    'dev5_all_generations_loaded', 'dev5_final_value',
+    'dev5_final_content_correct', 'dev5_generations_after_burst',
+    'dev7_set_was_up', 'dev7_kill_delivered', 'dev7_pweb_outcome',
+    'dev7_pweb_exit', 'dev7_descendants_remaining',
+    'dev7_no_partial_generation', 'dev7_kill_to_exit_ms',
+    'dev8_set_was_up', 'dev8_kill_delivered', 'dev8_pweb_outcome',
+    'dev8_pweb_exit', 'dev8_descendants_remaining',
+    'dev8_no_partial_generation', 'dev8_kill_to_exit_ms',
+    'dev10_release_seeded',
+    # the ratified model, the live set's listener count, the loose-asset
+    # claim and the interrupt CAP-10C1 could only measure on three targets
+    'dev_loop_model', 'cli_dev_available', 'dev_listener_members_max',
+    'dev_listener_members_seen', 'dev_listener_sampler_scope',
+    'dev_loose_assets_used', 'dev_app_dir_names', 'dev_interrupt_clean',
+    'dev_interrupt_mechanism',
+    'dev6_stop_requested', 'dev6_pweb_outcome',
+    'dev6_pweb_exit', 'dev6_descendants_remaining',
+    'dev6_no_partial_generation', 'dev6_interrupt_delivered',
+    'dev6_interrupt_to_exit_ms', 'dev9_exit', 'dev9_refused',
+    'dev9_never_loaded_beside_bundle', 'dev10_release_unchanged',
+    'dev11_exit', 'dev11_cause', 'dev11_nothing_written', 'dev13_no_ansi',
+    'dev13_no_absolute_path', 'dev13_generation_lines',
+    'dev13_exact_one_line_per_generation', 'dev14_install_record_written',
+    'dev14_second_run_skipped_install', 'dev_sentinel_in_template',
+    'network_stages_dev', 'c1_pipeline_digest_unchanged',
     'release_layout', 'no_listener', 'app_pwb_react_sha256',
     'logical_inventory_sha256_react', 'github_sha', 'github_run_id', 'waivers'
 )
@@ -227,7 +273,7 @@ $absolutePins = @{
     # noticed); an interrupt closes the application cleanly and a terminated
     # supervisor takes its tree with it.
     cli_run_available        = 'true'
-    advertised_commands      = 'create,doctor,run'
+    advertised_commands      = 'create,doctor,run,dev'
     supervision_shell_used   = 'false'
     global_name_kill_present = 'false'
     argv_roundtrip           = 'exact'
@@ -253,7 +299,10 @@ $absolutePins = @{
     run_layout_link          = 'exit3/layout_link'
     run_output_escape        = 'exit3'
     run_tampered_bundle      = 'exit5/host_refused'
-    dev_build_unknown        = 'true'
+    # CAP-10C2 exposed `dev`; `build` is STILL an unknown command, and this
+    # row is what says which of the two moved rather than dropping the
+    # measurement that one of them must stay unknown
+    dev_build_unknown        = 'build_only'
     # the teardown order as the contract gate READ it out of the host's
     # source after webview_run, expression by expression - never restated
     shutdown_order           = 'binding.Close>schedulerRef.Shutdown>navGuard.Detach>assetHandler.Detach>webview_destroy(w)'
@@ -296,9 +345,109 @@ $absolutePins = @{
     template_supersession_recorded = 'true'
     project_tree_unchanged         = 'true'
     driver_no_ansi                 = 'true'
-    pipeline_units_linked          = 'false'
+    # CAP-10C2 INVERTED this rather than removing it: `pweb dev` calls the
+    # lifecycle pipeline, so every unit of it must now reach the shipped
+    # executable, and the same measurement is required to come out the other
+    # way
+    pipeline_units_linked          = 'true'
     # the three frozen digests CAP-10C1 must not have moved, compared with
     # their closure values by the gate that reads each one back
+    # CAP-10C2: the facts four targets could agree on and still be wrong
+    # about. The privileged origin and the CSP are the same bytes in the
+    # development binary and the release one; the release binary carries
+    # neither the development unit nor the development argument; a source
+    # edit is loaded WITHOUT the host restarting; a broken rebuild publishes
+    # nothing and stops nothing; a development binary started without its
+    # root refuses and never looks at the bundle beside it; a development
+    # session leaves the release tree untouched; and `pweb dev` on a pas2js
+    # project is refused with nothing started and nothing written.
+    dev_origin                     = 'pweb://app/'
+    csp_identical                  = 'true'
+    csp_transport_terms            = ''
+    release_dev_unit_absent        = 'true'
+    dev_marker_in_release          = 'false'
+    dev_marker_in_dev              = 'true'
+    dev_units_linked               = 'true'
+    dev_transport_hits             = '0'
+    dev_conditionals               = '0'
+    dev_env_reads                  = '0'
+    dev_option_matrix              = 'PASS'
+    advertised_commands_c2         = 'create,doctor,run,dev'
+    build_still_unknown            = 'true'
+    dev1_generation_ready          = 'true'
+    dev1_generation_loaded         = 'true'
+    dev1_rpc_and_secure            = 'true'
+    dev2_generation_ready          = 'true'
+    dev2_generation_loaded         = 'true'
+    dev2_rpc_and_secure            = 'true'
+    dev2_host_pid_unchanged        = 'true'
+    dev3_generation_ready          = 'true'
+    dev3_generation_loaded         = 'true'
+    dev3_styles_applied            = 'true'
+    dev4_broken_published          = 'false'
+    dev4_recovered                 = 'true'
+    dev4_generation_holds_only_archive = 'true'
+    dev5_monotonic                 = 'true'
+    # DEV5, DRIVEN: five edits 50 ms apart, and then the page's own
+    # arithmetic. `value` is 20 + SUM_B and the burst's last edit sets
+    # SUM_B = 27, so 47 is the only report that says the LAST edit is the
+    # one still standing. The generation COUNT after a burst is a debounce
+    # observation and is deliberately not pinned
+    dev5_burst_edits               = '5'
+    dev5_burst_monotonic           = 'true'
+    dev5_all_generations_loaded    = 'true'
+    dev5_final_value               = '47'
+    dev5_final_content_correct     = 'true'
+    dev10_release_seeded           = 'true'
+    # DEV7 / DEV8: a member ended from OUTSIDE the loop. Both endings are
+    # the same claim - the set comes down, the supervisor says 5, and the
+    # drain finds nothing left - and both are refused if either half moves
+    dev7_set_was_up                = 'true'
+    dev7_kill_delivered            = 'true'
+    dev7_pweb_outcome              = 'exited'
+    dev7_pweb_exit                 = '5'
+    dev7_descendants_remaining     = '0'
+    dev7_no_partial_generation     = 'true'
+    dev8_set_was_up                = 'true'
+    dev8_kill_delivered            = 'true'
+    dev8_pweb_outcome              = 'exited'
+    dev8_pweb_exit                 = '5'
+    dev8_descendants_remaining     = '0'
+    dev8_no_partial_generation     = 'true'
+    # THE MODEL ITSELF. CAP-10C2 measured Vite's dev server against the
+    # frozen pweb://app grammar and refused it (the query is load-bearing and
+    # PWebParseAppUri cuts it; the MIME would have to come from the proxied
+    # response). A target that answered anything else here would be a target
+    # running a different loop
+    dev_loop_model                 = 'rebuild_and_reload'
+    cli_dev_available              = 'true'
+    # no member of the LIVE set holds a listening socket, and no development
+    # generation or run directory carries anything the frozen bundler did not
+    # pack. `dev_listener_members_seen` and `_sampler_scope` travel beside
+    # them as the per-platform observations that make the zero mean something
+    dev_listener_members_max       = '0'
+    dev_loose_assets_used          = 'false'
+    # the CAP-10C1 gap, closed: measured on all four rather than three
+    dev_interrupt_clean            = 'true'
+    dev6_stop_requested            = 'true'
+    dev6_pweb_outcome              = 'exited'
+    dev6_pweb_exit                 = '0'
+    dev6_descendants_remaining     = '0'
+    dev6_no_partial_generation     = 'true'
+    dev6_interrupt_delivered       = 'true'
+    dev9_refused                   = 'true'
+    dev9_never_loaded_beside_bundle = 'true'
+    dev10_release_unchanged        = 'true'
+    dev11_exit                     = '3'
+    dev11_cause                    = 'dev_ui_unsupported'
+    dev11_nothing_written          = 'true'
+    dev13_no_ansi                  = 'true'
+    dev13_no_absolute_path         = 'true'
+    dev13_exact_one_line_per_generation = 'true'
+    dev14_install_record_written   = 'true'
+    dev14_second_run_skipped_install = 'true'
+    dev_sentinel_in_template       = 'true'
+    c1_pipeline_digest_unchanged   = 'true'
     c0_supervision_digest_unchanged = 'true'
     cli_digest_unchanged            = 'true'
     doctor_schema_digest_unchanged  = 'true'
@@ -527,7 +676,22 @@ $equalityFields = @(
     # listener_members_seen (a per-platform mechanism and a host count).
     'pipeline_digest', 'pipeline_corpus_lines',
     'c1_app_pwb_react_semantic_digest', 'c1_app_pwb_react_entries',
-    'c1_app_pwb_pas2js_semantic_digest', 'c1_app_pwb_pas2js_entries'
+    'c1_app_pwb_pas2js_semantic_digest', 'c1_app_pwb_pas2js_entries',
+    # CAP-10C2: the development loop's own DECISION corpus - the command
+    # table, the generation and sentinel paths, the acknowledgement grammar,
+    # the ANSI rule, the publish-and-cleanup arithmetic and the conditional
+    # install rule, all pure functions computed on whichever target is
+    # running. A divergence here is a RULE that moved, never a host that
+    # differs - the same claim `pipeline_digest` makes for CAP-10C1, and the
+    # one the "dev model divergence" refusal is actually made of.
+    #
+    # Deliberately ABSENT: dev_listener_members_seen and
+    # dev_listener_sampler_scope (a host count and a per-platform mechanism),
+    # dev_app_dir_names (the engine library is named differently on each
+    # OS), dev_interrupt_mechanism (a console event on Windows, a signal on
+    # POSIX), dev5_generations_after_burst (what the debounce coalesced,
+    # which is a timing observation), and every *_ms.
+    'dev_digest', 'dev_corpus_lines'
 )
 # the CAP-9C2 semantic gate names, carried in ONE place across the two
 # emitters and this aggregator (see test/cap7f/emit_evidence.ps1)

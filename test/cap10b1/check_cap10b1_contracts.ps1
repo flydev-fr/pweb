@@ -161,9 +161,10 @@ foreach ($doc in 'docs/cli-contract.md', 'docs/template-contract.md') {
     }
 }
 
-# --- 2. dev and build are still unknown commands ---------------------------
-# (CAP-10C0 exposed `run`; the CAP-10C0 gates measure that surface)
-foreach ($cmd in 'dev', 'build') {
+# --- 2. build is still an unknown command ----------------------------------
+# (CAP-10C0 exposed `run` and CAP-10C2 exposed `dev`; each shard's own gates
+# measure the surface it added)
+foreach ($cmd in 'build') {
     if ($argsSource -match "pccC?$cmd\b") {
         Violation "pweb.cli.args.pas defines a '$cmd' command"
     }

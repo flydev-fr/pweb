@@ -101,6 +101,20 @@ function PWebCliFpcCommand(const FpcPath: RawUtf8;
   Os: TPWebCliOs; Arch: TPWebCliArch;
   const UnitDir, BinDir, NativeProgram: RawUtf8): TPWebCliCommand;
 
+/// the DEVELOPMENT compile of the same project, for the same target
+// - CAP-10C2, and ADDITIVE in the exact sense that matters: it is the
+// release vector with ONE element inserted, -dPWEB_DEV, produced by the
+// same private builder. The release function above cannot move because of
+// it, and test/cap10c1's pipeline_digest - which records the release
+// vector for all four targets - is re-measured UNCHANGED to prove it
+// - UnitDir and BinDir are the DEV directories (<dev>/units, <dev>/obj),
+// never the release ones: a development compile must not put a unit
+// carrying the dev composition into the set a release build reads
+function PWebCliFpcDevCommand(const FpcPath: RawUtf8;
+  const Project: TPWebCliProject; const Sdk: TPWebSdkLayout;
+  Os: TPWebCliOs; Arch: TPWebCliArch;
+  const UnitDir, BinDir, NativeProgram: RawUtf8): TPWebCliCommand;
+
 /// the native path of the executable an fpc run leaves in BinDir
 function PWebCliNativeExeName(const Ident: RawUtf8;
   Os: TPWebCliOs): RawUtf8;
@@ -122,10 +136,17 @@ begin
     Result := Result + PWEB_CLI_RUN_WINDOWS_EXT;
 end;
 
-function PWebCliFpcCommand(const FpcPath: RawUtf8;
+{ THE ONE BUILDER, and the whole of the difference between the two public
+  functions above. Dev inserts exactly one element, -dPWEB_DEV, at a fixed
+  position among the mode flags; every other element - order included - is
+  literally the same code producing the same string, so "the release vector
+  did not move" is a property of there being ONE vector rather than a
+  promise two copies keep. }
+function BuildFpcCommand(const FpcPath: RawUtf8;
   const Project: TPWebCliProject; const Sdk: TPWebSdkLayout;
   Os: TPWebCliOs; Arch: TPWebCliArch;
-  const UnitDir, BinDir, NativeProgram: RawUtf8): TPWebCliCommand;
+  const UnitDir, BinDir, NativeProgram: RawUtf8;
+  Dev: Boolean): TPWebCliCommand;
 var
   args: TRawUtf8DynArray;
   srcDir, name: RawUtf8;
@@ -144,12 +165,29 @@ begin
   end;
   Push(args, '-MObjFPC');
   Push(args, '-Sh');
-  Push(args, '-B');
+  // -B ONLY FOR A RELEASE. A release is required to be a function of its
+  // sources alone - `build_deterministic` is measured over two real runs -
+  // so it rebuilds everything every time. A DEVELOPMENT compile runs on
+  // every `pweb dev` start, into unit and object directories of its own
+  // that no release build ever reads, and rebuilding the whole mORMot
+  // surface before a window can open is minutes a developer pays for
+  // nothing. The define never varies within <dev>/units - it is always
+  // -dPWEB_DEV - so there is no mixed-define staleness for the dependency
+  // check to miss, which is the failure that would justify the cost.
+  if not Dev then
+    Push(args, '-B');
   if Os = pcoWindows then
     Push(args, '-Xm');
   if Os = pcoMacos then
     // the ratified support floor, on every compile - never left to the SDK
     Push(args, '-WM' + PWEB_CLI_MACOS_MIN);
+  if Dev then
+    // THE MODE, and the ONE place it is selected. It arrives here from
+    // pweb.cli.dev and from nowhere else: no descriptor field, no frontend
+    // file, no manifest and no environment variable can put it on a
+    // command line, which is what "the build/run mode is native-controlled"
+    // means when it is a mechanism rather than a sentence
+    Push(args, '-d' + PWEB_CLI_DEV_DEFINE);
 
   Push(args, '-FU' + PWebCliArgPath(UnitDir));
   Push(args, '-FE' + PWebCliArgPath(BinDir));
@@ -203,6 +241,24 @@ begin
   // absolute, so the working directory decides nothing - and stating it
   // explicitly is what the supervision contract requires of every spawn
   Result.WorkDir := Project.Root;
+end;
+
+function PWebCliFpcCommand(const FpcPath: RawUtf8;
+  const Project: TPWebCliProject; const Sdk: TPWebSdkLayout;
+  Os: TPWebCliOs; Arch: TPWebCliArch;
+  const UnitDir, BinDir, NativeProgram: RawUtf8): TPWebCliCommand;
+begin
+  Result := BuildFpcCommand(FpcPath, Project, Sdk, Os, Arch, UnitDir,
+    BinDir, NativeProgram, {Dev=}False);
+end;
+
+function PWebCliFpcDevCommand(const FpcPath: RawUtf8;
+  const Project: TPWebCliProject; const Sdk: TPWebSdkLayout;
+  Os: TPWebCliOs; Arch: TPWebCliArch;
+  const UnitDir, BinDir, NativeProgram: RawUtf8): TPWebCliCommand;
+begin
+  Result := BuildFpcCommand(FpcPath, Project, Sdk, Os, Arch, UnitDir,
+    BinDir, NativeProgram, {Dev=}True);
 end;
 
 end.

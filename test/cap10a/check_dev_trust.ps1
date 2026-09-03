@@ -141,6 +141,123 @@ foreach ($phrase in 'pweb://app', 'ws://127.0.0.1', 'never an origin exception',
     }
 }
 
+# --- 5. CAP-10C2: the DEVELOPMENT half, now that it exists ------------------
+# Sections 1-4 pinned the production half before any development code
+# existed, which was the whole point: the rule dies when a dev mode is
+# written and an allowance is added "temporarily" to a shared profile. The
+# dev mode is written now, so this section pins what CAP-10C2 decided.
+#
+# The source sweep in section 2 already covers src/** and tools/**, so a
+# ws:// or a 127.0.0.1 literal appearing in the dev loop or the dev host is
+# ALREADY a violation above. What is added here is the positive half: the
+# development composition exists, it navigates to nothing but the one
+# privileged origin, it selects its mode natively, and the ratified-but-
+# unused WebSocket allowance is still ratified, still unused, and still
+# absent from every profile.
+$devHost = 'src/webview/pweb.webview.devhost.pas'
+$devLoop = 'tools/pweb/pweb.cli.dev.pas'
+$devLayout = 'tools/pweb/pweb.cli.devlayout.pas'
+$devContract = 'docs/dev-contract.md'
+foreach ($f in $devHost, $devLoop, $devLayout, $devContract) {
+    if (-not (Test-Path $f)) {
+        $violations.Add("CAP-10C2 development surface is missing: $f")
+    }
+}
+if (Test-Path $devHost) {
+    $devHostText = [System.IO.File]::ReadAllText($devHost)
+    # THE ONE NAVIGATION. The dev host must not call webview_navigate at
+    # all: re-navigation goes through PWebHostRequestReload, which carries
+    # PWEB_HOST_ORIGIN and no parameter, so a development build has no way
+    # to name a second destination even by accident.
+    if ($devHostText -match 'webview_navigate') {
+        $violations.Add(('the development host calls webview_navigate ' +
+            'directly: the ratified switch is PWebHostRequestReload, whose ' +
+            'only destination is PWEB_HOST_ORIGIN'))
+    }
+    if (-not $devHostText.Contains('PWebHostRequestReload')) {
+        $violations.Add('the development host does not use PWebHostRequestReload')
+    }
+    # it must SERVE a packed bundle and never a folder: a dev store that
+    # could read loose files is a dev store with a different path grammar
+    if (-not $devHostText.Contains('PWebBundleLoadFile')) {
+        $violations.Add(('the development host does not open its generations ' +
+            'through the frozen PWebBundleLoadFile'))
+    }
+    foreach ($banned in 'pweb.assets.folder', 'TFolderAssetStore') {
+        if ($devHostText.Contains($banned)) {
+            $violations.Add("the development host reaches a FOLDER store: $banned")
+        }
+    }
+}
+# THE MODE IS NATIVE-CONTROLLED. PWEB_DEV reaches a compiler from the CLI's
+# own argument builder and from nowhere else - not from pweb.json, not from
+# a frontend file, not from an environment variable.
+$native = 'tools/pweb/pweb.cli.native.pas'
+if (Test-Path $native) {
+    $nativeText = [System.IO.File]::ReadAllText($native)
+    if (-not ($nativeText -match "'-d'\s*\+\s*PWEB_CLI_DEV_DEFINE")) {
+        $violations.Add(('pweb.cli.native does not build the development ' +
+            'define from PWEB_CLI_DEV_DEFINE: the mode must be spelled once ' +
+            'and reach the compiler from this one place'))
+    }
+}
+$toolchain = 'tools/pweb/pweb.cli.toolchain.pas'
+if (Test-Path $toolchain) {
+    $toolchainText = [System.IO.File]::ReadAllText($toolchain)
+    if ($toolchainText -notmatch "(?m)^\s*PWEB_CLI_DEV_DEFINE\s*=\s*'PWEB_DEV'\s*;") {
+        $violations.Add("$toolchain does not define PWEB_CLI_DEV_DEFINE = 'PWEB_DEV'")
+    }
+}
+# and no environment variable may select it, anywhere on the surface
+$modeEnvRx = 'PWEB_DEV_ROOT|PWEB_MODE|PWEB_DEVELOPMENT'
+foreach ($file in $surface) {
+    $rel = ($file.FullName.Substring($repoRoot.Length).TrimStart('\', '/')) `
+        -replace '\\', '/'
+    $lineNo = 0
+    foreach ($line in [System.IO.File]::ReadLines($file.FullName)) {
+        $lineNo++
+        if ($line -match 'GetEnvironmentVariable|getenv') {
+            if ($line -match $modeEnvRx) {
+                $violations.Add(("the development mode is read from the " +
+                    "ENVIRONMENT at ${rel}:${lineNo} -- the mode is " +
+                    'native-controlled and arrives on a compiler command line'))
+            }
+        }
+    }
+}
+# THE PRODUCTION TEMPLATE STILL SELECTS THE PRODUCTION HOST. The generated
+# program.lpr may name the development composition only inside its
+# PWEB_DEV region, which is what makes a release build unable to link it.
+$tpl = 'tools/templates/react/src/program.lpr'
+if (Test-Path $tpl) {
+    $inDev = $false
+    $lineNo = 0
+    foreach ($line in [System.IO.File]::ReadLines($tpl)) {
+        $lineNo++
+        if ($line -match '\{\$ifdef\s+PWEB_DEV\}') { $inDev = $true; continue }
+        if ($line -match '\{\$else\}') { $inDev = $false; continue }
+        if ($line -match '\{\$endif\s+PWEB_DEV\}') { $inDev = $false; continue }
+        if ((-not $inDev) -and
+            ($line -match 'devhost|PWebDevHostRun')) {
+            $violations.Add(("the generated program names the development " +
+                "composition OUTSIDE its PWEB_DEV region: ${tpl}:${lineNo}"))
+        }
+    }
+}
+# THE RATIFIED-BUT-UNUSED ALLOWANCE. CAP-10C2 chose rebuild-and-reload, so
+# ws://127.0.0.1:<port> is still ratified in the contract, still unused, and
+# still absent from every profile. Its presence in the DOCUMENT is required
+# (section 4); its absence from every SOURCE profile is section 2. This pins
+# the third thing: the contract must record that the shipped dev loop does
+# not use it, so a reader cannot mistake a ratification for an implementation.
+foreach ($phrase in 'rebuild-and-reload', 'ratified, unused') {
+    if (-not $contractText.Contains($phrase)) {
+        $violations.Add(("docs/cli-contract.md does not record the CAP-10C2 " +
+            "decision: `"$phrase`" is absent"))
+    }
+}
+$report.Add('CAP-10C2: rebuild-and-reload; the ws:// allowance stays ratified, unused and absent')
+
 # --- verdict ----------------------------------------------------------------
 New-Item -ItemType Directory -Force build/cap10a | Out-Null
 $lines = New-Object System.Collections.Generic.List[string]

@@ -2057,6 +2057,50 @@ jobs:
             build/cap10c1/pipe-*-stdout.txt
             build/cap10c1/run-*-stdout.txt
             build/cap10c1-gates.log
+      - name: CAP-10C2 build the development suite, the driver and both host binaries
+        shell: pwsh
+        timeout-minutes: 25
+        run: |
+          pwsh -NoProfile -File test/cap10c2/build_cap10c2.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10C2 build FAILED' }
+      - name: CAP-10C2 contract cross-checks (bounds, linkage, dev-free release, CSP, no transport)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10c2/check_cap10c2_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10C2 contract cross-checks FAILED' }
+
+      - name: CAP-10C2 development-loop gates (DEV1-DEV14, T1-T5) + evidence
+        shell: bash
+        timeout-minutes: 70
+        run: |
+          pwsh -NoProfile -File test/cap10c2/run_cap10c2_gates.ps1 2>&1 |
+            tee build/cap10c2-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10C2 upload the development corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10c2-dev-windows
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10c2/cli-windows-x86_64.json
+            build/cap10c2/contracts.json
+            build/cap10c2/dev-corpus.txt
+            build/cap10c2/dev-observed.txt
+            build/cap10c2/c2tests.log
+            build/cap10c2/devdrv-report.txt
+            build/cap10c2/devdrv-report.txt.lines
+            build/cap10c2/devdrv-stdout.txt
+            build/cap10c2/devdrv-stderr.txt
+            build/cap10c2/devdrv-killhost.txt
+            build/cap10c2/devdrv-killhost.txt.lines
+            build/cap10c2/devdrv-killwatcher.txt
+            build/cap10c2/devdrv-killwatcher.txt.lines
+            build/cap10c2/dev14-stderr.txt
+            build/cap10c2/dev9-stderr.txt
+            build/cap10c2-gates.log
       - name: CAP-7F emit the Windows evidence artifact
         shell: pwsh
         timeout-minutes: 10
@@ -2827,6 +2871,48 @@ jobs:
             build/cap10c1/pipe-*-stdout.txt
             build/cap10c1/run-*-stdout.txt
             build/cap10c1-gates.log
+      - name: CAP-10C2 build the development suite, the driver and both host binaries
+        shell: bash
+        timeout-minutes: 25
+        run: test/cap10c2/build_cap10c2.sh
+      - name: CAP-10C2 contract cross-checks (bounds, linkage, dev-free release, CSP, no transport)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10c2/check_cap10c2_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10C2 contract cross-checks FAILED' }
+
+      - name: CAP-10C2 development-loop gates (DEV1-DEV14, T1-T5) + evidence
+        shell: bash
+        timeout-minutes: 70
+        run: |
+          xvfb-run -a pwsh -NoProfile -File test/cap10c2/run_cap10c2_gates.ps1 2>&1 |
+            tee build/cap10c2-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10C2 upload the development corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10c2-dev-linux
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10c2/cli-linux-x86_64.json
+            build/cap10c2/contracts.json
+            build/cap10c2/dev-corpus.txt
+            build/cap10c2/dev-observed.txt
+            build/cap10c2/c2tests.log
+            build/cap10c2/devdrv-report.txt
+            build/cap10c2/devdrv-report.txt.lines
+            build/cap10c2/devdrv-stdout.txt
+            build/cap10c2/devdrv-stderr.txt
+            build/cap10c2/devdrv-killhost.txt
+            build/cap10c2/devdrv-killhost.txt.lines
+            build/cap10c2/devdrv-killwatcher.txt
+            build/cap10c2/devdrv-killwatcher.txt.lines
+            build/cap10c2/dev14-stderr.txt
+            build/cap10c2/dev9-stderr.txt
+            build/cap10c2-gates.log
       - name: CAP-7F emit the Linux evidence artifact
         shell: bash
         timeout-minutes: 10
@@ -3632,6 +3718,48 @@ jobs:
             build/cap10c1/pipe-*-stdout.txt
             build/cap10c1/run-*-stdout.txt
             build/cap10c1-gates.log
+      - name: CAP-10C2 build the development suite, the driver and both host binaries
+        shell: bash
+        timeout-minutes: 25
+        run: test/cap10c2/build_cap10c2.sh
+      - name: CAP-10C2 contract cross-checks (bounds, linkage, dev-free release, CSP, no transport)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10c2/check_cap10c2_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10C2 contract cross-checks FAILED' }
+
+      - name: CAP-10C2 development-loop gates (DEV1-DEV14, T1-T5) + evidence
+        shell: bash
+        timeout-minutes: 70
+        run: |
+          pwsh -NoProfile -File test/cap10c2/run_cap10c2_gates.ps1 2>&1 |
+            tee build/cap10c2-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10C2 upload the development corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10c2-dev-macos-x64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10c2/cli-macos-x86_64.json
+            build/cap10c2/contracts.json
+            build/cap10c2/dev-corpus.txt
+            build/cap10c2/dev-observed.txt
+            build/cap10c2/c2tests.log
+            build/cap10c2/devdrv-report.txt
+            build/cap10c2/devdrv-report.txt.lines
+            build/cap10c2/devdrv-stdout.txt
+            build/cap10c2/devdrv-stderr.txt
+            build/cap10c2/devdrv-killhost.txt
+            build/cap10c2/devdrv-killhost.txt.lines
+            build/cap10c2/devdrv-killwatcher.txt
+            build/cap10c2/devdrv-killwatcher.txt.lines
+            build/cap10c2/dev14-stderr.txt
+            build/cap10c2/dev9-stderr.txt
+            build/cap10c2-gates.log
       - name: CAP-7F emit the macOS x64 evidence artifact
         shell: bash
         timeout-minutes: 10
@@ -4365,6 +4493,48 @@ jobs:
             build/cap10c1/pipe-*-stdout.txt
             build/cap10c1/run-*-stdout.txt
             build/cap10c1-gates.log
+      - name: CAP-10C2 build the development suite, the driver and both host binaries
+        shell: bash
+        timeout-minutes: 25
+        run: test/cap10c2/build_cap10c2.sh
+      - name: CAP-10C2 contract cross-checks (bounds, linkage, dev-free release, CSP, no transport)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10c2/check_cap10c2_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10C2 contract cross-checks FAILED' }
+
+      - name: CAP-10C2 development-loop gates (DEV1-DEV14, T1-T5) + evidence
+        shell: bash
+        timeout-minutes: 70
+        run: |
+          pwsh -NoProfile -File test/cap10c2/run_cap10c2_gates.ps1 2>&1 |
+            tee build/cap10c2-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10C2 upload the development corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10c2-dev-macos-arm64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10c2/cli-macos-arm64.json
+            build/cap10c2/contracts.json
+            build/cap10c2/dev-corpus.txt
+            build/cap10c2/dev-observed.txt
+            build/cap10c2/c2tests.log
+            build/cap10c2/devdrv-report.txt
+            build/cap10c2/devdrv-report.txt.lines
+            build/cap10c2/devdrv-stdout.txt
+            build/cap10c2/devdrv-stderr.txt
+            build/cap10c2/devdrv-killhost.txt
+            build/cap10c2/devdrv-killhost.txt.lines
+            build/cap10c2/devdrv-killwatcher.txt
+            build/cap10c2/devdrv-killwatcher.txt.lines
+            build/cap10c2/dev14-stderr.txt
+            build/cap10c2/dev9-stderr.txt
+            build/cap10c2-gates.log
       - name: CAP-7F emit the macOS arm64 evidence artifact
         shell: bash
         timeout-minutes: 10

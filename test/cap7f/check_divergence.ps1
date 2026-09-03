@@ -127,9 +127,17 @@ $allow = @{
     # required. Every one selects a whole platform body; none decides.
     'tools/pweb/pweb.cli.platform.pas'   = @{ directives = 36;
         fingerprint = 'e1fcbe2461a0fe9bdd31b66200dee78f7faa7ee1c199476964e5383cf08c3be9' }
-    # CAP-10A: the program, whose only conditional is {$apptype console}
-    'tools/pweb/pweb.pas'                = @{ directives = 2;
-        fingerprint = '0dc7a84a71485678f01dc0e7032093d6858fb389878b52157a2f69671187305d' }
+    # CAP-10A: the program, whose only conditional was {$apptype console}.
+    # CAP-10C2 RE-RATIFIED at 4 (was 2): `pweb dev` supervises two
+    # long-lived children on two threads, and FPC's Unix threading is armed
+    # by LINKING cthreads - so the uses clause gains one UNIX region whose
+    # whole body is that unit name. It selects a NAME and decides nothing,
+    # which is the rule this allowlist exists to hold: every other new unit
+    # this shard added (pweb.cli.dev, pweb.cli.devlayout,
+    # src/webview/pweb.webview.devhost) carries ZERO conditionals and is
+    # therefore deliberately absent from this list.
+    'tools/pweb/pweb.pas'                = @{ directives = 4;
+        fingerprint = 'f4b8478344bc6029c69c1cc8439681b1ad1b21c57283aae4b3d644b3ef10fcd3' }
     # CAP-10B0: the trusted template-pack builder, likewise. Its fingerprint
     # equals pweb.pas's because the directive TEXTS are the same two - which
     # is the fingerprint working as intended, not a collision.

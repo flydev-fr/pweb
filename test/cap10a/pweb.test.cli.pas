@@ -325,9 +325,41 @@ begin
   a := PWebCliParseArgs(Argv(['build']));
   Check(a.Usage = pcuUnknownCommand, 'C3: build is not in this build');
   Record_('args|build|' + PWebCliUsageText(a.Usage));
+  // CAP-10C2 exposes `dev`: a bare `pweb dev` is a complete command line
+  // (the project is discovered from the working directory, exactly as `run`
+  // discovers it), so the case it makes here changed from "unknown command"
+  // to "accepted", and cli_digest is re-baselined as a RECORDED supersession
+  // in the same way CAP-10C0 re-baselined it for `run`. What `dev` refuses
+  // that `run` does not is a PROJECT fact - the declared frontend kind - and
+  // no usage cause was added for it.
   a := PWebCliParseArgs(Argv(['dev']));
-  Check(a.Usage = pcuUnknownCommand, 'C3: dev is not in this build');
+  Check(a.Usage = pcuNone, 'C3: dev is a command since CAP-10C2');
+  Check(a.Command = pccDev, 'C3: and it is the dev command');
   Record_('args|dev|' + PWebCliUsageText(a.Usage));
+  a := PWebCliParseArgs(Argv(['dev', '--project', 'p']));
+  Check(a.Usage = pcuNone, 'C3: dev takes --project');
+  CheckEqual(a.ProjectPath, 'p', 'C3: and it captures its value');
+  Record_('args|dev --project p|' + PWebCliUsageText(a.Usage));
+  a := PWebCliParseArgs(Argv(['dev', '--project', 'p', '--project', 'q']));
+  Check(a.Usage = pcuDuplicateOption, 'C3: dev refuses a repeated --project');
+  Record_('args|dev --project twice|' + PWebCliUsageText(a.Usage));
+  a := PWebCliParseArgs(Argv(['dev', '--json']));
+  Check(a.Usage = pcuOptionNotForCommand, 'C3: dev has no machine report');
+  Record_('args|dev --json|' + PWebCliUsageText(a.Usage));
+  a := PWebCliParseArgs(Argv(['dev', '--verbose']));
+  Check(a.Usage = pcuOptionNotForCommand, 'C3: dev has no verbosity');
+  Record_('args|dev --verbose|' + PWebCliUsageText(a.Usage));
+  a := PWebCliParseArgs(Argv(['dev', '--no-color']));
+  Check(a.Usage = pcuOptionNotForCommand, 'C3: dev emits no colour');
+  Record_('args|dev --no-color|' + PWebCliUsageText(a.Usage));
+  a := PWebCliParseArgs(Argv(['dev', 'extra']));
+  Check(a.Usage = pcuExtraPositional, 'C3: dev takes no operand');
+  Record_('args|dev extra|' + PWebCliUsageText(a.Usage));
+  a := PWebCliParseArgs(Argv(['dev', '--help']));
+  Check(a.Usage = pcuNone, 'C3: dev --help is a complete request');
+  Check(a.Help, 'C3: and it asks for help');
+  Check(a.Command = pccDev, 'C3: for the dev command');
+  Record_('args|dev --help|' + PWebCliUsageText(a.Usage));
   // CAP-10C0 exposes `run`: a bare `pweb run` is a complete command line
   // (the project is discovered from the working directory), so the case it
   // makes here changed from "unknown command" to "accepted". The corpus

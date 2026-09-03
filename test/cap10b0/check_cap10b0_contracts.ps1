@@ -153,10 +153,10 @@ $argsSource = [System.IO.File]::ReadAllText('tools/pweb/pweb.cli.args.pas')
 if ($argsSource -notmatch 'pccCreate\b') {
     Violation "tools/pweb/pweb.cli.args.pas defines no 'create' command"
 }
-# CAP-10C0 moved `run` out of this list: it is a command that does the whole
-# of what its name says now, and the CAP-10C0 gates measure it. `dev` and
-# `build` stay unknown until the shard that makes each of them true.
-foreach ($cmd in 'dev', 'build') {
+# CAP-10C0 moved `run` out of this list and CAP-10C2 moved `dev`: each is a
+# command that does the whole of what its name says now, and its own shard's
+# gates measure it. `build` stays unknown until the shard that makes it true.
+foreach ($cmd in 'build') {
     if ($argsSource -match "pccC?$cmd\b") {
         Violation "tools/pweb/pweb.cli.args.pas defines a '$cmd' command"
     }

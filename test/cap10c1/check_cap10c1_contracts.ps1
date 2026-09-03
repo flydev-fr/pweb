@@ -9,10 +9,13 @@
 #   1. THE BOUNDS AND THE LIBRARY NAMES, against docs/pipeline-contract.md
 #      and against webview.lock. A constant nobody cross-checks is a number
 #      somebody typed - the rule pweb.cli.toolchain's own header states.
-#   2. NO PIPELINE UNIT IS LINKED INTO THE CLI. `pweb` advertises create,
-#      doctor and run; the pipeline is private, and "private" has to be a
-#      MEASUREMENT over the compiled unit set rather than a claim about a
-#      command that happens not to exist yet.
+#   2. EVERY PIPELINE UNIT IS LINKED INTO THE CLI. CAP-10C1 required the
+#      opposite: `pweb` advertised create, doctor and run, the pipeline was
+#      private, and "private" had to be a MEASUREMENT over the compiled unit
+#      set rather than a claim about a command that happened not to exist
+#      yet. CAP-10C2 added `pweb dev`, which calls the pipeline's units, so
+#      this shard's measurement is INVERTED rather than removed - the fact is
+#      still measured, and the verdict is the other one.
 #   3. NO PLATFORM CONDITIONAL, NO NAME-BASED PROCESS PRIMITIVE, NO
 #      ENVIRONMENT READ and NO DEVELOPMENT ORIGIN in any pipeline unit. The
 #      first keeps the four-target command tables meaningful, the second is
@@ -123,10 +126,18 @@ if (Test-Path $cliUnits) {
     if ($linked.Count -lt 5) {
         Violation "$cliUnits holds no compiled unit set -- run test/cap10b1/build_cap10b1 first"
     }
+    # CAP-10C2 INVERTED THIS ASSERTION, and the inversion is the point rather
+    # than a deletion. CAP-10C1 froze the pipeline as PRIVATE and measured its
+    # absence from the shipped executable's compiled unit set at the link;
+    # CAP-10C2 exposes `pweb dev`, which calls it, so the SAME measurement is
+    # now required to come out the other way. Deleting the check instead
+    # would have left the repository with no measurement at all of a fact it
+    # had spent a shard establishing.
     foreach ($u in $pipelineUnits) {
-        if ($linked -contains "pweb.cli.$u.ppu") {
-            Violation ("the CLI LINKS pweb.cli.${u}: the lifecycle pipeline is " +
-                'private at CAP-10C1 and must not reach the shipped executable')
+        if ($linked -notcontains "pweb.cli.$u.ppu") {
+            Violation ("the CLI does NOT link pweb.cli.${u}: since CAP-10C2 " +
+                '`pweb dev` calls the lifecycle pipeline, so every unit of it ' +
+                'must reach the shipped executable')
         }
     }
     $facts['cli_linked_units'] = $linked.Count

@@ -163,6 +163,97 @@ const
   // that uses it - an object file, never a second dylib (CAP-7M1)
   PWEB_CLI_MACOS_BRIDGE_OBJ = 'pweb_cocoa_bridge.o';
 
+  { CAP-10C2 - the dev-loop bounds. Every one of them is a LIMIT on how long
+    the loop may wait for something it does not control, or on how much of
+    something it may keep, and never a tuning knob:
+    test/cap10c2/check_cap10c2_contracts.ps1 cross-checks each value against
+    docs/dev-contract.md, exactly as the CAP-10C0 and CAP-10C1 bounds are
+    cross-checked against their own contracts. }
+
+  /// after the completion sentinel changes, how long the CLI waits before
+  // it re-reads it
+  // - MEASURED: Vite does NOT coalesce rapid rebuilds (five edits 50 ms
+  // apart produced five sentinels), so five keystrokes would otherwise be
+  // five generations. A further change inside this window restarts the wait
+  PWEB_CLI_DEV_DEBOUNCE_MS = 250;
+
+  /// the CEILING on that restarting wait: a file being written continuously
+  // must not postpone a generation forever
+  PWEB_CLI_DEV_DEBOUNCE_MAX_MS = 5000;
+
+  /// how often the CLI reads the sentinel while it is waiting for one
+  PWEB_CLI_DEV_SENTINEL_POLL_MS = 60;
+
+  /// how long the CLI waits for the watcher's FIRST completed build before
+  // it gives up and stops the loop - the whole of a cold Vite start
+  PWEB_CLI_DEV_FIRST_BUILD_MS = 300000;
+
+  /// how long the CLI waits for the host to acknowledge a published
+  // generation with its one ratified line, before it says so and carries on
+  // - never a failure: an acknowledgement that did not arrive is a fact
+  // worth printing, not a reason to stop a running application
+  PWEB_CLI_DEV_ACK_MS = 30000;
+
+  /// how many attempts a consistent dist/ snapshot gets before the loop
+  // reports it could not take one
+  // - the snapshot is retaken when the sentinel MOVED during the copy,
+  // which means the watcher rebuilt underneath it. A bound, because a
+  // frontend rebuilding faster than it can be copied is a fact to report
+  PWEB_CLI_DEV_SNAPSHOT_TRIES = 5;
+
+  /// how many published generations are kept on disk behind the current one
+  // - the host only ever looks FORWARD, so a removed generation can never
+  // be the one it is about to open; keeping a few makes a failed publish
+  // diagnosable
+  PWEB_CLI_DEV_KEEP_GENERATIONS = 3;
+
+  /// the ceiling on the generation counter of one dev session
+  PWEB_CLI_DEV_MAX_GENERATIONS = 100000;
+
+  /// how long the loop waits for its two supervised threads to return
+  // after the stop ladder has run - the C0 ladder's own bounds plus room
+  // for the drain, never a second ladder
+  PWEB_CLI_DEV_JOIN_MS = 30000;
+
+  /// the DEV directory beneath <output>/<os>-<arch>, and its four children
+  // - spelled ONCE, because `pweb run` resolves `release` and must never
+  // resolve any of these
+  PWEB_CLI_DEV_DIR = 'dev';
+  PWEB_CLI_DEV_APP_DIR = 'app';
+  PWEB_CLI_DEV_UNIT_DIR = 'units';
+  PWEB_CLI_DEV_OBJ_DIR = 'obj';
+  /// the ONE generation under construction; never published under this name
+  PWEB_CLI_DEV_TMP_DIR = '.gen.tmp';
+  /// the published generation directories' name prefix, spelled ONCE
+  // - a session numbers from 1 and publishes by a rename that must not
+  // replace, so start-up reclaims every name matching this prefix followed
+  // by digits, and nothing else in <dev> is ever touched by that walk
+  PWEB_CLI_DEV_GEN_PREFIX = 'gen-';
+
+  /// the compiler define that selects the development composition
+  // - the mode is NATIVE-CONTROLLED: this string reaches the compiler from
+  // pweb.cli.native and from nowhere else, and no frontend file, descriptor
+  // field or environment variable can produce it
+  PWEB_CLI_DEV_DEFINE = 'PWEB_DEV';
+
+  /// the completion sentinel the template's vite.config.ts writes, beneath
+  // the frontend root - inside the ratified mutation set, outside dist/
+  PWEB_CLI_DEV_SENTINEL_DIR = 'dev';
+  PWEB_CLI_DEV_SENTINEL_FILE = 'build-id';
+
+  /// the record `npm ci` writes so a second `pweb dev` can skip it
+  PWEB_CLI_DEV_INSTALL_RECORD = 'install-lock.sha256';
+
+  /// the committed lockfile whose digest that record holds
+  // - `ci`, never `install`, is the ratified network stage, and this is the
+  // file that makes it authoritative; a differing digest re-runs it
+  PWEB_CLI_DEV_LOCKFILE = 'package-lock.json';
+
+  /// ceiling on the sentinel and the install record, in bytes - each holds
+  // one short line, and a file past this is a fact to refuse rather than a
+  // string to read
+  PWEB_CLI_DEV_SMALL_FILE_MAX = 4096;
+
 implementation
 
 end.

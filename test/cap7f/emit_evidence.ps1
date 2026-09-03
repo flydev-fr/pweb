@@ -1019,6 +1019,35 @@ if (-not (Test-Path $c1File)) {
     throw '[CAP-7F] cap10c1/cli-windows-x86_64.json missing -- the CAP-10C1 gates have not run in this workspace'
 }
 $c1 = Get-Content $c1File -Raw | ConvertFrom-Json
+
+# --- CAP-10C2: the public development loop ----------------------------------
+# build/cap10c2/cli-<target>.json is ONE record: the headless suite's decision
+# corpus (digested), the REAL `pweb dev` on the real generated project driven
+# through pwebdevdrv, the two host binaries' CSP bytes, and the refusals a
+# running loop cannot make about itself. The timings and the pids are
+# observations; the decisions are what four targets compare.
+$c2File = Join-Path $repoRoot 'build/cap10c2/cli-windows-x86_64.json'
+if (-not (Test-Path $c2File)) {
+    throw '[CAP-7F] cap10c2/cli-windows-x86_64.json missing -- the CAP-10C2 gates have not run in this workspace'
+}
+$c2 = Get-Content $c2File -Raw | ConvertFrom-Json
+if ("$($c2.dev_corpus)" -notin @('PASS', 'FAIL')) {
+    throw "[CAP-7F] the CAP-10C2 record carries an unexpected verdict: $($c2.dev_corpus)"
+}
+if ("$($c2.dev_corpus)" -ceq 'PASS') {
+    if ("$($c2.dev_digest)" -eq '') {
+        throw '[CAP-7F] the CAP-10C2 record records PASS with an empty dev_digest'
+    }
+    foreach ($pair in @(@('csp_identical', 'true'),
+                        @('dev2_host_pid_unchanged', 'true'),
+                        @('dev4_broken_published', 'false'),
+                        @('dev6_descendants_remaining', '0'),
+                        @('dev_marker_in_release', 'false'))) {
+        if ("$($c2.($pair[0]))" -ne $pair[1]) {
+            throw "[CAP-7F] the CAP-10C2 record records PASS with $($pair[0])=$($c2.($pair[0]))"
+        }
+    }
+}
 if ("$($c1.pipeline_corpus)" -notin @('PASS', 'FAIL')) {
     throw "[CAP-7F] the CAP-10C1 record carries an unexpected verdict: $($c1.pipeline_corpus)"
 }
@@ -1316,6 +1345,91 @@ $evidence = [ordered]@{
     c0_supervision_digest_unchanged = "$($c1.c0_supervision_digest_unchanged)"
     cli_digest_unchanged            = "$($c1.cli_digest_unchanged)"
     doctor_schema_digest_unchanged  = "$($c1.doctor_schema_digest_unchanged)"
+    dev_corpus                          = "$($c2.dev_corpus)"
+    dev_suite                           = "$($c2.dev_suite)"
+    dev_digest                          = "$($c2.dev_digest)"
+    dev_corpus_lines                    = "$($c2.dev_corpus_lines)"
+    dev_option_matrix                   = "$($c2.dev_option_matrix)"
+    advertised_commands_c2              = "$($c2.advertised_commands_c2)"
+    build_still_unknown                 = "$($c2.build_still_unknown)"
+    csp_identical                       = "$($c2.csp_identical)"
+    csp_transport_terms                 = "$($c2.csp_transport_terms)"
+    dev_origin                          = "$($c2.dev_origin)"
+    release_dev_unit_absent             = "$($c2.release_dev_unit_absent)"
+    dev_marker_in_release               = "$($c2.dev_marker_in_release)"
+    dev_marker_in_dev                   = "$($c2.dev_marker_in_dev)"
+    dev_units_linked                    = "$($c2.dev_units_linked)"
+    dev_transport_hits                  = "$($c2.dev_transport_hits)"
+    dev_conditionals                    = "$($c2.dev_conditionals)"
+    dev_env_reads                       = "$($c2.dev_env_reads)"
+    dev1_generation_ready               = "$($c2.dev1_generation_ready)"
+    dev1_generation_loaded              = "$($c2.dev1_generation_loaded)"
+    dev1_rpc_and_secure                 = "$($c2.dev1_rpc_and_secure)"
+    dev2_generation_ready               = "$($c2.dev2_generation_ready)"
+    dev2_generation_loaded              = "$($c2.dev2_generation_loaded)"
+    dev2_rpc_and_secure                 = "$($c2.dev2_rpc_and_secure)"
+    dev2_host_pid_unchanged             = "$($c2.dev2_host_pid_unchanged)"
+    dev3_generation_ready               = "$($c2.dev3_generation_ready)"
+    dev3_generation_loaded              = "$($c2.dev3_generation_loaded)"
+    dev3_styles_applied                 = "$($c2.dev3_styles_applied)"
+    dev4_broken_published               = "$($c2.dev4_broken_published)"
+    dev4_recovered                      = "$($c2.dev4_recovered)"
+    dev4_generation_holds_only_archive  = "$($c2.dev4_generation_holds_only_archive)"
+    dev5_monotonic                      = "$($c2.dev5_monotonic)"
+    dev5_generation_count               = "$($c2.dev5_generation_count)"
+    dev5_burst_edits                    = "$($c2.dev5_burst_edits)"
+    dev5_burst_monotonic                = "$($c2.dev5_burst_monotonic)"
+    dev5_all_generations_loaded         = "$($c2.dev5_all_generations_loaded)"
+    dev5_final_value                    = "$($c2.dev5_final_value)"
+    dev5_final_content_correct          = "$($c2.dev5_final_content_correct)"
+    dev5_generations_after_burst        = "$($c2.dev5_generations_after_burst)"
+    dev7_set_was_up                     = "$($c2.dev7_set_was_up)"
+    dev7_kill_delivered                 = "$($c2.dev7_kill_delivered)"
+    dev7_pweb_outcome                   = "$($c2.dev7_pweb_outcome)"
+    dev7_pweb_exit                      = "$($c2.dev7_pweb_exit)"
+    dev7_descendants_remaining          = "$($c2.dev7_descendants_remaining)"
+    dev7_no_partial_generation          = "$($c2.dev7_no_partial_generation)"
+    dev7_kill_to_exit_ms                = "$($c2.dev7_kill_to_exit_ms)"
+    dev8_set_was_up                     = "$($c2.dev8_set_was_up)"
+    dev8_kill_delivered                 = "$($c2.dev8_kill_delivered)"
+    dev8_pweb_outcome                   = "$($c2.dev8_pweb_outcome)"
+    dev8_pweb_exit                      = "$($c2.dev8_pweb_exit)"
+    dev8_descendants_remaining          = "$($c2.dev8_descendants_remaining)"
+    dev8_no_partial_generation          = "$($c2.dev8_no_partial_generation)"
+    dev8_kill_to_exit_ms                = "$($c2.dev8_kill_to_exit_ms)"
+    dev10_release_seeded                = "$($c2.dev10_release_seeded)"
+    dev_loop_model                      = "$($c2.dev_loop_model)"
+    cli_dev_available                   = "$($c2.cli_dev_available)"
+    dev_listener_members_max            = "$($c2.dev_listener_members_max)"
+    dev_listener_members_seen           = "$($c2.dev_listener_members_seen)"
+    dev_listener_sampler_scope          = "$($c2.dev_listener_sampler_scope)"
+    dev_loose_assets_used               = "$($c2.dev_loose_assets_used)"
+    dev_app_dir_names                   = "$($c2.dev_app_dir_names)"
+    dev_interrupt_clean                 = "$($c2.dev_interrupt_clean)"
+    dev_interrupt_mechanism             = "$($c2.dev_interrupt_mechanism)"
+    dev6_stop_requested                 = "$($c2.dev6_stop_requested)"
+    dev6_pweb_outcome                   = "$($c2.dev6_pweb_outcome)"
+    dev6_pweb_exit                      = "$($c2.dev6_pweb_exit)"
+    dev6_descendants_remaining          = "$($c2.dev6_descendants_remaining)"
+    dev6_no_partial_generation          = "$($c2.dev6_no_partial_generation)"
+    dev6_interrupt_delivered            = "$($c2.dev6_interrupt_delivered)"
+    dev6_interrupt_to_exit_ms           = "$($c2.dev6_interrupt_to_exit_ms)"
+    dev9_exit                           = "$($c2.dev9_exit)"
+    dev9_refused                        = "$($c2.dev9_refused)"
+    dev9_never_loaded_beside_bundle     = "$($c2.dev9_never_loaded_beside_bundle)"
+    dev10_release_unchanged             = "$($c2.dev10_release_unchanged)"
+    dev11_exit                          = "$($c2.dev11_exit)"
+    dev11_cause                         = "$($c2.dev11_cause)"
+    dev11_nothing_written               = "$($c2.dev11_nothing_written)"
+    dev13_no_ansi                       = "$($c2.dev13_no_ansi)"
+    dev13_no_absolute_path              = "$($c2.dev13_no_absolute_path)"
+    dev13_generation_lines              = "$($c2.dev13_generation_lines)"
+    dev13_exact_one_line_per_generation = "$($c2.dev13_exact_one_line_per_generation)"
+    dev14_install_record_written        = "$($c2.dev14_install_record_written)"
+    dev14_second_run_skipped_install    = "$($c2.dev14_second_run_skipped_install)"
+    dev_sentinel_in_template            = "$($c2.dev_sentinel_in_template)"
+    network_stages_dev                  = "$($c2.network_stages_dev)"
+    c1_pipeline_digest_unchanged        = "$($c2.c1_pipeline_digest_unchanged)"
     autoclose_stop_honoured         = "$($c1.autoclose_stop_honoured)"
     doctor_platform_webview         = "$($c1.doctor_platform_webview)"
     pipeline_corpus_lines           = "$($c1.pipeline_corpus_lines)"

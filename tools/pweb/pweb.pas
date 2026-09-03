@@ -1,6 +1,7 @@
 program pweb;
 
-{ The PWeb application lifecycle CLI (CAP-10A, CAP-10B1, CAP-10B2, CAP-10C0).
+{ The PWeb application lifecycle CLI (CAP-10A, CAP-10B1, CAP-10B2, CAP-10C0,
+  CAP-10C2).
 
     pweb --help
     pweb --version
@@ -10,29 +11,39 @@ program pweb;
                 [--verbose]
     pweb run [--project <path>]
     pweb run --help
+    pweb dev [--project <path>]
+    pweb dev --help
 
   WHAT THIS BUILD IS. One native FPC console executable, the public entry
   point of the framework. It can diagnose a machine against a project,
-  since CAP-10B1 it can create one, and since CAP-10C0 it can launch the
-  application a project has already built and supervise it.
+  since CAP-10B1 it can create one, since CAP-10C0 it can launch the
+  application a project has already built and supervise it, and since
+  CAP-10C2 it can DEVELOP a React one: build it, launch it, watch it,
+  rebuild it and reload the running window without restarting it.
 
-  WHAT IT IS NOT, AND SAYS SO BY BEING SILENT. `dev` and `build` are unknown
-  commands here. They are not stubs, not "not implemented in this build"
-  placeholders, and they are not listed in --help - because a command that
-  parses is a promise, and a lifecycle CLI that promises a build it cannot
-  perform is worse than one that has not got there yet.
+  WHAT IT IS NOT, AND SAYS SO BY BEING SILENT. `build` is an unknown command
+  here. It is not a stub, not a "not implemented in this build" placeholder,
+  and it is not listed in --help - because a command that parses is a
+  promise, and a lifecycle CLI that promises a build it cannot perform is
+  worse than one that has not got there yet. `dev` on a `pas2js` project is
+  refused with its own typed cause for the same reason.
 
-  THE PROCESS IS STILL INERT. It opens no socket, resolves no host, downloads
-  nothing and installs nothing. `create` writes exactly one tree - the
-  project it was asked for, through the frozen CAP-10B0 transaction - and
-  writes nothing anywhere else: not a lock file, not the registry, not PATH,
-  not a temporary probe file. Everything this CLI ever starts goes through
-  ONE execution engine (pweb.cli.process): a version probe of a tool found
-  on PATH, from `doctor`, and the built application, from `run` - each by
-  exact absolute path, with an argument array, an explicit working
-  directory and no shell anywhere. `create` starts nothing at all, and
-  `run` starts exactly one process and owns every process it spawns in
-  turn.
+  THE PROCESS OPENS NO SOCKET, resolves no host and listens on nothing - in
+  development exactly as in production. `dev` starts no development server,
+  no proxy and no HMR transport: the completion signal is a file the build
+  writes, the switch is a directory rename, and the reload is a native
+  re-navigation to pweb://app, which is the only origin this framework has.
+  The ONE stage that may reach the network is the dependency install, which
+  is skipped whenever the lockfile and node_modules already agree.
+
+  `create` writes exactly one tree - the project it was asked for, through
+  the frozen CAP-10B0 transaction - and writes nothing anywhere else: not a
+  lock file, not the registry, not PATH, not a temporary probe file.
+  Everything this CLI ever starts goes through ONE execution engine
+  (pweb.cli.process): a version probe from `doctor`, the built application
+  from `run`, and the toolchain, the watcher and the development host from
+  `dev` - each by exact absolute path, with an argument array, an explicit
+  working directory and no shell anywhere. `create` starts nothing at all.
 
   THE EXIT CODE IS THE CONTRACT, and the human text never changes it:
 
@@ -69,6 +80,14 @@ program pweb;
 {$endif OSWINDOWS}
 
 uses
+  {$ifdef UNIX}
+  { CAP-10C2: `dev` supervises two long-lived children on two threads, and
+    FPC's Unix threading has to be armed by LINKING this unit - without it
+    BeginThread dies with "This binary has no thread support". It must come
+    FIRST in the uses clause, which is the RTL's own requirement, and it is
+    inert on a run that starts no thread. }
+  cthreads,
+  {$endif UNIX}
   sysutils,
   mormot.core.base,
   pweb.assets.intf,
@@ -85,6 +104,22 @@ uses
   pweb.cli.write,
   pweb.cli.process,
   pweb.cli.run,
+  { CAP-10C2 LINKS THE LIFECYCLE PIPELINE AND THE DEV LOOP. CAP-10C1 froze
+    them as PRIVATE and measured their absence from this executable's
+    compiled unit set; `pweb dev` is what makes them public, so that
+    measurement is re-based in the same commit - from "no pipeline unit is
+    linked" to "every one of them is". `build` remains an unknown command:
+    linking the pipeline is not advertising a build. }
+  pweb.cli.sdkroot,
+  pweb.cli.stage,
+  pweb.cli.toolset,
+  pweb.cli.frontend,
+  pweb.cli.pack,
+  pweb.cli.native,
+  pweb.cli.layout,
+  pweb.cli.pipeline,
+  pweb.cli.devlayout,
+  pweb.cli.dev,
   pweb.cli.args;
 
 const
@@ -543,6 +578,90 @@ begin
     Result := PWEB_EXIT_INTERNAL;
 end;
 
+{ `pweb dev [--project <path>]`.
+
+  Resolve the project exactly as doctor and run do, and hand it to the one
+  development loop (pweb.cli.dev). This function decides exit codes and
+  prints the loop's own lines; it starts no child of its own, resolves no
+  path of its own and knows nothing about generations.
+
+  THE EXIT MAPPING is the CAP-10C0 one with the two additions this shard
+  ratifies:
+
+      0  the loop stopped cleanly - Ctrl+C, or the developer closed the
+         window and the application exited 0
+      2  usage
+      3  the project was refused, or its declared `ui` is one this build's
+         dev loop does not implement (dev_ui_unsupported)
+      4  the machine cannot build it: the doctor refused, or a tool is
+         missing, unrunnable or the wrong target
+      5  a start-up stage's child failed, or the SUPERVISED SET failed -
+         the application died, or the watcher exited
+      6  an invariant of the dev loop itself broke
+
+  The human text never changes the category, and the category comes from
+  the typed outcomes rather than from anything a child printed. }
+
+procedure DevRefused(const Cause, Detail: RawUtf8);
+begin
+  EmitErr('pweb: dev refused: ' + Cause);
+  if Detail <> '' then
+    EmitErr(': ' + Detail);
+  EmitErr(#10);
+end;
+
+// the loop's sink. A child's forwarded line goes to stdout and the loop's
+// own `pweb: `-prefixed lines to stderr, exactly as `pweb run` splits them;
+// both are already free of ANSI and of every absolute path
+procedure DevLine(Opaque: Pointer; const Line: RawUtf8; FromChild: Boolean);
+begin
+  if FromChild then
+    Emit(Line + #10)
+  else
+    EmitErr(Line + #10);
+end;
+
+function RunDev(const Args: TPWebCliArgs; const StartDir: RawUtf8): Integer;
+var
+  project: TPWebCliProject;
+  r: TPWebCliDevResult;
+begin
+  project := PWebCliOpenProject(Args.ProjectPath, StartDir);
+  if project.Refusal <> pcrNone then
+  begin
+    // the detail of a project refusal may be a path; this command prints
+    // none at all - the cause is the machine-stable part
+    if (PosExChar('/', project.Detail) = 0) and
+       (PosExChar('\', project.Detail) = 0) then
+      DevRefused(PWebCliProjectRefusalText(project.Refusal), project.Detail)
+    else
+      DevRefused(PWebCliProjectRefusalText(project.Refusal), '');
+    exit(PWEB_EXIT_PROJECT);
+  end;
+  // the stop handler is a prerequisite of supervision and is installed
+  // BEFORE anything is spawned, exactly as `run` installs it: without it a
+  // Ctrl+C would kill this process and leave two trees behind
+  if not PWebCliInstallStopHandler then
+  begin
+    DevRefused('supervision_unavailable', 'stop_handler');
+    exit(PWEB_EXIT_ENVIRONMENT);
+  end;
+  r := PWebCliRunDev(project, PWebCliHostOs, PWebCliHostArch, @DevLine, nil);
+  if r.Code <> pdcOk then
+    DevRefused(r.Cause, r.Detail);
+  if r.Interrupted then
+    EmitErr('pweb: stop requested; the watcher and the application were ' +
+      'asked to close'#10);
+  if r.DescendantsRemaining > 0 then
+    EmitErr('pweb: ' + RawUtf8(IntToStr(r.DescendantsRemaining)) +
+      ' descendant process(es) survived the drain'#10);
+  if r.Published_ > 0 then
+    EmitErr('pweb: ' + RawUtf8(IntToStr(r.Published_)) +
+      ' generation(s) published, ' + RawUtf8(IntToStr(r.Acknowledged)) +
+      ' loaded'#10);
+  Result := PWebCliDevExitCode(r.Code);
+end;
+
 function Main: Integer;
 var
   args: TPWebCliArgs;
@@ -559,6 +678,7 @@ begin
     case args.Command of
       pccCreate: EmitErr(PWebCliCreateHelp);
       pccRun:    EmitErr(PWebCliRunHelp);
+      pccDev:    EmitErr(PWebCliDevHelp);
     else
       EmitErr(PWebCliUsageBanner);
     end;
@@ -573,6 +693,7 @@ begin
     case args.Command of
       pccCreate: Emit(PWebCliCreateHelp);
       pccRun:    Emit(PWebCliRunHelp);
+      pccDev:    Emit(PWebCliDevHelp);
     else
       Emit(PWebCliUsageBanner);
     end;
@@ -595,6 +716,7 @@ begin
     pccCreate: Result := RunCreate(args, startDir);
     pccDoctor: Result := RunDoctor(args, startDir);
     pccRun:    Result := RunRun(args, startDir);
+    pccDev:    Result := RunDev(args, startDir);
   else
     // unreachable: the parser refuses a line with no command
     Result := PWEB_EXIT_INTERNAL;
