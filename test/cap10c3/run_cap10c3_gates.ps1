@@ -578,37 +578,7 @@ $tmpLeft = Test-Path -LiteralPath (Join-Path $devDir '.gen.tmp')
 Row 'pd11_no_partial_generation' (Bool (-not $tmpLeft))
 Require (-not $tmpLeft) 'PD11: a .gen.tmp survived the interrupt'
 
-# --- 7. PD14: the archive parity that is this shard's point -----------------
-# gen-1's app.pwb against the CAP-10C1 pipeline's, for the SAME sources. The
-# pipeline is driven by the CAP-10C1 private driver, which is the only thing
-# in the tree that calls it - `pweb build` is still an unknown command.
-$genOne = Join-Path $devDir 'gen-1/app.pwb'
-$pipeBundle = Join-Path $p2j "dist/$target/app.pwb"
-if ((Test-Path -LiteralPath $genOne) -and (Test-Path -LiteralPath $pipe)) {
-    $pr = Start-Process -FilePath $pipe -ArgumentList @('--project', $p2j) `
-        -Wait -PassThru -NoNewWindow -WorkingDirectory $cwd `
-        -RedirectStandardOutput (Join-Path $work 'pipe-stdout.txt') `
-        -RedirectStandardError (Join-Path $work 'pipe-stderr.txt')
-    Require ($pr.ExitCode -eq 0) `
-        "PD14: the CAP-10C1 pipeline exited $($pr.ExitCode) on the pas2js project"
-    if (Test-Path -LiteralPath $pipeBundle) {
-        $mine = Sha256File $genOne
-        $theirs = Sha256File $pipeBundle
-        Row 'dev_pas2js_gen1_sha256' $mine
-        Row 'dev_pas2js_app_pwb_parity' (Bool ($mine -ceq $theirs))
-        Require ($mine -ceq $theirs) `
-            ("PD14: generation 1's archive differs from the CAP-10C1 " +
-             "pipeline's: $mine vs $theirs")
-    } else {
-        Row 'dev_pas2js_app_pwb_parity' 'false'
-        Require $false 'PD14: the pipeline produced no app.pwb'
-    }
-} else {
-    Row 'dev_pas2js_app_pwb_parity' 'false'
-    Require $false 'PD14: generation 1 or the pipeline driver is absent'
-}
-
-# --- 8. the LIVE set, and PD12 ---------------------------------------------
+# --- 7. PD12, and the LIVE set ---------------------------------------------
 # The listener sample needs a running set, and PD12 needs one it can end from
 # outside, so the killhost scenario provides both: the driver waits until the
 # set is up, this gate samples it, and the driver then kills the host.
@@ -710,6 +680,51 @@ Require ($listenMax -eq 0) `
     "a member of the live pas2js development set held $listenMax listening socket(s)"
 if (-not $lp.HasExited) { $lp.Kill($true) }
 $lp.WaitForExit(30000) | Out-Null
+
+# --- 8. PD14: the archive parity that is this shard's point -----------------
+# gen-1's app.pwb against the CAP-10C1 pipeline's, for the SAME sources. The
+# pipeline is driven by the CAP-10C1 private driver, which is the only thing
+# in the tree that calls it - `pweb build` is still an unknown command.
+#
+# IT IS MEASURED ON THE RUN ABOVE, which stops at generation 1, and NOT on
+# the driven session. MEASURED on hosted run 33790870889: the driven session
+# publishes six generations, so the bounded cleanup removes gen-1, gen-2 and
+# gen-3 the moment generation 6 is acknowledged - and the leg failed with
+# "generation 1 is absent" on Linux while passing on Windows, where the
+# running host still had the archive open and the removal quietly failed.
+# A parity claim measured on a generation the loop is entitled to delete is
+# a claim that depends on the platform's unlink semantics; measured on a
+# one-generation run it depends on nothing.
+$genOne = Join-Path $devDir 'gen-1/app.pwb'
+$pipeBundle = Join-Path $p2j "dist/$target/app.pwb"
+Require (Test-Path -LiteralPath $genOne) `
+    'PD14: the one-generation run left no gen-1/app.pwb to compare'
+Require (Test-Path -LiteralPath $pipe) `
+    'PD14: the CAP-10C1 pipeline driver is absent -- run its build first'
+if ((Test-Path -LiteralPath $genOne) -and (Test-Path -LiteralPath $pipe)) {
+    $pr = Start-Process -FilePath $pipe -ArgumentList @('--project', $p2j) `
+        -Wait -PassThru -NoNewWindow -WorkingDirectory $cwd `
+        -RedirectStandardOutput (Join-Path $work 'pipe-stdout.txt') `
+        -RedirectStandardError (Join-Path $work 'pipe-stderr.txt')
+    Require ($pr.ExitCode -eq 0) `
+        "PD14: the CAP-10C1 pipeline exited $($pr.ExitCode) on the pas2js project"
+    if (Test-Path -LiteralPath $pipeBundle) {
+        $mine = Sha256File $genOne
+        $theirs = Sha256File $pipeBundle
+        Row 'dev_pas2js_gen1_sha256' $mine
+        Row 'dev_pas2js_app_pwb_parity' (Bool ($mine -ceq $theirs))
+        Require ($mine -ceq $theirs) `
+            ("PD14: generation 1's archive differs from the CAP-10C1 " +
+             "pipeline's: $mine vs $theirs")
+    } else {
+        Row 'dev_pas2js_gen1_sha256' 'unmeasured'
+        Row 'dev_pas2js_app_pwb_parity' 'false'
+        Require $false 'PD14: the pipeline produced no app.pwb'
+    }
+} else {
+    Row 'dev_pas2js_gen1_sha256' 'unmeasured'
+    Row 'dev_pas2js_app_pwb_parity' 'false'
+}
 
 # --- 9. RD1: the React loop is unchanged ------------------------------------
 # The CAP-10C2 gates run on this same job and record their own verdict; this

@@ -91,7 +91,21 @@ C1 pipeline and its stages, `pweb.cli.frontend`, both templates, schema 1,
 the seven interfaces, the adapters and every pin are unchanged — and each is
 re-measured rather than assumed.
 
-## One defect the first hosted run found, and two the local runs did
+## Three defects the hosted runs found, and two the local runs did
+
+**A parity leg measured on a generation the loop is entitled to delete.**
+Run 33790870889 was green on all four targets for every row **except PD14**,
+which failed on the three POSIX targets with "generation 1 is absent". The
+loop was blameless: the driven session publishes six generations, and the
+bounded cleanup removes `gen-1`…`gen-3` the moment generation 6 is
+acknowledged. It passed on Windows for a reason that makes it worse rather
+than better — the running host still had the archive open, Windows refuses to
+unlink an open file, the cleanup quietly failed and `gen-1` survived. A claim
+that depends on the platform's unlink semantics is not a claim. PD14 now
+measures on the **one-generation run** the gate already performs for the
+listener sample, where cleanup cannot have run on any platform.
+
+
 
 **The gate never put the pinned `pas2js` on `PATH`, and the local harness
 hid it.** Hosted run 33787727548 failed the Linux leg with fifteen PD rows
