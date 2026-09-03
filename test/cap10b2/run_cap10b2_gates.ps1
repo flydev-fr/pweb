@@ -524,16 +524,32 @@ function ProductionForm([string]$Text) {
     }
     return ($out -join "`n")
 }
+# BOTH sides are reduced to production form, because BOTH carry the region.
+# The development composition is frontend-AGNOSTIC - `PWebDevHostRun` takes an
+# options record, a policy and a bridge and knows nothing about React - so
+# putting it in one template and not the other would be the generated native
+# host branching on frontend kind, which is the very thing this comparison
+# exists to refuse. CAP-10C3 implements `pweb dev` for Pas2JS and inherits a
+# generated program that already selects the development host.
 $reactRaw = [System.IO.File]::ReadAllText((Join-Path $reactProject 'src/demo.lpr'))
+$p2jRaw = [System.IO.File]::ReadAllText((Join-Path $p2jProject 'src/demo.lpr'))
 $reactProd = Join-Path $work 'react-demo-production.lpr'
+$p2jProd = Join-Path $work 'pas2js-demo-production.lpr'
 [System.IO.File]::WriteAllText($reactProd, (ProductionForm $reactRaw),
     [System.Text.UTF8Encoding]::new($false))
+[System.IO.File]::WriteAllText($p2jProd, (ProductionForm $p2jRaw),
+    [System.Text.UTF8Encoding]::new($false))
 $reactCode = CodeText $reactProd
-$p2jCode = CodeText (Join-Path $p2jProject 'src/demo.lpr')
+$p2jCode = CodeText $p2jProd
 Row 'react_dev_region_present' $(
     if ($reactRaw -match '\{\$ifdef\s+PWEB_DEV\}') { 'true' } else { 'false' })
+Row 'pas2js_dev_region_present' $(
+    if ($p2jRaw -match '\{\$ifdef\s+PWEB_DEV\}') { 'true' } else { 'false' })
 Require ($reactRaw -match '\{\$ifdef\s+PWEB_DEV\}') `
     'the generated React program carries no PWEB_DEV region (CAP-10C2)'
+Require ($p2jRaw -match '\{\$ifdef\s+PWEB_DEV\}') `
+    ('the generated Pas2JS program carries no PWEB_DEV region -- the host ' +
+     'composition must not branch on frontend kind (CAP-10C2)')
 Require ($reactCode -ceq $p2jCode) `
     ('the generated src/demo.lpr differs in PRODUCTION code between the two ' +
      'UIs (the PWEB_DEV region is excluded by construction)')
