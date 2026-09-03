@@ -42,7 +42,9 @@ program pwebdevdrv;
 uses
   {$I mormot.uses.inc}
   {$ifdef UNIX}
-  cthreads,
+  // NOT cthreads: mormot.uses.inc above already emits it on UNIX, and naming
+  // it again is `Duplicate identifier "CTHREADS"`. `tools/pweb/pweb.pas` DOES
+  // name it, and must, because that program has no mormot.uses.inc
   baseunix, // DEV7 / DEV8: the external SIGKILL of one named member
   {$endif UNIX}
   {$ifdef OSWINDOWS}
@@ -378,8 +380,10 @@ begin
 end;
 {$else}
 begin
+  // pid_t is a 32-bit cint and PtrInt is 64-bit here, so the narrowing is
+  // written rather than left to an implicit conversion
   Result := (Pid > 0) and
-            (FpKill(Pid, SIGKILL) = 0);
+            (FpKill(pid_t(Pid), SIGKILL) = 0);
 end;
 {$endif OSWINDOWS}
 
