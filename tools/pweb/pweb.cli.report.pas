@@ -94,6 +94,14 @@ function PWebCliRunHelp: RawUtf8;
 // a promise the command refuses to keep on the very next line
 function PWebCliDevHelp: RawUtf8;
 
+/// the `pweb build --help` text
+// - it states the three things a reader would otherwise have to discover by
+// running the command: the frontend kind comes from the descriptor and not
+// from an option, the target is this machine's, and every stage runs on
+// every build - which is WHY there is no --clean and no incremental mode to
+// ask for
+function PWebCliBuildHelp: RawUtf8;
+
 /// the --version line
 function PWebCliVersionLine: RawUtf8;
 
@@ -115,11 +123,12 @@ end;
 
 function PWebCliUsageBanner: RawUtf8;
 begin
-  // `build` is absent ON PURPOSE. This build does not implement it, and a
-  // command listed in help that answers "not implemented" is a contract
-  // nobody can rely on either way. `create` appeared here in CAP-10B1,
-  // `run` in CAP-10C0 and `dev` in CAP-10C2, each in the shard that made it
-  // a command that does the whole of what its name says.
+  // ONE row per command, and each appeared in the shard that made it do the
+  // whole of what its name says: `create` in CAP-10B1, `run` in CAP-10C0,
+  // `dev` in CAP-10C2/C3 and `build` in CAP-10D0. `build` was absent here
+  // for four shards on purpose - a command listed in help that answers "not
+  // implemented" is a contract nobody can rely on either way - and it is
+  // listed now for exactly the same reason it was not before.
   Result :=
     'pweb - the PWeb application lifecycle CLI' + CRLF_NONE +
     CRLF_NONE +
@@ -132,6 +141,7 @@ begin
     '              [--no-color] [--verbose]' + CRLF_NONE +
     '  pweb run [--project <path>]' + CRLF_NONE +
     '  pweb dev [--project <path>]' + CRLF_NONE +
+    '  pweb build [--project <path>]' + CRLF_NONE +
     CRLF_NONE +
     'commands:' + CRLF_NONE +
     '  create         create a new PWeb project (pweb create --help)' +
@@ -145,6 +155,9 @@ begin
       CRLF_NONE +
     '                 (' + PWEB_CLI_UI_REACT + ' and ' +
       PWEB_CLI_UI_PAS2JS + '; pweb dev --help)' + CRLF_NONE +
+    '  build          build this project for this machine and leave the' +
+      CRLF_NONE +
+    '                 layout run resolves (pweb build --help)' + CRLF_NONE +
     CRLF_NONE +
     'options:' + CRLF_NONE +
     '  --ui <kind>    the frontend kind to scaffold (create only)' +
@@ -334,6 +347,71 @@ begin
     '  5 a start-up stage failed, or the application or the watcher died' +
       CRLF_NONE +
     '  6 internal' + CRLF_NONE;
+end;
+
+function PWebCliBuildHelp: RawUtf8;
+begin
+  Result :=
+    'pweb build - build this project for this machine' + CRLF_NONE +
+    CRLF_NONE +
+    'usage:' + CRLF_NONE +
+    '  pweb build [--project <path>]' + CRLF_NONE +
+    CRLF_NONE +
+    'options:' + CRLF_NONE +
+    '  --project <p>  use this pweb.json, or the project rooted at this' +
+      CRLF_NONE +
+    '                 directory, instead of searching upward from the' +
+      CRLF_NONE +
+    '                 working directory' + CRLF_NONE +
+    '  --help         show this text' + CRLF_NONE +
+    CRLF_NONE +
+    // the three facts a reader would otherwise discover by running the
+    // command, and each of them is WHY an option a reader might look for is
+    // not here. An absent option explained is a contract; an absent option
+    // unexplained is an omission somebody will file a bug about
+    'the frontend kind comes from pweb.json (`ui`), never from an option;' +
+      CRLF_NONE +
+    'the target is this machine and nothing is cross-compiled; and every' +
+      CRLF_NONE +
+    'stage runs on every build, so there is no incremental mode, nothing' +
+      CRLF_NONE +
+    'to resume and nothing to clean.' + CRLF_NONE +
+    CRLF_NONE +
+    'what it leaves, and what run resolves:' + CRLF_NONE +
+    '  <output>/<os>-<arch>/release/    the native executable and app.pwb' +
+      CRLF_NONE +
+    '                                   (a .app bundle on macOS)' + CRLF_NONE +
+    CRLF_NONE +
+    'an existing release is replaced only once the new one is complete: it' +
+      CRLF_NONE +
+    'is moved aside, the new one is put in its place and the old one is' +
+      CRLF_NONE +
+    'then reclaimed, so a failed or interrupted build leaves the previous' +
+      CRLF_NONE +
+    'release exactly as it was and no build ever leaves a mixture of two.' +
+      CRLF_NONE +
+    CRLF_NONE +
+    'a ' + PWEB_CLI_UI_REACT +
+      ' build reaches the network in exactly one stage, the' + CRLF_NONE +
+    'dependency install; a ' + PWEB_CLI_UI_PAS2JS +
+      ' build has no such stage and runs offline.' + CRLF_NONE +
+    'Nothing outside the project is written, and inside it only the' +
+      CRLF_NONE +
+    'frontend staging, dependency and build directories and the output' +
+      CRLF_NONE +
+    'directory are: the rest of the tree is verified unchanged after every' +
+      CRLF_NONE +
+    'stage.' + CRLF_NONE +
+    CRLF_NONE +
+    'Ctrl+C stops the running stage through the same graceful-then-forced' +
+      CRLF_NONE +
+    'ladder `pweb run` uses, and leaves the previous release untouched.' +
+      CRLF_NONE +
+    CRLF_NONE +
+    'exit codes:' + CRLF_NONE +
+    '  0 built and verified   2 usage   3 project   4 the machine cannot' +
+      CRLF_NONE +
+    '    build it   5 a stage''s child failed   6 internal' + CRLF_NONE;
 end;
 
 { ---------------------------------------------------------------------------

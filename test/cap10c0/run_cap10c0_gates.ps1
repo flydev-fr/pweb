@@ -30,6 +30,14 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..')).Path
 Set-Location $repoRoot
+
+# CAP-10D0: the ONE pwsh argument-quoting helper, dot-sourced rather than
+# reimplemented. `Start-Process -ArgumentList <array>` joins the array with
+# single spaces and quotes nothing, so a path carrying a space splits into
+# two arguments and `--project` takes half of it. Start-PWebProcess quotes
+# by the C runtime's rules - the same ones PWebCliWindowsCommandLine
+# implements and the CAP-10C0 golden table proves on four targets.
+. (Join-Path $repoRoot 'test/cap10d0/psargs.ps1')
 # CAP-10C1 ratified this addition: the MEMBERSHIP-scoped sampler runs here
 # too, BESIDE the per-pid one below. `run_listener_count` keeps the exact
 # provenance it was ratified with ("sampled live against the APPLICATION
@@ -235,7 +243,7 @@ function RunPweb([string[]]$CliArgs, [int]$TimeoutMs, [string]$AutoCloseMs) {
     else { Remove-Item Env:PWEB_SMOKE_AUTOCLOSE_MS -ErrorAction SilentlyContinue }
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     # an UNRELATED working directory, always: run resolves nothing from it
-    $p = Start-Process -FilePath $pweb -ArgumentList $CliArgs -PassThru `
+    $p = Start-PWebProcess -FilePath $pweb -ArgumentList $CliArgs -PassThru `
         -NoNewWindow -WorkingDirectory $runCwd `
         -RedirectStandardOutput $so -RedirectStandardError $se
     $appPid = 0
@@ -553,18 +561,21 @@ $surface = (ExpectUsage 'R14 with-paths' @('run', '--with-paths') 2 'option_not_
 $surface = (ExpectUsage 'R14 ui' @('run', '--ui', 'react') 2 'option_not_for_command') -and $surface
 $surface = (ExpectUsage 'R14 operand' @('run', 'extra') 2 'extra_positional') -and $surface
 $surface = (ExpectUsage 'R14 unknown' @('run', '--watch') 2 'unknown_option') -and $surface
-# CAP-10C2 MOVED `dev` OUT OF THIS SET, and `build` stays in it. CAP-10C0
-# pinned both as unknown commands because neither existed; `pweb dev` is a
-# command that does the whole of what its name says since CAP-10C2, so what
-# this leg pins now is that `build` is STILL unknown and that `dev` is not -
-# which is the same measurement with one row moved, never a deleted check.
-$surface = (ExpectUsage 'C2 build' @('build') 2 'unknown_command') -and $surface
+# CAP-10C2 MOVED `dev` OUT OF THIS SET and CAP-10D0 MOVED `build`. CAP-10C0
+# pinned both as unknown commands because neither existed; each is now a
+# command that does the whole of what its name says, so the SUBJECT of this
+# leg moved to a name no shard will ratify rather than the leg being
+# deleted. The measurement was never about `dev` or `build` in particular -
+# it is that this parser has a CLOSED command set and refuses anything
+# outside it with exit 2 and `unknown_command`.
+$surface = (ExpectUsage 'D0 unknown' @('publish') 2 'unknown_command') -and $surface
 $help = RunPweb @('--help') 30000 ''
 Require ($help.Code -eq 0) '--help did not exit 0'
-foreach ($cmd in 'pweb create ', 'pweb doctor ', 'pweb run ', 'pweb dev ') {
+foreach ($cmd in 'pweb create ', 'pweb doctor ', 'pweb run ', 'pweb dev ',
+                 'pweb build ') {
     Require ($help.Out.Contains($cmd)) "--help does not list $cmd"
 }
-foreach ($absent in 'pweb build') {
+foreach ($absent in 'pweb publish') {
     Require (-not $help.Out.Contains($absent)) "--help advertises $absent"
 }
 $devHelp = RunPweb @('dev', '--help') 30000 ''
@@ -572,20 +583,28 @@ Require ($devHelp.Code -eq 0) 'dev --help did not exit 0 (CAP-10C2)'
 Require ($devHelp.Out.Contains('pweb dev [--project <path>]')) `
     'dev --help does not state the grammar'
 Require (-not $devHelp.Out.Contains([char]27)) 'dev --help emitted ANSI'
+$buildHelp = RunPweb @('build', '--help') 30000 ''
+Require ($buildHelp.Code -eq 0) 'build --help did not exit 0 (CAP-10D0)'
+Require ($buildHelp.Out.Contains('pweb build [--project <path>]')) `
+    'build --help does not state the grammar'
+Require (-not $buildHelp.Out.Contains([char]27)) 'build --help emitted ANSI'
 $runHelp = RunPweb @('run', '--help') 30000 ''
 Require ($runHelp.Code -eq 0) 'run --help did not exit 0'
 Require ($runHelp.Out.Contains('pweb run [--project <path>]')) 'run --help does not state the grammar'
 Require ($runHelp.Out.Contains('Run builds nothing')) 'run --help does not state that run builds nothing'
 Require (-not $runHelp.Out.Contains([char]27)) 'run --help emitted ANSI'
 Row 'cli_run_available' (Bool ($runHelp.Code -eq 0))
-# CAP-10C2 added `dev`; `build` is still an unknown command, which the
-# surface matrix above measures rather than this literal asserts
-Row 'advertised_commands' 'create,doctor,run,dev'
+# CAP-10C2 added `dev` and CAP-10D0 added `build`: this is the complete
+# CAP-10 surface, and the matrix above measures that nothing outside it
+# parses rather than this literal asserting it
+Row 'advertised_commands' 'create,doctor,run,dev,build'
 Row 'run_option_matrix' $(if ($surface) { 'PASS' } else { 'FAIL' })
-# CAP-10C2 exposed `dev`, so this row says WHICH of the two is still unknown
-# rather than answering a question that no longer has one answer. It is the
+# CAP-10C2 exposed `dev` and CAP-10D0 exposed `build`, so NEITHER of the two
+# this row was named for is unknown any more. It is inverted rather than
+# deleted: what it reports now is that the command set is closed, which is
+# the property the row has really been guarding since CAP-10C0. It is the
 # surface matrix's own verdict, never a literal
-Row 'dev_build_unknown' $(if ($surface) { 'build_only' } else { 'false' })
+Row 'dev_build_unknown' $(if ($surface) { 'none' } else { 'false' })
 
 # --- the shell-free proof at the source and the link (S13 / S16) ----------
 $contracts = Join-Path $work 'contracts.json'

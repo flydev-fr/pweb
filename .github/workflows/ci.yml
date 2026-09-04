@@ -73,9 +73,12 @@ jobs:
     # PER-STEP budgets are the real protection: each must exceed the sum
     # of the bounded waits its own script can spend, so a hang is caught
     # by the STEP, which lets the `if: failure()` diagnostics uploads
-    # below still run. Those budgets now sum to 416 minutes (283 through
+    # below still run. Those budgets now sum to 646 minutes (283 through
     # CAP-6b3, plus 133 for CAP-6b4: 3 contracts + 8 probes + 3 index +
-    # 4 isolation + 115 matrix).
+    # 4 isolation + 115 matrix; plus 230 for CAP-10D0: 20 build + 90
+    # gates + 120 for the L2b spaced-path re-run, which is the largest
+    # single addition this job has taken and the one to look at first if
+    # the JOB backstop below ever fires).
     #
     # The JOB budget is only a BACKSTOP, and it deliberately does NOT
     # try to exceed that sum. It cannot meaningfully: the step budgets
@@ -2150,6 +2153,128 @@ jobs:
             build/cap10c3/pipe-stdout.txt
             build/cap10c3/pipe-stderr.txt
             build/cap10c3-gates.log
+      - name: CAP-10D0 build the public-build suite and its driver
+        shell: pwsh
+        timeout-minutes: 20
+        run: |
+          pwsh -NoProfile -File test/cap10d0/build_cap10d0.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10D0 build FAILED' }
+      - name: CAP-10D0 contract cross-checks (one execution path, ten stages, five commands, gate quoting)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10d0/check_cap10d0_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10D0 contract cross-checks FAILED' }
+
+      - name: CAP-10D0 public-build gates (B1-B12, L1-L3, R1-R2) + evidence
+        shell: bash
+        timeout-minutes: 90
+        run: |
+          pwsh -NoProfile -File test/cap10d0/run_cap10d0_gates.ps1 2>&1 |
+            tee build/cap10d0-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10D0 upload the public-build corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10d0-build-windows
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10d0/cli-windows-x86_64.json
+            build/cap10d0/contracts.json
+            build/cap10d0/build-corpus.txt
+            build/cap10d0/build-observed.txt
+            build/cap10d0/d0tests.log
+            build/cap10d0/builddrv-report.txt
+            build/cap10d0/builddrv-report.txt.lines
+            build/cap10d0/builddrv-stdout.txt
+            build/cap10d0/builddrv-stderr.txt
+            build/cap10d0/cli-stderr.txt
+            build/cap10d0-gates.log
+      # CAP-10D0 L2b: the CAP-10 chain, RE-RUN from a repository path that
+      # carries a SPACE.
+      #
+      # THE DEFECT THIS CLOSES (deferred-work C0-12 (b)): every CAP-10 gate
+      # used to hand `Start-Process -ArgumentList` an array pwsh joins with
+      # single spaces and no quoting, so a repository under `C:\pweb work`
+      # would split `--project` into two arguments. No hosted runner has a
+      # space in its workspace, which is exactly why it survived four
+      # shards. L2a puts a space in every `--project` on every leg of every
+      # job; this is L2b, the stronger claim: the whole chain green with the
+      # REPOSITORY ITSELF at a spaced path.
+      #
+      # IT COPIES THE PREPARED WORKSPACE rather than setting one up again.
+      # Every dependency - the pinned FPC on PATH, the patched mORMot, the
+      # built webview.dll, Node, the TypeScript SDK, the pinned pas2js - is
+      # already here and already correct, and a second setup would be a
+      # second thing to keep in step. The copy is the identical tree at a
+      # different name, which is the whole of what is under test.
+      #
+      # SCOPE, stated rather than implied: the CAP-10A, B0, B1, B2, C0, C1
+      # and D0 gate chains run there. The two development-loop gates
+      # (CAP-10C2, CAP-10C3) do not: each is a 70-minute display-bound run
+      # of a live application, and running them twice would double this
+      # job. Their eleven Start-PWebProcess call sites go through the same
+      # helper, which check_cap10d0_contracts.ps1 proves at the source on
+      # every leg of every job and the CAP-10D0 gate proves at runtime with
+      # spaced project paths on all four targets.
+      - name: CAP-10D0 L2b - the CAP-10 chain at a repository path with a space
+        shell: pwsh
+        timeout-minutes: 120
+        run: |
+          $spaced = Join-Path $env:RUNNER_TEMP 'pweb work'
+          if (Test-Path -LiteralPath $spaced) {
+            Remove-Item -Recurse -Force -LiteralPath $spaced
+          }
+          New-Item -ItemType Directory -Force $spaced | Out-Null
+          Write-Host "[L2b] copying the prepared workspace to: $spaced"
+          # robocopy's exit codes below 8 are success; /XD .git keeps the
+          # copy to what the gates read, and build/ is left behind so every
+          # artifact under test is rebuilt at the new path
+          robocopy . $spaced /E /NFL /NDL /NJH /NJS /NP /XD .git build |
+            Out-Null
+          if ($LASTEXITCODE -ge 8) {
+            throw "[L2b] robocopy failed with $LASTEXITCODE"
+          }
+          $global:LASTEXITCODE = 0
+          if (-not $spaced.Contains(' ')) {
+            throw '[L2b] the destination carries no space -- the leg would prove nothing'
+          }
+          Push-Location -LiteralPath $spaced
+          try {
+            foreach ($step in
+                'test/cap10b0/build_cap10b0.ps1',
+                'test/cap10b1/build_cap10b1.ps1',
+                'test/cap10a/build_cap10a.ps1',
+                'test/cap10b2/build_cap10b2.ps1',
+                'test/cap10c0/build_cap10c0.ps1',
+                'test/cap10c1/build_cap10c1.ps1',
+                'test/cap10d0/build_cap10d0.ps1',
+                'test/cap10a/check_cap10a_contracts.ps1',
+                'test/cap10a/run_cap10a_gates.ps1',
+                'test/cap10b0/check_cap10b0_contracts.ps1',
+                'test/cap10b0/run_cap10b0_gates.ps1',
+                'test/cap10b1/check_cap10b1_contracts.ps1',
+                'test/cap10b1/run_cap10b1_gates.ps1',
+                'test/cap10b2/check_cap10b2_contracts.ps1',
+                'test/cap10b2/run_cap10b2_gates.ps1',
+                'test/cap10c0/check_cap10c0_contracts.ps1',
+                'test/cap10c0/run_cap10c0_gates.ps1',
+                'test/cap10c1/check_cap10c1_contracts.ps1',
+                'test/cap10c1/run_cap10c1_gates.ps1',
+                'test/cap10d0/check_cap10d0_contracts.ps1',
+                'test/cap10d0/run_cap10d0_gates.ps1') {
+              Write-Host "[L2b] === $step"
+              pwsh -NoProfile -File $step
+              if ($LASTEXITCODE -ne 0) {
+                throw "[L2b] $step FAILED at a spaced repository path"
+              }
+            }
+          } finally {
+            Pop-Location
+          }
+          Write-Host '[L2b] the CAP-10 chain is green at a repository path carrying a space'
       - name: CAP-7F emit the Windows evidence artifact
         shell: pwsh
         timeout-minutes: 10
@@ -3009,6 +3134,43 @@ jobs:
             build/cap10c3/pipe-stdout.txt
             build/cap10c3/pipe-stderr.txt
             build/cap10c3-gates.log
+      - name: CAP-10D0 build the public-build suite and its driver
+        shell: bash
+        timeout-minutes: 20
+        run: test/cap10d0/build_cap10d0.sh
+      - name: CAP-10D0 contract cross-checks (one execution path, ten stages, five commands, gate quoting)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10d0/check_cap10d0_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10D0 contract cross-checks FAILED' }
+
+      - name: CAP-10D0 public-build gates (B1-B12, L1-L3, R1-R2) + evidence
+        shell: bash
+        timeout-minutes: 90
+        run: |
+          pwsh -NoProfile -File test/cap10d0/run_cap10d0_gates.ps1 2>&1 |
+            tee build/cap10d0-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10D0 upload the public-build corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10d0-build-linux
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10d0/cli-linux-x86_64.json
+            build/cap10d0/contracts.json
+            build/cap10d0/build-corpus.txt
+            build/cap10d0/build-observed.txt
+            build/cap10d0/d0tests.log
+            build/cap10d0/builddrv-report.txt
+            build/cap10d0/builddrv-report.txt.lines
+            build/cap10d0/builddrv-stdout.txt
+            build/cap10d0/builddrv-stderr.txt
+            build/cap10d0/cli-stderr.txt
+            build/cap10d0-gates.log
       - name: CAP-7F emit the Linux evidence artifact
         shell: bash
         timeout-minutes: 10
@@ -3903,6 +4065,43 @@ jobs:
             build/cap10c3/pipe-stdout.txt
             build/cap10c3/pipe-stderr.txt
             build/cap10c3-gates.log
+      - name: CAP-10D0 build the public-build suite and its driver
+        shell: bash
+        timeout-minutes: 20
+        run: test/cap10d0/build_cap10d0.sh
+      - name: CAP-10D0 contract cross-checks (one execution path, ten stages, five commands, gate quoting)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10d0/check_cap10d0_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10D0 contract cross-checks FAILED' }
+
+      - name: CAP-10D0 public-build gates (B1-B12, L1-L3, R1-R2) + evidence
+        shell: bash
+        timeout-minutes: 90
+        run: |
+          pwsh -NoProfile -File test/cap10d0/run_cap10d0_gates.ps1 2>&1 |
+            tee build/cap10d0-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10D0 upload the public-build corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10d0-build-macos-x64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10d0/cli-macos-x86_64.json
+            build/cap10d0/contracts.json
+            build/cap10d0/build-corpus.txt
+            build/cap10d0/build-observed.txt
+            build/cap10d0/d0tests.log
+            build/cap10d0/builddrv-report.txt
+            build/cap10d0/builddrv-report.txt.lines
+            build/cap10d0/builddrv-stdout.txt
+            build/cap10d0/builddrv-stderr.txt
+            build/cap10d0/cli-stderr.txt
+            build/cap10d0-gates.log
       - name: CAP-7F emit the macOS x64 evidence artifact
         shell: bash
         timeout-minutes: 10
@@ -4725,6 +4924,43 @@ jobs:
             build/cap10c3/pipe-stdout.txt
             build/cap10c3/pipe-stderr.txt
             build/cap10c3-gates.log
+      - name: CAP-10D0 build the public-build suite and its driver
+        shell: bash
+        timeout-minutes: 20
+        run: test/cap10d0/build_cap10d0.sh
+      - name: CAP-10D0 contract cross-checks (one execution path, ten stages, five commands, gate quoting)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10d0/check_cap10d0_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10D0 contract cross-checks FAILED' }
+
+      - name: CAP-10D0 public-build gates (B1-B12, L1-L3, R1-R2) + evidence
+        shell: bash
+        timeout-minutes: 90
+        run: |
+          pwsh -NoProfile -File test/cap10d0/run_cap10d0_gates.ps1 2>&1 |
+            tee build/cap10d0-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10D0 upload the public-build corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10d0-build-macos-arm64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10d0/cli-macos-arm64.json
+            build/cap10d0/contracts.json
+            build/cap10d0/build-corpus.txt
+            build/cap10d0/build-observed.txt
+            build/cap10d0/d0tests.log
+            build/cap10d0/builddrv-report.txt
+            build/cap10d0/builddrv-report.txt.lines
+            build/cap10d0/builddrv-stdout.txt
+            build/cap10d0/builddrv-stderr.txt
+            build/cap10d0/cli-stderr.txt
+            build/cap10d0-gates.log
       - name: CAP-7F emit the macOS arm64 evidence artifact
         shell: bash
         timeout-minutes: 10

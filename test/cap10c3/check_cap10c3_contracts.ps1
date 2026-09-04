@@ -325,7 +325,7 @@ if ($loop -notmatch 'PWebCliSdkLayout\(Os,\s*Arch,\s*Project\.Ui\s*=\s*puiPas2js
         'own ui: a pas2js build needs the pas2js SDK, not the TypeScript one')
 }
 
-# --- 7. the contracts record the Pas2JS half, and build stays unknown -------
+# --- 7. the contracts record the Pas2JS half, and build is advertised -------
 foreach ($phrase in 'cli_content_fingerprint_poll', 'dev_input_link',
                     'dev_input_bound', 'PWebCliDevInputScan',
                     'pweb.cli.devinputs', 'dev_ui_unsupported') {
@@ -342,19 +342,22 @@ foreach ($phrase in 'pweb dev [--project <path>]', 'rebuild-and-reload',
         Violation "docs/cli-contract.md does not record: $phrase"
     }
 }
-# `build` is STILL an unknown command, and the help text still says so by
-# not saying anything at all
+# CAP-10D0 EXPOSED `build`, so this check is INVERTED rather than deleted -
+# the same discipline CAP-10C2 applied to pipeline_units_linked and CAP-10C3
+# to dev11. What it asserted was that the help text and the implemented
+# surface agree; it asserts that still, from the other side.
 $report = [System.IO.File]::ReadAllText('tools/pweb/pweb.cli.report.pas')
-if ($report -match "'\s*pweb build") {
-    Violation ('pweb.cli.report advertises `pweb build`: CAP-10D exposes it, ' +
-        'and until then a command that parses is a promise')
+if ($report -notmatch "'\s*pweb build") {
+    Violation ('pweb.cli.report does not advertise `pweb build`: CAP-10D0 ' +
+        'exposes it, and a command that is implemented and unlisted is the ' +
+        'same defect as one that is listed and unimplemented')
 }
 # and both UIs are advertised where a reader looks
 if ($report -notmatch "PWEB_CLI_UI_REACT \+ ' and ' \+[\s\S]{0,80}PWEB_CLI_UI_PAS2JS") {
     Violation ('the usage banner does not advertise both frontend kinds for ' +
         '`dev`')
 }
-$facts['build_still_unknown'] = ($report -notmatch "'\s*pweb build")
+$facts['build_available'] = ($report -match "'\s*pweb build")
 
 # --- verdict -----------------------------------------------------------------
 New-Item -ItemType Directory -Force build/cap10c3 | Out-Null

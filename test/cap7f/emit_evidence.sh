@@ -1332,7 +1332,7 @@ dev_digest="$(c2_str dev_digest)"
 dev_corpus_lines="$(c2_str dev_corpus_lines)"
 dev_option_matrix="$(c2_str dev_option_matrix)"
 advertised_commands_c2="$(c2_str advertised_commands_c2)"
-build_still_unknown="$(c2_str build_still_unknown)"
+build_available="$(c2_str build_available)"
 csp_identical="$(c2_str csp_identical)"
 csp_transport_terms="$(c2_str csp_transport_terms)"
 dev_origin="$(c2_str dev_origin)"
@@ -1415,6 +1415,78 @@ c1_pipeline_digest_unchanged="$(c2_str c1_pipeline_digest_unchanged)"
 # real generated pas2js project through the driver, the two pas2js host
 # binaries' CSP bytes, the input-set refusals, the archive parity with the
 # CAP-10C1 pipeline, and the ledger disposition.
+# CAP-10D0: the public `pweb build`. ONE record: the headless suite's
+# decision corpus (digested), the real `pweb build` on both generated
+# projects at a path carrying a SPACE, the `pweb run` that answers 42 after
+# it, the replacement of an existing release, a seeded failure, a real
+# interrupt and the Windows long-path measurement (typed not_applicable here).
+d0_file="${repo_root}/build/cap10d0/cli-${target}.json"
+[ -f "${d0_file}" ] ||
+    die "cap10d0/cli-${target}.json missing -- the CAP-10D0 gates have not run in this workspace"
+d0_str() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+        "${d0_file}" | head -n 1
+}
+for f in build_corpus \
+         build_suite \
+         build_digest \
+         build_corpus_lines \
+         build_execute_callers \
+         build_driver_spawns \
+         build_stage_count \
+         build_unratified_options \
+         gate_quoting_space_path \
+         build_option_matrix \
+         advertised_commands_d0 \
+         build_help_matrix \
+         cli_build_available \
+         gate_project_path_has_space \
+         build_react_exit \
+         build_pas2js_exit \
+         build_network_stages_react \
+         build_network_stages_pas2js \
+         d0_project_tree_unchanged \
+         build_react_rpc_value \
+         build_pas2js_rpc_value \
+         build_replacement_rule \
+         build_replacement_window \
+         build_never_partial_release \
+         d0_build_deterministic \
+         build_failure_exit \
+         build_failure_leaves_old_release \
+         build_interrupt_armed \
+         build_interrupt_delivered \
+         build_descendants_after_interrupt \
+         build_driver_ansi_seen \
+         build_interrupt_clean \
+         build_race_run_rpc \
+         release_path_observations_disposed \
+         d0_template_supersession_recorded \
+         d0_pas2js_on_path \
+         doctor_react_exit \
+         doctor_pas2js_exit \
+         release_react_files \
+         release_react_inventory \
+         release_pas2js_files \
+         release_pas2js_inventory \
+         summary_react_release \
+         summary_react_app_pwb \
+         summary_react_target \
+         summary_pas2js_release \
+         summary_pas2js_app_pwb \
+         summary_pas2js_target \
+         build_interrupt_outcome \
+         build_interrupt_exit \
+         build_race_run_exit \
+         build_race_build_exit \
+         build_replace_while_running \
+         long_path_rule \
+         long_path_project_chars \
+         long_path_exit \
+         long_path_cause; do
+    eval "${f}=\"\$(d0_str ${f})\""
+done
+
 c3_file="${repo_root}/build/cap10c3/cli-${target}.json"
 [ -f "${c3_file}" ] ||
     die "cap10c3/cli-${target}.json missing -- the CAP-10C3 gates have not run in this workspace"
@@ -1424,7 +1496,7 @@ c3_str() {
 }
 for f in dev_pas2js_corpus dev_pas2js_suite dev_pas2js_digest \
          dev_pas2js_corpus_lines dev_pas2js_available change_detection_model \
-         advertised_ui_dev dev_pas2js_option_matrix build_still_unknown_c3 \
+         advertised_ui_dev dev_pas2js_option_matrix build_available_c3 \
          advertised_commands_c3 dev_pas2js_csp_identical \
          dev_pas2js_release_dev_free dev_pas2js_transport_hits \
          dev_pas2js_watch_api_hits dev_region_in_pas2js_template \
@@ -1798,7 +1870,7 @@ cat > "${work}/evidence.json" <<EOF
   "dev_corpus_lines": "${dev_corpus_lines}",
   "dev_option_matrix": "${dev_option_matrix}",
   "advertised_commands_c2": "${advertised_commands_c2}",
-  "build_still_unknown": "${build_still_unknown}",
+  "build_available": "${build_available}",
   "csp_identical": "${csp_identical}",
   "csp_transport_terms": "${csp_transport_terms}",
   "dev_origin": "${dev_origin}",
@@ -1875,6 +1947,63 @@ cat > "${work}/evidence.json" <<EOF
   "dev_sentinel_in_template": "${dev_sentinel_in_template}",
   "network_stages_dev": "${network_stages_dev}",
   "c1_pipeline_digest_unchanged": "${c1_pipeline_digest_unchanged}",
+  "build_corpus": "${build_corpus}",
+  "build_suite": "${build_suite}",
+  "build_digest": "${build_digest}",
+  "build_corpus_lines": "${build_corpus_lines}",
+  "build_execute_callers": "${build_execute_callers}",
+  "build_driver_spawns": "${build_driver_spawns}",
+  "build_stage_count": "${build_stage_count}",
+  "build_unratified_options": "${build_unratified_options}",
+  "gate_quoting_space_path": "${gate_quoting_space_path}",
+  "build_option_matrix": "${build_option_matrix}",
+  "advertised_commands_d0": "${advertised_commands_d0}",
+  "build_help_matrix": "${build_help_matrix}",
+  "cli_build_available": "${cli_build_available}",
+  "gate_project_path_has_space": "${gate_project_path_has_space}",
+  "build_react_exit": "${build_react_exit}",
+  "build_pas2js_exit": "${build_pas2js_exit}",
+  "build_network_stages_react": "${build_network_stages_react}",
+  "build_network_stages_pas2js": "${build_network_stages_pas2js}",
+  "d0_project_tree_unchanged": "${d0_project_tree_unchanged}",
+  "build_react_rpc_value": "${build_react_rpc_value}",
+  "build_pas2js_rpc_value": "${build_pas2js_rpc_value}",
+  "build_replacement_rule": "${build_replacement_rule}",
+  "build_replacement_window": "${build_replacement_window}",
+  "build_never_partial_release": "${build_never_partial_release}",
+  "d0_build_deterministic": "${d0_build_deterministic}",
+  "build_failure_exit": "${build_failure_exit}",
+  "build_failure_leaves_old_release": "${build_failure_leaves_old_release}",
+  "build_interrupt_armed": "${build_interrupt_armed}",
+  "build_interrupt_delivered": "${build_interrupt_delivered}",
+  "build_descendants_after_interrupt": "${build_descendants_after_interrupt}",
+  "build_driver_ansi_seen": "${build_driver_ansi_seen}",
+  "build_interrupt_clean": "${build_interrupt_clean}",
+  "build_race_run_rpc": "${build_race_run_rpc}",
+  "release_path_observations_disposed": "${release_path_observations_disposed}",
+  "d0_template_supersession_recorded": "${d0_template_supersession_recorded}",
+  "d0_pas2js_on_path": "${d0_pas2js_on_path}",
+  "doctor_react_exit": "${doctor_react_exit}",
+  "doctor_pas2js_exit": "${doctor_pas2js_exit}",
+  "release_react_files": "${release_react_files}",
+  "release_react_inventory": "${release_react_inventory}",
+  "release_pas2js_files": "${release_pas2js_files}",
+  "release_pas2js_inventory": "${release_pas2js_inventory}",
+  "summary_react_release": "${summary_react_release}",
+  "summary_react_app_pwb": "${summary_react_app_pwb}",
+  "summary_react_target": "${summary_react_target}",
+  "summary_pas2js_release": "${summary_pas2js_release}",
+  "summary_pas2js_app_pwb": "${summary_pas2js_app_pwb}",
+  "summary_pas2js_target": "${summary_pas2js_target}",
+  "build_interrupt_outcome": "${build_interrupt_outcome}",
+  "build_interrupt_exit": "${build_interrupt_exit}",
+  "build_race_run_exit": "${build_race_run_exit}",
+  "build_race_build_exit": "${build_race_build_exit}",
+  "build_replace_while_running": "${build_replace_while_running}",
+  "long_path_rule": "${long_path_rule}",
+  "long_path_project_chars": "${long_path_project_chars}",
+  "long_path_exit": "${long_path_exit}",
+  "long_path_cause": "${long_path_cause}",
   "dev_pas2js_corpus": "${dev_pas2js_corpus}",
   "dev_pas2js_suite": "${dev_pas2js_suite}",
   "dev_pas2js_digest": "${dev_pas2js_digest}",
@@ -1883,7 +2012,7 @@ cat > "${work}/evidence.json" <<EOF
   "change_detection_model": "${change_detection_model}",
   "advertised_ui_dev": "${advertised_ui_dev}",
   "dev_pas2js_option_matrix": "${dev_pas2js_option_matrix}",
-  "build_still_unknown_c3": "${build_still_unknown_c3}",
+  "build_available_c3": "${build_available_c3}",
   "advertised_commands_c3": "${advertised_commands_c3}",
   "dev_pas2js_csp_identical": "${dev_pas2js_csp_identical}",
   "dev_pas2js_release_dev_free": "${dev_pas2js_release_dev_free}",

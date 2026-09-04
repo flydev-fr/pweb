@@ -10,9 +10,9 @@
 #
 #   - THE COMMAND EXISTS AND SAYS WHAT IT DOES. `create` is in the global
 #     help, `create --help` advertises exactly the frontend kinds the parser
-#     accepts, and dev/run/build are still unknown commands. A help text and
-#     a parser that disagree is how a CLI ends up promising a template
-#     nobody shipped;
+#     accepts, and a name outside the five commands is still an unknown
+#     command. A help text and a parser that disagree is how a CLI ends up
+#     promising a template nobody shipped;
 #
 #   - THE REFUSALS ARE REAL AND CATEGORISED. Fourteen bad command lines and
 #     two broken installations are executed, each required to produce its
@@ -42,6 +42,14 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..')).Path
 Set-Location $repoRoot
+
+# CAP-10D0: the ONE pwsh argument-quoting helper, dot-sourced rather than
+# reimplemented. `Start-Process -ArgumentList <array>` joins the array with
+# single spaces and quotes nothing, so a path carrying a space splits into
+# two arguments and `--project` takes half of it. Start-PWebProcess quotes
+# by the C runtime's rules - the same ones PWebCliWindowsCommandLine
+# implements and the CAP-10C0 golden table proves on four targets.
+. (Join-Path $repoRoot 'test/cap10d0/psargs.ps1')
 
 $exeSuffix = if ($IsWindows) { '.exe' } else { '' }
 $work = Join-Path $repoRoot 'build/cap10b1'
@@ -101,7 +109,7 @@ New-Item -ItemType Directory -Force $capture | Out-Null
 function RunCli([string]$Exe, [string]$WorkDir, [string[]]$CliArgs) {
     $so = Join-Path $capture 'stdout.txt'
     $se = Join-Path $capture 'stderr.txt'
-    $p = Start-Process -FilePath $Exe -ArgumentList $CliArgs -Wait -PassThru `
+    $p = Start-PWebProcess -FilePath $Exe -ArgumentList $CliArgs -Wait -PassThru `
         -NoNewWindow -WorkingDirectory $WorkDir `
         -RedirectStandardOutput $so -RedirectStandardError $se
     return [pscustomobject]@{
@@ -223,10 +231,14 @@ Require ($supported -ceq 'pas2js,react') `
     "create --help advertises '$advertised', expected 'react|pas2js'"
 Row 'supported_uis' $supported
 
-# `build` must still be an UNKNOWN COMMAND, not merely unadvertised. `run` is
-# a command since CAP-10C0 and `dev` since CAP-10C2, and each is refused
-# differently: it needs no operand and answers about the project instead.
-foreach ($absent in 'build') {
+# A NAME THAT IS NOT A COMMAND must still be an UNKNOWN COMMAND, not merely
+# unadvertised. `run` is a command since CAP-10C0, `dev` since CAP-10C2 and
+# `build` since CAP-10D0, each refused differently: it needs no operand and
+# answers about the project instead. The claim this leg makes has never been
+# about `build` in particular - it is that the command set is CLOSED - so the
+# subject moved to a name no shard will ever ratify rather than the leg being
+# deleted with the last command that used to sit in it.
+foreach ($absent in 'publish') {
     $r = RunCli $pweb $repoRoot @($absent)
     Require ($r.Code -eq 2) `
         "'pweb $absent' must be an unknown command (exit 2), got $($r.Code)"

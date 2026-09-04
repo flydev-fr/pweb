@@ -16,8 +16,15 @@ the frozen bundler — so every unit named below is now linked into `pweb`,
 and that same measurement is required to come out the other way. Nothing
 about the ten stages, the mutation set, the network policy or the failure
 semantics moved; `docs/dev-contract.md` records what the development loop
-adds on top. CAP-10D will expose the whole of it as `pweb build`, which is
-**still an unknown command** and exits 2.
+adds on top.
+
+**CAP-10D0 exposes the whole of it as `pweb build`**
+([build-contract.md](build-contract.md)). It adds one private driver,
+`tools/pweb/pweb.cli.build.pas`, which calls `PWebCliRunPipeline` exactly
+once and then reads the committed layout; it adds no stage, reorders none,
+moves no bound, and introduces no second way to run a child. What CAP-10D0
+did ratify is what happens when `release/` already exists - the sequence
+section 8 already implemented, promoted to the public rule and measured.
 
 ## 1. The units, and why they are shaped this way
 

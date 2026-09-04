@@ -16,7 +16,7 @@ command: the scaffold engine was not linked into the `pweb` executable at
 all, and `test/cap10b0/check_cap10b0_contracts.ps1` measured that against
 the CLI's compiled unit set on every CI leg. CAP-10B1 **inverts that same
 measurement** rather than deleting it — the engine must now be linked — and
-`dev`, `run` and `build` remain unknown commands. CAP-10B2 adds the second
+`dev`, `run` and `build` were all unknown commands then; each became one in`nthe shard that made it do the whole of what its name says. CAP-10B2 adds the second
 template and widens the `--ui` allowlist to the two kinds schema 1 has
 ratified since CAP-10A.
 

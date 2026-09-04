@@ -1,7 +1,7 @@
 program pweb;
 
 { The PWeb application lifecycle CLI (CAP-10A, CAP-10B1, CAP-10B2, CAP-10C0,
-  CAP-10C2).
+  CAP-10C2, CAP-10C3, CAP-10D0).
 
     pweb --help
     pweb --version
@@ -13,22 +13,31 @@ program pweb;
     pweb run --help
     pweb dev [--project <path>]
     pweb dev --help
+    pweb build [--project <path>]
+    pweb build --help
 
   WHAT THIS BUILD IS. One native FPC console executable, the public entry
-  point of the framework. It can diagnose a machine against a project,
-  since CAP-10B1 it can create one, since CAP-10C0 it can launch the
-  application a project has already built and supervise it, and since
-  CAP-10C2 it can DEVELOP a React one: build it, launch it, watch it,
-  rebuild it and reload the running window without restarting it.
+  point of the framework, and with CAP-10D0 the whole of the CAP-10 surface.
+  It diagnoses a machine against a project; since CAP-10B1 it creates one;
+  since CAP-10C0 it launches the application a project has already built and
+  supervises it; since CAP-10C2 and CAP-10C3 it DEVELOPS one of either
+  frontend kind - build it, launch it, watch it, rebuild it and reload the
+  running window without restarting it; and since CAP-10D0 it BUILDS one, by
+  running the whole ten-stage lifecycle pipeline and leaving exactly the
+  layout `run` resolves. `pweb create demo --ui react --bundle-id
+  com.example.demo`, `pweb build`, `pweb run` is the entire path from
+  nothing to a running application, with no script in between.
 
-  WHAT IT IS NOT, AND SAYS SO BY BEING SILENT. `build` is an unknown command
-  here. It is not a stub, not a "not implemented in this build" placeholder,
-  and it is not listed in --help - because a command that parses is a
-  promise, and a lifecycle CLI that promises a build it cannot perform is
-  worse than one that has not got there yet. `dev` on a project whose `ui` is
-  neither of the two ratified kinds is refused with its own typed cause for
-  the same reason - CAP-10C2 implemented react and CAP-10C3 pas2js, and the
-  refusal stays for the next one.
+  WHAT IT IS NOT, AND SAYS SO BY BEING SILENT. `build` was an unknown
+  command for four shards - not a stub, not a "not implemented in this
+  build" placeholder, and not listed in --help - because a command that
+  parses is a promise, and a lifecycle CLI that promises a build it cannot
+  perform is worse than one that has not got there yet. It is a command here
+  for exactly the same reason it was not before: this executable performs
+  the whole of one. `dev` on a project whose `ui` is neither of the two
+  ratified kinds is still refused with its own typed cause - CAP-10C2
+  implemented react and CAP-10C3 pas2js, and the refusal stays for the next
+  one.
 
   THE PROCESS OPENS NO SOCKET, resolves no host and listens on nothing - in
   development exactly as in production. `dev` starts no development server,
@@ -45,9 +54,12 @@ program pweb;
   lock file, not the registry, not PATH, not a temporary probe file.
   Everything this CLI ever starts goes through ONE execution engine
   (pweb.cli.process): a version probe from `doctor`, the built application
-  from `run`, and the toolchain, the watcher and the development host from
-  `dev` - each by exact absolute path, with an argument array, an explicit
-  working directory and no shell anywhere. `create` starts nothing at all.
+  from `run`, the toolchain, the watcher and the development host from
+  `dev`, and the ten stages' children from `build` - each by exact absolute
+  path, with an argument array, an explicit working directory and no shell
+  anywhere. `create` starts nothing at all, and `build` starts nothing of
+  its OWN: every child it has is one pweb.cli.pipeline runs, which stays the
+  only unit in this repository that spawns anything.
 
   THE EXIT CODE IS THE CONTRACT, and the human text never changes it:
 
@@ -71,11 +83,13 @@ program pweb;
   probe for one to come from.
 
   THE WORKING DIRECTORY IS READ EXACTLY ONCE, at startup, by the ONE seam in
-  Main. `doctor` and `run` use it to seed the upward search for a descriptor
-  and `create` uses it as the destination's parent. From that moment the
-  canonical root is the only anchor: no later path resolution consults the
-  CWD, nothing re-reads it, and the process never changes it - `run`'s
-  child is started in the application's OWN directory, never in this one. }
+  Main. `doctor`, `run`, `dev` and `build` use it to seed the upward search
+  for a descriptor and `create` uses it as the destination's parent. From
+  that moment the canonical root is the only anchor: no later path
+  resolution consults the CWD, nothing re-reads it, and the process never
+  changes it - `run`'s child is started in the application's OWN directory
+  and every stage of a `build` in the directory its plan builder named,
+  never in this one. }
 
 {$mode ObjFPC}{$H+}
 
@@ -112,8 +126,9 @@ uses
     them as PRIVATE and measured their absence from this executable's
     compiled unit set; `pweb dev` is what makes them public, so that
     measurement is re-based in the same commit - from "no pipeline unit is
-    linked" to "every one of them is". `build` remains an unknown command:
-    linking the pipeline is not advertising a build. }
+    linked" to "every one of them is". `build` remained an unknown command
+    for two more shards: linking the pipeline was not advertising a build,
+    and CAP-10D0 is the shard that performs one. }
   pweb.cli.sdkroot,
   pweb.cli.stage,
   pweb.cli.toolset,
@@ -130,6 +145,12 @@ uses
     inference. }
   pweb.cli.devinputs,
   pweb.cli.dev,
+  { CAP-10D0 adds the public build driver, and it is ONE unit deep: it calls
+    pweb.cli.pipeline and reads a disk. Named here for the same reason
+    pweb.cli.devinputs is - the linkage claim is a measurement over this
+    executable's compiled unit set, and a unit that reaches the link only
+    transitively is a unit whose presence is an inference. }
+  pweb.cli.build,
   pweb.cli.args;
 
 const
@@ -672,6 +693,109 @@ begin
   Result := PWebCliDevExitCode(r.Code);
 end;
 
+{ `pweb build [--project <path>]`.
+
+  Resolve the project exactly as doctor, run and dev resolve it, and hand it
+  to the one build driver (pweb.cli.build), which hands it to the one
+  lifecycle pipeline. This function decides exit codes and prints; it starts
+  no child of its own, resolves no path of its own, and knows neither a
+  stage nor a bound.
+
+  THE EXIT MAPPING is docs/pipeline-contract.md section 9, unchanged - the
+  same six categories `run` and `dev` answer with, and no seventh:
+
+      0  every stage of this UI ran and the layout verified
+      2  usage
+      3  the project, its descriptor, its paths or its layout
+      4  the machine cannot build it: the doctor refused, or a tool is
+         missing, unrunnable or the wrong target
+      5  a stage's child failed, died or was stopped
+      6  an invariant of the pipeline itself broke
+
+  THE OUTPUT is human and nothing else. A stage's forwarded child lines go
+  to stdout; every line this CLI writes itself is `pweb: `-prefixed and goes
+  to stderr, so `pweb build > out.txt` captures the toolchain's own output
+  and the progress stays where a person is watching. No ANSI on either
+  stream, no absolute path, no SDK location, no home directory and no
+  environment content ever reaches either.
+
+  `pweb run` is suggested at the end ONLY when the CAP-10C0 resolver
+  actually accepted the committed layout in the verify stage. A build tool
+  that tells you to run something it has not confirmed is runnable is a
+  build tool whose last line is a guess. }
+
+procedure BuildRefused(const Cause, Detail: RawUtf8);
+begin
+  EmitErr('pweb: build failed: ' + Cause);
+  if Detail <> '' then
+    EmitErr(': ' + Detail);
+  EmitErr(#10);
+end;
+
+function RunBuild(const Args: TPWebCliArgs; const StartDir: RawUtf8): Integer;
+var
+  project: TPWebCliProject;
+  r: TPWebCliBuildResult;
+begin
+  project := PWebCliOpenProject(Args.ProjectPath, StartDir);
+  if project.Refusal <> pcrNone then
+  begin
+    // the detail of a project refusal may be a path; this command prints
+    // none at all - the cause is the machine-stable part
+    if (PosExChar('/', project.Detail) = 0) and
+       (PosExChar('\', project.Detail) = 0) then
+      BuildRefused(PWebCliProjectRefusalText(project.Refusal), project.Detail)
+    else
+      BuildRefused(PWebCliProjectRefusalText(project.Refusal), '');
+    exit(PWEB_EXIT_PROJECT);
+  end;
+  // the stop handler is a prerequisite of supervision and is installed
+  // BEFORE anything is spawned, exactly as `run` and `dev` install it:
+  // without it a Ctrl+C would end this process under a running compiler
+  if not PWebCliInstallStopHandler then
+  begin
+    BuildRefused('supervision_unavailable', 'stop_handler');
+    exit(PWEB_EXIT_ENVIRONMENT);
+  end;
+  EmitErr('pweb: building ' + project.Name + ' (' +
+    PWebCliUiText(project.Ui) + ', ' +
+    PWebCliRunTargetName(PWebCliHostOs, PWebCliHostArch) + ')'#10);
+  // @DevLine, and deliberately NOT a second copy of it: `dev` and `build`
+  // split their two streams by the same rule, and a second spelling of one
+  // rule is a second thing to keep in step
+  r := PWebCliRunBuild(project, PWebCliHostOs, PWebCliHostArch,
+    @DevLine, nil);
+  if r.Code <> ppcOk then
+  begin
+    BuildRefused(r.Cause, r.Detail);
+    if r.Interrupted then
+      EmitErr('pweb: stop requested; the running stage was asked to stop ' +
+        'and the previous release was left as it was'#10);
+    // ONE advisory, on the two refusals an in-use release directory
+    // produces. It changes no cause and no category: it names the thing a
+    // reader would otherwise spend an afternoon on, because on Windows a
+    // directory that is a running process's working directory cannot be
+    // renamed at all - and the release directory is exactly that while
+    // `pweb run` holds it
+    if r.ReleaseInUse then
+      EmitErr('pweb: the previous release could not be replaced; stop an ' +
+        'application running from it and build again'#10);
+    exit(PWebCliPipeExitCode(r.Code));
+  end;
+  // the summary: six facts, and the release named RELATIVE TO THE PROJECT,
+  // which is both the whole truth and the one form that is byte-identical
+  // on every machine
+  EmitErr('pweb: built ' + r.ProjectName + #10);
+  EmitErr('  ' + Pad('ui', 13) + r.Ui + #10);
+  EmitErr('  ' + Pad('target', 13) + r.Target + #10);
+  EmitErr('  ' + Pad('release', 13) + r.ReleaseLogical + #10);
+  EmitErr('  ' + Pad('app.pwb', 13) + r.BundleSha256 + #10);
+  EmitErr('  ' + Pad('bytes', 13) + RawUtf8(IntToStr(r.TotalBytes)) + #10);
+  if r.Accepted then
+    EmitErr('pweb: run it with `pweb run`'#10);
+  Result := PWEB_EXIT_OK;
+end;
+
 function Main: Integer;
 var
   args: TPWebCliArgs;
@@ -689,6 +813,7 @@ begin
       pccCreate: EmitErr(PWebCliCreateHelp);
       pccRun:    EmitErr(PWebCliRunHelp);
       pccDev:    EmitErr(PWebCliDevHelp);
+      pccBuild:  EmitErr(PWebCliBuildHelp);
     else
       EmitErr(PWebCliUsageBanner);
     end;
@@ -704,6 +829,7 @@ begin
       pccCreate: Emit(PWebCliCreateHelp);
       pccRun:    Emit(PWebCliRunHelp);
       pccDev:    Emit(PWebCliDevHelp);
+      pccBuild:  Emit(PWebCliBuildHelp);
     else
       Emit(PWebCliUsageBanner);
     end;
@@ -727,6 +853,7 @@ begin
     pccDoctor: Result := RunDoctor(args, startDir);
     pccRun:    Result := RunRun(args, startDir);
     pccDev:    Result := RunDev(args, startDir);
+    pccBuild:  Result := RunBuild(args, startDir);
   else
     // unreachable: the parser refuses a line with no command
     Result := PWEB_EXIT_INTERNAL;

@@ -56,6 +56,14 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..')).Path
 Set-Location $repoRoot
 
+# CAP-10D0: the ONE pwsh argument-quoting helper, dot-sourced rather than
+# reimplemented. `Start-Process -ArgumentList <array>` joins the array with
+# single spaces and quotes nothing, so a path carrying a space splits into
+# two arguments and `--project` takes half of it. Start-PWebProcess quotes
+# by the C runtime's rules - the same ones PWebCliWindowsCommandLine
+# implements and the CAP-10C0 golden table proves on four targets.
+. (Join-Path $repoRoot 'test/cap10d0/psargs.ps1')
+
 # THE CAP-10B1 CLOSURE VALUE, pinned here on purpose.
 #
 # It is the SHA-256 of the generated React project's inventory projection,
@@ -102,10 +110,26 @@ Set-Location $repoRoot
 #
 # The Pas2JS template is UNTOUCHED by this shard, which is why only the
 # React trio moves here.
+#
+# 16 -> 16, and 71416 -> 72884 bytes:
+#
+# CAP-10D0 SUPERSEDES README.md IN BOTH TEMPLATES. The B1/B2 READMEs
+# described creation's next steps without naming a command, because until
+# CAP-10D0 the command that takes them did not exist - `pweb build` was an
+# unknown command and the README could not honestly name it. It exists now,
+# so both READMEs document the five commands - create, doctor, build, dev,
+# run - and the React one stops implying that some unnamed future build will
+# materialise `.pweb/sdk/typescript`: `pweb build` and `pweb dev` do, and it
+# says so.
+#
+# NO FILE WAS ADDED OR REMOVED, which is why the count does not move; only
+# README.md's bytes did. Nothing in dist/ changed either, so no `app.pwb`
+# digest moves - CAP-10D0 re-measures every c1_app_pwb_* and records them
+# unchanged rather than claiming they are.
 $CAP10B1_REACT_INVENTORY_DIGEST =
-    'ef9a9312f3d18efd80dd10bab5baa0774454ee99263b5f06427d01e753d5a617'
+    '06e47ba8a8df19b6164fdabd89deb674e3fe1f5e767e30dbcef1026f99116a77'
 $CAP10B1_REACT_FILE_COUNT = 16
-$CAP10B1_REACT_TOTAL_BYTES = 71416
+$CAP10B1_REACT_TOTAL_BYTES = 72884
 
 $exeSuffix = if ($IsWindows) { '.exe' } else { '' }
 $work = Join-Path $repoRoot 'build/cap10b2'
@@ -246,7 +270,7 @@ New-Item -ItemType Directory -Force $capture | Out-Null
 function RunCli([string]$Exe, [string]$WorkDir, [string[]]$CliArgs) {
     $so = Join-Path $capture 'stdout.txt'
     $se = Join-Path $capture 'stderr.txt'
-    $p = Start-Process -FilePath $Exe -ArgumentList $CliArgs -Wait -PassThru `
+    $p = Start-PWebProcess -FilePath $Exe -ArgumentList $CliArgs -Wait -PassThru `
         -NoNewWindow -WorkingDirectory $WorkDir `
         -RedirectStandardOutput $so -RedirectStandardError $se
     return [pscustomobject]@{
@@ -270,9 +294,11 @@ foreach ($line in ($createHelp.Out -split "`n")) {
 $supported = (SortOrdinal @($advertised -split '\|')) -join ','
 Require ($supported -ceq 'pas2js,react') `
     "create --help advertises '$advertised', expected 'react|pas2js'"
-# and the command that must still not exist (`run` exists since CAP-10C0 and
-# `dev` since CAP-10C2)
-foreach ($absent in 'build') {
+# and a name that must NOT be a command (`run` exists since CAP-10C0, `dev`
+# since CAP-10C2 and `build` since CAP-10D0, so the subject of this leg moved
+# to a name no shard will ratify - the claim is a CLOSED command set, and it
+# survives the shard that emptied the old list)
+foreach ($absent in 'publish') {
     $r = RunCli $pweb $repoRoot @($absent)
     Require ($r.Code -eq 2) `
         "'pweb $absent' must be an unknown command (exit 2), got $($r.Code)"

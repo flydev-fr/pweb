@@ -1,7 +1,7 @@
-# The `pweb` CLI contract (CAP-10A, CAP-10B1, CAP-10B2, CAP-10C0, CAP-10C2)
+# The `pweb` CLI contract (CAP-10A, CAP-10B1, CAP-10B2, CAP-10C0, CAP-10C2, CAP-10C3, CAP-10D0)
 
 The public surface frozen by CAP-10A and extended by CAP-10B1, CAP-10B2,
-CAP-10C0 and CAP-10C2:
+CAP-10C0, CAP-10C2, CAP-10C3 and CAP-10D0:
 what the
 executable accepts, what `pweb.json` means, what `pweb doctor --json` emits,
 what each exit code promises, and the development-trust decision CAP-10C2
@@ -25,12 +25,26 @@ pweb run [--project <path>]
 pweb run --help
 pweb dev [--project <path>]
 pweb dev --help
+pweb build [--project <path>]
+pweb build --help
 ```
 
-That is the whole of it in this build. `build` is an **unknown command** —
-not a stub, not a "not implemented" placeholder, and not listed in `--help`.
-A command that parses is a promise, and a lifecycle CLI that promises a build
-it cannot perform is worse than one that has not got there yet.
+That is the whole of it in this build, and with CAP-10D0 it is the complete
+CAP-10 surface. `build` was **not** a command for four shards — not a stub,
+not a "not implemented" placeholder, and not listed in `--help` — because a
+command that parses is a promise, and a lifecycle CLI that promises a build
+it cannot perform is worse than one that has not got there yet. It is a
+command here for exactly the same reason: this executable performs the whole
+of one. A name outside the five is still refused with `unknown_command` and
+exit 2.
+
+**CAP-10D0 adds `build`** ([build-contract.md](build-contract.md)). It runs
+the CAP-10C1 ten-stage pipeline end to end for the project's declared `ui`
+and leaves the CAP-10C0 run layout, so `pweb create` → `pweb build` →
+`pweb run` is the whole path from nothing to a running application. It takes
+`--project` and `--help` and nothing else, adds no usage cause, adds no exit
+category, adds no stage and adds no second way to run a child: the pipeline
+underneath it is CAP-10C1's, unchanged.
 
 **CAP-10C0 adds `run` and the engine under it** (section 7 and
 [supervision-contract.md](supervision-contract.md)). `run` launches an
@@ -49,8 +63,8 @@ with the project cause `dev_ui_unsupported` (exit 3) rather than pretending
 to a loop this build does not implement. It opens no listener, no development
 server and no proxy; the privileged origin stays `pweb://app`. The lifecycle
 pipeline CAP-10C1 froze as private is linked into this executable to serve it
-— which is not the same thing as advertising a build, and `build` stays
-unknown.
+— which was not the same thing as advertising a build, and `build` stayed
+unknown until CAP-10D0 made it perform one.
 
 **CAP-10B2 adds the second frontend and nothing else.** It ships one more
 trusted public template, widens the compiled `--ui` allowlist to the two kinds
@@ -59,7 +73,9 @@ compiled registry does not describe is now an **environment** failure (4)
 rather than a usage one, because with a two-value allowlist no command line
 can reach that code — it means the pack this installation carries does not
 describe a template this build advertises. Nothing else about the command
-surface changed, and `dev`, `run` and `build` are still unknown commands.
+surface changed; `run`, `dev` and `build` were all still unknown
+commands then, and each became one in the shard that made it do the whole
+of what its name says.
 
 CAP-10B0 built the private engine — the template carrier, the identity
 mapping, the placeholder model and the atomic creation transaction, all
@@ -451,6 +467,19 @@ mapping was ratified before a line of it was written:
 Human text never changes the category and the category never depends on
 what the application printed: a host that refuses a tampered `app.pwb`
 exits 1 on its own, and `run` reports `application exited 1` and answers 5.
+
+**CAP-10D0 added no category either.** `build` answers with
+`docs/pipeline-contract.md` §9 — the mapping CAP-10C1 ratified for the
+pipeline, reused rather than re-decided — projected onto the same six:
+
+| exit | `build` causes |
+|---|---|
+| 0 | every stage of the project's UI ran and the CAP-10C0 resolver accepted the committed layout |
+| 2 | a duplicated, unknown or foreign option (`--json`, `--verbose`, `--no-color`, `--with-paths`, `--ui`, `--bundle-id`), an operand |
+| 3 | the project was refused — every CAP-10A descriptor cause — or a package-manager configuration inside it would redirect the registry (`registry_override_present`), or its `output` cannot be written |
+| 4 | the machine cannot build it: `doctor` refused with its own cause, or a tool is missing, unrunnable or the wrong target; or supervision could not be established |
+| 5 | a stage's child failed, died by a signal or had to be force-terminated — its real typed status is printed — or the build was interrupted (`pipeline_interrupted`) |
+| 6 | an invariant of the pipeline itself broke: the read-only tree moved under it (`pipeline_mutation`), an argument reached a spawn in the extended-length form (`arg_longpath_form`), or the layout could not be assembled, committed or verified |
 
 ---
 

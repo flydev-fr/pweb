@@ -32,7 +32,11 @@
 #      guard, detaches the handler and destroys the webview - in that order -
 #      and the POSIX stop helper enters that path through the SAME dispatch
 #      the auto-close thread uses.
-#   7. dev AND build STAY ABSENT from the parser.
+#   7. THE PARSER'S COMMAND SET IS CLOSED. CAP-10C0 pinned `dev` and `build`
+#      absent because neither existed; CAP-10C2 and CAP-10D0 implemented
+#      them, so the sweep now names commands no shard will ratify and
+#      requires all five that exist. The rule never moved: the parser must
+#      accept exactly what this build can perform.
 #
 # Emits build/cap10c0/contracts.json.
 #
@@ -272,19 +276,34 @@ if ($dispatches.Count -ne 2) {
 }
 $facts['stop_helper_shares_dispatch'] = ($dispatches.Count -eq 2)
 
-# --- 7. build stays absent ---------------------------------------------------
-# CAP-10C2 moved `dev` out of this sweep and `build` stays in it. The rule is
-# unchanged - the parser must not accept a command this build cannot perform -
-# and only the membership moved, in the shard that made `dev` a command doing
-# the whole of what its name says.
+# --- 7. the parser's command set is CLOSED -----------------------------------
+# CAP-10C2 moved `dev` out of this sweep and CAP-10D0 moved `build`. The rule
+# is unchanged - the parser must not accept a command this build cannot
+# perform - and only the membership moved, each time in the shard that made
+# the command do the whole of what its name says. The sweep is INVERTED
+# rather than deleted: its subject is a name no shard will ratify, because
+# the claim it has always made is that this parser's command set is closed.
 $devBuildHits = 0
 foreach ($row in (Get-CodeLines 'tools/pweb/pweb.cli.args.pas')) {
-    if ($row.Text -match "token\s*=\s*'(build)'") {
+    if ($row.Text -match "token\s*=\s*'(publish|package|deploy|install)'") {
         Violation "the parser accepts an unimplemented command: line $($row.Number)"
         $devBuildHits++
     }
 }
 $facts['dev_build_absent'] = ($devBuildHits -eq 0)
+# and the five that ARE implemented are all still there, so a command that
+# quietly disappeared is a violation too
+$implemented = 0
+foreach ($row in (Get-CodeLines 'tools/pweb/pweb.cli.args.pas')) {
+    if ($row.Text -match "token\s*=\s*'(create|doctor|run|dev|build)'") {
+        $implemented++
+    }
+}
+$facts['implemented_commands'] = $implemented
+if ($implemented -ne 5) {
+    Violation ("the parser accepts $implemented of the five commands this " +
+        'build implements')
+}
 
 # --- verdict ----------------------------------------------------------------
 New-Item -ItemType Directory -Force build/cap10c0 | Out-Null
@@ -300,4 +319,4 @@ if ($violations.Count -gt 0) {
 }
 Write-Host ('[CAP-10C0] contracts PASS - bounds stated once, no FPC process ' +
     'unit linked, no name-based kill, runtime ignores the environment, run ' +
-    'never builds, shutdown order and dispatch preserved, dev/build absent')
+    'never builds, shutdown order and dispatch preserved, the command set closed at five')

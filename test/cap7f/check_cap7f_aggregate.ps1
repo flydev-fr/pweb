@@ -188,7 +188,7 @@ $required = @(
     # host binaries' CSP bytes, and the refusals. The pids and the
     # elapsed times travel beside them and are recorded per target.
     'dev_corpus', 'dev_suite', 'dev_digest', 'dev_corpus_lines',
-    'dev_option_matrix', 'advertised_commands_c2', 'build_still_unknown',
+    'dev_option_matrix', 'advertised_commands_c2', 'build_available',
     'csp_identical', 'csp_transport_terms', 'dev_origin',
     'release_dev_unit_absent', 'dev_marker_in_release', 'dev_marker_in_dev',
     'dev_units_linked', 'dev_transport_hits', 'dev_conditionals',
@@ -242,7 +242,7 @@ $required = @(
     'dev_pas2js_corpus', 'dev_pas2js_suite', 'dev_pas2js_digest',
     'dev_pas2js_corpus_lines', 'dev_pas2js_available',
     'change_detection_model', 'advertised_ui_dev',
-    'dev_pas2js_option_matrix', 'build_still_unknown_c3',
+    'dev_pas2js_option_matrix', 'build_available_c3',
     'advertised_commands_c3', 'dev_pas2js_csp_identical',
     'dev_pas2js_release_dev_free', 'dev_pas2js_transport_hits',
     'dev_pas2js_watch_api_hits', 'dev_region_in_pas2js_template',
@@ -282,6 +282,23 @@ $required = @(
     'rd1_dev_digest_unchanged', 'rd1_dev_suite',
     'c3_pipeline_digest_unchanged', 'dev_pas2js_normalised',
     'pas2js_on_path',
+    # CAP-10D0: the public build, on four targets
+    'build_corpus', 'build_suite', 'build_digest', 'build_corpus_lines',
+    'build_execute_callers', 'build_driver_spawns', 'build_stage_count',
+    'build_unratified_options', 'gate_quoting_space_path',
+    'build_option_matrix', 'advertised_commands_d0', 'build_help_matrix',
+    'cli_build_available', 'gate_project_path_has_space',
+    'build_react_exit', 'build_pas2js_exit', 'build_network_stages_react',
+    'build_network_stages_pas2js', 'd0_project_tree_unchanged',
+    'build_react_rpc_value', 'build_pas2js_rpc_value',
+    'build_replacement_rule', 'build_replacement_window',
+    'build_never_partial_release', 'd0_build_deterministic',
+    'build_failure_exit', 'build_failure_leaves_old_release',
+    'build_interrupt_armed', 'build_interrupt_delivered',
+    'build_descendants_after_interrupt', 'build_driver_ansi_seen',
+    'build_interrupt_clean', 'build_race_run_rpc',
+    'release_path_observations_disposed',
+    'd0_template_supersession_recorded', 'd0_pas2js_on_path',
     'release_layout', 'no_listener', 'app_pwb_react_sha256',
     'logical_inventory_sha256_react', 'github_sha', 'github_run_id', 'waivers'
 )
@@ -326,7 +343,7 @@ $absolutePins = @{
     # noticed); an interrupt closes the application cleanly and a terminated
     # supervisor takes its tree with it.
     cli_run_available        = 'true'
-    advertised_commands      = 'create,doctor,run,dev'
+    advertised_commands      = 'create,doctor,run,dev,build'
     supervision_shell_used   = 'false'
     global_name_kill_present = 'false'
     argv_roundtrip           = 'exact'
@@ -352,10 +369,10 @@ $absolutePins = @{
     run_layout_link          = 'exit3/layout_link'
     run_output_escape        = 'exit3'
     run_tampered_bundle      = 'exit5/host_refused'
-    # CAP-10C2 exposed `dev`; `build` is STILL an unknown command, and this
+    # CAP-10C2 exposed `dev` and CAP-10D0 exposed `build`, and this
     # row is what says which of the two moved rather than dropping the
     # measurement that one of them must stay unknown
-    dev_build_unknown        = 'build_only'
+    dev_build_unknown        = 'none'
     # the teardown order as the contract gate READ it out of the host's
     # source after webview_run, expression by expression - never restated
     shutdown_order           = 'binding.Close>schedulerRef.Shutdown>navGuard.Detach>assetHandler.Detach>webview_destroy(w)'
@@ -428,8 +445,8 @@ $absolutePins = @{
     dev_conditionals               = '0'
     dev_env_reads                  = '0'
     dev_option_matrix              = 'PASS'
-    advertised_commands_c2         = 'create,doctor,run,dev'
-    build_still_unknown            = 'true'
+    advertised_commands_c2         = 'create,doctor,run,dev,build'
+    build_available                = 'true'
     dev1_generation_ready          = 'true'
     dev1_generation_loaded         = 'true'
     dev1_rpc_and_secure            = 'true'
@@ -527,8 +544,8 @@ $absolutePins = @{
     # a build that grew a third kind or lost one is refused here rather than
     # merely disagreeing with its neighbours
     advertised_ui_dev              = 'pas2js,react'
-    advertised_commands_c3         = 'create,doctor,run,dev'
-    build_still_unknown_c3         = 'true'
+    advertised_commands_c3         = 'create,doctor,run,dev,build'
+    build_available_c3             = 'true'
     dev_pas2js_option_matrix       = 'PASS'
     dev_pas2js_csp_identical       = 'true'
     dev_pas2js_release_dev_free    = 'true'
@@ -604,12 +621,45 @@ $absolutePins = @{
     # THE CLAIM THIS SHARD EXISTS TO MAKE about the archive: a development
     # generation is the pipeline's release archive, for the same sources
     dev_pas2js_app_pwb_parity      = 'true'
+    # CAP-10D0: the values four targets could agree on and still be wrong
+    cli_build_available                = 'true'
+    advertised_commands_d0             = 'create,doctor,run,dev,build'
+    build_option_matrix                = 'PASS'
+    build_help_matrix                  = 'PASS'
+    build_execute_callers              = 'pweb.cli.dev.pas,pweb.cli.pipeline.pas,pweb.cli.probe.pas,pweb.cli.run.pas'
+    build_driver_spawns                = '0'
+    build_stage_count                  = '10'
+    build_unratified_options           = 'none'
+    build_react_exit                   = '0'
+    build_pas2js_exit                  = '0'
+    build_react_rpc_value              = '42'
+    build_pas2js_rpc_value             = '42'
+    build_network_stages_react         = 'install'
+    build_network_stages_pas2js        = 'none'
+    d0_project_tree_unchanged          = 'true'
+    build_replacement_rule             = 'stage_aside_rename_reclaim'
+    build_replacement_window           = 'one_rename_no_release'
+    build_never_partial_release        = 'true'
+    d0_build_deterministic             = 'true'
+    build_failure_exit                 = '5'
+    build_failure_leaves_old_release   = 'true'
+    build_interrupt_delivered          = 'true'
+    build_interrupt_clean              = 'true'
+    build_descendants_after_interrupt  = '0'
+    build_driver_ansi_seen             = 'false'
+    build_race_run_rpc                 = '42'
+    gate_quoting_space_path            = 'PASS'
+    gate_project_path_has_space        = 'true'
+    release_path_observations_disposed = '6'
+    d0_template_supersession_recorded  = 'true'
     # and the React loop did not move while the Pas2JS one was added
     rd1_dev_digest_unchanged       = 'true'
     c3_pipeline_digest_unchanged   = 'true'
 }
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
 $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
+    'build_corpus', 'build_suite', 'build_option_matrix',
+    'build_help_matrix', 'gate_quoting_space_path',
     'navigation_security', 'security_corpus', 'quickjs_corpus',
     'quickjs_package_corpus', 'quickjs_lifecycle_corpus',
     'quickjs_release_corpus', 'quickjs_gui_corpus',
@@ -1646,7 +1696,7 @@ foreach ($t in $evidence.Keys) {
     $summary += "  - $t pas2js compiler $($evidence[$t].pas2js_compiler_host) sha256 ``$($evidence[$t].pas2js_compiler_sha256)``, raw output $($evidence[$t].pas2js_output_normalised), app.pwb $($evidence[$t].pas2js_app_pwb_bytes) bytes, native binary equal to the react build: $($evidence[$t].native_binary_equal)"
 }
 $summary += "- CAP-10C0 ONE supervision engine, one decision corpus: supervision_digest ``$($first.supervision_digest)`` equal on all four targets ($($first.supervision_corpus_lines) decisions; argv=$($first.argv_roundtrip), exit=$($first.exit_propagation), death_never_exit_zero=$($first.death_never_exit_zero), forced_kill_required=$($first.forced_kill_required), zombie=$($first.zombie_left), env=$($first.environment_policy), shell=$($first.supervision_shell_used), name_kill=$($first.global_name_kill_present))"
-$summary += "- CAP-10C0 ``pweb run`` on the built React and Pas2JS projects on every target: advertised ``$($first.advertised_commands)``, CalculatorService.Add(20,22)=$($first.run_react_rpc_value)/$($first.run_pas2js_rpc_value), secure=$($first.run_secure_origin), listeners=$($first.run_listener_count), network=$($first.run_network_calls), tools=$($first.run_tool_calls), descendants_after_exit=$($first.descendants_after_exit), interrupt=$($first.run_interrupt_clean), supervisor_terminated_tree_dies=$($first.supervisor_terminated_tree_dies), not_built=$($first.run_not_built), link=$($first.run_layout_link), tampered=$($first.run_tampered_bundle), dev/build unknown=$($first.dev_build_unknown)"
+$summary += "- CAP-10C0 ``pweb run`` on the built React and Pas2JS projects on every target: advertised ``$($first.advertised_commands)``, CalculatorService.Add(20,22)=$($first.run_react_rpc_value)/$($first.run_pas2js_rpc_value), secure=$($first.run_secure_origin), listeners=$($first.run_listener_count), network=$($first.run_network_calls), tools=$($first.run_tool_calls), descendants_after_exit=$($first.descendants_after_exit), interrupt=$($first.run_interrupt_clean), supervisor_terminated_tree_dies=$($first.supervisor_terminated_tree_dies), not_built=$($first.run_not_built), link=$($first.run_layout_link), tampered=$($first.run_tampered_bundle), unknown commands remaining=$($first.dev_build_unknown)"
 foreach ($t in $evidence.Keys) {
     $summary += "  - $t tree=$($evidence[$t].supervision_tree_model) stop=$($evidence[$t].graceful_stop_mechanism) signal_typed=$($evidence[$t].signal_outcome_typed) drained=$($evidence[$t].run_descendants_drained) forced=$($evidence[$t].run_descendants_forced) passes=$($evidence[$t].run_drain_passes) elapsed_ms=$($evidence[$t].run_elapsed_ms)"
 }

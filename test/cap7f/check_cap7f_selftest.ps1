@@ -233,7 +233,133 @@ $script:AggRefusals = 0
 $script:SweepRefusals = 0
 
 function Invoke-AggExpectFail([string]$Label, [string]$ExpectPattern = '') {
-    Remove-Item -Force -ErrorAction SilentlyContinue $matrix
+    
+# --- CAP-10D0: the public build, one negative leg per new refusal --------
+# Each of these is a way the matrix could go green over a public build that
+# does not work, and each one must go RED. A refusal nobody has watched fire
+# is a comment.
+
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.cli_build_available = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-build-unavailable' 'cli_build_available'
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_react_rpc_value = '41'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-rpc-not-42-react' 'build_react_rpc_value'
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_pas2js_rpc_value = '0'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-rpc-not-42-pas2js' 'build_pas2js_rpc_value'
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_never_partial_release = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-partial-release' 'build_never_partial_release'
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_failure_leaves_old_release = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-old-release-altered' 'build_failure_leaves_old_release'
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.d0_build_deterministic = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-nondeterministic' 'd0_build_deterministic'
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_network_stages_pas2js = 'install'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-network-outside-install' 'build_network_stages_pas2js'
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_descendants_after_interrupt = '1'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-descendants-survived' 'build_descendants_after_interrupt'
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_interrupt_clean = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-interrupt-dirty' 'build_interrupt_clean'
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.release_path_observations_disposed = '5'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-observations-undisposed' 'release_path_observations_disposed'
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.d0_project_tree_unchanged = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-tree-mutated' 'd0_project_tree_unchanged'
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.gate_quoting_space_path = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-quoting-regressed' 'gate_quoting_space_path'
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.gate_project_path_has_space = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-spaced-path-dropped' 'gate_project_path_has_space'
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.advertised_commands_d0 = 'create,doctor,run,dev'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-surface-shrank' 'advertised_commands_d0'
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_driver_spawns = '1'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-second-execution-path' 'build_driver_spawns'
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_stage_count = '11'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-stage-added' 'build_stage_count'
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_unratified_options = '--profile'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-option-ratified-late' 'build_unratified_options'
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_replacement_rule = 'copy_over_the_top'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-replacement-rule-moved' 'build_replacement_rule'
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.d0_template_supersession_recorded = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-template-unrecorded' 'd0_template_supersession_recorded'
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_corpus = 'SKIP'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-corpus-skipped' 'build_corpus'
+Remove-Item -Force -ErrorAction SilentlyContinue $matrix
     & pwsh -NoProfile -File $agg -EvidenceRoot (Join-Path $fx 'ev') `
         -MacosInventoryRoot (Join-Path $fx 'inv') *> (Join-Path $fx "$Label.log")
     if ($LASTEXITCODE -eq 0) {
@@ -1917,13 +2043,13 @@ $e.dev8_pweb_exit = '0'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap10c2-watcher-death-category' 'dev8_pweb_exit'
 
-# (c74) `build` EXPOSED -> the one command this shard must not ship
+# (c74) `build` UNAVAILABLE -> CAP-10D0 inverted this leg with the row
 Reset-Fixture
 $f = Join-Path $fx 'ev/macos-arm64/evidence.json'
 $e = Get-Content $f -Raw | ConvertFrom-Json
-$e.build_still_unknown = 'false'
+$e.build_available = 'false'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
-Invoke-AggExpectFail 'cap10c2-build-exposed' 'build_still_unknown'
+Invoke-AggExpectFail 'cap10c2-build-unavailable' 'build_available'
 
 # (c75) a target on which `pweb dev` does NOT implement the second frontend
 # kind. CAP-10C2 asserted the opposite here - that a pas2js project was
@@ -2071,13 +2197,13 @@ $e.dev_pas2js_release_dev_free = 'false'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap10c3-release-dev-code' 'dev_pas2js_release_dev_free'
 
-# (C3-14) `build` EXPOSED, measured again by the shard that closes the phase
+# (C3-14) `build` UNAVAILABLE, measured again by the closing shard
 Reset-Fixture
 $f = Join-Path $fx 'ev/linux/evidence.json'
 $e = Get-Content $f -Raw | ConvertFrom-Json
-$e.build_still_unknown_c3 = 'false'
+$e.build_available_c3 = 'false'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
-Invoke-AggExpectFail 'cap10c3-build-exposed' 'build_still_unknown_c3'
+Invoke-AggExpectFail 'cap10c3-build-unavailable' 'build_available_c3'
 
 # (C3-15) A LEDGER ORPHAN - the gate over the disposition table
 Reset-Fixture
@@ -2185,13 +2311,139 @@ if ($LASTEXITCODE -ne 0) {
     throw 'selftest: the divergence sweep does not pass after fixture removal + swap restore'
 }
 
+
+# --- CAP-10D0: the public build, one negative leg per new refusal --------
+# Each of these is a way the matrix could go green over a public build that
+# does not work, and each one must go RED. A refusal nobody has watched fire
+# is a comment.
+
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.cli_build_available = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-build-unavailable' 'cli_build_available'
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_react_rpc_value = '41'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-rpc-not-42-react' 'build_react_rpc_value'
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_pas2js_rpc_value = '0'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-rpc-not-42-pas2js' 'build_pas2js_rpc_value'
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_never_partial_release = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-partial-release' 'build_never_partial_release'
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_failure_leaves_old_release = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-old-release-altered' 'build_failure_leaves_old_release'
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.d0_build_deterministic = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-nondeterministic' 'd0_build_deterministic'
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_network_stages_pas2js = 'install'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-network-outside-install' 'build_network_stages_pas2js'
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_descendants_after_interrupt = '1'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-descendants-survived' 'build_descendants_after_interrupt'
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_interrupt_clean = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-interrupt-dirty' 'build_interrupt_clean'
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.release_path_observations_disposed = '5'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-observations-undisposed' 'release_path_observations_disposed'
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.d0_project_tree_unchanged = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-tree-mutated' 'd0_project_tree_unchanged'
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.gate_quoting_space_path = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-quoting-regressed' 'gate_quoting_space_path'
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.gate_project_path_has_space = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-spaced-path-dropped' 'gate_project_path_has_space'
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.advertised_commands_d0 = 'create,doctor,run,dev'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-surface-shrank' 'advertised_commands_d0'
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_driver_spawns = '1'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-second-execution-path' 'build_driver_spawns'
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_stage_count = '11'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-stage-added' 'build_stage_count'
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_unratified_options = '--profile'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-option-ratified-late' 'build_unratified_options'
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_replacement_rule = 'copy_over_the_top'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-replacement-rule-moved' 'build_replacement_rule'
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.d0_template_supersession_recorded = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-template-unrecorded' 'd0_template_supersession_recorded'
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_corpus = 'SKIP'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-corpus-skipped' 'build_corpus'
 Remove-Item -Force -ErrorAction SilentlyContinue $matrix
 # a floor, so a leg that silently stops running is caught. It is deliberately
 # NOT an equality: adding a refusal branch is normal and should not require
 # editing this line, while LOSING one is the failure worth naming
-if ($script:AggRefusals -lt 180) {
+if ($script:AggRefusals -lt 200) {
     throw ("selftest: only $($script:AggRefusals) aggregator refusals fired, " +
-        'expected at least 180 -- a negative leg stopped running')
+        'expected at least 200 -- a negative leg stopped running')
 }
 if ($script:SweepRefusals -lt 2) {
     throw ("selftest: only $($script:SweepRefusals) divergence refusals fired, " +

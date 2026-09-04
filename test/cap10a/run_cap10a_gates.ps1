@@ -29,6 +29,14 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..')).Path
 Set-Location $repoRoot
 
+# CAP-10D0: the ONE pwsh argument-quoting helper, dot-sourced rather than
+# reimplemented. `Start-Process -ArgumentList <array>` joins the array with
+# single spaces and quotes nothing, so a path carrying a space splits into
+# two arguments and `--project` takes half of it. Start-PWebProcess quotes
+# by the C runtime's rules - the same ones PWebCliWindowsCommandLine
+# implements and the CAP-10C0 golden table proves on four targets.
+. (Join-Path $repoRoot 'test/cap10d0/psargs.ps1')
+
 $exeSuffix = if ($IsWindows) { '.exe' } else { '' }
 $bin = Join-Path $repoRoot 'build/cap10a/bin'
 $pweb = Join-Path $bin "pweb$exeSuffix"
@@ -151,10 +159,10 @@ function RunCli([string[]]$CliArgs) {
     # the rows this gate exists to check, so the no-argument case is its own
     # call rather than an empty list
     if ($CliArgs.Count -eq 0) {
-        $p = Start-Process -FilePath $pweb -Wait -PassThru `
+        $p = Start-PWebProcess -FilePath $pweb -Wait -PassThru `
             -NoNewWindow -RedirectStandardOutput $so -RedirectStandardError $se
     } else {
-        $p = Start-Process -FilePath $pweb -ArgumentList $CliArgs -Wait -PassThru `
+        $p = Start-PWebProcess -FilePath $pweb -ArgumentList $CliArgs -Wait -PassThru `
             -NoNewWindow -RedirectStandardOutput $so -RedirectStandardError $se
     }
     return [pscustomobject]@{
@@ -174,13 +182,16 @@ $help = RunCli @('--help')
 Require ($help.Code -eq 0) '--help did not exit 0'
 Require ($help.Out.Contains('doctor')) '--help does not list doctor'
 # CAP-10B1 moved `create` from this list into the one above it, CAP-10C0
-# moved `run` and CAP-10C2 moved `dev`: the rule is unchanged - help
-# advertises exactly the commands the binary implements - and only the
-# membership changed. `build` stays here, alone.
+# moved `run`, CAP-10C2 moved `dev` and CAP-10D0 moved `build`: the rule is
+# unchanged - help advertises exactly the commands the binary implements -
+# and only the membership changed. The list below is EMPTY rather than gone,
+# and the subject of the check moved to a name no shard will ratify: the
+# claim is that the command set is CLOSED, not that `build` is missing.
 Require ($help.Out.Contains('pweb create ')) '--help does not list create'
 Require ($help.Out.Contains('pweb run ')) '--help does not list run'
 Require ($help.Out.Contains('pweb dev ')) '--help does not list dev'
-foreach ($absent in 'pweb build') {
+Require ($help.Out.Contains('pweb build ')) '--help does not list build'
+foreach ($absent in 'pweb publish') {
     Require (-not $help.Out.Contains($absent)) `
         "--help advertises an unimplemented command: $absent"
 }

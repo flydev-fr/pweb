@@ -35,6 +35,14 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..')).Path
 Set-Location $repoRoot
 
+# CAP-10D0: the ONE pwsh argument-quoting helper, dot-sourced rather than
+# reimplemented. `Start-Process -ArgumentList <array>` joins the array with
+# single spaces and quotes nothing, so a path carrying a space splits into
+# two arguments and `--project` takes half of it. Start-PWebProcess quotes
+# by the C runtime's rules - the same ones PWebCliWindowsCommandLine
+# implements and the CAP-10C0 golden table proves on four targets.
+. (Join-Path $repoRoot 'test/cap10d0/psargs.ps1')
+
 $work = Join-Path $repoRoot 'build/cap10b2'
 $sdkRoot = Join-Path $repoRoot 'build/cap10b1/sdk'
 $sdkPas2js = Join-Path $sdkRoot 'share/pweb/sdk/pas2js'
@@ -441,7 +449,7 @@ $autoCloseMs = 20000
 $started = [System.Diagnostics.Stopwatch]::StartNew()
 # an unrelated CWD, deliberately: app.pwb is resolved from the EXECUTABLE and
 # a run that only works from its own directory has not proved that
-$proc = Start-Process -FilePath (Join-Path $release 'demo.exe') `
+$proc = Start-PWebProcess -FilePath (Join-Path $release 'demo.exe') `
     -ArgumentList @("--pweb-verdict=$verdictFile", "--pweb-autoclose-ms=$autoCloseMs") `
     -WorkingDirectory ([System.IO.Path]::GetTempPath()) `
     -RedirectStandardOutput $outFile -RedirectStandardError $errFile `

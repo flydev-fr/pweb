@@ -54,8 +54,11 @@ unratified ordinal — because the day a third kind is ratified the loop must
 refuse it rather than start something it cannot finish, and an unreachable
 branch nobody exercises is a branch nobody notices has rotted.
 
-**`build` is still an unknown command** and exits 2. Linking the lifecycle
-pipeline into the executable is not advertising a build.
+**`build` is a command since CAP-10D0** ([build-contract.md](build-contract.md)),
+and it runs the same pipeline these start-up stages run. It changes nothing
+in this document: the dev loop's host, generation, poller, acknowledgement
+and ladder are untouched, and a development session still writes nothing
+into `<output>/<os>-<arch>/release/`.
 
 ---
 
@@ -593,7 +596,8 @@ stage and after every start-up stage, and any change stops the loop with
 
 ## 11. What the dev loop does not do
 
-It exposes no `build`; starts no listener, development server, proxy or HMR
+It writes nothing into the release layout `pweb build` owns; starts no
+listener, development server, proxy or HMR
 transport; proxies no HTTP through the host; makes the **production** host
 accept no development argument, path or environment variable and link no
 development unit; adds no folder-served asset path and no watcher to it;

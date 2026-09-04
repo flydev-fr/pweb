@@ -41,6 +41,14 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..')).Path
 Set-Location $repoRoot
 
+# CAP-10D0: the ONE pwsh argument-quoting helper, dot-sourced rather than
+# reimplemented. `Start-Process -ArgumentList <array>` joins the array with
+# single spaces and quotes nothing, so a path carrying a space splits into
+# two arguments and `--project` takes half of it. Start-PWebProcess quotes
+# by the C runtime's rules - the same ones PWebCliWindowsCommandLine
+# implements and the CAP-10C0 golden table proves on four targets.
+. (Join-Path $repoRoot 'test/cap10d0/psargs.ps1')
+
 $exeSuffix = if ($IsWindows) { '.exe' } else { '' }
 $work = Join-Path $repoRoot 'build/cap10b0'
 $builder = Join-Path $work "bin/pwebtemplates$exeSuffix"
@@ -278,24 +286,29 @@ $pweb = Join-Path $repoRoot "build/cap10a/bin/pweb$exeSuffix"
 if (Test-Path -LiteralPath $pweb) {
     $so = Join-Path $work 'cli-stdout.txt'
     $se = Join-Path $work 'cli-stderr.txt'
-    $p = Start-Process -FilePath $pweb -ArgumentList '--help' -Wait -PassThru `
+    $p = Start-PWebProcess -FilePath $pweb -ArgumentList '--help' -Wait -PassThru `
         -NoNewWindow -RedirectStandardOutput $so -RedirectStandardError $se
     $help = [System.IO.File]::ReadAllText($so)
     Require ($p.ExitCode -eq 0) '--help did not exit 0'
     Require ($help.Contains('pweb create ')) `
         '--help does not advertise create'
-    # CAP-10C0 moved `run` out of this list and CAP-10C2 moved `dev`: each is
-    # advertised because it is implemented, and the shard that implemented it
-    # measures it. The RULE is unchanged - help advertises exactly the
-    # commands the binary implements - and only the membership moved.
-    # `build` stays here, alone.
-    foreach ($absent in 'build') {
+    # CAP-10C0 moved `run` out of this list, CAP-10C2 moved `dev` and
+    # CAP-10D0 moved `build`: each is advertised because it is implemented,
+    # and the shard that implemented it measures it. The RULE is unchanged -
+    # help advertises exactly the commands the binary implements - and only
+    # the membership moved, which is why the list is EMPTY rather than gone
+    # and why the positive check below took its place.
+    foreach ($absent in @()) {
         Require (-not $help.Contains("pweb $absent")) `
             "--help advertises an unimplemented command: $absent"
     }
+    foreach ($present in 'create', 'doctor', 'run', 'dev', 'build') {
+        Require ($help.Contains("pweb $present")) `
+            "--help does not advertise the implemented command: $present"
+    }
     # a bare `pweb create` is a USAGE refusal (no NAME), never an unknown
     # command any more
-    $p = Start-Process -FilePath $pweb -ArgumentList 'create' -Wait `
+    $p = Start-PWebProcess -FilePath $pweb -ArgumentList 'create' -Wait `
         -PassThru -NoNewWindow -RedirectStandardOutput $so `
         -RedirectStandardError $se
     $err = [System.IO.File]::ReadAllText($se)

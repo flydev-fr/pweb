@@ -322,9 +322,45 @@ begin
   Check(a.Usage = pcuMissingOperand,
     'C3: create needs its NAME, and says so rather than doing nothing');
   Record_('args|create|' + PWebCliUsageText(a.Usage));
+  // CAP-10D0 exposes `build`, the last command of the CAP-10 surface, and
+  // the corpus row moves from `unknown_command` to `ok` exactly as it moved
+  // for `run` at CAP-10C0 and for `dev` at CAP-10C2 - a RECORDED
+  // supersession of cli_digest, never a silent re-baseline. The six option
+  // rows below are the whole of what `build` adds to this grammar: it takes
+  // --project and --help and nothing else, and it introduces no usage cause
+  // that did not already exist.
   a := PWebCliParseArgs(Argv(['build']));
-  Check(a.Usage = pcuUnknownCommand, 'C3: build is not in this build');
+  Check(a.Usage = pcuNone, 'C3: build is a command since CAP-10D0');
+  Check(a.Command = pccBuild, 'C3: and it is the build command');
   Record_('args|build|' + PWebCliUsageText(a.Usage));
+  a := PWebCliParseArgs(Argv(['build', '--project', 'p']));
+  Check(a.Usage = pcuNone, 'C3: build takes --project');
+  CheckEqual(a.ProjectPath, 'p', 'C3: and it captures its value');
+  Record_('args|build --project p|' + PWebCliUsageText(a.Usage));
+  a := PWebCliParseArgs(Argv(['build', '--project', 'p', '--project', 'q']));
+  Check(a.Usage = pcuDuplicateOption, 'C3: build refuses a repeated --project');
+  Record_('args|build --project twice|' + PWebCliUsageText(a.Usage));
+  a := PWebCliParseArgs(Argv(['build', '--json']));
+  Check(a.Usage = pcuOptionNotForCommand, 'C3: build has no machine report');
+  Record_('args|build --json|' + PWebCliUsageText(a.Usage));
+  a := PWebCliParseArgs(Argv(['build', 'extra']));
+  Check(a.Usage = pcuExtraPositional, 'C3: build takes no operand');
+  Record_('args|build extra|' + PWebCliUsageText(a.Usage));
+  // the four options a reader of another build tool would reach for first,
+  // and every one of them is an option this grammar does not have. They are
+  // recorded because an ABSENCE nobody measured is an absence somebody adds
+  a := PWebCliParseArgs(Argv(['build', '--profile', 'offline']));
+  Check(a.Usage = pcuUnknownOption, 'C3: there is no --profile in v1');
+  Record_('args|build --profile|' + PWebCliUsageText(a.Usage));
+  a := PWebCliParseArgs(Argv(['build', '--clean']));
+  Check(a.Usage = pcuUnknownOption,
+    'C3: every stage runs every time, so there is nothing to clean');
+  Record_('args|build --clean|' + PWebCliUsageText(a.Usage));
+  a := PWebCliParseArgs(Argv(['build', '--help']));
+  Check(a.Usage = pcuNone, 'C3: build --help is a complete request');
+  Check(a.Help, 'C3: and it asks for help');
+  Check(a.Command = pccBuild, 'C3: for the build command');
+  Record_('args|build --help|' + PWebCliUsageText(a.Usage));
   // CAP-10C2 exposes `dev`: a bare `pweb dev` is a complete command line
   // (the project is discovered from the working directory, exactly as `run`
   // discovers it), so the case it makes here changed from "unknown command"

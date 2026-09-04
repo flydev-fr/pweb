@@ -28,6 +28,8 @@
     pweb run --help
     pweb dev [--project <path>]
     pweb dev --help
+    pweb build [--project <path>]
+    pweb build --help
 
   Long options only. There are no short forms in v1 - not because they are
   bad, but because every alias is a second spelling of one contract and this
@@ -67,9 +69,19 @@
   existed - `option_not_for_command`, `duplicate_option`, `extra_positional`
   - and the ONE thing `dev` can refuse that `run` cannot is the project's
   declared `ui`, which is not a command-line fact at all and is answered by
-  the dev loop with its own PROJECT cause. `build` is STILL an unknown
-  command: this build cannot perform one, and a command that parses is a
-  promise.
+  the dev loop with its own PROJECT cause.
+
+  CAP-10D0 ADDS `build`, and it adds nothing else: the same option set as
+  `run` and `dev`, the same refusals, and no new usage cause. `build` was an
+  unknown command for as long as this executable could not perform one,
+  which was the whole of the rule - a command that parses is a promise. The
+  promise is now keepable, and the grammar is deliberately the SMALLEST one
+  that keeps it: the frontend kind comes from `pweb.json` and never from an
+  option, the target is this machine's, and every stage runs on every build,
+  so there is no `--profile`, no `--target`, no `--clean`, no
+  `--release`/`--debug` and no `--watch` to spell. Each of those absences is
+  a contract rather than an omission: an option exposed before its semantics
+  are ratified is an option that can never be taken back.
 
   DELIBERATELY NOT IMPLEMENTED: response files (`@file` is an ordinary
   positional and is never expanded), `--` as an argument terminator (it is
@@ -102,15 +114,14 @@ const
 
 type
   /// the commands this build exposes
-  // - `build` is NOT here: an unimplemented command that parses is a
-  // promise the binary cannot keep, so it is an unknown command and is
-  // refused like any other. CAP-10C0 added `run`, which does the whole of
-  // what its name says: it launches an already-built application.
-  // CAP-10C2 adds `dev`, which does the whole of what ITS name says for
-  // `ui = react` - it builds, launches, watches, rebuilds and reloads - and
-  // refuses `ui = pas2js` with a typed PROJECT cause rather than pretending
-  // to a loop it does not implement
-  TPWebCliCommand = (pccNone, pccCreate, pccDoctor, pccRun, pccDev);
+  // - each one arrived in the shard that made it do the whole of what its
+  // name says, and never before: CAP-10B1 `create`, CAP-10C0 `run` (launch
+  // what is already built), CAP-10C2/C3 `dev` (build, launch, watch,
+  // rebuild, reload, for both frontend kinds) and CAP-10D0 `build` (run the
+  // ten-stage lifecycle pipeline and leave the layout `run` resolves).
+  // `build` was an unknown command until this one, because an unimplemented
+  // command that parses is a promise the binary cannot keep
+  TPWebCliCommand = (pccNone, pccCreate, pccDoctor, pccRun, pccDev, pccBuild);
 
   /// why a command line was refused - ordinal 0 is the accepted state
   TPWebCliUsage = (
@@ -449,6 +460,8 @@ begin
           Result.Command := pccRun
         else if token = 'dev' then
           Result.Command := pccDev
+        else if token = 'build' then
+          Result.Command := pccBuild
         else
         begin
           Refuse(Result, pcuUnknownCommand, token);
@@ -509,8 +522,14 @@ begin
   // verbose diagnostics, and NOTHING typed after it reaches the
   // application - the dev host receives one argument, and that argument is
   // this CLI's own, never the user's
+  // build takes exactly what both take, and for the third time the same
+  // reasons: its stage progress is a supervisor's rather than a report, it
+  // emits no colour and no verbose diagnostics, and nothing typed after it
+  // reaches a compiler, a package manager or a bundler - every argument a
+  // stage spawns with is built by a plan builder from the descriptor
   if (Result.Command = pccRun) or
-     (Result.Command = pccDev) then
+     (Result.Command = pccDev) or
+     (Result.Command = pccBuild) then
   begin
     if Result.Verbose then
     begin

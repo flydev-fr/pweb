@@ -42,6 +42,14 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..')).Path
 Set-Location $repoRoot
+
+# CAP-10D0: the ONE pwsh argument-quoting helper, dot-sourced rather than
+# reimplemented. `Start-Process -ArgumentList <array>` joins the array with
+# single spaces and quotes nothing, so a path carrying a space splits into
+# two arguments and `--project` takes half of it. Start-PWebProcess quotes
+# by the C runtime's rules - the same ones PWebCliWindowsCommandLine
+# implements and the CAP-10C0 golden table proves on four targets.
+. (Join-Path $repoRoot 'test/cap10d0/psargs.ps1')
 . (Join-Path $PSScriptRoot 'listener_members.ps1')
 
 $exeSuffix = if ($IsWindows) { '.exe' } else { '' }
@@ -151,7 +159,7 @@ function RunPipe([string]$Project, [string]$Tag, [int]$TimeoutMs = 1800000,
         $env:PATH = $ExtraPath + [System.IO.Path]::PathSeparator + $env:PATH
     }
     try {
-        $p = Start-Process -FilePath $pipe -PassThru -NoNewWindow `
+        $p = Start-PWebProcess -FilePath $pipe -PassThru -NoNewWindow `
             -ArgumentList @('--project', $Project, '--report', $report) `
             -WorkingDirectory $repoRoot `
             -RedirectStandardOutput $so -RedirectStandardError $se
@@ -453,7 +461,7 @@ function RunApplication([string]$Project, [string]$Tag) {
     $runCwd = Join-Path $work 'unrelated-cwd'
     New-Item -ItemType Directory -Force $runCwd | Out-Null
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $p = Start-Process -FilePath $pweb -PassThru -NoNewWindow `
+    $p = Start-PWebProcess -FilePath $pweb -PassThru -NoNewWindow `
         -ArgumentList @('run', '--project', $Project) `
         -WorkingDirectory $runCwd -RedirectStandardOutput $so -RedirectStandardError $se
     $appPid = 0
@@ -619,7 +627,7 @@ if ($IsWindows) {
     $so = Join-Path $work 'pipe-st10-stdout.txt'
     $se = Join-Path $work 'pipe-st10-stderr.txt'
     Remove-Item -Force -ErrorAction SilentlyContinue $so, $se
-    $p10 = Start-Process -FilePath $pipe -PassThru -NoNewWindow `
+    $p10 = Start-PWebProcess -FilePath $pipe -PassThru -NoNewWindow `
         -ArgumentList @('--project', $st10Project) -WorkingDirectory $repoRoot `
         -RedirectStandardOutput $so -RedirectStandardError $se
     # wait until a stage that OWNS a child tree is actually running, so the
@@ -680,7 +688,7 @@ if ($IsWindows) {
     $runCwd = Join-Path $work 'unrelated-cwd'
     New-Item -ItemType Directory -Force $runCwd | Out-Null
     $sw4 = [System.Diagnostics.Stopwatch]::StartNew()
-    $p4 = Start-Process -FilePath $pweb -PassThru -NoNewWindow `
+    $p4 = Start-PWebProcess -FilePath $pweb -PassThru -NoNewWindow `
         -ArgumentList @('run', '--project', $reactProject) `
         -WorkingDirectory $runCwd -RedirectStandardOutput $so -RedirectStandardError $se
     $ready = $false
@@ -733,20 +741,22 @@ Require $supersession `
 $help = (& $pweb '--help' 2>&1 | Out-String)
 $helpCode = $LASTEXITCODE
 $advertised = @()
-# CAP-10C2 added `dev` to the advertised set. `build` stays unknown, and the
-# leg below is what still measures that
-foreach ($c in 'create', 'doctor', 'run', 'dev') {
+# CAP-10C2 added `dev` to the advertised set and CAP-10D0 added `build`,
+# which completes the CAP-10 surface. The leg below is inverted with it: its
+# subject is a name no shard will ratify, because the claim it makes is that
+# the command set is CLOSED and not that `build` in particular is missing.
+foreach ($c in 'create', 'doctor', 'run', 'dev', 'build') {
     if ($help -match "(?m)^\s+$c\s") { $advertised += $c }
 }
 Row 'advertised_commands' ($advertised -join ',')
-Require (($advertised -join ',') -ceq 'create,doctor,run,dev') `
+Require (($advertised -join ',') -ceq 'create,doctor,run,dev,build') `
     "SF1: pweb advertises $($advertised -join ',')"
-foreach ($absent in 'build') {
+foreach ($absent in 'publish') {
     & $pweb $absent 2>&1 | Out-Null
     Require ($LASTEXITCODE -eq 2) `
         "SF1: pweb $absent exited $LASTEXITCODE, expected 2 (unknown command)"
 }
-Row 'dev_build_unknown' 'build_only'
+Row 'dev_build_unknown' 'none'
 # MEASURED, never asserted: check_cap10c1_contracts.ps1 reads the CLI's own
 # compiled unit set and writes its verdict here. A literal would be an
 # absolute pin guarding a constant - exactly the vacuous row CAP-10C0
@@ -773,13 +783,19 @@ if (Test-Path -LiteralPath $contractsFile) {
 # SF2/SF3: the two frozen digests this shard must not have moved, read back
 # from the gates that own them and compared with their CLOSURE values.
 $c0Closure = '120f6769c155c59b8bc0cbc8b96e7faee14091628a5af49833f5b4fb96db11c0'
-# SUPERSEDED BY CAP-10C2, which is the shard that exposes `pweb dev`. The
-# CAP-10A parser corpus records `args|dev|ok` where it recorded
-# `args|dev|unknown_command`, plus the seven option rows the new command
-# brings, so cli_digest moves exactly as CAP-10C0 moved it for `run` - a
-# RECORDED supersession, never a silent re-baseline. It was
-# 1341221df25aa1db922666fa89542411142765db3a378b83c1287d017dfdd208.
-$cliClosure = 'c4c54b3c758e2e680ccae14d3cafb6a3f3410475c94d24e71b7c503dd14f2e01'
+# SUPERSEDED BY CAP-10D0, which is the shard that exposes `pweb build` and
+# completes the CAP-10 surface. The CAP-10A parser corpus records
+# `args|build|ok` where it recorded `args|build|unknown_command`, plus the
+# seven option rows the new command brings - --project, a repeated
+# --project, --json, an operand, --profile, --clean and --help - so
+# cli_digest moves exactly as it moved for `run` at CAP-10C0 and for `dev`
+# at CAP-10C2: a RECORDED supersession, never a silent re-baseline.
+#
+# It was 1341221df25aa1db922666fa89542411142765db3a378b83c1287d017dfdd208
+# before CAP-10C2 and
+# c4c54b3c758e2e680ccae14d3cafb6a3f3410475c94d24e71b7c503dd14f2e01 before
+# CAP-10D0.
+$cliClosure = '9eb329ae89cfd29b945503481ca80e59d21cb2f14f03bfa4e0d4420c1e691e02'
 $c0File = Join-Path $repoRoot "build/cap10c0/cli-$target.json"
 if (Test-Path -LiteralPath $c0File) {
     $c0 = Get-Content $c0File -Raw | ConvertFrom-Json

@@ -153,12 +153,22 @@ $argsSource = [System.IO.File]::ReadAllText('tools/pweb/pweb.cli.args.pas')
 if ($argsSource -notmatch 'pccCreate\b') {
     Violation "tools/pweb/pweb.cli.args.pas defines no 'create' command"
 }
-# CAP-10C0 moved `run` out of this list and CAP-10C2 moved `dev`: each is a
-# command that does the whole of what its name says now, and its own shard's
-# gates measure it. `build` stays unknown until the shard that makes it true.
-foreach ($cmd in 'build') {
+# CAP-10C0 moved `run` out of this list, CAP-10C2 moved `dev` and CAP-10D0
+# moved `build`: each is a command that does the whole of what its name says
+# now, and its own shard's gates measure it. The list is EMPTY rather than
+# deleted, and the loop below is INVERTED rather than removed - CAP-10B0's
+# claim was that this parser advertises exactly what this repository can
+# perform, and that claim is still measured, from the other side.
+foreach ($cmd in @()) {
     if ($argsSource -match "pccC?$cmd\b") {
         Violation "tools/pweb/pweb.cli.args.pas defines a '$cmd' command"
+    }
+}
+# CAP-10D0: the four commands CAP-10B0 knew would come are all here now, so
+# what this gate pins is that none of them QUIETLY disappeared
+foreach ($cmd in 'Create', 'Doctor', 'Run', 'Dev', 'Build') {
+    if ($argsSource -notmatch "pcc$cmd\b") {
+        Violation "tools/pweb/pweb.cli.args.pas no longer defines '$cmd'"
     }
 }
 

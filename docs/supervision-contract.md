@@ -10,9 +10,10 @@ through it — one thread each, which is legal without the engine moving
 because it is re-entrant: no unit-level mutable state, the Windows spawn
 restricts inheritance with `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`, and the
 POSIX spawn touches no heap between `fork` and `execve` and closes every
-descriptor above 2. `pweb build` (CAP-10D) will run its toolchain through it
-too. There is no second execution path, and this document is the contract
-every caller gets.
+descriptor above 2. `pweb build` (CAP-10D0) runs the ten stages' children
+through it too - through `pweb.cli.pipeline` and through nothing of its own,
+so the public build added a command and no caller. There is no second
+execution path, and this document is the contract every caller gets.
 
 ## 1. What a spawn is
 

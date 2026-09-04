@@ -21,6 +21,14 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..')).Path
 Set-Location $repoRoot
 
+# CAP-10D0: the ONE pwsh argument-quoting helper, dot-sourced rather than
+# reimplemented. `Start-Process -ArgumentList <array>` joins the array with
+# single spaces and quotes nothing, so a path carrying a space splits into
+# two arguments and `--project` takes half of it. Start-PWebProcess quotes
+# by the C runtime's rules - the same ones PWebCliWindowsCommandLine
+# implements and the CAP-10C0 golden table proves on four targets.
+. (Join-Path $repoRoot 'test/cap10d0/psargs.ps1')
+
 $exeSuffix = if ($IsWindows) { '.exe' } else { '' }
 $work = Join-Path $repoRoot 'build/cap10c3'
 New-Item -ItemType Directory -Force $work | Out-Null
@@ -142,7 +150,7 @@ if ($failures.Count -gt 0) {
 # decision whatever the platform.
 $suiteLog = Join-Path $work 'c3tests.log'
 $suiteArgs = if ($IsWindows) { @('/noenter') } else { @() }
-$sp = Start-Process -FilePath $suite -ArgumentList $suiteArgs -Wait -PassThru `
+$sp = Start-PWebProcess -FilePath $suite -ArgumentList $suiteArgs -Wait -PassThru `
     -NoNewWindow -WorkingDirectory $repoRoot `
     -RedirectStandardOutput $suiteLog `
     -RedirectStandardError (Join-Path $work 'c3tests-stderr.log')
@@ -220,7 +228,7 @@ if (Test-Path -LiteralPath (Join-Path $work 'ledger.json')) {
 function RunCli([string[]]$CliArgs, [string]$WorkDir) {
     $so = Join-Path $work 'cli-stdout.txt'
     $se = Join-Path $work 'cli-stderr.txt'
-    $p = Start-Process -FilePath $pweb -ArgumentList $CliArgs -Wait -PassThru `
+    $p = Start-PWebProcess -FilePath $pweb -ArgumentList $CliArgs -Wait -PassThru `
         -NoNewWindow -WorkingDirectory $WorkDir `
         -RedirectStandardOutput $so -RedirectStandardError $se
     return [pscustomobject]@{
@@ -236,7 +244,9 @@ foreach ($case in @(
         @{ Args = @('dev', '--project', 'a', '--project', 'b'); Code = 2; Cause = 'duplicate_option' },
         @{ Args = @('dev', '--json');                           Code = 2; Cause = 'option_not_for_command' },
         @{ Args = @('dev', 'extra');                            Code = 2; Cause = 'extra_positional' },
-        @{ Args = @('build');                                   Code = 2; Cause = 'unknown_command' })) {
+        # CAP-10D0 made `build` a command; the subject of this row moved to a
+        # name no shard will ratify, because the claim is a CLOSED set
+        @{ Args = @('publish');                                 Code = 2; Cause = 'unknown_command' })) {
     $r = RunCli $case.Args $cwd
     $ok = ($r.Code -eq $case.Code) -and ($r.Err.Contains($case.Cause))
     if (-not $ok) {
@@ -255,10 +265,12 @@ Require (-not $devHelp.Out.Contains('ONLY. A `pas2js` project is refused')) `
     'dev --help still says this build implements react only'
 $mainHelp = RunCli @('--help') $cwd
 Require ($mainHelp.Out.Contains('pweb dev ')) '--help does not advertise dev'
-Require (-not $mainHelp.Out.Contains('pweb build')) '--help advertises build'
+# INVERTED by CAP-10D0, never deleted: `build` is advertised now
+Require ($mainHelp.Out.Contains('pweb build')) '--help does not advertise build'
+Require (-not $mainHelp.Out.Contains('pweb publish')) '--help advertises publish'
 Row 'dev_pas2js_option_matrix' $(if ($surface) { 'PASS' } else { 'FAIL' })
-Row 'build_still_unknown_c3' (Bool $surface)
-Row 'advertised_commands_c3' 'create,doctor,run,dev'
+Row 'build_available_c3' (Bool $surface)
+Row 'advertised_commands_c3' 'create,doctor,run,dev,build'
 
 # --- 4. the project this gate drives, SCAFFOLDED BY THE REAL CLI ------------
 # NOT borrowed from another shard's stage. A development loop is a claim about
@@ -407,7 +419,7 @@ $drvArgs = @(
 if (Test-Path -LiteralPath $helper) { $drvArgs += @('--helper', $helper) }
 $drvOut = Join-Path $work 'p2jdrv-stdout.txt'
 $drvErr = Join-Path $work 'p2jdrv-stderr.txt'
-$p = Start-Process -FilePath $driver -ArgumentList $drvArgs -Wait -PassThru `
+$p = Start-PWebProcess -FilePath $driver -ArgumentList $drvArgs -Wait -PassThru `
     -NoNewWindow -WorkingDirectory $cwd `
     -RedirectStandardOutput $drvOut -RedirectStandardError $drvErr
 Write-Host "[CAP-10C3] the driver exited $($p.ExitCode)"
@@ -595,7 +607,7 @@ $kargs = @(
 if (Test-Path -LiteralPath $helper) { $kargs += @('--helper', $helper) }
 $ko = Join-Path $work 'p2jdrv-killhost-stdout.txt'
 $ke = Join-Path $work 'p2jdrv-killhost-stderr.txt'
-$kp = Start-Process -FilePath $driver -ArgumentList $kargs -Wait -PassThru `
+$kp = Start-PWebProcess -FilePath $driver -ArgumentList $kargs -Wait -PassThru `
     -NoNewWindow -WorkingDirectory $cwd `
     -RedirectStandardOutput $ko -RedirectStandardError $ke
 Write-Host "[CAP-10C3] the killhost driver exited $($kp.ExitCode)"
@@ -641,7 +653,7 @@ Require $noPartial `
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $devDir
 $lo = Join-Path $work 'p2j-live-stdout.txt'
 $le = Join-Path $work 'p2j-live-stderr.txt'
-$lp = Start-Process -FilePath $pweb -ArgumentList @('dev', '--project', $p2j) `
+$lp = Start-PWebProcess -FilePath $pweb -ArgumentList @('dev', '--project', $p2j) `
     -PassThru -NoNewWindow -WorkingDirectory $cwd `
     -RedirectStandardOutput $lo -RedirectStandardError $le
 $liveDeadline = (Get-Date).AddSeconds(600)
@@ -684,7 +696,8 @@ $lp.WaitForExit(30000) | Out-Null
 # --- 8. PD14: the archive parity that is this shard's point -----------------
 # gen-1's app.pwb against the CAP-10C1 pipeline's, for the SAME sources. The
 # pipeline is driven by the CAP-10C1 private driver, which is the only thing
-# in the tree that calls it - `pweb build` is still an unknown command.
+# in the tree that called it when CAP-10C3 closed; CAP-10D0 exposed
+# `pweb build`, and the private driver stays as the CAP-10C1 regression's own.
 #
 # IT IS MEASURED ON THE RUN ABOVE, which stops at generation 1, and NOT on
 # the driven session. MEASURED on hosted run 33790870889: the driven session
@@ -702,7 +715,7 @@ Require (Test-Path -LiteralPath $genOne) `
 Require (Test-Path -LiteralPath $pipe) `
     'PD14: the CAP-10C1 pipeline driver is absent -- run its build first'
 if ((Test-Path -LiteralPath $genOne) -and (Test-Path -LiteralPath $pipe)) {
-    $pr = Start-Process -FilePath $pipe -ArgumentList @('--project', $p2j) `
+    $pr = Start-PWebProcess -FilePath $pipe -ArgumentList @('--project', $p2j) `
         -Wait -PassThru -NoNewWindow -WorkingDirectory $cwd `
         -RedirectStandardOutput (Join-Path $work 'pipe-stdout.txt') `
         -RedirectStandardError (Join-Path $work 'pipe-stderr.txt')

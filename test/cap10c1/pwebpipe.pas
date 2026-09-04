@@ -3,7 +3,7 @@ program pwebpipe;
 { CAP-10C1: the PRIVATE lifecycle-pipeline driver.
 
   THIS IS NOT A COMMAND. `pweb` advertises create, doctor and run; `dev` and
-  `build` are unknown commands and stay unknown until CAP-10C2 and CAP-10D.
+  `build` were unknown commands then; CAP-10C2 exposed `dev` and CAP-10D0`n  exposed `build`, and this driver stays as the C1 regression's own.
   The pipeline is production code (tools/pweb/pweb.cli.pipeline and the five
   plan builders under it) and this program is the only thing in the tree that
   calls it - which is what lets the whole lifecycle be measured on four

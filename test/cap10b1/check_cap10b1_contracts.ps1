@@ -161,19 +161,27 @@ foreach ($doc in 'docs/cli-contract.md', 'docs/template-contract.md') {
     }
 }
 
-# --- 2. build is still an unknown command ----------------------------------
-# (CAP-10C0 exposed `run` and CAP-10C2 exposed `dev`; each shard's own gates
-# measure the surface it added)
-foreach ($cmd in 'build') {
-    if ($argsSource -match "pccC?$cmd\b") {
-        Violation "pweb.cli.args.pas defines a '$cmd' command"
-    }
-    if ($reportSource -match "pweb $cmd ") {
-        Violation "pweb.cli.report.pas advertises 'pweb $cmd'"
+# --- 2. the parser and the help advertise the SAME set ---------------------
+# CAP-10C0 exposed `run`, CAP-10C2 exposed `dev` and CAP-10D0 exposed
+# `build`, each in the shard that made it do the whole of what its name
+# says. This check is INVERTED rather than deleted: the claim it has always
+# made is that the parser and the help text agree about what exists, and it
+# now makes that claim from the other side.
+foreach ($cmd in 'create', 'doctor', 'run', 'dev', 'build') {
+    if ($argsSource -notmatch "pcc$($cmd.Substring(0,1).ToUpperInvariant())$($cmd.Substring(1))\b") {
+        Violation "pweb.cli.args.pas defines no '$cmd' command"
     }
 }
-if ($argsSource -notmatch 'pccCreate\b') {
-    Violation "pweb.cli.args.pas defines no 'create' command"
+foreach ($cmd in 'run', 'dev', 'build') {
+    if ($reportSource -notmatch "pweb $cmd ") {
+        Violation "pweb.cli.report.pas does not advertise 'pweb $cmd'"
+    }
+}
+# and a name that is NOT a command still has to be refused as one: the
+# original claim was never about `build` in particular, it was that this
+# parser has a closed command set
+if ($argsSource -match 'pccPublish\b') {
+    Violation "pweb.cli.args.pas defines a 'publish' command nobody ratified"
 }
 
 # --- 3. the create path executes nothing ---------------------------------

@@ -1078,6 +1078,37 @@ if ("$($c3.dev_pas2js_corpus)" -ceq 'PASS') {
         }
     }
 }
+# --- CAP-10D0: the public `pweb build` -------------------------------------
+# build/cap10d0/cli-<target>.json is ONE record: the headless suite's decision
+# corpus (digested), the REAL `pweb build` on both generated projects at a
+# path carrying a SPACE, the `pweb run` that answers 42 after it, the
+# replacement of an existing release, a seeded failure, a real interrupt
+# through pwebbuilddrv, and the Windows long-path measurement.
+$d0File = Join-Path $repoRoot 'build/cap10d0/cli-windows-x86_64.json'
+if (-not (Test-Path $d0File)) {
+    throw '[CAP-7F] cap10d0/cli-windows-x86_64.json missing -- the CAP-10D0 gates have not run in this workspace'
+}
+$d0 = Get-Content $d0File -Raw | ConvertFrom-Json
+if ("$($d0.build_corpus)" -notin @('PASS', 'FAIL')) {
+    throw "[CAP-7F] the CAP-10D0 record carries an unexpected verdict: $($d0.build_corpus)"
+}
+if ("$($d0.build_corpus)" -ceq 'PASS') {
+    if ("$($d0.build_digest)" -eq '') {
+        throw '[CAP-7F] the CAP-10D0 record records PASS with an empty build_digest'
+    }
+    foreach ($pair in @(@('cli_build_available', 'true'),
+                        @('build_react_rpc_value', '42'),
+                        @('build_pas2js_rpc_value', '42'),
+                        @('build_never_partial_release', 'true'),
+                        @('build_failure_leaves_old_release', 'true'),
+                        @('d0_build_deterministic', 'true'),
+                        @('build_descendants_after_interrupt', '0'),
+                        @('release_path_observations_disposed', '6'))) {
+        if ("$($d0.($pair[0]))" -ne $pair[1]) {
+            throw "[CAP-7F] the CAP-10D0 record records PASS with $($pair[0])=$($d0.($pair[0]))"
+        }
+    }
+}
 if ("$($c1.pipeline_corpus)" -notin @('PASS', 'FAIL')) {
     throw "[CAP-7F] the CAP-10C1 record carries an unexpected verdict: $($c1.pipeline_corpus)"
 }
@@ -1381,7 +1412,7 @@ $evidence = [ordered]@{
     dev_corpus_lines                    = "$($c2.dev_corpus_lines)"
     dev_option_matrix                   = "$($c2.dev_option_matrix)"
     advertised_commands_c2              = "$($c2.advertised_commands_c2)"
-    build_still_unknown                 = "$($c2.build_still_unknown)"
+    build_available                     = "$($c2.build_available)"
     csp_identical                       = "$($c2.csp_identical)"
     csp_transport_terms                 = "$($c2.csp_transport_terms)"
     dev_origin                          = "$($c2.dev_origin)"
@@ -1466,7 +1497,7 @@ $evidence = [ordered]@{
     change_detection_model              = "$($c3.change_detection_model)"
     advertised_ui_dev                   = "$($c3.advertised_ui_dev)"
     dev_pas2js_option_matrix            = "$($c3.dev_pas2js_option_matrix)"
-    build_still_unknown_c3              = "$($c3.build_still_unknown_c3)"
+    build_available_c3                  = "$($c3.build_available_c3)"
     advertised_commands_c3              = "$($c3.advertised_commands_c3)"
     dev_pas2js_csp_identical            = "$($c3.dev_pas2js_csp_identical)"
     dev_pas2js_release_dev_free         = "$($c3.dev_pas2js_release_dev_free)"
@@ -1549,6 +1580,63 @@ $evidence = [ordered]@{
     c3_pipeline_digest_unchanged        = "$($c3.c3_pipeline_digest_unchanged)"
     dev_pas2js_normalised               = "$($c3.dev_pas2js_normalised)"
     pas2js_on_path                      = "$($c3.pas2js_on_path)"
+    build_corpus                        = "$($d0.build_corpus)"
+    build_suite                         = "$($d0.build_suite)"
+    build_digest                        = "$($d0.build_digest)"
+    build_corpus_lines                  = "$($d0.build_corpus_lines)"
+    build_execute_callers               = "$($d0.build_execute_callers)"
+    build_driver_spawns                 = "$($d0.build_driver_spawns)"
+    build_stage_count                   = "$($d0.build_stage_count)"
+    build_unratified_options            = "$($d0.build_unratified_options)"
+    gate_quoting_space_path             = "$($d0.gate_quoting_space_path)"
+    build_option_matrix                 = "$($d0.build_option_matrix)"
+    advertised_commands_d0              = "$($d0.advertised_commands_d0)"
+    build_help_matrix                   = "$($d0.build_help_matrix)"
+    cli_build_available                 = "$($d0.cli_build_available)"
+    gate_project_path_has_space         = "$($d0.gate_project_path_has_space)"
+    build_react_exit                    = "$($d0.build_react_exit)"
+    build_pas2js_exit                   = "$($d0.build_pas2js_exit)"
+    build_network_stages_react          = "$($d0.build_network_stages_react)"
+    build_network_stages_pas2js         = "$($d0.build_network_stages_pas2js)"
+    d0_project_tree_unchanged           = "$($d0.d0_project_tree_unchanged)"
+    build_react_rpc_value               = "$($d0.build_react_rpc_value)"
+    build_pas2js_rpc_value              = "$($d0.build_pas2js_rpc_value)"
+    build_replacement_rule              = "$($d0.build_replacement_rule)"
+    build_replacement_window            = "$($d0.build_replacement_window)"
+    build_never_partial_release         = "$($d0.build_never_partial_release)"
+    d0_build_deterministic              = "$($d0.d0_build_deterministic)"
+    build_failure_exit                  = "$($d0.build_failure_exit)"
+    build_failure_leaves_old_release    = "$($d0.build_failure_leaves_old_release)"
+    build_interrupt_armed               = "$($d0.build_interrupt_armed)"
+    build_interrupt_delivered           = "$($d0.build_interrupt_delivered)"
+    build_descendants_after_interrupt   = "$($d0.build_descendants_after_interrupt)"
+    build_driver_ansi_seen              = "$($d0.build_driver_ansi_seen)"
+    build_interrupt_clean               = "$($d0.build_interrupt_clean)"
+    build_race_run_rpc                  = "$($d0.build_race_run_rpc)"
+    release_path_observations_disposed  = "$($d0.release_path_observations_disposed)"
+    d0_template_supersession_recorded   = "$($d0.d0_template_supersession_recorded)"
+    d0_pas2js_on_path                   = "$($d0.d0_pas2js_on_path)"
+    doctor_react_exit                   = "$($d0.doctor_react_exit)"
+    doctor_pas2js_exit                  = "$($d0.doctor_pas2js_exit)"
+    release_react_files                 = "$($d0.release_react_files)"
+    release_react_inventory             = "$($d0.release_react_inventory)"
+    release_pas2js_files                = "$($d0.release_pas2js_files)"
+    release_pas2js_inventory            = "$($d0.release_pas2js_inventory)"
+    summary_react_release               = "$($d0.summary_react_release)"
+    summary_react_app_pwb               = "$($d0.summary_react_app_pwb)"
+    summary_react_target                = "$($d0.summary_react_target)"
+    summary_pas2js_release              = "$($d0.summary_pas2js_release)"
+    summary_pas2js_app_pwb              = "$($d0.summary_pas2js_app_pwb)"
+    summary_pas2js_target               = "$($d0.summary_pas2js_target)"
+    build_interrupt_outcome             = "$($d0.build_interrupt_outcome)"
+    build_interrupt_exit                = "$($d0.build_interrupt_exit)"
+    build_race_run_exit                 = "$($d0.build_race_run_exit)"
+    build_race_build_exit               = "$($d0.build_race_build_exit)"
+    build_replace_while_running         = "$($d0.build_replace_while_running)"
+    long_path_rule                      = "$($d0.long_path_rule)"
+    long_path_project_chars             = "$($d0.long_path_project_chars)"
+    long_path_exit                      = "$($d0.long_path_exit)"
+    long_path_cause                     = "$($d0.long_path_cause)"
     autoclose_stop_honoured         = "$($c1.autoclose_stop_honoured)"
     doctor_platform_webview         = "$($c1.doctor_platform_webview)"
     pipeline_corpus_lines           = "$($c1.pipeline_corpus_lines)"

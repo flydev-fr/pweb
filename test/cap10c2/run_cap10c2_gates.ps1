@@ -20,6 +20,14 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..')).Path
 Set-Location $repoRoot
 
+# CAP-10D0: the ONE pwsh argument-quoting helper, dot-sourced rather than
+# reimplemented. `Start-Process -ArgumentList <array>` joins the array with
+# single spaces and quotes nothing, so a path carrying a space splits into
+# two arguments and `--project` takes half of it. Start-PWebProcess quotes
+# by the C runtime's rules - the same ones PWebCliWindowsCommandLine
+# implements and the CAP-10C0 golden table proves on four targets.
+. (Join-Path $repoRoot 'test/cap10d0/psargs.ps1')
+
 $exeSuffix = if ($IsWindows) { '.exe' } else { '' }
 $work = Join-Path $repoRoot 'build/cap10c2'
 New-Item -ItemType Directory -Force $work | Out-Null
@@ -240,7 +248,7 @@ if ($devExe.Count -eq 1) {
     }
     $so = Join-Path $work 'dev9-stdout.txt'
     $se = Join-Path $work 'dev9-stderr.txt'
-    $p = Start-Process -FilePath $devExe[0].FullName -Wait -PassThru `
+    $p = Start-PWebProcess -FilePath $devExe[0].FullName -Wait -PassThru `
         -NoNewWindow -WorkingDirectory $probeDir `
         -RedirectStandardOutput $so -RedirectStandardError $se
     $devErr = [System.IO.File]::ReadAllText($se)
@@ -261,7 +269,7 @@ if ($devExe.Count -eq 1) {
 function RunCli([string[]]$CliArgs, [string]$WorkDir) {
     $so = Join-Path $work 'cli-stdout.txt'
     $se = Join-Path $work 'cli-stderr.txt'
-    $p = Start-Process -FilePath $pweb -ArgumentList $CliArgs -Wait -PassThru `
+    $p = Start-PWebProcess -FilePath $pweb -ArgumentList $CliArgs -Wait -PassThru `
         -NoNewWindow -WorkingDirectory $WorkDir `
         -RedirectStandardOutput $so -RedirectStandardError $se
     return [pscustomobject]@{
@@ -278,7 +286,10 @@ foreach ($case in @(
         @{ Args = @('dev', '--json');                           Code = 2; Cause = 'option_not_for_command' },
         @{ Args = @('dev', 'extra');                            Code = 2; Cause = 'extra_positional' },
         @{ Args = @('dev', '--verbose');                        Code = 2; Cause = 'option_not_for_command' },
-        @{ Args = @('build');                                   Code = 2; Cause = 'unknown_command' })) {
+        # CAP-10D0 made `build` a command, so this row's subject moved to a
+        # name no shard will ratify: the claim is a CLOSED command set, and
+        # it outlives the command that used to demonstrate it
+        @{ Args = @('publish');                                 Code = 2; Cause = 'unknown_command' })) {
     $r = RunCli $case.Args $cwd
     $ok = ($r.Code -eq $case.Code) -and ($r.Err.Contains($case.Cause))
     if (-not $ok) {
@@ -296,10 +307,17 @@ Require ($devHelp.Out.Contains('pas2js')) 'DEV12: dev --help does not name pas2j
 Require (-not $devHelp.Out.Contains([char]27)) 'DEV12: dev --help emitted ANSI'
 $mainHelp = RunCli @('--help') $cwd
 Require ($mainHelp.Out.Contains('pweb dev ')) '--help does not advertise dev'
-Require (-not $mainHelp.Out.Contains('pweb build')) '--help advertises build'
+# CAP-10D0 INVERTED this line rather than removing it: `build` is advertised
+# now, and a shard that quietly stopped advertising it would go red here
+Require ($mainHelp.Out.Contains('pweb build')) '--help does not advertise build'
+Require (-not $mainHelp.Out.Contains('pweb publish')) '--help advertises publish'
 Row 'dev_option_matrix' $(if ($surface) { 'PASS' } else { 'FAIL' })
-Row 'advertised_commands_c2' 'create,doctor,run,dev'
-Row 'build_still_unknown' (Bool $surface)
+Row 'advertised_commands_c2' 'create,doctor,run,dev,build'
+# INVERTED, not deleted, exactly as pipeline_units_linked was at CAP-10C2 and
+# dev11_pas2js_supported at CAP-10C3: the row asked whether `build` was
+# unknown, and CAP-10D0 makes the answer no, so it asks whether it is
+# AVAILABLE and the surface matrix is still what answers it
+Row 'build_available' (Bool $surface)
 
 # --- 5b. the two projects this gate drives, SCAFFOLDED BY THE REAL CLI ------
 # NOT borrowed from another shard's stage. A development loop is a claim
@@ -424,7 +442,7 @@ if (Test-Path -LiteralPath $react) {
     if (Test-Path -LiteralPath $helper) { $drvArgs += @('--helper', $helper) }
     $drvOut = Join-Path $work 'devdrv-stdout.txt'
     $drvErr = Join-Path $work 'devdrv-stderr.txt'
-    $p = Start-Process -FilePath $driver -ArgumentList $drvArgs -Wait -PassThru `
+    $p = Start-PWebProcess -FilePath $driver -ArgumentList $drvArgs -Wait -PassThru `
         -NoNewWindow -WorkingDirectory $cwd `
         -RedirectStandardOutput $drvOut -RedirectStandardError $drvErr
     Write-Host "[CAP-10C2] the driver exited $($p.ExitCode)"
@@ -608,7 +626,7 @@ if (Test-Path -LiteralPath $react) {
     # is therefore `none` - which is the DEV14 claim.
     $so2 = Join-Path $work 'dev14-stdout.txt'
     $se2 = Join-Path $work 'dev14-stderr.txt'
-    $p2 = Start-Process -FilePath $pweb `
+    $p2 = Start-PWebProcess -FilePath $pweb `
         -ArgumentList @('dev', '--project', $react) -PassThru `
         -NoNewWindow -WorkingDirectory $cwd `
         -RedirectStandardOutput $so2 -RedirectStandardError $se2
@@ -703,7 +721,7 @@ if (Test-Path -LiteralPath $react) {
         if (Test-Path -LiteralPath $helper) { $kargs += @('--helper', $helper) }
         $ko = Join-Path $work "devdrv-$($kill.scenario)-stdout.txt"
         $ke = Join-Path $work "devdrv-$($kill.scenario)-stderr.txt"
-        $kp = Start-Process -FilePath $driver -ArgumentList $kargs -Wait -PassThru `
+        $kp = Start-PWebProcess -FilePath $driver -ArgumentList $kargs -Wait -PassThru `
             -NoNewWindow -WorkingDirectory $cwd `
             -RedirectStandardOutput $ko -RedirectStandardError $ke
         Write-Host "[CAP-10C2] the $($kill.scenario) driver exited $($kp.ExitCode)"

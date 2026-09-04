@@ -22,7 +22,7 @@ only one of them is compiled to JavaScript.
     frontend/app.css          the stylesheet
     frontend/pas2js.cfg       the frontend compile options
     frontend/src/             the Pas2JS sources
-    dist/                     build output, created by a build
+    dist/                     build output, created by `pweb build`
 
 The native half of this project is the same as a React PWeb project's: the
 same entry point, the same service, the same capability policy, the same
@@ -80,11 +80,35 @@ whole application.
 frontend is exactly four files: `index.html`, `assets/app.js`,
 `assets/boot.js` and `assets/app.css`.
 
+## The five commands
+
+The `pweb` command owns the whole lifecycle of this project, and these five
+are all of it:
+
+    pweb create    wrote this tree. Offline: no compiler, no package
+                   manager, no network connection, no repository.
+    pweb doctor    tells you whether this machine can build and run it,
+                   with a row per requirement and a reason per refusal.
+    pweb build     builds it for THIS machine and leaves
+                   dist/<os>-<arch>/release/. Every stage runs on every
+                   build, so there is no incremental mode and nothing to
+                   clean. NO stage reaches the network: a Pas2JS build is
+                   entirely offline.
+    pweb dev       builds it, launches it, watches the frontend sources,
+                   and on every completed rebuild reloads the running
+                   window WITHOUT restarting the application.
+    pweb run       launches what `pweb build` produced. It builds nothing,
+                   and it answers `not_built` if you have not built yet.
+
+`pweb dev` watches the frontend only. A change under `src/` — the native
+half — is picked up by the next `pweb build`, or by restarting `pweb dev`.
+
 ## What creation did not do
 
 Creating this project wrote source files and nothing else. It ran no
 compiler, no package manager, opened no network connection, and initialised
-no repository. Those are separate, deliberate steps.
+no repository. Those are separate steps, and `pweb build` and `pweb dev` are
+the commands that take them.
 
 There is nothing to install. This project has no `package.json`, no
 lockfile and no `node_modules`, and it needs neither Node.js nor npm: its
