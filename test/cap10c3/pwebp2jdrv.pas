@@ -111,6 +111,12 @@ const
   // consistency rule is exercised rather than merely available
   DRIVER_MOVE_MS = 9000;
   DRIVER_MOVE_GAP_MS = 40;
+  /// how long a whole-file replacement may keep losing to a reader that has
+  // not let go yet, and how often it tries again
+  // - see WriteWhole. Small enough that it cannot hide a file this driver
+  // genuinely cannot write, and larger than a compiler's read of one source
+  DRIVER_WRITE_RETRY_MS = 2000;
+  DRIVER_WRITE_RETRY_GAP_MS = 20;
   /// PD6: how many edits the burst writes and how long it leaves between
   // them, and how long the loop must then go without publishing before the
   // burst counts as settled
@@ -336,11 +342,37 @@ end;
 // the ONE way this driver edits a project file: it is replaced whole, and
 // only ever with bytes derived from what was read at start - so a failed run
 // can put the project back exactly as it found it
+//
+// IT RETRIES, and the retry is the point rather than a workaround. PD7
+// rewrites the input set roughly twenty-five times a second WHILE a build is
+// in flight, which means this delete-then-create races the PAS2JS COMPILER
+// reading the very file it is rewriting. On Windows a third-party reader
+// that opened the source without FILE_SHARE_DELETE makes the delete fail,
+// and a delete that DID succeed against a reader holding the handle leaves
+// the name delete-pending, where CREATE_NEW answers access-denied until the
+// last handle closes. Neither is a fact about the development loop - it is
+// the operating system's momentary answer about a compiler this repository
+// does not own - so a driver that reported it as a failure would be
+// reporting the compiler's file handle as a defect in `pweb dev`. MEASURED:
+// the hosted Windows leg of 2026-09-04 failed PD6/PD7 with
+// `move_write_failed` on the first such collision after this scenario had
+// run green on every previous Windows run. The budget is bounded and small
+// on purpose: it absorbs a handle that is closing, never a file that is
+// genuinely unwritable, and a write that never lands still fails the leg.
 function WriteWhole(const Path: RawUtf8;
   const Content: RawByteString): Boolean;
+var
+  waited: Integer;
 begin
-  PWebCliDeleteFile(Path);
-  Result := PWebCliWriteNewFile(Path, Content, {SetExecBit=}False);
+  waited := 0;
+  repeat
+    PWebCliDeleteFile(Path);
+    Result := PWebCliWriteNewFile(Path, Content, {SetExecBit=}False);
+    if Result or (waited >= DRIVER_WRITE_RETRY_MS) then
+      exit;
+    SleepHiRes(DRIVER_WRITE_RETRY_GAP_MS);
+    Inc(waited, DRIVER_WRITE_RETRY_GAP_MS);
+  until False;
 end;
 
 function Summed(N: Integer): RawByteString;

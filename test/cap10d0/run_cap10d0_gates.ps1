@@ -224,9 +224,21 @@ foreach ($case in @(
         @{ Args = @('build', '--with-paths');                     Cause = 'option_not_for_command' },
         @{ Args = @('build', '--ui', 'react');                    Cause = 'option_not_for_command' },
         @{ Args = @('build', 'extra');                            Cause = 'extra_positional' },
-        # the four options a reader of another build tool reaches for first,
-        # and every one of them is an option this grammar does not have
-        @{ Args = @('build', '--profile', 'offline');             Cause = 'unknown_option' },
+        # the options a reader of another build tool reaches for first, and
+        # every one of them is an option this grammar does not have.
+        # SUPERSEDED BY CAP-10D1: `--profile` left this list because D1 is the
+        # shard that ratified its semantics, and an option whose semantics are
+        # ratified is no longer an absence this gate can assert. It does not
+        # simply vanish from the matrix: the three legs below hold it to the
+        # SAME grammar every other build option obeys, so what B9 measures is
+        # still "the public surface refuses everything it has not ratified",
+        # not "the surface got one option shorter". Whether the profile that
+        # was named can be built HERE is a different answer with a different
+        # typed cause (`profile_not_for_target`), and it belongs to the D1
+        # gate, not to this one.
+        @{ Args = @('build', '--profile');                        Cause = 'missing_value' },
+        @{ Args = @('build', '--profile=');                       Cause = 'empty_value' },
+        @{ Args = @('run', '--profile', 'offline');               Cause = 'option_not_for_command' },
         @{ Args = @('build', '--target', 'linux-x86_64');         Cause = 'unknown_option' },
         @{ Args = @('build', '--clean');                          Cause = 'unknown_option' },
         @{ Args = @('build', '--watch');                          Cause = 'unknown_option' },
