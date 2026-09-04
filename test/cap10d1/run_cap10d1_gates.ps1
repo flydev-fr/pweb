@@ -373,6 +373,56 @@ foreach ($profile in $profiles) {
     Require ($logical -match ("dist/$([regex]::Escape($target))/artifacts/" +
              [regex]::Escape($profile) + '/')) `
         "$profile`: the summary artifact path is '$logical'"
+    # W2/W3 THE PAYLOAD PROOF, from the compiler's own listing. The CAP-6b1
+    # assertion applied to a generated application: ISCC's `Compressing:`
+    # lines are authoritative evidence of what it actually embedded, and they
+    # reach this gate because the packaging driver forwards every child line
+    # through the same sink the pipeline's stages use. An index that named
+    # the right artifact would say nothing about what is INSIDE it.
+    if ($IsWindows) {
+        $embedded = SortOrdinal @(($r.Out -split "`n") |
+            Where-Object { $_ -match 'Compressing: ' } |
+            ForEach-Object {
+                (($_ -replace '^.*Compressing: ', '') -replace
+                    '\s+\([^)]*\)\s*$', '').Trim()
+            } | ForEach-Object { Split-Path -Leaf $_ } | Sort-Object -Unique)
+        Row "windows_${profile}_payload" ($embedded -join ',')
+        $want = switch ($profile) {
+            'normal'  { @('MicrosoftEdgeWebview2Setup.exe', 'app.pwb',
+                          'demopack.exe', 'pwebwv2prov.exe', 'webview.dll') }
+            'offline' { @('MicrosoftEdgeWebView2RuntimeInstallerX64.exe',
+                          'app.pwb', 'demopack.exe', 'pwebwv2prov.exe',
+                          'webview.dll') }
+            default   { @('WebView2Loader.dll', 'app.pwb', 'demopack.exe',
+                          'pwebwv2fixed.exe', 'webview.dll') }
+        }
+        $want = SortOrdinal $want
+        if ($profile -eq 'fixed-runtime') {
+            # the runtime TREE is hundreds of files; the assertion is that
+            # every ratified name is present and that no OTHER profile's
+            # provisioning installer is, rather than an exact set
+            foreach ($n in $want) {
+                Require ($embedded -ccontains $n) `
+                    "$profile`: $n is not in the embedded payload"
+            }
+            foreach ($n in 'MicrosoftEdgeWebview2Setup.exe',
+                           'MicrosoftEdgeWebView2RuntimeInstallerX64.exe') {
+                Require (-not ($embedded -ccontains $n)) `
+                    "$profile`: the Evergreen installer $n is embedded"
+            }
+        } else {
+            Require (($embedded -join ',') -ceq ($want -join ',')) `
+                ("$profile`: the embedded payload is [" +
+                 ($embedded -join ', ') + ']')
+        }
+        # no loose frontend file, ever - in any profile
+        $loose = @($embedded | Where-Object {
+            $_ -match '\.(html|css|map|json)$' })
+        Require ($loose.Count -eq 0) `
+            "$profile`: loose frontend file(s) embedded: $($loose -join ', ')"
+    } else {
+        Row "windows_${profile}_payload" 'not_applicable'
+    }
     # W8 / the release is the INPUT and must not move
     $after = InventoryOf (ReleaseDirOf $projA)
     Require ($after.Text -ceq $releaseBefore.Text) `
@@ -385,6 +435,13 @@ foreach ($profile in $profiles) {
     }
 }
 Row 'release_untouched_by_packaging' 'true'
+if (-not $IsWindows) {
+    # every row the Windows loop sets, typed here so a target that stopped
+    # emitting one is a required-field failure rather than a silence
+    foreach ($p in 'normal', 'offline', 'fixed-runtime') {
+        Row "windows_${p}_payload" 'not_applicable'
+    }
+}
 Row 'windows_offline_built' $(
     if ($IsWindows) { Bool ($artifacts.Contains('offline')) } else { 'not_applicable' })
 Row 'windows_fixed_built' $(

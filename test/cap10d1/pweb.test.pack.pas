@@ -81,6 +81,7 @@ type
     procedure TheIdentityRulesAreDeterministic;
     procedure AMetacharacterIsRefusedNeverEscaped;
     procedure TwoBundleIdsNeverCollide;
+    procedure AStagingPathMetacharacterIsRefused;
     procedure ThePinnedTableCarriesNoUrl;
   end;
 
@@ -417,6 +418,35 @@ begin
   CheckEqual(a.MarkerKey, b.MarkerKey, 'and the same marker');
   Record_('identity|collision_free|true');
   Record_('identity|self_replacing|true');
+end;
+
+{ A PATH THIS CLI BUILT is checked like a descriptor value, because a
+  DEVELOPER controls it. A Windows path may legally carry an Inno
+  constant opener, and a define expanded into a [Files] Source would
+  then put a CONSTANT where a directory name belongs. The separator and
+  the drive colon are allowed - a path needs both - and the four bytes an
+  Inno directive reads as syntax are not. Found by this shard's own
+  adversarial review, before it shipped. }
+procedure TTestPWebPackPure.AStagingPathMetacharacterIsRefused;
+begin
+  Check(PWebCliPackStagingPathAcceptable('C:\Users\dev\proj'),
+    'an ordinary Windows path');
+  Check(PWebCliPackStagingPathAcceptable('/home/dev/proj'),
+    'an ordinary POSIX path');
+  Check(PWebCliPackStagingPathAcceptable('C:\Users\dev one\proj'),
+    'a path carrying a space');
+  Check(not PWebCliPackStagingPathAcceptable('C:\my{dir}\proj'),
+    'an Inno constant opener is refused');
+  Check(not PWebCliPackStagingPathAcceptable('C:\my}dir\proj'),
+    'and its closer');
+  Check(not PWebCliPackStagingPathAcceptable('C:\my"dir\proj'),
+    'a quote would end a define value');
+  Check(not PWebCliPackStagingPathAcceptable('C:\my;dir\proj'),
+    'a semicolon would start a comment');
+  Check(not PWebCliPackStagingPathAcceptable('C:\my' + #13 + 'dir'),
+    'a control byte would end a directive');
+  Check(not PWebCliPackStagingPathAcceptable(''), 'and an empty path');
+  Record_('identity|staging_path_refused|brace,quote,semicolon,control');
 end;
 
 { THE PINNED TABLE, and the one thing it must never contain. A build path

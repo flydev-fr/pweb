@@ -228,6 +228,12 @@ type
 /// fixed diagnostic text - the machine authority, never localized prose
 function PWebCliPackRefusalText(Refusal: TPWebCliPackRefusal): RawUtf8;
 
+/// True when a PATH this CLI built may be handed to ISCC as a define value
+// - the separator and the drive colon are allowed, because a path needs
+// both; the four bytes an Inno directive reads as syntax, and every control
+// byte, are not
+function PWebCliPackStagingPathAcceptable(const Path: RawUtf8): Boolean;
+
 /// derive every platform identifier from ONE descriptor
 // - a pure function: no filesystem, no environment, no host state, so the
 // same descriptor derives the same identity on every target
@@ -405,6 +411,32 @@ begin
       if Value[i] = PWEB_PACK_FORBIDDEN[j] then
         exit;
   end;
+  Result := True;
+end;
+
+// A PATH THIS CLI BUILT is not a descriptor value, and it is checked all the
+// same. PWEB_PAYLOAD_DIR and PWEB_RUNTIME_DIR are absolute paths under the
+// project root, which a DEVELOPER controls: `C:\my{dir}\proj` is a perfectly
+// legal Windows path, and `{#PWEB_PAYLOAD_DIR}` expanded into a [Files]
+// Source would put `{dir}` where Inno reads a CONSTANT. So the separator and
+// the drive colon are allowed here - a path needs both - and the four bytes
+// an Inno directive reads as syntax are not. REFUSED, never escaped, for the
+// same reason a descriptor value is: a path that quietly became a different
+// path is an installer that embeds something else.
+function PWebCliPackStagingPathAcceptable(const Path: RawUtf8): Boolean;
+var
+  i: PtrInt;
+begin
+  Result := False;
+  if Path = '' then
+    exit;
+  for i := 1 to Length(Path) do
+    if (Path[i] < ' ') or
+       (Path[i] = '{') or
+       (Path[i] = '}') or
+       (Path[i] = '"') or
+       (Path[i] = ';') then
+      exit;
   Result := True;
 end;
 
@@ -730,6 +762,15 @@ begin
   if not DeriveIdentity(Project, Os, Profile, id, refusal, detail) then
   begin
     Result := Fail(refusal, detail);
+    exit;
+  end;
+  // the paths this run will hand ISCC are built under the project root, so
+  // the root itself is checked HERE - before the pipeline, like every other
+  // preflight refusal, and on every target so the rule is not a Windows
+  // special case a POSIX reader has to discover
+  if not PWebCliPackStagingPathAcceptable(PWebCliDisplayPath(Project.Root)) then
+  begin
+    Result := Fail(pkrIdentityRefused, 'project_path');
     exit;
   end;
   if not ResolveKit(Os, kit, refusal, detail) then
@@ -1099,6 +1140,18 @@ var
     cmd.Exe := kit.Iscc;
     cmd.WorkDir := kit.SetupDir;
     Define(cmd, 'PWEB_PAYLOAD_DIR', PWebCliArgPath(payloadDir));
+    // the second half of the staging-path rule, at the point of use: the
+    // preflight checked the project ROOT, and these are the paths actually
+    // handed to the compiler
+    if not PWebCliPackStagingPathAcceptable(PWebCliArgPath(payloadDir)) or
+       not PWebCliPackStagingPathAcceptable(PWebCliArgPath(outDir)) or
+       ((Profile = ppfFixedRuntime) and
+        not PWebCliPackStagingPathAcceptable(PWebCliArgPath(runtimeDir))) then
+    begin
+      Fail(pkrIdentityRefused, 'staging_path');
+      cmd := Default(TPWebCliCommand);
+      exit;
+    end;
     Define(cmd, 'PWEB_APP_ID', id.AppId);
     Define(cmd, 'PWEB_APP_NAME', id.AppName);
     Define(cmd, 'PWEB_APP_VERSION', id.AppVersion);
