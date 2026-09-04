@@ -2214,14 +2214,22 @@ jobs:
       # second thing to keep in step. The copy is the identical tree at a
       # different name, which is the whole of what is under test.
       #
-      # SCOPE, stated rather than implied: the CAP-10A, B0, B1, B2, C0, C1
-      # and D0 gate chains run there. The two development-loop gates
-      # (CAP-10C2, CAP-10C3) do not: each is a 70-minute display-bound run
-      # of a live application, and running them twice would double this
-      # job. Their eleven Start-PWebProcess call sites go through the same
-      # helper, which check_cap10d0_contracts.ps1 proves at the source on
-      # every leg of every job and the CAP-10D0 gate proves at runtime with
-      # spaced project paths on all four targets.
+      # SCOPE, stated rather than implied. The CAP-10A, B0, B1, B2, C0, C1
+      # and D0 gate chains run there. Three things do not:
+      #
+      #   - the two development-loop gates (CAP-10C2, CAP-10C3), because
+      #     each is a 70-minute display-bound run of a live application and
+      #     running them twice would double this job;
+      #   - check_cap10b0_contracts.ps1 and check_cap10b1_contracts.ps1,
+      #     because both ask `git ls-files` whether the template corpus is
+      #     tracked and this copy is not a git checkout - they would report
+      #     a fact about git rather than about the path.
+      #
+      # None of the five spawns anything, or spawns only through the same
+      # helper, so none of them exercises quoting this leg does not.
+      # check_cap10d0_contracts.ps1 proves the helper's adoption at the
+      # source on every leg of every job, and the CAP-10D0 gate proves it at
+      # runtime with spaced project paths on all four targets.
       - name: CAP-10D0 L2b - the CAP-10 chain at a repository path with a space
         shell: pwsh
         timeout-minutes: 120
@@ -2273,9 +2281,16 @@ jobs:
                 'test/cap10d0/build_cap10d0.ps1',
                 'test/cap10a/check_cap10a_contracts.ps1',
                 'test/cap10a/run_cap10a_gates.ps1',
-                'test/cap10b0/check_cap10b0_contracts.ps1',
+                # NOT check_cap10b0_contracts.ps1 and NOT
+                # check_cap10b1_contracts.ps1. MEASURED: both ask `git
+                # ls-files` whether the template corpus is tracked, and this
+                # copy is deliberately not a git checkout - so all 35
+                # template files read as untracked and the check reports a
+                # fact about git rather than about the path. They spawn
+                # nothing, so they exercise no quoting at all; the job's own
+                # run of them, in the real checkout, is where that claim
+                # belongs.
                 'test/cap10b0/run_cap10b0_gates.ps1',
-                'test/cap10b1/check_cap10b1_contracts.ps1',
                 'test/cap10b1/run_cap10b1_gates.ps1',
                 'test/cap10b2/check_cap10b2_contracts.ps1',
                 'test/cap10b2/run_cap10b2_gates.ps1',
