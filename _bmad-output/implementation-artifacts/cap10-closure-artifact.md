@@ -89,7 +89,7 @@ Re-measured **unchanged** by CAP-10D2 and required so: `build_digest`,
 
 ## 4. The phase-wide ledger, disposed
 
-163 entries across eleven shards, every one with exactly one judgement from
+165 entries across eleven shards, every one with exactly one judgement from
 the closed set `RESOLVED | RECORDED-ONLY | CAP-11 | CAP-12 | CAP-13 | LATER`.
 `test/cap10d2/check_cap10_ledger.ps1` re-derives every key and every digest
 from `deferred-work.md` on every CI leg, so an entry ADDED, REMOVED or
@@ -268,6 +268,8 @@ reason.
 | D2-11 | 58acec74 | RESOLVED | the CAP-11 handoff, written; it is section 6 of this artifact |
 | D2-12 | eb03bf0d | RESOLVED | the SDK root could not be resolved from a non-ASCII path on Windows, because the RTL hands ParamStr(0) to a process through an ANSI conversion. PWebCliImageDir asks the kernel instead - GetModuleFileNameW - and the clean-machine leg that found it now passes at that very path |
 | D2-13 | c3483e49 | LATER | the frozen CAP-6 bundler reads its argv through the same ANSI conversion, so a PROJECT at a non-ASCII path fails at the pack stage with a message about a directory that is plainly there. Closing it is either CAP-6 surface (a UTF-16 argv in pwebbundle) or a new exit-3 cause at the open stage the way CAP-10D1 refuses project_root_too_long; neither is additive to this shard, both routes are named in the entry, and the clean-machine leg keeps the non-ASCII where the brief asks for it - the extracted SDK root |
+| D2-14 | 2fa8354b | RESOLVED | an SDK installed under a directory whose name has a space could not LINK on macOS: FPC re-splits its `-k` pass-through values on whitespace, and pweb.cli.native puts two SDK paths through `-k` there. PWebCliLinkPath applies FPC's own `maybequoted` rule to them, conditionally, so no argument vector CAP-10C1 pinned moves and the CAP-10C1 suite is unchanged |
+| D2-15 | dd9d4690 | RESOLVED | a clean-machine doctor assertion must be the PIPELINE's rule and not the doctor's overall status: `platform.webview` answers `framework_absent` on hosted macOS by ratified measurement (C1-15), and CM1 now requires that no OTHER required row failed |
 
 ## 5. Known limitations of the phase, stated
 
@@ -381,6 +383,6 @@ three platform adapters, and every dependency pin.
 ## Verdict
 
 **CAP-10 CLOSED.** Five public commands, one public option, eleven hosted
-green runs, 163 ledger entries disposed with 0 orphans, seven SPEC acceptance
+green runs, 165 ledger entries disposed with 0 orphans, seven SPEC acceptance
 clauses met and one ratified deviation named, and a distribution a machine
 that never built this repository can extract and use.

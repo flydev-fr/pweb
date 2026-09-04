@@ -167,6 +167,16 @@ procedure PWebCliSortBytewise(var Names: TRawUtf8DynArray);
 // - identity on POSIX, which has no such form
 function PWebCliArgPath(const Path: RawUtf8): RawUtf8;
 
+/// the form of a path that is handed to the LINKER through one of FPC's
+/// `-k` pass-through arguments (CAP-10D2)
+// - `-k` values are accumulated into ONE options string and re-split on
+// whitespace, so a path carrying a space arrives at `ld` as two arguments.
+// FPC quotes the paths it owns - `maybequoted`, for every `-Fl` directory -
+// and this applies the identical rule to the ones it does not
+// - IDENTITY for a path with no space, so not one argument vector CAP-10C1
+// pinned moves
+function PWebCliLinkPath(const Path: RawUtf8): RawUtf8;
+
 /// replace every absolute prefix by its logical token, and both path
 /// separators by '/'
 // - Prefixes are tried in the order given, so a caller lists the longest
@@ -301,6 +311,37 @@ end;
 function PWebCliArgPath(const Path: RawUtf8): RawUtf8;
 begin
   Result := PWebCliDisplayPath(Path);
+end;
+
+function PWebCliLinkPath(const Path: RawUtf8): RawUtf8;
+var
+  i: PtrInt;
+begin
+  // FPC's OWN rule, applied to the paths FPC does not own. `maybequoted` is
+  // what the compiler uses when it writes its `-Fl` directories onto the
+  // linker's command line: quote iff the value needs it. A `-k` value gets
+  // none of that - it is concatenated into one options string and re-split
+  // on whitespace - so a path with a space becomes two linker arguments.
+  //
+  // MEASURED on a hosted macOS runner (CAP-10D2): an SDK extracted into
+  // `/Users/.../étude sdk/` produced
+  //   ld: warning: search path '/Users/runner/work/_temp/étude' not found
+  //   ld: ... file cannot be open()ed ... path=sdk/pweb-sdk-.../macos-arm64
+  // and the whole link failed. The non-ASCII character is incidental; the
+  // SPACE is the defect.
+  //
+  // CONDITIONAL on purpose. A path without a space comes back byte-for-byte
+  // unchanged, so every argument vector CAP-10C1 pinned - all of which are
+  // built over unspaced fixture roots - is untouched, and the only vectors
+  // that move are the ones that could not have worked.
+  Result := Path;
+  for i := 1 to Length(Path) do
+    if (Path[i] = ' ') or
+       (Path[i] = #9) then
+    begin
+      Result := '"' + Path + '"';
+      exit;
+    end;
 end;
 
 // replace every occurrence of From by ToText, without a regex and without

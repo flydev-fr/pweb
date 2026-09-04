@@ -221,9 +221,17 @@ begin
         Push(args, '-Fl' + PWebCliArgPath(Sdk.PlatformLib));
         Push(args, '-k-rpath');
         Push(args, '-k@executable_path');
-        Push(args, '-k-L' + PWebCliArgPath(Sdk.PlatformLib));
+        // THE TWO ARGUMENTS THAT CARRY A PATH THROUGH `-k` ARE QUOTED THE
+        // WAY FPC QUOTES ITS OWN (CAP-10D2). `-k` values are concatenated
+        // into one options string and re-split on whitespace, so an SDK
+        // installed under a directory whose name has a space arrived at
+        // `ld` as two arguments and the link failed - measured on a hosted
+        // macOS runner against a real extracted distribution. The quoting
+        // is CONDITIONAL, so an unspaced path produces the identical vector
+        // it always did.
+        Push(args, '-k-L' + PWebCliLinkPath(PWebCliArgPath(Sdk.PlatformLib)));
         Push(args, '-k-lwebview');
-        Push(args, '-k' + PWebCliArgPath(Sdk.MacosBridge));
+        Push(args, '-k' + PWebCliLinkPath(PWebCliArgPath(Sdk.MacosBridge)));
         Push(args, '-k-framework');
         Push(args, '-kCocoa');
         Push(args, '-k-framework');

@@ -32,6 +32,7 @@ type
   TPWebD2Tests = class(TSynTests)
   published
     procedure TheCanonicalJsonRule;
+    procedure TheLinkPathRule;
     procedure TheDistributionManifest;
     procedure TheIntegrityVerifier;
   end;
@@ -39,6 +40,11 @@ type
 procedure TPWebD2Tests.TheCanonicalJsonRule;
 begin
   AddCase([TTestPWebSdkCanonical]);
+end;
+
+procedure TPWebD2Tests.TheLinkPathRule;
+begin
+  AddCase([TTestPWebSdkLinkPath]);
 end;
 
 procedure TPWebD2Tests.TheDistributionManifest;

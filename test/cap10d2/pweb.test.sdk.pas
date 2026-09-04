@@ -62,6 +62,10 @@ uses
   pweb.cli.toolchain,
   pweb.cli.sdk,
   pweb.cli.stage,
+  pweb.cli.project,
+  pweb.cli.run,
+  pweb.cli.sdkroot,
+  pweb.cli.native,
   pweb.cli.sdkmanifest;
 
 type
@@ -72,6 +76,13 @@ type
     procedure TheRuleRefusesRatherThanRepairs;
     procedure CanonicalIsIdempotent;
     procedure TheTypeScriptReEmitterUsesTheSameRule;
+  end;
+
+  TTestPWebSdkLinkPath = class(TSynTestCase)
+  published
+    procedure APathWithNoSpaceIsUnchanged;
+    procedure APathWithASpaceIsQuotedLikeFpcQuotesItsOwn;
+    procedure TheMacosLinkVectorCarriesTheQuotedForm;
   end;
 
   TTestPWebSdkManifest = class(TSynTestCase)
@@ -360,6 +371,95 @@ begin
   Check(not PWebCliSdkManifest(dev, canonical, refusal),
     'a lone surrogate is refused by the re-emitter');
   Record_('c1_11_c_reemitter_refuses_undecodable|true');
+end;
+
+
+{ ---------------------------------------------------------------------------
+  LINK PATH - the `-k` quoting rule, measured on four targets
+
+  It is a PURE FUNCTION and a pure argument-vector question, which is what
+  lets a Windows or a Linux runner assert what an `ld` on macOS will be
+  handed - the same property the CAP-10C1 plan builders already have, and
+  the reason the whole four-target command matrix is assertable from any
+  single target.
+  --------------------------------------------------------------------------- }
+
+procedure TTestPWebSdkLinkPath.APathWithNoSpaceIsUnchanged;
+
+  procedure Same(const Path: RawUtf8);
+  begin
+    CheckEqual(PWebCliLinkPath(Path), Path, 'identity for ' + string(Path));
+  end;
+
+begin
+  // IDENTITY, and it is the half that matters most: every argument vector
+  // CAP-10C1 pinned is built over an unspaced fixture root, so none of them
+  // may move
+  Same('');
+  Same('/opt/pweb/share/pweb/lib/linux-x86_64');
+  Same('/Users/runner/work/pweb/build/cap10b1/sdk/share/pweb/lib/macos-arm64');
+  Same('C:\pweb\share\pweb\lib\windows-x86_64');
+  Same('/opt/' + #$C3 + #$A9 + 'tude/lib');   // non-ASCII is NOT a space
+  Same('/opt/pweb-1.0/lib');
+  Record_('linkpath_identity|6');
+end;
+
+procedure TTestPWebSdkLinkPath.APathWithASpaceIsQuotedLikeFpcQuotesItsOwn;
+begin
+  CheckEqual(PWebCliLinkPath('/Users/me/' + #$C3 + #$A9 + 'tude sdk/lib'),
+    '"/Users/me/' + #$C3 + #$A9 + 'tude sdk/lib"', 'a space earns quotes');
+  CheckEqual(PWebCliLinkPath('/a b'), '"/a b"');
+  CheckEqual(PWebCliLinkPath(' leading'), '" leading"');
+  CheckEqual(PWebCliLinkPath('trailing '), '"trailing "');
+  CheckEqual(PWebCliLinkPath('tab' + #9 + 'sep'), '"tab' + #9 + 'sep"');
+  Record_('linkpath_quoted|5');
+end;
+
+procedure TTestPWebSdkLinkPath.TheMacosLinkVectorCarriesTheQuotedForm;
+var
+  project: TPWebCliProject;
+  sdk: TPWebSdkLayout;
+  cmd: TPWebCliCommand;
+  i: PtrInt;
+  seenL, seenBridge: Boolean;
+begin
+  // the REAL plan builder, over a synthetic SDK layout at a spaced root:
+  // this is the vector `ld` would have been handed, asserted here rather
+  // than discovered on a runner
+  project := Default(TPWebCliProject);
+  project.Root := '/tmp/proj';
+  sdk := Default(TPWebSdkLayout);
+  sdk.Target := 'macos-arm64';
+  sdk.SourceRoot := '/opt/' + #$C3 + #$A9 + 'tude sdk/share/pweb/src';
+  SetLength(sdk.UnitDirs, 1);
+  sdk.UnitDirs[0] := '/opt/' + #$C3 + #$A9 + 'tude sdk/share/pweb/src/lib';
+  sdk.MormotSource := '/opt/' + #$C3 + #$A9 + 'tude sdk/share/pweb/deps/mormot2/src';
+  sdk.MormotStatic := '/opt/' + #$C3 + #$A9 + 'tude sdk/share/pweb/deps/mormot2/static/aarch64-darwin';
+  sdk.PlatformLib := '/opt/' + #$C3 + #$A9 + 'tude sdk/share/pweb/lib/macos-arm64';
+  sdk.MacosBridge := '/opt/' + #$C3 + #$A9 + 'tude sdk/share/pweb/lib/macos-arm64/pweb_cocoa_bridge.o';
+  cmd := PWebCliFpcCommand('/usr/local/bin/fpc', project, sdk,
+    pcoMacos, pcaArm64, '/tmp/proj/dist/units', '/tmp/proj/dist/obj',
+    '/tmp/proj/src/demo.lpr');
+  seenL := False;
+  seenBridge := False;
+  for i := 0 to High(cmd.Args) do
+  begin
+    if cmd.Args[i] = '-k-L"/opt/' + #$C3 + #$A9 + 'tude sdk/share/pweb/lib/macos-arm64"' then
+      seenL := True;
+    if cmd.Args[i] =
+       '-k"/opt/' + #$C3 + #$A9 + 'tude sdk/share/pweb/lib/macos-arm64/pweb_cocoa_bridge.o"' then
+      seenBridge := True;
+    // and NOTHING that carries a `-k` and a bare space: that is the shape
+    // that reached ld as two arguments
+    if (Copy(cmd.Args[i], 1, 2) = '-k') and
+       (Pos(' ', cmd.Args[i]) > 0) and
+       (Pos('"', cmd.Args[i]) = 0) then
+      Check(False, 'an unquoted -k argument carries a space: ' +
+        string(cmd.Args[i]));
+  end;
+  Check(seenL, 'the macOS link vector carries the quoted -k-L');
+  Check(seenBridge, 'the macOS link vector carries the quoted bridge object');
+  Record_('linkpath_macos_vector|quoted');
 end;
 
 
