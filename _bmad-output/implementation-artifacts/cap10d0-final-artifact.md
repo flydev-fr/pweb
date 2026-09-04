@@ -114,7 +114,7 @@ grammar, or any dependency pin.
 
 | half | disposition |
 |---|---|
-| (a) the MAX_PATH form for `lpApplicationName` | measured on the hosted Windows runner with a project path past MAX_PATH; the corpus carries `long_path_rule`, `long_path_project_chars`, `long_path_exit` and `long_path_cause`, typed `not_applicable` on the three POSIX targets. Whatever the measurement says, the leg refuses an **untyped** failure — an opaque `supervision_unavailable` is the one answer the entry exists to prevent |
+| (a) the MAX_PATH form for `lpApplicationName` | **MEASURED, and it answers the opposite of what the entry feared: CAP-10D0 changes nothing.** A Pas2JS project rooted at 233 characters — so `<root>/dist/windows-x86_64/release/demolp.exe` passes MAX_PATH comfortably — builds on the hosted Windows runner and answers `long_path_exit = 5`, `long_path_cause = stage_exited`. Exit 5 is "a stage's child failed and its real status is printed"; it is **not** the untyped `supervision_unavailable` (4) an unprefixed `lpApplicationName` would have produced. PWeb's own spawn reached the tool and the tool answered nonzero, so the `\\?\` change is not what this measurement calls for and none is made. `long_path_stage` records which stage, so the owner is named rather than re-derived; re-ledgered to CAP-10D1 on that name. Typed `not_applicable` on the three POSIX targets |
 | (b) the pwsh `Start-Process` quoting hazard | **RESOLVED** — one helper, `test/cap10d0/psargs.ps1`, adopted at all 24 CAP-10 call sites in one commit, verified against the fourteen CAP-10C0 golden rows before a call site moved, and proven continuously because the CAP-10D0 gate scaffolds both projects inside a directory whose name carries a space |
 
 ### C1-11 — the six release-path observations

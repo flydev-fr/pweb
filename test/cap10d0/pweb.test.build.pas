@@ -499,7 +499,15 @@ begin
   inv := ReleaseInventory(fx, files);
   Check(Pos('exe-one', inv) = 0, 'the inventory is digests, not contents');
   CheckEqual(files, r.Files, 'the file count the assembly reported');
-  Record_('commit|fresh|ok|' + IntText(r.Files));
+  // THE COUNT IS NOT A DECISION, it is a fact about the host: a flat layout
+  // holds three files and a macOS bundle four, so a corpus line carrying it
+  // could never be equal on four targets. MEASURED: it was, and
+  // build_digest came out `96f650da` on Windows and Linux and `04cfa320` on
+  // both macOS targets. This is CAP-10C1's ledger entry C1-16 in a new
+  // costume - the decision corpus records the RULE and never the host that
+  // ran it - so the count goes to the observed file, where per-target values
+  // belong, and the corpus keeps the decision alone.
+  Record_('commit|fresh|ok');
   Observe('commit_fresh_files', IntText(files));
 end;
 

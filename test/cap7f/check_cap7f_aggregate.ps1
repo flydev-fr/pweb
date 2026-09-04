@@ -300,6 +300,13 @@ $required = @(
     'build_interrupt_clean', 'build_race_run_rpc',
     'release_path_observations_disposed',
     'd0_template_supersession_recorded', 'd0_pas2js_on_path',
+    # CAP-10D0, required PRESENT on every target and compared on none: each
+    # is a fact about the host, and a target that stopped emitting one would
+    # otherwise go unnoticed. `not_applicable` is a value; empty is not.
+    'build_replace_while_running', 'build_race_build_exit',
+    'long_path_rule', 'long_path_stage', 'long_path_project_chars',
+    'long_path_exit', 'long_path_cause',
+    'build_pas2js_sampler_members', 'build_pas2js_sampler_samples',
     'release_layout', 'no_listener', 'app_pwb_react_sha256',
     'logical_inventory_sha256_react', 'github_sha', 'github_run_id', 'waivers'
 )
@@ -930,7 +937,45 @@ $equalityFields = @(
     # and pd15_generation_lines (observations), pd7_discarded /
     # pd7_moving_writes / pd5_compile_failures (timing-shaped counts), and
     # every *_ms.
-    'dev_pas2js_digest', 'dev_pas2js_corpus_lines'
+    'dev_pas2js_digest', 'dev_pas2js_corpus_lines',
+    # CAP-10D0: the public build. Its own DECISION corpus (the exit mapping,
+    # the ten stage names, the mutation set, the replacement rule and its
+    # failure table, the release layout for all four targets), plus every
+    # claim the public command makes that is a fact about the RULE rather
+    # than about the machine - 42 through `pweb run` after a real build,
+    # determinism, the interrupt, the failure that leaves the old release,
+    # the network, the tree, and the two ledger measurements.
+    #
+    # Deliberately ABSENT, each because it is a fact about the host:
+    # release_{react,pas2js}_{files,inventory} and summary_*_app_pwb (a
+    # macOS bundle holds four files where a flat layout holds three, and the
+    # native binary differs per target - the same reason c1_app_pwb_*_sha256
+    # is absent); summary_*_release and summary_*_target (they name the
+    # target); build_replace_while_running and build_race_build_exit (a
+    # directory that is a process's working directory renames on POSIX and
+    # does not on Windows - a measured platform divergence, typed per
+    # family); long_path_* (a Windows measurement, `not_applicable`
+    # elsewhere); doctor_*_exit (a machine's own verdict);
+    # build_pas2js_sampler_{members,samples} (host counts, exactly as
+    # listener_members_seen is); and every *_ms.
+    'build_corpus', 'build_suite', 'build_digest', 'build_corpus_lines',
+    'build_execute_callers', 'build_driver_spawns', 'build_stage_count',
+    'build_unratified_options', 'gate_quoting_space_path',
+    'build_option_matrix', 'advertised_commands_d0', 'build_help_matrix',
+    'cli_build_available', 'gate_project_path_has_space',
+    'build_react_exit', 'build_pas2js_exit',
+    'build_network_stages_react', 'build_network_stages_pas2js',
+    'build_pas2js_network_calls', 'd0_project_tree_unchanged',
+    'build_react_rpc_value', 'build_pas2js_rpc_value',
+    'build_replacement_rule', 'build_replacement_window',
+    'build_never_partial_release', 'd0_build_deterministic',
+    'build_failure_exit', 'build_failure_leaves_old_release',
+    'build_interrupt_armed', 'build_interrupt_delivered',
+    'build_interrupt_outcome', 'build_interrupt_exit',
+    'build_descendants_after_interrupt', 'build_driver_ansi_seen',
+    'build_interrupt_clean', 'build_race_run_rpc', 'build_race_run_exit',
+    'release_path_observations_disposed',
+    'd0_template_supersession_recorded', 'd0_pas2js_on_path'
 )
 # the CAP-9C2 semantic gate names, carried in ONE place across the two
 # emitters and this aggregator (see test/cap7f/emit_evidence.ps1)

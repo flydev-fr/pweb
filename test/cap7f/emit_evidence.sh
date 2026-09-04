@@ -1483,7 +1483,7 @@ for f in build_corpus \
          build_race_run_exit \
          build_race_build_exit \
          build_replace_while_running \
-         long_path_rule \
+         long_path_rule long_path_stage \
          long_path_project_chars \
          long_path_exit \
          long_path_cause; do
@@ -2007,6 +2007,7 @@ cat > "${work}/evidence.json" <<EOF
   "build_race_build_exit": "${build_race_build_exit}",
   "build_replace_while_running": "${build_replace_while_running}",
   "long_path_rule": "${long_path_rule}",
+  "long_path_stage": "${long_path_stage}",
   "long_path_project_chars": "${long_path_project_chars}",
   "long_path_exit": "${long_path_exit}",
   "long_path_cause": "${long_path_cause}",

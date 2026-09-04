@@ -694,6 +694,7 @@ if (-not $IsWindows) {
     Row 'long_path_project_chars' '0'
     Row 'long_path_exit' 'not_applicable'
     Row 'long_path_cause' 'not_applicable'
+    Row 'long_path_stage' 'not_applicable'
 } else {
     # a chain long enough that <root>/dist/<target>/release/demo.exe passes
     # MAX_PATH comfortably
@@ -707,6 +708,7 @@ if (-not $IsWindows) {
         Row 'long_path_project_chars' "$($deep.Length)"
         Row 'long_path_exit' 'unmeasured'
         Row 'long_path_cause' 'unmeasured'
+        Row 'long_path_stage' 'unmeasured'
     } else {
         $lp = RunCli @('create', 'demolp', '--ui', 'pas2js', '--bundle-id',
             'com.example.demo') $deep 120000
@@ -716,13 +718,21 @@ if (-not $IsWindows) {
             Row 'long_path_rule' 'create_refused'
             Row 'long_path_exit' "$($lp.Code)"
             Row 'long_path_cause' (($lp.Err -split "`n")[0].Trim())
+            Row 'long_path_stage' 'create'
         } else {
             $lb = RunCli @('build', '--project', $lpProject) $cwd
             Row 'long_path_exit' "$($lb.Code)"
             $cause = ''
+            # WHICH STAGE, not only which cause. `stage_exited` says a child
+            # answered nonzero and nothing about which tool did; C0-12 (a)
+            # asks whether the CLI's own spawn is the obstacle or somebody
+            # else's, and only the stage name distinguishes the two.
+            $lpStage = ''
             foreach ($line in ($lb.Err -split "`n")) {
                 if ($line -match '^pweb: build failed: (\S+)') { $cause = $Matches[1] }
+                if ($line -match '^pweb: (\w+): FAILED ') { $lpStage = $Matches[1] }
             }
+            Row 'long_path_stage' $(if ($lpStage -eq '') { 'none' } else { $lpStage })
             Row 'long_path_cause' $(if ($cause -eq '') { 'none' } else { $cause })
             Row 'long_path_rule' $(
                 if ($lb.Code -eq 0) { 'builds_end_to_end' }

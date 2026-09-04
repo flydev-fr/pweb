@@ -1637,6 +1637,7 @@ $evidence = [ordered]@{
     build_race_build_exit               = "$($d0.build_race_build_exit)"
     build_replace_while_running         = "$($d0.build_replace_while_running)"
     long_path_rule                      = "$($d0.long_path_rule)"
+    long_path_stage                     = "$($d0.long_path_stage)"
     long_path_project_chars             = "$($d0.long_path_project_chars)"
     long_path_exit                      = "$($d0.long_path_exit)"
     long_path_cause                     = "$($d0.long_path_cause)"
