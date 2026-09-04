@@ -208,6 +208,7 @@ refactoring a frozen unit's spine to keep a count at four is the worse trade.
 | the CAP-10A `--profile` case | `unknown_option` | accepted, with six new rows | the recorded supersession behind `cli_digest` |
 | the D0 gate's option matrix (B9) | `--profile offline` → `unknown_option` | **three legs**: bare → `missing_value`, empty → `empty_value`, `run --profile` → `option_not_for_command` | ratifying an option is a supersession in **two** places, and the first hosted run found the one that was missed. The matrix does not get shorter: `--profile` is held to the same grammar every other build option obeys, so B9 still measures "the surface refuses everything it has not ratified" |
 | the CAP-10C3 driver's whole-file write | one delete-then-`CREATE_NEW` | the same, **retried** for a bounded two seconds | PD7 rewrites the input set ~25×/s *while a build is in flight*, so it races PAS2JS's own read of that file. Nothing in the product changed; a driver that reported a compiler's file handle as `move_write_failed` was reporting the wrong thing |
+| the CAP-7F cross-target equality set | the CAP-10D1 block pasted in whole: **44 per-target fields compared, 0 shared facts** | **31 shared facts compared, the 44 named in a deliberately-absent note** | CAP-7F keeps two lists that read alike and mean opposite things — required-present and compared-across-four. One paste put the per-target block in both, so a green run produced 124 disagreements that were all the aggregate asking Linux to have installed a Windows setup — and, worse, left `pack_digest`, the five-caller set, `signing_identity_used`, `secrets_read`, the rollback seam and the interrupt compared on **no** target. The 31 were **measured** equal on four real evidence files before being written |
 | `build_digest`, `pipeline_digest`, `dev_digest`, `dev_pas2js_digest`, `supervision_digest`, `doctor_schema_digest` | | **unchanged**, re-measured | CAP-10D1 changes no decision any of them froze |
 
 Nothing else moved. The seven frozen interfaces, `TInvocationContext`,
@@ -256,7 +257,7 @@ green on it:
 
 | shard | closure HEAD | hosted run | what it proved |
 |---|---|---|---|
-| CAP-10D1 | `PENDING` | `PENDING` | |
+| CAP-10D1 | `89538dee` | 33883767131 | all six jobs green. One `pack_digest` `03ab486c…27eaec6f` — 39 decisions — equal on windows-x86_64, linux-x86_64, macos-x86_64 and macos-arm64, alongside the five-caller set, `pack_code_twins = 2`, `pack_pins_checked = 14` with `pack_pins_mismatched = none`, `signing_identity_used = false`, `secrets_read = 0`, `rollback_seam_exercised = true` and `pack_descendants_after_interrupt = 0` — the thirty-one facts four machines must agree about. Per target: a generated application **installed, ran 42 and uninstalled with zero residue** on Windows, two `bundleId`s side by side and a rebuild replacing itself; an extracted archive answering **42** at mode 755 with an inventory equal to the release on Linux and both macOS targets; `adhoc` on arm64 and `unsigned` on x64, `CFBundleIdentifier` = the descriptor's; the long-path bound **bracketed on the runner** (140 builds, 180 refuses `project_root_too_long`, pin 160) and the cabinet's own depth **re-measured** (119 = 119). `d0_build_digest` re-measured **unchanged** at its CAP-10D0 closure value `1d5230a9…ff08fb18`. The aggregate's own negative self-test fired **216** refusals first |
 
 ## 11. Cross-links
 
@@ -272,4 +273,10 @@ green on it:
 
 ## Verdict
 
-**CAP-10D1 NOT READY** — pending the hosted green run on the closure HEAD.
+**CAP-10D1 PASS — DISTRIBUTABLE ARTIFACTS FROZEN**
+
+`pweb build --profile` is ratified on four targets: three Windows installer
+profiles over the CAP-13 mechanics, one deterministic archive on Linux and
+macOS, one identity derived from `pweb.json` and refused rather than escaped,
+zero network, no signing identity and no credential read anywhere on the
+path. `pweb build` without `--profile` is byte-for-byte CAP-10D0.

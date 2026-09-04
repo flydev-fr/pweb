@@ -2,7 +2,7 @@
 title: 'CAP-10D1 — distributable artifacts: `pweb build --profile`'
 type: 'feature'
 created: '2026-09-04'
-status: 'in-progress'
+status: 'done'
 baseline_commit: '9e092c03bcb676ab001f987fbd4a5472cf0fdb5b'
 review_loop_iteration: 0
 context:
