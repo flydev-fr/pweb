@@ -2,7 +2,7 @@
 title: 'CAP-10D0 — the public `pweb build`: the frozen C1 pipeline exposed, the release replacement ratified, and the two CAP-10D ledger items discharged'
 type: 'feature'
 created: '2026-09-04'
-status: 'in-progress'
+status: 'done'
 baseline_commit: 'c3aa38e5816d6971a29d767db71e04594d9959a1'
 review_loop_iteration: 0
 context:

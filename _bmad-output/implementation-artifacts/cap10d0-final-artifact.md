@@ -114,7 +114,7 @@ grammar, or any dependency pin.
 
 | half | disposition |
 |---|---|
-| (a) the MAX_PATH form for `lpApplicationName` | **MEASURED, and it answers the opposite of what the entry feared: CAP-10D0 changes nothing.** A Pas2JS project rooted at 233 characters — so `<root>/dist/windows-x86_64/release/demolp.exe` passes MAX_PATH comfortably — builds on the hosted Windows runner and answers `long_path_exit = 5`, `long_path_cause = stage_exited`. Exit 5 is "a stage's child failed and its real status is printed"; it is **not** the untyped `supervision_unavailable` (4) an unprefixed `lpApplicationName` would have produced. PWeb's own spawn reached the tool and the tool answered nonzero, so the `\\?\` change is not what this measurement calls for and none is made. `long_path_stage` records which stage, so the owner is named rather than re-derived; re-ledgered to CAP-10D1 on that name. Typed `not_applicable` on the three POSIX targets |
+| (a) the MAX_PATH form for `lpApplicationName` | **MEASURED, and it answers the opposite of what the entry feared: CAP-10D0 changes nothing.** A Pas2JS project rooted at 233 characters — so `<root>/dist/windows-x86_64/release/demolp.exe` passes MAX_PATH comfortably — builds on the hosted Windows runner and answers `long_path_exit = 5`, `long_path_cause = stage_exited`. Exit 5 is "a stage's child failed and its real status is printed"; it is **not** the untyped `supervision_unavailable` (4) an unprefixed `lpApplicationName` would have produced. PWeb's own spawn reached the tool and the tool answered nonzero, so the `\\?\` change is not what this measurement calls for and none is made. `long_path_stage` names the owner: **`build`** — the pinned Pas2JS compiler, not this CLI. Re-ledgered to CAP-10D1 on that name, because a limitation whose owner is a third-party compiler is not one this repository can close. Typed `not_applicable` on the three POSIX targets |
 | (b) the pwsh `Start-Process` quoting hazard | **RESOLVED** — one helper, `test/cap10d0/psargs.ps1`, adopted at all 24 CAP-10 call sites in one commit, verified against the fourteen CAP-10C0 golden rows before a call site moved, and proven continuously because the CAP-10D0 gate scaffolds both projects inside a directory whose name carries a space |
 
 ### C1-11 — the six release-path observations
@@ -168,9 +168,27 @@ unchanged.
 **The hosted run.** CAP-10D0's closure HEAD and the hosted run that was
 green on it:
 
-| shard | closure HEAD | hosted run |
-|---|---|---|
-| CAP-10D0 | `pending` | `pending` |
+| shard | closure HEAD | hosted run | what it proved |
+|---|---|---|---|
+| CAP-10D0 | `a67978ef` | 33851014894 | all six jobs green; one `build_digest` `1d5230a9…9fb18` equal on windows-x86_64, linux-x86_64, macos-x86_64 and macos-arm64; `42` through the real `pweb run` after the real `pweb build` for both frontend kinds on every target; and `supervision_digest`, `pipeline_digest`, `dev_digest` and `dev_pas2js_digest` re-measured **unchanged** at their CAP-10C0/C1/C2/C3 closure values |
+
+The substance behind the green, checked field by field rather than taken
+from the conclusion: `build_corpus`, `build_suite`, `build_option_matrix`,
+`build_help_matrix` and `gate_quoting_space_path` PASS on all four;
+`cli_build_available`, `build_never_partial_release`,
+`build_failure_leaves_old_release`, `build_interrupt_clean`,
+`d0_build_deterministic`, `d0_project_tree_unchanged` and
+`d0_template_supersession_recorded` true on all four;
+`build_pas2js_network_calls`, `build_descendants_after_interrupt` and
+`build_driver_spawns` zero on all four; `build_stage_count` ten,
+`build_unratified_options` none, `release_path_observations_disposed` six.
+
+The three per-target measurements, recorded rather than compared:
+`build_replace_while_running` reads `windows_refused_layout_reclaim` on
+Windows and `posix_old_runs_to_completion` on the three POSIX targets;
+`long_path_rule` reads `typed_refusal_stage_exited` on Windows with
+`long_path_stage = build` at 233 characters, and `not_applicable`
+elsewhere.
 
 The evidence above is emitted per target into `build/cap10d0/cli-<target>.json`
 and aggregated field by field by `test/cap7f/check_cap7f_aggregate.ps1`,
