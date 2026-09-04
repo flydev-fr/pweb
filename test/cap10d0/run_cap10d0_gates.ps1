@@ -348,6 +348,49 @@ Row 'build_pas2js_exit' "$($builds['pas2js'].Code)"
 Row 'build_network_stages_react' 'install'
 Row 'build_network_stages_pas2js' 'none'
 
+# B2, MEASURED rather than declared: a Pas2JS build must make NO network
+# connection at all. "The pipeline declares no network stage for pas2js" is
+# a statement about a table; this samples the real process tree of a real
+# build through the CAP-10C1 membership sampler, which is the same rule the
+# C0, C1, C2 and C3 gates use and is never a lookup by process name.
+$netSo = Join-Path $work 'net-build-stdout.txt'
+$netSe = Join-Path $work 'net-build-stderr.txt'
+Remove-Item -Force -ErrorAction SilentlyContinue $netSo, $netSe
+$np = Start-PWebProcess -FilePath $pweb -PassThru -NoNewWindow `
+    -ArgumentList @('build', '--project', $projects['pas2js']) `
+    -WorkingDirectory $cwd -RedirectStandardOutput $netSo `
+    -RedirectStandardError $netSe
+$netMax = 0
+$netMembers = 0
+$netSamples = 0
+$sw = [System.Diagnostics.Stopwatch]::StartNew()
+while ((-not $np.HasExited) -and ($sw.ElapsedMilliseconds -lt 1800000)) {
+    Start-Sleep -Milliseconds 250
+    $members = @(Get-PWebTreeMembers -RootPid $np.Id)
+    if ($members.Count -gt $netMembers) { $netMembers = $members.Count }
+    $netSamples++
+    foreach ($m in $members) {
+        $c = Get-PWebConnectionCount -OwnerPid $m
+        if ($c -gt $netMax) { $netMax = $c }
+    }
+}
+if (-not $np.HasExited) {
+    try { $np.Kill() } catch { }
+    $np.WaitForExit(10000) | Out-Null
+    Require $false 'B2: the sampled pas2js build did not finish inside 30 minutes'
+}
+$np.WaitForExit()
+Row 'build_pas2js_network_calls' "$netMax"
+Row 'build_pas2js_sampler_members' "$netMembers"
+Row 'build_pas2js_sampler_samples' "$netSamples"
+Require ($np.ExitCode -eq 0) "B2: the sampled pas2js build exited $($np.ExitCode)"
+# a sampler that never ran would report a vacuous 0, so its own liveness is
+# a requirement rather than an assumption - the CAP-10C1 DB3 discipline
+Require ($netSamples -gt 0) 'B2: the network sampler never ran'
+Require ($netMembers -gt 0) 'B2: the sampler saw no member of the build tree'
+Require ($netMax -eq 0) `
+    "B2: a pas2js build opened $netMax network connection(s); it declares no network stage"
+
 # the committed layouts, and the summary values read back out of the output
 function ReleaseDirOf([string]$Ui) {
     return (Join-Path (Join-Path (Join-Path $projects[$Ui] 'dist') $target) 'release')

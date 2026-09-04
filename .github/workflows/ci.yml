@@ -2229,10 +2229,14 @@ jobs:
           }
           New-Item -ItemType Directory -Force $spaced | Out-Null
           Write-Host "[L2b] copying the prepared workspace to: $spaced"
-          # robocopy's exit codes below 8 are success; /XD .git keeps the
-          # copy to what the gates read, and build/ is left behind so every
-          # artifact under test is rebuilt at the new path
-          robocopy . $spaced /E /NFL /NDL /NJH /NJS /NP /XD .git build |
+          # robocopy's exit codes below 8 are success. ONLY .git is excluded:
+          # build/ has to travel, because it carries artifacts this step must
+          # not rebuild - build/webview-dist/webview.dll above all, which is
+          # the cmake+MSVC output test/cap10c1/build_cap10c1.ps1 stages into
+          # the SDK root. Every CAP-10 build script reclaims its own subtree
+          # before it writes, so nothing stale survives into what is measured;
+          # what survives is exactly the pinned platform artifact.
+          robocopy . $spaced /E /NFL /NDL /NJH /NJS /NP /XD .git |
             Out-Null
           if ($LASTEXITCODE -ge 8) {
             throw "[L2b] robocopy failed with $LASTEXITCODE"
@@ -2241,6 +2245,13 @@ jobs:
           if (-not $spaced.Contains(' ')) {
             throw '[L2b] the destination carries no space -- the leg would prove nothing'
           }
+          # the cost, recorded rather than guessed: this is the one step that
+          # doubles the workspace on disk, and a reader deciding whether to
+          # keep it should be able to see what it costs
+          $mb = [int](((Get-ChildItem -LiteralPath $spaced -Recurse -File -Force |
+            Measure-Object -Property Length -Sum).Sum) / 1MB)
+          $free = [int](((Get-PSDrive -Name (Split-Path -Qualifier $spaced).TrimEnd(':')).Free) / 1MB)
+          Write-Host "[L2b] copied $mb MB; $free MB free on that volume"
           Push-Location -LiteralPath $spaced
           try {
             foreach ($step in

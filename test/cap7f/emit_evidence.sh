@@ -1445,6 +1445,9 @@ for f in build_corpus \
          build_pas2js_exit \
          build_network_stages_react \
          build_network_stages_pas2js \
+         build_pas2js_network_calls \
+         build_pas2js_sampler_members \
+         build_pas2js_sampler_samples \
          d0_project_tree_unchanged \
          build_react_rpc_value \
          build_pas2js_rpc_value \
@@ -1965,6 +1968,9 @@ cat > "${work}/evidence.json" <<EOF
   "build_pas2js_exit": "${build_pas2js_exit}",
   "build_network_stages_react": "${build_network_stages_react}",
   "build_network_stages_pas2js": "${build_network_stages_pas2js}",
+  "build_pas2js_network_calls": "${build_pas2js_network_calls}",
+  "build_pas2js_sampler_members": "${build_pas2js_sampler_members}",
+  "build_pas2js_sampler_samples": "${build_pas2js_sampler_samples}",
   "d0_project_tree_unchanged": "${d0_project_tree_unchanged}",
   "build_react_rpc_value": "${build_react_rpc_value}",
   "build_pas2js_rpc_value": "${build_pas2js_rpc_value}",

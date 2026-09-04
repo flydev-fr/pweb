@@ -161,6 +161,7 @@ unchanged.
 | B4 | a seeded stage failure stops the pipeline with the child's real status and leaves the previous release byte-identical |
 | B5 | a **real** interrupt mid-compile, delivered through the CAP-10C0 console mechanism on all four targets, leaves the previous release untouched, no staging tree and zero descendants — the measurement CAP-10C1's ST10 recorded as `not_measured` on Windows |
 | B6 | a build racing a running application: the application runs to completion and answers 42, and the two families' outcomes are typed apart |
+| B2 network | a Pas2JS build's own process tree is **sampled** through the CAP-10C1 membership sampler while it runs, and opens zero connections — the declared "no network stage" turned into a measurement, with the sampler's own liveness required so a vacuous zero cannot pass |
 | B8/B10/B11 | the project tree minus the mutation set is unchanged; no ANSI, no absolute path and exactly six summary fields; five commands advertised and every `<cmd> --help` green |
 | L1/L2 | the Windows long path, measured; every CAP-10 gate green through one quoting helper, with both projects at a spaced path on every leg |
 

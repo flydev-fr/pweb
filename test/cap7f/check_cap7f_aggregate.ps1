@@ -289,7 +289,8 @@ $required = @(
     'build_option_matrix', 'advertised_commands_d0', 'build_help_matrix',
     'cli_build_available', 'gate_project_path_has_space',
     'build_react_exit', 'build_pas2js_exit', 'build_network_stages_react',
-    'build_network_stages_pas2js', 'd0_project_tree_unchanged',
+    'build_network_stages_pas2js', 'build_pas2js_network_calls',
+    'd0_project_tree_unchanged',
     'build_react_rpc_value', 'build_pas2js_rpc_value',
     'build_replacement_rule', 'build_replacement_window',
     'build_never_partial_release', 'd0_build_deterministic',
@@ -636,6 +637,7 @@ $absolutePins = @{
     build_pas2js_rpc_value             = '42'
     build_network_stages_react         = 'install'
     build_network_stages_pas2js        = 'none'
+    build_pas2js_network_calls         = '0'
     d0_project_tree_unchanged          = 'true'
     build_replacement_rule             = 'stage_aside_rename_reclaim'
     build_replacement_window           = 'one_rename_no_release'

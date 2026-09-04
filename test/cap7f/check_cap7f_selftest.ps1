@@ -281,6 +281,13 @@ $e = Get-Content $f -Raw | ConvertFrom-Json
 $e.build_network_stages_pas2js = 'install'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap10d0-network-outside-install' 'build_network_stages_pas2js'
+
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_pas2js_network_calls = '1'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-pas2js-network-call' 'build_pas2js_network_calls'
 Reset-Fixture
 $f = Join-Path $fx 'ev/macos-arm64/evidence.json'
 $e = Get-Content $f -Raw | ConvertFrom-Json
@@ -2359,6 +2366,13 @@ $e = Get-Content $f -Raw | ConvertFrom-Json
 $e.build_network_stages_pas2js = 'install'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap10d0-network-outside-install' 'build_network_stages_pas2js'
+
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.build_pas2js_network_calls = '1'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d0-pas2js-network-call' 'build_pas2js_network_calls'
 Reset-Fixture
 $f = Join-Path $fx 'ev/macos-arm64/evidence.json'
 $e = Get-Content $f -Raw | ConvertFrom-Json
