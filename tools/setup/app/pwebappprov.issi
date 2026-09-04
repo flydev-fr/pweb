@@ -1,0 +1,174 @@
+; PWeb GENERATED-APPLICATION provisioning-gate include (CAP-10D1).
+;
+; The CAP-13 twin of tools/setup/pwebprovgate.issi. Both generated
+; PROVISIONING profiles - app-normal.iss (Evergreen Bootstrapper) and
+; app-offline.iss (Evergreen Standalone Installer) - consume this one
+; file, so the embedded-payload model, the define validation and the
+; fail-closed provisioning gate can never fork between them. The ONLY
+; difference between the two is the neutral define each .iss maps before
+; including this file:
+;
+;   PWEB_WV2_INSTALLER    filename of the lock-verified installer this
+;                         profile embeds
+;
+; WHY A TWIN RATHER THAN THE CAP-13 FILE ITSELF. tools/setup/pwebprovgate.issi
+; includes tools/setup/pwebappsetup.issi, whose [Setup] identity is
+; literal and whose literals two frozen CAP-13 gates pin (see the header
+; of tools/setup/app/pwebappid.issi). An [Setup] directive cannot be
+; overridden after the fact, so a generated application cannot consume
+; that include at all.
+;
+; AND THE FORK IS MEASURED RATHER THAN ACCEPTED. Everything below the
+; [Code] marker in this file is BYTE-IDENTICAL to the [Code] region of
+; tools/setup/pwebprovgate.issi, and
+; test/cap10d1/check_cap10d1_contracts.ps1 requires that equality on every
+; CI leg. The behaviour CAP-6b1 and CAP-6b2 prove at RUNTIME - detect,
+; verify sha256 + Authenticode, bounded silent execute, mandatory
+; re-probe, abort fail-closed on any failure - is therefore the behaviour
+; a generated installer has, and a change to one body that is not made to
+; the other is a red step rather than a divergence somebody discovers on a
+; user's machine.
+;
+; Everything else is derived by pweb.cli.package from the compiled pins at
+; BUILD time (pweb.cli.packpins, cross-checked against the locks):
+;   PWEB_PAYLOAD_DIR      staged payload directory (release triple +
+;                         pinned installer + compiled helper)
+;   PWEB_WV2_SHA256       the ratified digest (64 lowercase hex)
+;   PWEB_WV2_SUBJECT      the ratified Authenticode leaf subject
+;   PWEB_WV2_TIMEOUT_MS   the bounded helper wait, from the single Pascal
+;                         source PWEB_WV2_INSTALL_TIMEOUT_MS
+;   PWEB_PROV_HELPER      TEST HOOK (optional; default pwebwv2prov.exe),
+;                         the same documented convention CAP-6b1 ratified.
+;                         Production builds leave it at the default
+;
+; There is deliberately NO Launch entry and no [Run] section: setup either
+; completes with a proven-usable runtime or aborts fail-closed. Nothing in
+; this file can reach the network: the embedded payload is the only
+; installer source, and no lock URL ever reaches an installed SDK.
+
+#ifndef PWEB_WV2_INSTALLER
+  #error PWEB_WV2_INSTALLER must be mapped by the including profile (.iss) before this include
+#endif
+#ifndef PWEB_WV2_SHA256
+  #error PWEB_WV2_SHA256 must be defined by the packaging driver
+#endif
+#ifndef PWEB_WV2_SUBJECT
+  #error PWEB_WV2_SUBJECT must be defined by the packaging driver
+#endif
+#ifndef PWEB_WV2_TIMEOUT_MS
+  #error PWEB_WV2_TIMEOUT_MS must be defined by the packaging driver
+#endif
+#ifndef PWEB_PROV_HELPER
+  #define PWEB_PROV_HELPER "pwebwv2prov.exe"
+#endif
+
+; the neutral half - [Setup] identity and the CAP-6b4-shaped profile
+; marker - lives in the shared include below, which app-fixed.iss consumes
+; as well. Nothing about the installed application identity is authored in
+; this provisioning-only file.
+#include "pwebappid.issi"
+
+[Files]
+; provisioning payload: extracted to {tmp} on demand, auto-deleted by Inno
+; when setup exits (success OR abort) - never installed to {app}
+Source: "{#PWEB_PAYLOAD_DIR}\{#PWEB_WV2_INSTALLER}"; Flags: dontcopy
+Source: "{#PWEB_PAYLOAD_DIR}\{#PWEB_PROV_HELPER}"; Flags: dontcopy
+
+; the release triple, authored once in the shared payload include. An
+; Evergreen profile has no post-install gate, so its position is free.
+#include "pwebapptriple.issi"
+
+[InstallDelete]
+; STALE-TREE RECLAIM, the CAP-6b4 rule applied to this product's own
+; install directory. All three generated profiles are modes of ONE
+; application sharing one AppId and one directory, so installing an
+; Evergreen profile over a fixed one must reclaim the bundled runtime
+; tree the Evergreen-mode binary will never look at.
+;
+; ORDER IS THE SAFETY PROPERTY, and it is Inno's: PrepareToInstall runs
+; BEFORE the installation phase and [InstallDelete] is the FIRST step of
+; that phase, so on a fixed -> Evergreen switch the gate below has already
+; PROVEN a usable Evergreen runtime by the time a byte of the old tree is
+; touched; a refusal aborts with zero file operations.
+;
+; OWNERSHIP IS CHECKED, because {app} is user-redirectable on an
+; interactive run: PWebOwnsInstallDir lets the reclaim proceed only when
+; this is an over-install of this product. It targets only the runtime
+; subdirectory this product installs and the intermediate directory that
+; subdirectory lives in - never {app} itself, and never user data. The
+; WebView2 user-data folder is deliberately untouched here and at
+; uninstall.
+;
+; The parent entry comes SECOND on purpose: entries are processed in
+; order, so the leaf has to be gone before dirifempty finds the parent
+; empty.
+Type: filesandordirs; Name: "{app}\{#PWEB_RUNTIME_SUBDIR}"; \
+    Check: PWebOwnsInstallDir
+Type: dirifempty; Name: "{app}\{#PWEB_RUNTIME_PARENT}"; \
+    Check: PWebOwnsInstallDir
+
+[Code]
+// The stale-tree reclaim's ownership gate. {app} is user-redirectable
+// on an interactive run, so "there is a runtime\webview2 under {app}"
+// is NOT on its own a licence to delete it recursively - the directory
+// may belong to something this installer never touched.
+//
+// The signal used is the presence of OUR OWN Inno uninstaller in {app},
+// which means one specific thing: a previous install of this product
+// put its files here. It is read at [InstallDelete] time, which is
+// BEFORE this run writes anything (this run's own uninstaller is
+// written later, during the [Files] phase), so the file it sees can
+// only be a pre-existing one.
+//
+// Deliberately NOT the profile marker: the marker is per-USER and says
+// nothing about which DIRECTORY setup was pointed at, and the very
+// install this reclaim exists to migrate - a pre-CAP-6b4 fixed install
+// - predates the marker and carries none.
+function PWebOwnsInstallDir: Boolean;
+var
+  Dir: String;
+begin
+  Dir := ExpandConstant('{app}');
+  Result := FileExists(AddBackslash(Dir) + 'unins000.exe');
+  if Result then
+    Log('PWEB_RECLAIM owned install detected in ' + Dir +
+      ' - the stale runtime tree (if any) will be reclaimed')
+  else
+    Log('PWEB_RECLAIM no PWeb uninstaller in ' + Dir +
+      ' - reclaim SKIPPED (this directory is not an over-install of our product)');
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Helper, Installer, ProvLog, Params: String;
+  Output: AnsiString;
+  Rc: Integer;
+begin
+  Result := '';
+  ExtractTemporaryFile('{#PWEB_PROV_HELPER}');
+  ExtractTemporaryFile('{#PWEB_WV2_INSTALLER}');
+  Helper := ExpandConstant('{tmp}\{#PWEB_PROV_HELPER}');
+  Installer := ExpandConstant('{tmp}\{#PWEB_WV2_INSTALLER}');
+  ProvLog := ExpandConstant('{tmp}\pwebwv2prov.log');
+  Params := '"' + Installer + '" {#PWEB_WV2_SHA256} "{#PWEB_WV2_SUBJECT}" ' +
+    '{#PWEB_WV2_TIMEOUT_MS} "' + ProvLog + '"';
+  Log('PWEB_WV2PROV launching: ' + Helper + ' ' + Params);
+  if not Exec(Helper, Params, ExpandConstant('{tmp}'), SW_HIDE,
+       ewWaitUntilTerminated, Rc) then
+  begin
+    Log('PWEB_WV2PROV exec-failed');
+    Result := 'The WebView2 provisioning helper could not be started. ' +
+      'Setup cannot continue and nothing was installed.';
+    exit;
+  end;
+  if LoadStringFromFile(ProvLog, Output) then
+    Log('PWEB_WV2PROV output:' + #13#10 + Output)
+  else
+    Log('PWEB_WV2PROV output file missing');
+  Log('PWEB_WV2PROV exit=' + IntToStr(Rc));
+  if Rc <> 0 then
+    // fail closed: the helper's re-probe verdict is authoritative and
+    // aborting here leaves NO installed launchable app behind
+    Result := 'WebView2 runtime provisioning failed (helper exit ' +
+      IntToStr(Rc) + '). Setup cannot continue and nothing was installed.';
+end;

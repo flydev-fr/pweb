@@ -50,10 +50,18 @@ function ReadText([string]$Rel) {
 
 # --- 1. one execution path --------------------------------------------------
 # The engine itself DEFINES PWebCliExecute; every other unit that names it
-# CALLS it, and the ratified set of callers is four - one per command family.
-# CAP-10D0 adds a fifth command and no fifth caller: `build` reaches a child
-# only through pweb.cli.pipeline, which is the whole of the one-caller
-# property the CAP-10C closure handed over.
+# CALLS it, and the ratified set of callers was FOUR at CAP-10D0 - one per
+# command family. `build` reached a child only through pweb.cli.pipeline,
+# which was the whole of the one-caller property the CAP-10C closure handed
+# over.
+#
+# CAP-10D1 MOVED IT TO FIVE, and the supersession is recorded here rather
+# than worked around: `pweb build --profile` runs an Inno Setup compile and a
+# cabinet expansion, and pweb.cli.package runs both through the SAME engine,
+# in the same supervise profile, with the same sink, stop check, descendant
+# drain and typed outcome mapping every stage child gets. The COUNT was never
+# the invariant - one engine, an ENUMERATED caller set, and a build driver
+# that spawns nothing is, and all three are still measured below.
 $callers = New-Object System.Collections.Generic.List[string]
 foreach ($f in (Get-ChildItem -Path 'tools/pweb' -Filter '*.pas')) {
     if ($f.Name -eq 'pweb.cli.process.pas') { continue }
@@ -62,11 +70,12 @@ foreach ($f in (Get-ChildItem -Path 'tools/pweb' -Filter '*.pas')) {
 }
 $callerList = (($callers | Sort-Object) -join ',')
 $facts['execute_callers'] = $callerList
-$expectedCallers = 'pweb.cli.dev.pas,pweb.cli.pipeline.pas,' +
-    'pweb.cli.probe.pas,pweb.cli.run.pas'
+$expectedCallers = 'pweb.cli.dev.pas,pweb.cli.package.pas,' +
+    'pweb.cli.pipeline.pas,pweb.cli.probe.pas,pweb.cli.run.pas'
 if ($callerList -cne $expectedCallers) {
-    Violation ("the set of PWebCliExecute callers is [$callerList]; " +
-        "CAP-10D0 inherits [$expectedCallers] and adds none")
+    Violation ("the set of PWebCliExecute callers is [$callerList]; the " +
+        "ratified set is [$expectedCallers] - CAP-10D0's four plus the " +
+        'CAP-10D1 packaging driver, and no sixth')
 }
 
 # and the build driver names NO process API of any kind, by any spelling
@@ -124,6 +133,12 @@ $bounds = [ordered]@{
     PWEB_CLI_PIPE_MAX_FILE_BYTES = '268435456'
     PWEB_CLI_PIPE_MAX_TREE_FILES = '4096'
     PWEB_CLI_PIPE_MAX_TREE_DEPTH = '24'
+    # CAP-10D1's ninth, and the only one this table has ever gained: the
+    # Windows project-root ceiling below which the whole pipeline is known
+    # to complete. It is MEASURED on the hosted runner by
+    # test/cap10d1/windows_legs.ps1 and pinned strictly between the largest
+    # root that builds and the smallest that fails
+    PWEB_CLI_PIPE_MAX_ROOT_CHARS = '160'
 }
 foreach ($k in $bounds.Keys) {
     if ($toolchain -notmatch "$k\s*=\s*$($bounds[$k])\s*;") {
@@ -161,7 +176,9 @@ $facts['advertised_commands'] = 'create,doctor,run,dev,build'
 # contract: an option exposed before its semantics are ratified is an option
 # that can never be taken back, and the four below are exactly the ones a
 # reader of another build tool reaches for first.
-$unratified = @('--profile', '--target', '--clean', '--release', '--debug',
+# `--profile` LEFT THIS LIST AT CAP-10D1, which is the shard that ratified
+# its semantics; the other eight are still absences this contract keeps.
+$unratified = @('--target', '--clean', '--release', '--debug',
     '--watch', '--install', '--output', '--force')
 $present = @()
 foreach ($o in $unratified) {

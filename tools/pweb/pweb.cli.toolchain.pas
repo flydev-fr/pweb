@@ -131,6 +131,32 @@ const
   // output directory
   PWEB_CLI_PIPE_FPC_MS = 900000;
 
+  { CAP-10D1 - the Windows project-root ceiling.
+
+    MEASURED, not chosen. CAP-10D0's L1 leg built a Pas2JS project rooted at
+    233 characters on the hosted Windows runner and recorded `long_path_exit
+    = 5`, `long_path_cause = stage_exited`, `long_path_stage = build`: the
+    CLI's own spawn reached the compiler and the PINNED COMPILER answered
+    nonzero. That limitation's owner is a third-party tool this repository
+    cannot fix.
+
+    What it CAN do is stop that tool being the thing that fails. This is the
+    ceiling on the canonical project root below which the whole pipeline is
+    known to complete, and above which `open` refuses with
+    `project_root_too_long` (exit 3) BEFORE anything is written or spawned.
+    test/cap10d1/run_cap10d1_gates.ps1 builds one project at three root
+    lengths on the hosted runner and records the largest that builds and the
+    smallest that fails; this value must lie strictly between them, and the
+    gate fails if it does not - so it stays a measurement rather than
+    decaying into a number somebody typed.
+
+    It is a Windows rule and only a Windows rule: the two POSIX families
+    have no MAX_PATH and the branch is ordinary runtime code over the target
+    the caller passed, never a platform conditional. }
+
+  /// the longest canonical project root a Windows build accepts
+  PWEB_CLI_PIPE_MAX_ROOT_CHARS = 160;
+
   /// ceiling on ONE file the pipeline itself reads or copies, in bytes
   // - the pipeline's copy primitive is PWebCliReadSmallFile with this bound,
   // so a native executable and a staged static library are covered while an

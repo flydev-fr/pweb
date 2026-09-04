@@ -300,6 +300,41 @@ $required = @(
     'build_interrupt_clean', 'build_race_run_rpc',
     'release_path_observations_disposed',
     'd0_template_supersession_recorded', 'd0_pas2js_on_path',
+    # CAP-10D1: the distributable artifact, on four targets
+    'pack_corpus', 'pack_suite', 'pack_digest', 'pack_corpus_lines',
+    'pack_execute_callers', 'pack_build_driver_spawns', 'pack_code_twins',
+    'pack_pins_checked', 'pack_pins_mismatched', 'long_path_bound_chars',
+    'signing_identity_used', 'secrets_read', 'profile_identity_rule',
+    'profile_index_shape', 'build_profile_available', 'profiles_for_target',
+    'profile_fixed_shorthand_refused', 'profile_option_scoped_to_build',
+    'd0_summary_extra_rows_without_profile', 'd0_no_artifacts_without_profile',
+    'profile_foreign_exit', 'profile_foreign_cause',
+    'profile_foreign_built_nothing', 'release_untouched_by_packaging',
+    'archive_deterministic', 'rollback_seam_exercised',
+    'pack_interrupt_armed', 'pack_interrupt_delivered',
+    'pack_descendants_after_interrupt', 'pack_driver_ansi_seen',
+    'pack_interrupt_clean', 'd0_corpus_without_profile_unchanged',
+    'ledger_items_disposed',
+    # CAP-10D1, required PRESENT on every target and compared on none: each
+    # is a per-family or per-host fact, and a target that stopped emitting
+    # one would otherwise go unnoticed. `not_applicable` is a value.
+    'windows_offline_built', 'windows_fixed_built',
+    'windows_artifact_replaced', 'windows_install_exit',
+    'windows_installed_layout', 'windows_profile_marker',
+    'windows_installed_rpc', 'windows_uninstall_residue',
+    'windows_normal_install_run_uninstall', 'windows_profile_collision',
+    'windows_two_bundleids_side_by_side', 'windows_profile_self_replace',
+    'profile_missing_input_exit', 'profile_missing_input_cause',
+    'profile_missing_input_names_script', 'profile_drifted_input_exit',
+    'profile_drifted_input_cause', 'profile_iscc_identity_exit',
+    'profile_iscc_identity_cause', 'profile_identity_metacharacter_exit',
+    'profile_identity_metacharacter_refused',
+    'linux_archive_inventory_equals_release', 'linux_archive_run',
+    'macos_archive_inventory_equals_release', 'macos_archive_run',
+    'macos_codesign_observation', 'macos_bundle_identity',
+    'archive_program_mode', 'pack_interrupt_stage',
+    'long_path_ok_chars', 'long_path_fail_chars', 'long_path_refusal',
+    'long_path_refusal_cause', 'long_path_refusal_exit', 'd0_build_digest',
     # CAP-10D0, required PRESENT on every target and compared on none: each
     # is a fact about the host, and a target that stopped emitting one would
     # otherwise go unnoticed. `not_applicable` is a value; empty is not.
@@ -634,7 +669,7 @@ $absolutePins = @{
     advertised_commands_d0             = 'create,doctor,run,dev,build'
     build_option_matrix                = 'PASS'
     build_help_matrix                  = 'PASS'
-    build_execute_callers              = 'pweb.cli.dev.pas,pweb.cli.pipeline.pas,pweb.cli.probe.pas,pweb.cli.run.pas'
+    build_execute_callers              = 'pweb.cli.dev.pas,pweb.cli.package.pas,pweb.cli.pipeline.pas,pweb.cli.probe.pas,pweb.cli.run.pas'
     build_driver_spawns                = '0'
     build_stage_count                  = '10'
     build_unratified_options           = 'none'
@@ -664,11 +699,45 @@ $absolutePins = @{
     # and the React loop did not move while the Pas2JS one was added
     rd1_dev_digest_unchanged       = 'true'
     c3_pipeline_digest_unchanged   = 'true'
+    # CAP-10D1: the values four targets could agree on and still be wrong
+    pack_execute_callers               = 'pweb.cli.dev.pas,pweb.cli.package.pas,pweb.cli.pipeline.pas,pweb.cli.probe.pas,pweb.cli.run.pas'
+    pack_build_driver_spawns           = '0'
+    pack_code_twins                    = '2'
+    pack_pins_checked                  = '15'
+    pack_pins_mismatched               = 'none'
+    long_path_bound_chars              = '160'
+    build_profile_available            = 'true'
+    profile_identity_rule              = 'bundleid_literal'
+    profile_index_shape                = 'cap6b4'
+    profile_fixed_shorthand_refused    = 'true'
+    profile_option_scoped_to_build     = 'true'
+    profile_foreign_exit               = '2'
+    profile_foreign_cause              = 'profile_not_for_target'
+    profile_foreign_built_nothing      = 'true'
+    # THE CLAIMS THIS SHARD EXISTS TO MAKE
+    release_untouched_by_packaging     = 'true'
+    d0_corpus_without_profile_unchanged = 'true'
+    d0_summary_extra_rows_without_profile = '0'
+    d0_no_artifacts_without_profile    = 'true'
+    rollback_seam_exercised            = 'true'
+    # nothing signs, and nothing reads a secret - on any target
+    signing_identity_used              = 'false'
+    secrets_read                       = '0'
+    # an interrupted packaging run leaves the previous artifacts alone and no
+    # descendant behind, whatever child it was interrupted in
+    pack_interrupt_armed               = 'true'
+    pack_interrupt_delivered           = 'true'
+    pack_descendants_after_interrupt   = '0'
+    pack_driver_ansi_seen              = 'false'
+    pack_interrupt_clean               = 'true'
+    ledger_items_disposed              = '4'
 }
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
 $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
     'build_corpus', 'build_suite', 'build_option_matrix',
     'build_help_matrix', 'gate_quoting_space_path',
+    # CAP-10D1: the packaging verdict and the suite behind it
+    'pack_corpus', 'pack_suite',
     'navigation_security', 'security_corpus', 'quickjs_corpus',
     'quickjs_package_corpus', 'quickjs_lifecycle_corpus',
     'quickjs_release_corpus', 'quickjs_gui_corpus',
@@ -975,7 +1044,32 @@ $equalityFields = @(
     'build_descendants_after_interrupt', 'build_driver_ansi_seen',
     'build_interrupt_clean', 'build_race_run_rpc', 'build_race_run_exit',
     'release_path_observations_disposed',
-    'd0_template_supersession_recorded', 'd0_pas2js_on_path'
+    'd0_template_supersession_recorded', 'd0_pas2js_on_path',
+    # CAP-10D1: the per-family and per-host packaging facts. windows_* and
+    # the three Inno-input refusals are `not_applicable` off Windows;
+    # linux_*/macos_* are `not_applicable` off their family;
+    # archive_program_mode is a POSIX mode and archive_deterministic a POSIX
+    # claim (an Inno compile stamps its own output); long_path_* is a Windows
+    # measurement; pack_interrupt_stage names WHICH child was interrupted,
+    # which differs by family because the packaging work does.
+    'windows_offline_built', 'windows_fixed_built',
+    'windows_artifact_replaced', 'windows_install_exit',
+    'windows_installed_layout', 'windows_profile_marker',
+    'windows_installed_rpc', 'windows_uninstall_residue',
+    'windows_normal_install_run_uninstall', 'windows_profile_collision',
+    'windows_two_bundleids_side_by_side', 'windows_profile_self_replace',
+    'profile_missing_input_exit', 'profile_missing_input_cause',
+    'profile_missing_input_names_script', 'profile_drifted_input_exit',
+    'profile_drifted_input_cause', 'profile_iscc_identity_exit',
+    'profile_iscc_identity_cause', 'profile_identity_metacharacter_exit',
+    'profile_identity_metacharacter_refused',
+    'linux_archive_inventory_equals_release', 'linux_archive_run',
+    'macos_archive_inventory_equals_release', 'macos_archive_run',
+    'macos_codesign_observation', 'macos_bundle_identity',
+    'archive_program_mode', 'archive_deterministic', 'pack_interrupt_stage',
+    'profiles_for_target', 'long_path_ok_chars', 'long_path_fail_chars',
+    'long_path_refusal', 'long_path_refusal_cause', 'long_path_refusal_exit',
+    'd0_build_digest'
 )
 # the CAP-9C2 semantic gate names, carried in ONE place across the two
 # emitters and this aggregator (see test/cap7f/emit_evidence.ps1)

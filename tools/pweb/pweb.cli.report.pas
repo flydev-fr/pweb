@@ -141,7 +141,7 @@ begin
     '              [--no-color] [--verbose]' + CRLF_NONE +
     '  pweb run [--project <path>]' + CRLF_NONE +
     '  pweb dev [--project <path>]' + CRLF_NONE +
-    '  pweb build [--project <path>]' + CRLF_NONE +
+    '  pweb build [--project <path>] [--profile <name>]' + CRLF_NONE +
     CRLF_NONE +
     'commands:' + CRLF_NONE +
     '  create         create a new PWeb project (pweb create --help)' +
@@ -355,7 +355,7 @@ begin
     'pweb build - build this project for this machine' + CRLF_NONE +
     CRLF_NONE +
     'usage:' + CRLF_NONE +
-    '  pweb build [--project <path>]' + CRLF_NONE +
+    '  pweb build [--project <path>] [--profile <name>]' + CRLF_NONE +
     CRLF_NONE +
     'options:' + CRLF_NONE +
     '  --project <p>  use this pweb.json, or the project rooted at this' +
@@ -363,6 +363,21 @@ begin
     '                 directory, instead of searching upward from the' +
       CRLF_NONE +
     '                 working directory' + CRLF_NONE +
+    '  --profile <n>  also produce a distributable artifact for this' +
+      CRLF_NONE +
+    '                 machine, under <output>/<os>-<arch>/dist/<name>/' +
+      CRLF_NONE +
+    '                   windows   normal | offline | fixed-runtime' +
+      CRLF_NONE +
+    '                   linux, macos   archive' + CRLF_NONE +
+    '                 Every packaging input is a pinned artifact this' +
+      CRLF_NONE +
+    '                 command verifies offline and NEVER downloads; an' +
+      CRLF_NONE +
+    '                 absent one is refused with the script that provides' +
+      CRLF_NONE +
+    '                 it. Nothing is signed and no identity is used.' +
+      CRLF_NONE +
     '  --help         show this text' + CRLF_NONE +
     CRLF_NONE +
     // the three facts a reader would otherwise discover by running the
@@ -381,6 +396,10 @@ begin
     '  <output>/<os>-<arch>/release/    the native executable and app.pwb' +
       CRLF_NONE +
     '                                   (a .app bundle on macOS)' + CRLF_NONE +
+    '  <output>/<os>-<arch>/dist/<profile>/   with --profile: the artifact' +
+      CRLF_NONE +
+    '                                   and its release-index.json' +
+      CRLF_NONE +
     CRLF_NONE +
     'an existing release is replaced only once the new one is complete: it' +
       CRLF_NONE +

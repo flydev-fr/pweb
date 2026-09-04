@@ -1,7 +1,7 @@
 # The public build contract (CAP-10D0)
 
 ```
-pweb build [--project <path>]
+pweb build [--project <path>] [--profile <name>]
 pweb build --help
 ```
 
@@ -28,7 +28,12 @@ codes may not, except by a version bump.
 
 ## 1. The grammar, and every option that is not in it
 
-`build` takes `--project` and `--help` and **nothing else**. Every refusal is
+`build` takes `--project`, `--profile` and `--help` and **nothing else**.
+CAP-10D0 ratified the first and the third; **CAP-10D1 ratified `--profile`**,
+which turns the release into a distributable artifact and is the whole of
+[distribution-contract.md](distribution-contract.md). Everything below is
+CAP-10D0's, unchanged: without `--profile` this command is byte-for-byte what
+that shard froze. Every refusal is
 an existing CAP-10A cause — `unknown_option`, `duplicate_option`,
 `option_not_for_command`, `extra_positional`, `missing_value`,
 `empty_value`, `argument_encoding` — and this shard adds no usage code.
@@ -42,7 +47,7 @@ an existing CAP-10A cause — `unknown_option`, `duplicate_option`,
   staleness, and a build tool that guesses what is still fresh ships a stale
   artifact. So there is no incremental mode, nothing to resume, and — since
   the release is replaced whole — nothing to clean.
-- **No `--profile`, `--target`, `--clean`, `--release`/`--debug`, `--json`,
+- **No `--target`, `--clean`, `--release`/`--debug`, `--json`,
   `--watch`, `--install`, `--output` or `--force`**, no short option, no
   response file, no `--` terminator, and no option any environment variable
   can set. Each absence is a contract rather than an omission: an option
@@ -50,10 +55,12 @@ an existing CAP-10A cause — `unknown_option`, `duplicate_option`,
   `test/cap10d0/check_cap10d0_contracts.ps1` refuses the parser that grew
   one.
 
-The CAP-13 profiles, a distributable Linux artifact, the macOS signing
-posture and SDK packaging are **CAP-10D1 and CAP-10D2**. None of them is
-reachable from this grammar, and none of their vocabulary is in the build
-path.
+SDK packaging is **CAP-10D2**, and none of its vocabulary is in the build
+path. The CAP-13 profiles, the distributable Linux artifact and the macOS
+signing posture arrived at **CAP-10D1**, behind `--profile` and behind
+nothing else: the packaging driver is a second delegation from
+`pweb.cli.build`, after the pipeline has committed and the CAP-10C0 resolver
+has accepted the layout.
 
 ## 2. One execution path
 

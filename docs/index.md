@@ -28,6 +28,7 @@ every companion in its frontmatter.
 | [pipeline-contract.md](pipeline-contract.md) | the ten-stage lifecycle pipeline, the SDK root, the project-mutation set, the network policy and the Pas2JS assembly | CAP-10C1 |
 | [dev-contract.md](dev-contract.md) | the development loop for both frontends: the dev host, the generation, publish-by-rename, the poller, the acknowledgement, and the two change detectors | CAP-10C2 (React), CAP-10C3 (Pas2JS) |
 | [build-contract.md](build-contract.md) | the public `pweb build`: its grammar and the options it deliberately does not have, the one execution path, the release replacement rule and its failure table, the summary, and interruption | CAP-10D0 |
+| [distribution-contract.md](distribution-contract.md) | `pweb build --profile`: the four profile names, the identity every platform identifier is derived from, the pinned offline inputs, the deterministic archive, the macOS signing posture and the artifact layout | CAP-10D1 |
 
 `_bmad-output/implementation-artifacts/cap10c-closure-artifact.md` is the
 CAP-10C phase closure: the four hosted green runs, every digest supersession,

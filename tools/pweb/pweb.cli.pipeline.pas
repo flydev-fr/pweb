@@ -514,6 +514,22 @@ begin
       PWebCliProjectRefusalText(Project.Refusal), Project.Detail);
     exit;
   end;
+  // CAP-10D1: the Windows project-root ceiling, refused HERE - before the
+  // read-only tree is even digested, so nothing has been written and no
+  // child has been spawned. The measurement behind the bound, and why its
+  // owner is the pinned compiler rather than this CLI, is
+  // PWEB_CLI_PIPE_MAX_ROOT_CHARS in pweb.cli.toolchain. A build tool whose
+  // answer to "this path is too long" is a third-party compiler's own
+  // failure ten minutes later is a build tool that made the developer do
+  // the diagnosis
+  if (Os = pcoWindows) and
+     (Length(PWebCliDisplayPath(Project.Root)) >
+        PWEB_CLI_PIPE_MAX_ROOT_CHARS) then
+  begin
+    Refuse(pskOpen, ppcProject, 'project_root_too_long',
+      IntText(Length(PWebCliDisplayPath(Project.Root))));
+    exit;
+  end;
   excludes := PWebCliMutationSet(Project);
   if not PWebCliPipeTreeDigest(Project.Root, excludes, res.TreeBefore,
        stageRefusal) then

@@ -151,6 +151,15 @@ uses
     executable's compiled unit set, and a unit that reaches the link only
     transitively is a unit whose presence is an inference. }
   pweb.cli.build,
+  { CAP-10D1 adds the packaging driver and the deterministic archive writer,
+    named here for the same reason: the linkage claim is a measurement, and
+    a unit that reaches the link only transitively is a unit whose presence
+    is an inference. pweb.cli.package is the FIFTH and last caller of the
+    CAP-10C0 engine, and test/cap10d1/check_cap10d1_contracts.ps1 pins that
+    set by name. }
+  pweb.cli.packpins,
+  pweb.cli.tar,
+  pweb.cli.package,
   pweb.cli.args;
 
 const
@@ -736,7 +745,34 @@ function RunBuild(const Args: TPWebCliArgs; const StartDir: RawUtf8): Integer;
 var
   project: TPWebCliProject;
   r: TPWebCliBuildResult;
+  profile: TPWebCliProfile;
+  pre: TPWebCliPackResult;
 begin
+  // CAP-10D1, STEP ZERO: the profile name, and whether this target has it.
+  // Both are command-line facts, so both are answered BEFORE a project is
+  // opened - `pweb build --profile archive` on Windows is wrong whatever
+  // directory it was typed in, and answering it here is what keeps the
+  // CAP-10A usage taxonomy at thirteen causes with no fourteenth for a
+  // value the parser deliberately accepts on every platform
+  profile := ppfNone;
+  if Args.Profile <> '' then
+  begin
+    if not PWebCliParseProfile(Args.Profile, profile) then
+    begin
+      // the value is not one of the four ratified names on ANY target. The
+      // diagnostic names the set THIS target has, because that is the set a
+      // reader is about to retype
+      BuildRefused('profile_unknown',
+        PWebCliProfilesForTarget(PWebCliHostOs));
+      exit(PWEB_EXIT_USAGE);
+    end;
+    if not PWebCliProfileForTarget(profile, PWebCliHostOs) then
+    begin
+      BuildRefused('profile_not_for_target',
+        PWebCliProfilesForTarget(PWebCliHostOs));
+      exit(PWEB_EXIT_USAGE);
+    end;
+  end;
   project := PWebCliOpenProject(Args.ProjectPath, StartDir);
   if project.Refusal <> pcrNone then
   begin
@@ -748,6 +784,32 @@ begin
     else
       BuildRefused(PWebCliProjectRefusalText(project.Refusal), '');
     exit(PWEB_EXIT_PROJECT);
+  end;
+  // CAP-10D1: the packaging PREFLIGHT, before the pipeline rather than
+  // after it. A developer whose machine has no pinned standalone installer
+  // learns it in one second; the alternative is learning it after a
+  // fifteen-minute React build, which is the same answer delivered at the
+  // worst possible moment. It resolves, probes and hashes; it writes
+  // nothing and builds nothing
+  if profile <> ppfNone then
+  begin
+    pre := PWebCliPackPreflight(project, PWebCliHostOs, PWebCliHostArch,
+      profile);
+    if pre.Refusal <> pkrNone then
+    begin
+      BuildRefused(pre.Cause, pre.Detail);
+      // the remediation NAMES THE SCRIPT, because "a pinned input is
+      // missing" without one is a sentence a reader can do nothing with -
+      // and because naming it is the whole of what this CLI does instead of
+      // downloading it
+      if pre.Refusal in [pkrInputMissing, pkrInputDigest] then
+        EmitErr('pweb: provision it with `tools/get-webview2-runtime.ps1` ' +
+          '- this command never downloads anything'#10)
+      else if pre.Refusal in [pkrIsccMissing, pkrIsccIdentity] then
+        EmitErr('pweb: provision it with `tools/get-innosetup.ps1` - this ' +
+          'command never downloads anything'#10);
+      exit(PWebCliPackExitCode(pre.Refusal));
+    end;
   end;
   // the stop handler is a prerequisite of supervision and is installed
   // BEFORE anything is spawned, exactly as `run` and `dev` install it:
@@ -763,7 +825,7 @@ begin
   // @DevLine, and deliberately NOT a second copy of it: `dev` and `build`
   // split their two streams by the same rule, and a second spelling of one
   // rule is a second thing to keep in step
-  r := PWebCliRunBuild(project, PWebCliHostOs, PWebCliHostArch,
+  r := PWebCliRunBuild(project, PWebCliHostOs, PWebCliHostArch, profile,
     @DevLine, nil);
   if r.Code <> ppcOk then
   begin
@@ -791,6 +853,14 @@ begin
   EmitErr('  ' + Pad('release', 13) + r.ReleaseLogical + #10);
   EmitErr('  ' + Pad('app.pwb', 13) + r.BundleSha256 + #10);
   EmitErr('  ' + Pad('bytes', 13) + RawUtf8(IntToStr(r.TotalBytes)) + #10);
+  // CAP-10D1: two more fields, and ONLY when a profile was named. Six
+  // without, eight with - never a field that is present and empty, because
+  // an empty field is a reader's question rather than an answer
+  if r.Packaged then
+  begin
+    EmitErr('  ' + Pad('artifact', 13) + r.ArtifactLogical + #10);
+    EmitErr('  ' + Pad('sha256', 13) + r.ArtifactSha256 + #10);
+  end;
   if r.Accepted then
     EmitErr('pweb: run it with `pweb run`'#10);
   Result := PWEB_EXIT_OK;

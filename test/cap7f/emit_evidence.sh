@@ -1490,6 +1490,90 @@ for f in build_corpus \
     eval "${f}=\"\$(d0_str ${f})\""
 done
 
+# CAP-10D1: the distributable artifact. ONE record: the headless suite's
+# decision corpus (digested), the real `pweb build --profile archive` on a
+# generated project at a path carrying a SPACE, the archive whose inventory
+# equals the release and whose extracted copy answers 42, the determinism of
+# two writes, and the macOS codesign observation (typed not_applicable off
+# that family).
+d1_file="${repo_root}/build/cap10d1/cli-${target}.json"
+[ -f "${d1_file}" ] ||
+    die "cap10d1/cli-${target}.json missing -- the CAP-10D1 gates have not run in this workspace"
+d1_str() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+        "${d1_file}" | head -n 1
+}
+for f in pack_corpus \
+         pack_suite \
+         pack_digest \
+         pack_corpus_lines \
+         pack_execute_callers \
+         pack_build_driver_spawns \
+         pack_code_twins \
+         pack_pins_checked \
+         pack_pins_mismatched \
+         long_path_bound_chars \
+         signing_identity_used \
+         secrets_read \
+         profile_identity_rule \
+         profile_index_shape \
+         build_profile_available \
+         profiles_for_target \
+         profile_fixed_shorthand_refused \
+         profile_option_scoped_to_build \
+         d0_summary_extra_rows_without_profile \
+         d0_no_artifacts_without_profile \
+         profile_foreign_exit \
+         profile_foreign_cause \
+         profile_foreign_built_nothing \
+         release_untouched_by_packaging \
+         archive_deterministic \
+         rollback_seam_exercised \
+         pack_interrupt_stage \
+         pack_interrupt_armed \
+         pack_interrupt_delivered \
+         pack_descendants_after_interrupt \
+         pack_driver_ansi_seen \
+         pack_interrupt_clean \
+         d0_corpus_without_profile_unchanged \
+         d0_build_digest \
+         ledger_items_disposed \
+         windows_offline_built \
+         windows_fixed_built \
+         windows_artifact_replaced \
+         windows_install_exit \
+         windows_installed_layout \
+         windows_profile_marker \
+         windows_installed_rpc \
+         windows_uninstall_residue \
+         windows_normal_install_run_uninstall \
+         windows_profile_collision \
+         windows_two_bundleids_side_by_side \
+         windows_profile_self_replace \
+         profile_missing_input_exit \
+         profile_missing_input_cause \
+         profile_missing_input_names_script \
+         profile_drifted_input_exit \
+         profile_drifted_input_cause \
+         profile_iscc_identity_exit \
+         profile_iscc_identity_cause \
+         profile_identity_metacharacter_exit \
+         profile_identity_metacharacter_refused \
+         linux_archive_inventory_equals_release \
+         linux_archive_run \
+         macos_archive_inventory_equals_release \
+         macos_archive_run \
+         macos_codesign_observation \
+         macos_bundle_identity \
+         archive_program_mode \
+         long_path_ok_chars \
+         long_path_fail_chars \
+         long_path_refusal \
+         long_path_refusal_cause \
+         long_path_refusal_exit; do
+    eval "${f}=\"\$(d1_str ${f})\""
+done
+
 c3_file="${repo_root}/build/cap10c3/cli-${target}.json"
 [ -f "${c3_file}" ] ||
     die "cap10c3/cli-${target}.json missing -- the CAP-10C3 gates have not run in this workspace"
@@ -2011,6 +2095,74 @@ cat > "${work}/evidence.json" <<EOF
   "long_path_project_chars": "${long_path_project_chars}",
   "long_path_exit": "${long_path_exit}",
   "long_path_cause": "${long_path_cause}",
+  "pack_corpus": "${pack_corpus}",
+  "pack_suite": "${pack_suite}",
+  "pack_digest": "${pack_digest}",
+  "pack_corpus_lines": "${pack_corpus_lines}",
+  "pack_execute_callers": "${pack_execute_callers}",
+  "pack_build_driver_spawns": "${pack_build_driver_spawns}",
+  "pack_code_twins": "${pack_code_twins}",
+  "pack_pins_checked": "${pack_pins_checked}",
+  "pack_pins_mismatched": "${pack_pins_mismatched}",
+  "long_path_bound_chars": "${long_path_bound_chars}",
+  "signing_identity_used": "${signing_identity_used}",
+  "secrets_read": "${secrets_read}",
+  "profile_identity_rule": "${profile_identity_rule}",
+  "profile_index_shape": "${profile_index_shape}",
+  "build_profile_available": "${build_profile_available}",
+  "profiles_for_target": "${profiles_for_target}",
+  "profile_fixed_shorthand_refused": "${profile_fixed_shorthand_refused}",
+  "profile_option_scoped_to_build": "${profile_option_scoped_to_build}",
+  "d0_summary_extra_rows_without_profile": "${d0_summary_extra_rows_without_profile}",
+  "d0_no_artifacts_without_profile": "${d0_no_artifacts_without_profile}",
+  "profile_foreign_exit": "${profile_foreign_exit}",
+  "profile_foreign_cause": "${profile_foreign_cause}",
+  "profile_foreign_built_nothing": "${profile_foreign_built_nothing}",
+  "release_untouched_by_packaging": "${release_untouched_by_packaging}",
+  "archive_deterministic": "${archive_deterministic}",
+  "rollback_seam_exercised": "${rollback_seam_exercised}",
+  "pack_interrupt_stage": "${pack_interrupt_stage}",
+  "pack_interrupt_armed": "${pack_interrupt_armed}",
+  "pack_interrupt_delivered": "${pack_interrupt_delivered}",
+  "pack_descendants_after_interrupt": "${pack_descendants_after_interrupt}",
+  "pack_driver_ansi_seen": "${pack_driver_ansi_seen}",
+  "pack_interrupt_clean": "${pack_interrupt_clean}",
+  "d0_corpus_without_profile_unchanged": "${d0_corpus_without_profile_unchanged}",
+  "d0_build_digest": "${d0_build_digest}",
+  "ledger_items_disposed": "${ledger_items_disposed}",
+  "windows_offline_built": "${windows_offline_built}",
+  "windows_fixed_built": "${windows_fixed_built}",
+  "windows_artifact_replaced": "${windows_artifact_replaced}",
+  "windows_install_exit": "${windows_install_exit}",
+  "windows_installed_layout": "${windows_installed_layout}",
+  "windows_profile_marker": "${windows_profile_marker}",
+  "windows_installed_rpc": "${windows_installed_rpc}",
+  "windows_uninstall_residue": "${windows_uninstall_residue}",
+  "windows_normal_install_run_uninstall": "${windows_normal_install_run_uninstall}",
+  "windows_profile_collision": "${windows_profile_collision}",
+  "windows_two_bundleids_side_by_side": "${windows_two_bundleids_side_by_side}",
+  "windows_profile_self_replace": "${windows_profile_self_replace}",
+  "profile_missing_input_exit": "${profile_missing_input_exit}",
+  "profile_missing_input_cause": "${profile_missing_input_cause}",
+  "profile_missing_input_names_script": "${profile_missing_input_names_script}",
+  "profile_drifted_input_exit": "${profile_drifted_input_exit}",
+  "profile_drifted_input_cause": "${profile_drifted_input_cause}",
+  "profile_iscc_identity_exit": "${profile_iscc_identity_exit}",
+  "profile_iscc_identity_cause": "${profile_iscc_identity_cause}",
+  "profile_identity_metacharacter_exit": "${profile_identity_metacharacter_exit}",
+  "profile_identity_metacharacter_refused": "${profile_identity_metacharacter_refused}",
+  "linux_archive_inventory_equals_release": "${linux_archive_inventory_equals_release}",
+  "linux_archive_run": "${linux_archive_run}",
+  "macos_archive_inventory_equals_release": "${macos_archive_inventory_equals_release}",
+  "macos_archive_run": "${macos_archive_run}",
+  "macos_codesign_observation": "${macos_codesign_observation}",
+  "macos_bundle_identity": "${macos_bundle_identity}",
+  "archive_program_mode": "${archive_program_mode}",
+  "long_path_ok_chars": "${long_path_ok_chars}",
+  "long_path_fail_chars": "${long_path_fail_chars}",
+  "long_path_refusal": "${long_path_refusal}",
+  "long_path_refusal_cause": "${long_path_refusal_cause}",
+  "long_path_refusal_exit": "${long_path_refusal_exit}",
   "dev_pas2js_corpus": "${dev_pas2js_corpus}",
   "dev_pas2js_suite": "${dev_pas2js_suite}",
   "dev_pas2js_digest": "${dev_pas2js_digest}",

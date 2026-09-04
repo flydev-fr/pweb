@@ -1142,6 +1142,47 @@ Write-Host ("[CAP-10C0] supervision_corpus: $supervisionCorpus " +
     "listeners=$($c0.run_listener_count) descendants=$($c0.descendants_after_exit) " +
     "interrupt=$($c0.run_interrupt_clean))")
 
+# --- CAP-10D1: the distributable artifact -----------------------------------
+# build/cap10d1/cli-<target>.json is ONE record: the headless suite's decision
+# corpus (digested), the REAL `pweb build --profile` on a generated project at
+# a path carrying a SPACE, the three Windows installers with a silent install
+# that answers 42 and uninstalls clean, the two bundleIds that install side by
+# side, the pinned inputs whose absence and whose drift are two different
+# refusals, and the project-root ceiling measured on this runner.
+$d1File = Join-Path $repoRoot 'build/cap10d1/cli-windows-x86_64.json'
+if (-not (Test-Path $d1File)) {
+    throw '[CAP-7F] cap10d1/cli-windows-x86_64.json missing -- the CAP-10D1 gates have not run in this workspace'
+}
+$d1 = Get-Content $d1File -Raw | ConvertFrom-Json
+if ("$($d1.pack_corpus)" -notin @('PASS', 'FAIL')) {
+    throw "[CAP-7F] the CAP-10D1 record carries an unexpected verdict: $($d1.pack_corpus)"
+}
+if ("$($d1.pack_corpus)" -ceq 'PASS') {
+    if ("$($d1.pack_digest)" -eq '') {
+        throw '[CAP-7F] the CAP-10D1 record records PASS with an empty pack_digest'
+    }
+    # the claims a green verdict is MADE of, checked one at a time so a
+    # regression names itself rather than arriving as "CAP-10D1 FAILED"
+    foreach ($pair in @(@('signing_identity_used', 'false'),
+                        @('secrets_read', '0'),
+                        @('release_untouched_by_packaging', 'true'),
+                        @('rollback_seam_exercised', 'true'),
+                        @('d0_corpus_without_profile_unchanged', 'true'),
+                        @('pack_descendants_after_interrupt', '0'),
+                        @('windows_installed_rpc', '42'),
+                        @('windows_normal_install_run_uninstall', 'true'))) {
+        if ("$($d1.($pair[0]))" -ne $pair[1]) {
+            throw "[CAP-7F] the CAP-10D1 record records PASS with $($pair[0])=$($d1.($pair[0]))"
+        }
+    }
+}
+$d1Digest = "$($d1.pack_digest)"
+if ($d1Digest.Length -gt 12) { $d1Digest = $d1Digest.Substring(0, 12) + '...' }
+Write-Host ("[CAP-10D1] pack_corpus: $($d1.pack_corpus) (digest=$d1Digest " +
+    "lines=$($d1.pack_corpus_lines) profiles=$($d1.profiles_for_target) " +
+    "install_rpc=$($d1.windows_installed_rpc) " +
+    "signing=$($d1.signing_identity_used))")
+
 # --- run identity -----------------------------------------------------------
 $sha = $env:GITHUB_SHA
 if (-not $sha) { $sha = (& git rev-parse HEAD).Trim() }
@@ -1641,6 +1682,75 @@ $evidence = [ordered]@{
     long_path_project_chars             = "$($d0.long_path_project_chars)"
     long_path_exit                      = "$($d0.long_path_exit)"
     long_path_cause                     = "$($d0.long_path_cause)"
+    # CAP-10D1
+    pack_corpus                         = "$($d1.pack_corpus)"
+    pack_suite                          = "$($d1.pack_suite)"
+    pack_digest                         = "$($d1.pack_digest)"
+    pack_corpus_lines                   = "$($d1.pack_corpus_lines)"
+    pack_execute_callers                = "$($d1.pack_execute_callers)"
+    pack_build_driver_spawns            = "$($d1.pack_build_driver_spawns)"
+    pack_code_twins                     = "$($d1.pack_code_twins)"
+    pack_pins_checked                   = "$($d1.pack_pins_checked)"
+    pack_pins_mismatched                = "$($d1.pack_pins_mismatched)"
+    long_path_bound_chars               = "$($d1.long_path_bound_chars)"
+    signing_identity_used               = "$($d1.signing_identity_used)"
+    secrets_read                        = "$($d1.secrets_read)"
+    profile_identity_rule               = "$($d1.profile_identity_rule)"
+    profile_index_shape                 = "$($d1.profile_index_shape)"
+    build_profile_available             = "$($d1.build_profile_available)"
+    profiles_for_target                 = "$($d1.profiles_for_target)"
+    profile_fixed_shorthand_refused     = "$($d1.profile_fixed_shorthand_refused)"
+    profile_option_scoped_to_build      = "$($d1.profile_option_scoped_to_build)"
+    d0_summary_extra_rows_without_profile = "$($d1.d0_summary_extra_rows_without_profile)"
+    d0_no_artifacts_without_profile     = "$($d1.d0_no_artifacts_without_profile)"
+    profile_foreign_exit                = "$($d1.profile_foreign_exit)"
+    profile_foreign_cause               = "$($d1.profile_foreign_cause)"
+    profile_foreign_built_nothing       = "$($d1.profile_foreign_built_nothing)"
+    release_untouched_by_packaging      = "$($d1.release_untouched_by_packaging)"
+    archive_deterministic               = "$($d1.archive_deterministic)"
+    rollback_seam_exercised             = "$($d1.rollback_seam_exercised)"
+    pack_interrupt_stage                = "$($d1.pack_interrupt_stage)"
+    pack_interrupt_armed                = "$($d1.pack_interrupt_armed)"
+    pack_interrupt_delivered            = "$($d1.pack_interrupt_delivered)"
+    pack_descendants_after_interrupt    = "$($d1.pack_descendants_after_interrupt)"
+    pack_driver_ansi_seen               = "$($d1.pack_driver_ansi_seen)"
+    pack_interrupt_clean                = "$($d1.pack_interrupt_clean)"
+    d0_corpus_without_profile_unchanged = "$($d1.d0_corpus_without_profile_unchanged)"
+    d0_build_digest                     = "$($d1.d0_build_digest)"
+    ledger_items_disposed               = "$($d1.ledger_items_disposed)"
+    windows_offline_built               = "$($d1.windows_offline_built)"
+    windows_fixed_built                 = "$($d1.windows_fixed_built)"
+    windows_artifact_replaced           = "$($d1.windows_artifact_replaced)"
+    windows_install_exit                = "$($d1.windows_install_exit)"
+    windows_installed_layout            = "$($d1.windows_installed_layout)"
+    windows_profile_marker              = "$($d1.windows_profile_marker)"
+    windows_installed_rpc               = "$($d1.windows_installed_rpc)"
+    windows_uninstall_residue           = "$($d1.windows_uninstall_residue)"
+    windows_normal_install_run_uninstall = "$($d1.windows_normal_install_run_uninstall)"
+    windows_profile_collision           = "$($d1.windows_profile_collision)"
+    windows_two_bundleids_side_by_side  = "$($d1.windows_two_bundleids_side_by_side)"
+    windows_profile_self_replace        = "$($d1.windows_profile_self_replace)"
+    profile_missing_input_exit          = "$($d1.profile_missing_input_exit)"
+    profile_missing_input_cause         = "$($d1.profile_missing_input_cause)"
+    profile_missing_input_names_script  = "$($d1.profile_missing_input_names_script)"
+    profile_drifted_input_exit          = "$($d1.profile_drifted_input_exit)"
+    profile_drifted_input_cause         = "$($d1.profile_drifted_input_cause)"
+    profile_iscc_identity_exit          = "$($d1.profile_iscc_identity_exit)"
+    profile_iscc_identity_cause         = "$($d1.profile_iscc_identity_cause)"
+    profile_identity_metacharacter_exit = "$($d1.profile_identity_metacharacter_exit)"
+    profile_identity_metacharacter_refused = "$($d1.profile_identity_metacharacter_refused)"
+    linux_archive_inventory_equals_release = "$($d1.linux_archive_inventory_equals_release)"
+    linux_archive_run                   = "$($d1.linux_archive_run)"
+    macos_archive_inventory_equals_release = "$($d1.macos_archive_inventory_equals_release)"
+    macos_archive_run                   = "$($d1.macos_archive_run)"
+    macos_codesign_observation          = "$($d1.macos_codesign_observation)"
+    macos_bundle_identity               = "$($d1.macos_bundle_identity)"
+    archive_program_mode                = "$($d1.archive_program_mode)"
+    long_path_ok_chars                  = "$($d1.long_path_ok_chars)"
+    long_path_fail_chars                = "$($d1.long_path_fail_chars)"
+    long_path_refusal                   = "$($d1.long_path_refusal)"
+    long_path_refusal_cause             = "$($d1.long_path_refusal_cause)"
+    long_path_refusal_exit              = "$($d1.long_path_refusal_exit)"
     autoclose_stop_honoured         = "$($c1.autoclose_stop_honoured)"
     doctor_platform_webview         = "$($c1.doctor_platform_webview)"
     pipeline_corpus_lines           = "$($c1.pipeline_corpus_lines)"

@@ -1,0 +1,170 @@
+; PWeb GENERATED-APPLICATION identity include (CAP-10D1).
+;
+; The CAP-13 twin of tools/setup/pwebappsetup.issi, for an application
+; `pweb create` scaffolded rather than for the one CAP-6 release. Every
+; profile manifest under tools/setup/app/ consumes this one file, so the
+; installed identity - AppId, display name, per-user location, privilege
+; level, architecture gating and the profile marker - can never fork
+; between the three generated profiles, exactly as it cannot fork between
+; the three CAP-13 ones.
+;
+; WHY THIS FILE EXISTS AT ALL, rather than a define added to
+; tools/setup/pwebappsetup.issi. That include authors its identity as
+; LITERALS, and two FROZEN CAP-13 gates require them to stay literals:
+;
+;   test/cap6b1/check_cap6b1_contracts.ps1 matches
+;       (?m)^AppId=\{\{([0-9A-Fa-f-]+)\}\s*$
+;     in pwebappsetup.issi and fails if the GUID is not written out;
+;   test/cap6b4/check_cap6b4_contracts.ps1 requires
+;       #define PWEB_MARKER_KEY "Software\PWeb\PWebRelease"
+;     at column 0, and pins that exact key.
+;
+; Turning either into a define would break a CAP-13 gate, which CAP-10D1
+; may not do. So the generated application gets its own identity include
+; and every CAP-13 file stays byte-for-byte untouched.
+;
+; ANTI-FORK IS NOT ABANDONED, IT IS MEASURED.
+; test/cap10d1/check_cap10d1_contracts.ps1 requires the [Code] region of
+; tools/setup/app/pwebappprov.issi to be BYTE-IDENTICAL to
+; tools/setup/pwebprovgate.issi's, and app-fixed.iss's to fixed.iss's. A
+; CAP-13 gate body that moves without its twin is a red step rather than a
+; silent divergence discovered on somebody's machine.
+;
+; EVERY VALUE HERE IS A REQUIRED DEFINE WITH NO DEFAULT. A default would
+; be a silent identity: an installer that stamped some other application's
+; AppId, install directory or marker onto a user's machine because a
+; define was forgotten. The CAP-6b4 rule - "there is deliberately NO
+; default: the value is written to the machine" - applies to all of them
+; here, not only to the profile.
+;
+; Defines consumed (all derived from pweb.json by pweb.cli.package, and
+; every one of them re-checked against the Inno metacharacter set before
+; it is passed: a value that carries one is REFUSED, never escaped):
+;   PWEB_APP_ID          Inno AppId - the pweb.json bundleId literal
+;   PWEB_APP_NAME        display name - pweb.json name
+;   PWEB_APP_VERSION     pweb.json version, strict X.Y.Z
+;   PWEB_INSTALL_VENDOR  bundleId up to its LAST dot
+;   PWEB_INSTALL_APP     the bundleId's last label
+;   PWEB_MARKER_KEY      Software\PWeb\Apps\<bundleId>
+;   PWEB_PROFILE         normal | offline | fixed-runtime (validated)
+;   PWEB_SETUP_BASENAME  the output basename, never "setup"
+;   PWEB_PAYLOAD_DIR     the staged payload directory
+;   PWEB_COMPRESSION / PWEB_SOLID   optional, historical defaults
+;
+; THERE IS NO AppPublisher. Schema 1 states no organisation, and
+; inventing one from a bundle identifier is exactly the silent derivation
+; docs/cli-contract.md refuses when it refuses to default --bundle-id.
+;
+; THE INSTALL DIRECTORY IS KEYED ON THE bundleId, not on the name. Two
+; generated projects can share a name; they cannot share a bundleId. The
+; split at the LAST dot is unique, so <vendor>\<app> is a bijection with
+; the identifier - which is what makes it impossible for two products to
+; land in one directory and for PWebOwnsInstallDir to reclaim a tree that
+; belongs to somebody else.
+;
+; Nothing here can reach the network: there is no URL, no download
+; primitive and no [Run] entry, and the payload a profile embeds is the
+; only source a target machine ever sees.
+
+#ifndef PWEB_APP_ID
+  #error PWEB_APP_ID must be defined by the packaging driver - the pweb.json bundleId; there is deliberately no default
+#endif
+#ifndef PWEB_APP_NAME
+  #error PWEB_APP_NAME must be defined by the packaging driver - the pweb.json name; there is deliberately no default
+#endif
+#ifndef PWEB_APP_VERSION
+  #error PWEB_APP_VERSION must be defined by the packaging driver - the pweb.json version; there is deliberately no default
+#endif
+#ifndef PWEB_INSTALL_VENDOR
+  #error PWEB_INSTALL_VENDOR must be defined by the packaging driver - the bundleId up to its last dot
+#endif
+#ifndef PWEB_INSTALL_APP
+  #error PWEB_INSTALL_APP must be defined by the packaging driver - the bundleId's last label
+#endif
+#ifndef PWEB_MARKER_KEY
+  #error PWEB_MARKER_KEY must be defined by the packaging driver - Software\PWeb\Apps\<bundleId>
+#endif
+#ifndef PWEB_PAYLOAD_DIR
+  #error PWEB_PAYLOAD_DIR must be defined by the packaging driver - a hand-run ISCC must fail loudly rather than build a partial setup out of whatever happens to be on disk
+#endif
+; the profile identity, with the CAP-6b4 rules applied unchanged: no
+; default (a default silently stamps a wrong mode onto a user's machine)
+; and a case-SENSITIVE membership test against the one ratified set
+#ifndef PWEB_PROFILE
+  #error PWEB_PROFILE must be defined by the including profile (.iss) - exactly one of normal | offline | fixed-runtime; there is deliberately no default
+#endif
+#define PWEB_PROFILE_SET "|normal|offline|fixed-runtime|"
+#if Pos("|" + PWEB_PROFILE + "|", PWEB_PROFILE_SET) == 0
+  #error PWEB_PROFILE must be exactly one of normal | offline | fixed-runtime (case-sensitive)
+#endif
+; the basename. CAP-6b4 authored it IN the manifest and parsed it out; a
+; generated application's artifact name cannot be a literal in a shared
+; manifest, so the direction is inverted and the name arrives as a define.
+; The property that mattered is kept exactly: it is VALIDATED here, and
+; "setup" in any casing is refused, because every executable named
+; setup.exe is shimmed by Windows application compatibility into loading
+; version.dll and other DLLs from its own directory.
+#ifndef PWEB_SETUP_BASENAME
+  #error PWEB_SETUP_BASENAME must be defined by the packaging driver - and never "setup"
+#endif
+#if Pos("|" + LowerCase(PWEB_SETUP_BASENAME) + "|", "|setup|") != 0
+  #error PWEB_SETUP_BASENAME must not be "setup" (in any casing): every executable named setup.exe is shimmed by Windows application compatibility into loading version.dll and other DLLs from its own directory
+#endif
+#ifndef PWEB_COMPRESSION
+  #define PWEB_COMPRESSION "lzma2"
+#endif
+#ifndef PWEB_SOLID
+  #define PWEB_SOLID "yes"
+#endif
+
+; the fixed profile's installed runtime subdirectory, authored ONCE here
+; exactly as pwebappsetup.issi authors it for CAP-13: app-fixed.iss
+; deploys the tree INTO it and pwebappprov.issi reclaims it with
+; [InstallDelete] when an Evergreen profile is installed over a fixed one.
+; Two literals would be two directories, and the orphan the reclaim exists
+; to kill would come straight back. The PARENT is named beside it because
+; Inno only removes what an install RECORDED.
+#define PWEB_RUNTIME_PARENT "runtime"
+#define PWEB_RUNTIME_SUBDIR "runtime\webview2"
+
+; the profile marker: PWeb's own HKCU namespace, one key per bundleId.
+; Three levels are reclaimed with uninsdeletekeyifempty rather than
+; CAP-13's two, because this key is one level deeper - an uninstall must
+; leave neither the app key, nor Apps, nor PWeb behind when they are
+; empty, and must touch neither when a sibling product still owns one.
+#define PWEB_MARKER_ROOT "Software\PWeb"
+#define PWEB_MARKER_APPS "Software\PWeb\Apps"
+#define PWEB_MARKER_VALUE "Profile"
+
+[Setup]
+AppId={#PWEB_APP_ID}
+AppName={#PWEB_APP_NAME}
+AppVersion={#PWEB_APP_VERSION}
+VersionInfoDescription={#PWEB_APP_NAME} Setup ({#PWEB_PROFILE})
+DefaultDirName={localappdata}\Programs\{#PWEB_INSTALL_VENDOR}\{#PWEB_INSTALL_APP}
+; per-user by construction: never any elevation, never any attempt to
+; force where Microsoft places the runtime
+PrivilegesRequired=lowest
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+DisableProgramGroupPage=yes
+Compression={#PWEB_COMPRESSION}
+SolidCompression={#PWEB_SOLID}
+OutputBaseFilename={#PWEB_SETUP_BASENAME}
+Uninstallable=yes
+
+[Registry]
+; THE PROFILE MARKER, and the COMMIT POINT of a profile switch: Inno runs
+; [Registry] after every [Files] entry, so a setup that aborts earlier
+; never reaches it and the marker still names the SOURCE profile.
+;
+; Uninstall order is the reverse of install order, so the value goes first
+; and the three key levels follow only while they are empty - an uninstall
+; therefore removes this product's marker without ever touching a
+; neighbouring key another generated application owns.
+Root: HKCU; Subkey: "{#PWEB_MARKER_ROOT}"; Flags: uninsdeletekeyifempty
+Root: HKCU; Subkey: "{#PWEB_MARKER_APPS}"; Flags: uninsdeletekeyifempty
+Root: HKCU; Subkey: "{#PWEB_MARKER_KEY}"; Flags: uninsdeletekeyifempty
+Root: HKCU; Subkey: "{#PWEB_MARKER_KEY}"; ValueType: string; \
+    ValueName: "{#PWEB_MARKER_VALUE}"; ValueData: "{#PWEB_PROFILE}"; \
+    Flags: uninsdeletevalue

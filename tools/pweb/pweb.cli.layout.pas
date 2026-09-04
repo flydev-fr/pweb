@@ -122,6 +122,32 @@ function PWebCliAssembleRelease(const Project: TPWebCliProject;
   const Sdk: TPWebSdkLayout; Os: TPWebCliOs; Arch: TPWebCliArch;
   const TargetDir, ExePath, BundlePath: RawUtf8): TPWebCliLayoutResult;
 
+{$ifdef PWEB_LAYOUT_FAULTS}
+{ CAP-10D1, ledger item C1-11 (b) - THE ROLLBACK FAULT SEAM, TEST-ONLY.
+
+  CAP-10C1 recorded that the commit's rollback - the branch that puts the
+  previous release BACK when the committing rename fails - was a handled
+  partial-failure path no gate exercised. CAP-10D0 seeded the REFUSAL
+  portably (a `release` pre-seeded as a FILE makes the rename that must not
+  replace impossible on either family) and measured it on four targets, but
+  that refusal happens when `hadOld` is False, so the rollback inside it
+  stayed unreached: reaching it needs a fault injected BETWEEN the two
+  renames, which is a production seam the CAP-10D0 freeze forbade.
+
+  This is that seam, and it is compiled ONLY when PWEB_LAYOUT_FAULTS is
+  defined. Exactly one compile command in this repository defines it -
+  test/cap10d1/build_cap10d1 - and test/cap10d1/check_cap10d1_contracts.ps1
+  sweeps every other build command, every CI step and the shipped `pweb`
+  compile for the spelling, so the seam cannot reach a released binary by
+  accident. In a production build this declaration does not exist at all,
+  which is a stronger statement than a runtime flag defaulting to False. }
+var
+  /// when True, the rename that commits the staged tree is made to fail
+  // without touching the filesystem, so the rollback that follows it runs
+  // against a real aside-renamed previous release
+  PWebCliLayoutFailCommit: Boolean = False;
+{$endif}
+
 
 implementation
 
@@ -284,7 +310,15 @@ begin
       exit;
     end;
   end;
-  if not PWebCliRenameDir(stageDir,
+  if
+     {$ifdef PWEB_LAYOUT_FAULTS}
+     // the test-only seam: the commit is failed WITHOUT touching the
+     // filesystem, so what the rollback below finds is exactly what a real
+     // failed rename would have left - the previous release sitting at
+     // .pweb-old.tmp and the staged tree still complete
+     PWebCliLayoutFailCommit or
+     {$endif}
+     not PWebCliRenameDir(stageDir,
        PWebCliJoin(TargetDir, PWEB_CLI_RUN_RELEASE)) then
   begin
     // put the old one back rather than leave the project with neither

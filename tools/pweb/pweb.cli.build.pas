@@ -26,6 +26,19 @@
   PROJECT-RELATIVE, the app.pwb digest and the total bytes - plus the one
   advisory that turns an otherwise puzzling refusal into an actionable one.
 
+  CAP-10D1 ADDS A SECOND DELEGATION AND NOTHING ELSE. When a profile was
+  named, the packaging driver (pweb.cli.package) runs AFTER the pipeline has
+  committed and the CAP-10C0 resolver has accepted the layout, and the
+  summary gains two facts: the artifact's project-relative path and its
+  sha256. Without a profile that branch is not taken at all, which is what
+  makes "byte-for-byte CAP-10D0" a property of the code rather than a
+  sentence: the six fields are the same six, in the same order, and no
+  `dist/` directory comes into existence.
+
+  This unit STILL spawns nothing. It delegates to the packaging driver
+  exactly as it delegates to the pipeline, and the contract check keeps
+  sweeping this file for every spelling of a process API and finding none.
+
   DOES NOT ADD: a stage, an order, a bound, an exit category, a resumption
   rule, a cleaning rule, an option, or a second opinion about anything the
   pipeline already decided. TPWebCliPipeCode is REUSED rather than
@@ -106,7 +119,8 @@ uses
   pweb.cli.project,
   pweb.cli.run,
   pweb.cli.stage,
-  pweb.cli.pipeline;
+  pweb.cli.pipeline,
+  pweb.cli.package;
 
 type
   /// everything one public build learned, over and above the pipeline's own
@@ -141,17 +155,29 @@ type
     /// the CAP-10C0 resolver accepted the committed layout in `verify`.
     // The ONLY thing that may make this command suggest `pweb run`
     Accepted: Boolean;
+    /// CAP-10D1: what `--profile` produced, and nothing when it was absent
+    // - Packaged is False for a plain `pweb build`, and then every field
+    // below is empty and the summary is the CAP-10D0 six. That is what
+    // "byte-for-byte CAP-10D0 without --profile" means here: not a promise,
+    // a branch that is not taken
+    Packaged: Boolean;
+    Profile: RawUtf8;
+    ArtifactLogical: RawUtf8;
+    ArtifactSha256: RawUtf8;
+    ArtifactBytes: Int64;
   end;
 
 /// run the whole lifecycle for an ALREADY OPENED project and measure what
 /// it committed
 // - Project.Refusal must be pcrNone; the caller owns discovery and parsing,
 // exactly as `pweb run` and `pweb dev` do
+// - Profile is ppfNone for a plain `pweb build`; anything else runs the
+// CAP-10D1 packaging driver AFTER the pipeline and never instead of it
 // - Notify receives every line the pipeline emits, already prefixed and
 // already free of ANSI and of any absolute path; nil means silence
 function PWebCliRunBuild(const Project: TPWebCliProject;
-  Os: TPWebCliOs; Arch: TPWebCliArch; Notify: TPWebCliPipeNotify;
-  Opaque: Pointer): TPWebCliBuildResult;
+  Os: TPWebCliOs; Arch: TPWebCliArch; Profile: TPWebCliProfile;
+  Notify: TPWebCliPipeNotify; Opaque: Pointer): TPWebCliBuildResult;
 
 
 implementation
@@ -169,6 +195,25 @@ function InUseRefusal(const Cause: RawUtf8): Boolean;
 begin
   Result := (Cause = 'layout_reclaim_failed') or
             (Cause = 'layout_commit_failed');
+end;
+
+{ CAP-10D1. A packaging refusal has to arrive at the caller as one of the SIX
+  categories `build` already answers with, and the mapping is not re-decided
+  here: pweb.cli.package owns it, states it as a number, and this projects
+  that number back onto the pipeline's own enumeration so
+  PWebCliPipeExitCode stays the ONE place a category turns into an exit
+  code. Two enumerations, one mapping, and no seventh code anywhere. }
+function PackCode(Refusal: TPWebCliPackRefusal): TPWebCliPipeCode;
+begin
+  case PWebCliPackExitCode(Refusal) of
+    0: Result := ppcOk;
+    2: Result := ppcUsage;
+    3: Result := ppcProject;
+    4: Result := ppcUnavailable;
+    5: Result := ppcStageFailed;
+  else
+    Result := ppcInternal;
+  end;
 end;
 
 // the total size of a release, read out of the projection that already
@@ -205,10 +250,11 @@ begin
 end;
 
 function PWebCliRunBuild(const Project: TPWebCliProject;
-  Os: TPWebCliOs; Arch: TPWebCliArch; Notify: TPWebCliPipeNotify;
-  Opaque: Pointer): TPWebCliBuildResult;
+  Os: TPWebCliOs; Arch: TPWebCliArch; Profile: TPWebCliProfile;
+  Notify: TPWebCliPipeNotify; Opaque: Pointer): TPWebCliBuildResult;
 var
   pipe: TPWebCliPipeResult;
+  pack: TPWebCliPackResult;
   layout: TPWebCliRunLayout;
   refusal: TPWebCliStageRefusal;
   content: RawByteString;
@@ -263,6 +309,31 @@ begin
      PWebCliReadSmallFile(layout.BundlePath, PWEB_CLI_PIPE_MAX_FILE_BYTES,
        content, tooBig) then
     Result.BundleSha256 := LowerCaseU(Sha256(content));
+
+  // CAP-10D1. THE SECOND CALL, and it is reached only after the layout the
+  // first one committed has been verified: a distributable artifact of a
+  // release the CAP-10C0 resolver would refuse is an artifact nobody should
+  // be handed. This unit still spawns nothing, resolves no tool and knows no
+  // stage - it delegates to the packaging driver exactly as it delegates to
+  // the pipeline, and the categories both return are the same six
+  if Profile = ppfNone then
+    exit;
+  pack := PWebCliRunPackage(Project, Os, Arch, Profile, Notify, Opaque);
+  Result.Profile := pack.Profile;
+  if pack.Refusal <> pkrNone then
+  begin
+    // the packaging refusal REPLACES the result's category. The release is
+    // committed and untouched either way; what failed is the artifact
+    Result.Cause := pack.Cause;
+    Result.Detail := pack.Detail;
+    Result.Interrupted := Result.Interrupted or pack.Interrupted;
+    Result.Code := PackCode(pack.Refusal);
+    exit;
+  end;
+  Result.Packaged := True;
+  Result.ArtifactLogical := pack.ArtifactLogical;
+  Result.ArtifactSha256 := pack.ArtifactSha256;
+  Result.ArtifactBytes := pack.ArtifactBytes;
 end;
 
 end.

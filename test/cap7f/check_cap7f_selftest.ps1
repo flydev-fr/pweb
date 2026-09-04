@@ -110,6 +110,14 @@
 #   (c74) doctor_result=FAIL -> mustPass refusal (the CAP-10B0
 #         `frontend.lockfile` limitation this template exists to close)
 #   (c75) frontend_build=FAIL -> mustPass refusal
+#
+#   CAP-10D1 (d1..d15): pack_corpus SKIPPED, pack_digest diverging, a
+#   signing identity used, a secret read, the release altered by packaging,
+#   the CAP-10D0 corpus moved, a SIXTH engine caller, the rollback seam
+#   unexercised, a surviving descendant, an artifacts/ directory without
+#   --profile, a foreign profile that built something, a pin mismatched
+#   against its lock, the anti-fork equality lost, a ledger item left
+#   undisposed, and the packaging suite FAILED.
 #   (c76) native_build=FAIL -> mustPass refusal
 #   (c77) secure_origin=FAIL -> mustPass refusal
 #   (c78) rpc_result=41 on EVERY target -> ABSOLUTE PIN refusal
@@ -2318,13 +2326,165 @@ $e = Get-Content $f -Raw | ConvertFrom-Json
 $e.build_corpus = 'SKIP'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap10d0-corpus-skipped' 'build_corpus'
+
+# --- CAP-10D1: the distributable artifact ----------------------------------
+# Every refusal the aggregator can make about packaging, fired against a copy
+# of the freshly downloaded evidence. A comparator whose red paths were only
+# ever human-verified is a comparator whose red paths rot.
+
+# (d1) the packaging verdict rewritten to SKIP -> mustPass refusal
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.pack_corpus = 'SKIP'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d1-corpus-skipped' 'pack_corpus'
+
+# (d2) the packaging decision corpus diverging on one target -> the rules
+# stopped being the same rules on four machines
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.pack_digest = ('0' * 64)
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d1-digest-diverged' 'pack_digest'
+
+# (d3) A SIGNING IDENTITY WAS USED, in unison. The absolute pin, because four
+# targets that all signed would agree perfectly.
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.signing_identity_used = 'true'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10d1-signing-identity' 'signing_identity_used'
+
+# (d4) a secret was read, in unison
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.secrets_read = '1'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10d1-secret-read' 'secrets_read'
+
+# (d5) PACKAGING ALTERED THE RELEASE IT PACKAGED, in unison
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.release_untouched_by_packaging = 'false'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10d1-release-altered' 'release_untouched_by_packaging'
+
+# (d6) the CAP-10D0 corpus moved: `pweb build` without --profile is no longer
+# what that shard froze
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.d0_corpus_without_profile_unchanged = 'false'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10d1-d0-corpus-moved' 'd0_corpus_without_profile_unchanged'
+
+# (d7) a SIXTH caller of the child-process engine appeared
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.pack_execute_callers = 'pweb.cli.dev.pas,pweb.cli.package.pas,pweb.cli.pipeline.pas,pweb.cli.probe.pas,pweb.cli.run.pas,pweb.cli.somethingelse.pas'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10d1-sixth-engine-caller' 'pack_execute_callers'
+
+# (d8) the rollback seam was never exercised: C1-11 (b) is a claim again
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.rollback_seam_exercised = 'false'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10d1-rollback-unexercised' 'rollback_seam_exercised'
+
+# (d9) a descendant survived an interrupted packaging run, on ONE target
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.pack_descendants_after_interrupt = '1'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d1-descendant-survived' 'pack_descendants_after_interrupt'
+
+# (d10) an artifacts/ directory appeared without --profile: the CAP-10D0 path
+# is no longer byte-for-byte what it was
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.d0_no_artifacts_without_profile = 'false'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10d1-artifacts-without-profile' 'd0_no_artifacts_without_profile'
+
+# (d11) a foreign profile BUILT something instead of refusing
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.profile_foreign_built_nothing = 'false'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10d1-foreign-profile-built' 'profile_foreign_built_nothing'
+
+# (d12) a pinned input drifted from its lock and packaging built anyway
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.pack_pins_mismatched = 'PWEB_PACK_WV2_FIXED_SHA'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10d1-pin-mismatched' 'pack_pins_mismatched'
+
+# (d13) the anti-fork equality stopped being measured
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.pack_code_twins = '0'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10d1-code-twins-lost' 'pack_code_twins'
+
+# (d14) an inherited ledger item was left undisposed
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.ledger_items_disposed = '3'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10d1-ledger-undisposed' 'ledger_items_disposed'
+
+# (d15) the packaging suite verdict rewritten to FAIL -> mustPass refusal
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.pack_suite = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d1-suite-failed' 'pack_suite'
+
 Remove-Item -Force -ErrorAction SilentlyContinue $matrix
 # a floor, so a leg that silently stops running is caught. It is deliberately
 # NOT an equality: adding a refusal branch is normal and should not require
 # editing this line, while LOSING one is the failure worth naming
-if ($script:AggRefusals -lt 200) {
+if ($script:AggRefusals -lt 215) {
     throw ("selftest: only $($script:AggRefusals) aggregator refusals fired, " +
-        'expected at least 200 -- a negative leg stopped running')
+        'expected at least 215 -- a negative leg stopped running')
 }
 if ($script:SweepRefusals -lt 2) {
     throw ("selftest: only $($script:SweepRefusals) divergence refusals fired, " +

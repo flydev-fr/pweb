@@ -1,0 +1,58 @@
+; PWeb GENERATED-APPLICATION payload include (CAP-10D1).
+;
+; The CAP-13 twin of tools/setup/pwebapppayload.issi. It authors, ONCE,
+; the only [Files] entries that install the application itself - the
+; CAP-10C1 release triple of a generated project:
+;
+;   <ident>.exe   the native host the pipeline compiled
+;   app.pwb       the bundle - byte-identical across all three profiles
+;   webview.dll   the pinned binding - byte-identical across all three
+;
+; It is a SEPARATE include from the identity one for exactly the reason
+; CAP-6b4 measured with the pinned ISCC 6.7.3: the POSITION of these three
+; entries inside a profile's [Files] order decides what a FAILED profile
+; switch leaves behind. With the triple BEFORE the fixed profile's verdict
+; gate, a failed Evergreen -> fixed switch overwrites the source install's
+; executable and then rolls the runtime tree back, leaving a fixed-mode
+; application with no runtime tree. With the triple AFTER the gate, the
+; abort happens before these entries are reached at all and the source
+; install comes out byte-identical to pre-switch. So each profile
+; #includes this file at the position ITS order needs, while the entries
+; themselves can never fork.
+;
+; WHY THE FILENAMES ARE DEFINES. CAP-13 installs one product and names
+; `releaseapp.exe` literally; a generated application's executable is its
+; own `native.program` basename, which is stated once in pweb.json and
+; cannot be a literal in a shared manifest.
+;
+; Consumed defines (validated by pwebappid.issi, which every profile
+; includes before this file):
+;   PWEB_PAYLOAD_DIR  the staged payload directory holding the triple
+;   PWEB_APP_EXE      <ident>.exe
+;   PWEB_APP_BUNDLE   app.pwb
+;   PWEB_APP_LIB      webview.dll
+;
+; Nothing here is a profile-specific artifact: no provisioning installer,
+; no runtime tree, no loose frontend file, ever.
+
+#ifndef PWEB_PAYLOAD_DIR
+  #error PWEB_PAYLOAD_DIR must be defined - include tools/setup/app/pwebappid.issi before this file
+#endif
+#ifndef PWEB_APP_EXE
+  #error PWEB_APP_EXE must be defined by the packaging driver - the generated program's executable name
+#endif
+#ifndef PWEB_APP_BUNDLE
+  #error PWEB_APP_BUNDLE must be defined by the packaging driver - the release bundle name
+#endif
+#ifndef PWEB_APP_LIB
+  #error PWEB_APP_LIB must be defined by the packaging driver - the platform webview library name
+#endif
+
+[Files]
+; the CAP-10C1 release triple - no loose frontend files, ever
+Source: "{#PWEB_PAYLOAD_DIR}\{#PWEB_APP_EXE}"; DestDir: "{app}"; \
+    Flags: ignoreversion
+Source: "{#PWEB_PAYLOAD_DIR}\{#PWEB_APP_BUNDLE}"; DestDir: "{app}"; \
+    Flags: ignoreversion
+Source: "{#PWEB_PAYLOAD_DIR}\{#PWEB_APP_LIB}"; DestDir: "{app}"; \
+    Flags: ignoreversion

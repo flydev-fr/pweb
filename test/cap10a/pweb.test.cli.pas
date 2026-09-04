@@ -346,12 +346,43 @@ begin
   a := PWebCliParseArgs(Argv(['build', 'extra']));
   Check(a.Usage = pcuExtraPositional, 'C3: build takes no operand');
   Record_('args|build extra|' + PWebCliUsageText(a.Usage));
-  // the four options a reader of another build tool would reach for first,
-  // and every one of them is an option this grammar does not have. They are
-  // recorded because an ABSENCE nobody measured is an absence somebody adds
+  // CAP-10D1 RATIFIED `--profile`, and this row is the recorded
+  // supersession: it read `unknown_option` for as long as the option's
+  // semantics were unratified, which is the whole of why the absence was
+  // measured rather than assumed. Everything ELSE a reader of another build
+  // tool reaches for first is still an option this grammar does not have.
   a := PWebCliParseArgs(Argv(['build', '--profile', 'offline']));
-  Check(a.Usage = pcuUnknownOption, 'C3: there is no --profile in v1');
-  Record_('args|build --profile|' + PWebCliUsageText(a.Usage));
+  Check(a.Usage = pcuNone, 'D1: --profile is a build option');
+  Check(a.Command = pccBuild, 'D1: on the build command');
+  Check(a.Profile = 'offline', 'D1: carrying its value verbatim');
+  Record_('args|build --profile offline|' + PWebCliUsageText(a.Usage));
+  // the value discipline is --project's, and it is measured rather than
+  // inherited: a missing value, a duplicate and an empty one each earn the
+  // cause CAP-10A already had, which is why this shard adds no fourteenth
+  a := PWebCliParseArgs(Argv(['build', '--profile']));
+  Check(a.Usage = pcuMissingValue, 'D1: --profile needs a value');
+  Record_('args|build --profile bare|' + PWebCliUsageText(a.Usage));
+  a := PWebCliParseArgs(Argv(['build', '--profile=']));
+  Check(a.Usage = pcuEmptyValue, 'D1: an empty --profile is refused');
+  Record_('args|build --profile empty|' + PWebCliUsageText(a.Usage));
+  a := PWebCliParseArgs(Argv(['build', '--profile', 'a', '--profile', 'b']));
+  Check(a.Usage = pcuDuplicateOption, 'D1: --profile is not repeatable');
+  Record_('args|build --profile twice|' + PWebCliUsageText(a.Usage));
+  // and it belongs to `build` and to nothing else
+  a := PWebCliParseArgs(Argv(['run', '--profile', 'archive']));
+  Check(a.Usage = pcuOptionNotForCommand, 'D1: run has no --profile');
+  Record_('args|run --profile|' + PWebCliUsageText(a.Usage));
+  // THE ACCEPTED SET IS THE SAME ON FOUR TARGETS. The parser takes every
+  // ratified name on every platform, because a parser whose accepted values
+  // differed per platform is the divergence this contract forbids; whether
+  // the HOST can build the profile is answered after parsing, with its own
+  // typed cause
+  a := PWebCliParseArgs(Argv(['build', '--profile', 'archive']));
+  Check(a.Usage = pcuNone, 'D1: archive parses on every target');
+  Record_('args|build --profile archive|' + PWebCliUsageText(a.Usage));
+  a := PWebCliParseArgs(Argv(['build', '--profile', 'fixed-runtime']));
+  Check(a.Usage = pcuNone, 'D1: fixed-runtime parses on every target');
+  Record_('args|build --profile fixed-runtime|' + PWebCliUsageText(a.Usage));
   a := PWebCliParseArgs(Argv(['build', '--clean']));
   Check(a.Usage = pcuUnknownOption,
     'C3: every stage runs every time, so there is nothing to clean');

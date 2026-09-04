@@ -795,7 +795,14 @@ $c0Closure = '120f6769c155c59b8bc0cbc8b96e7faee14091628a5af49833f5b4fb96db11c0'
 # before CAP-10C2 and
 # c4c54b3c758e2e680ccae14d3cafb6a3f3410475c94d24e71b7c503dd14f2e01 before
 # CAP-10D0.
-$cliClosure = '9eb329ae89cfd29b945503481ca80e59d21cb2f14f03bfa4e0d4420c1e691e02'
+# and 9eb329ae89cfd29b945503481ca80e59d21cb2f14f03bfa4e0d4420c1e691e02
+# before CAP-10D1, which ratified `--profile`: the parser corpus records
+# `args|build --profile offline|ok` where it recorded `unknown_option`, plus
+# six rows for the option's value discipline and its per-command scope. The
+# public parser surface moves only in the shard that changes it, and only
+# with the supersession recorded - exactly as CAP-10C0 moved it for `run`,
+# CAP-10C2 for `dev` and CAP-10D0 for `build`.
+$cliClosure = '4aa3c03b772ad1bddc8b51d1ea974543184529733cebf9463c899a84c198f9ec'
 $c0File = Join-Path $repoRoot "build/cap10c0/cli-$target.json"
 if (Test-Path -LiteralPath $c0File) {
     $c0 = Get-Content $c0File -Raw | ConvertFrom-Json

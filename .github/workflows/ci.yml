@@ -78,7 +78,11 @@ jobs:
     # 4 isolation + 115 matrix; plus 230 for CAP-10D0: 20 build + 90
     # gates + 120 for the L2b spaced-path re-run, which is the largest
     # single addition this job has taken and the one to look at first if
-    # the JOB backstop below ever fires).
+    # the JOB backstop below ever fires; plus 170 for CAP-10D1: 20 to stage
+    # the packaging kit and compile the suite, and 150 for the gates, which
+    # build THREE Inno Setup installers for a generated application - the
+    # fixed profile expands a ~690 MB runtime tree and compresses it - and
+    # then install, launch, uninstall and drain two of them).
     #
     # The JOB budget is only a BACKSTOP, and it deliberately does NOT
     # try to exceed that sum. It cannot meaningfully: the step budgets
@@ -2195,6 +2199,52 @@ jobs:
             build/cap10d0/run-pas2js-stderr.txt
             build/cap10d0/race-run-stderr.txt
             build/cap10d0-gates.log
+
+      # ---------------------------------------------------------------------
+      # CAP-10D1: the distributable artifact. `pweb build --profile` turns the
+      # release CAP-10D0 committed into something somebody else can install or
+      # unpack, and every packaging input is a PINNED artifact verified
+      # offline - this job provisioned them for the CAP-6b steps, and the
+      # staging step below COPIES them into the SDK root. Nothing here
+      # downloads anything.
+      # ---------------------------------------------------------------------
+      - name: CAP-10D1 contract cross-checks (pins vs locks, five engine callers, the anti-fork twins, no signing, no network)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10d1/check_cap10d1_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10D1 contract cross-checks FAILED' }
+      - name: CAP-10D1 stage the packaging kit and build the suite and driver
+        shell: pwsh
+        timeout-minutes: 20
+        run: pwsh -NoProfile -File test/cap10d1/build_cap10d1.ps1
+      - name: CAP-10D1 packaging gates + evidence
+        shell: bash
+        timeout-minutes: 150
+        run: |
+          pwsh -NoProfile -File test/cap10d1/run_cap10d1_gates.ps1 2>&1 |
+            tee build/cap10d1-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10D1 upload the packaging corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10d1-pack-windows
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10d1/cli-windows-x86_64.json
+            build/cap10d1/contracts.json
+            build/cap10d1/pack-corpus.txt
+            build/cap10d1/pack-observed.txt
+            build/cap10d1/d1tests.log
+            build/cap10d1/packdrv-report.txt
+            build/cap10d1/packdrv-report.txt.lines
+            build/cap10d1/packdrv-stdout.txt
+            build/cap10d1/packdrv-stderr.txt
+            build/cap10d1/cli-stderr.txt
+            build/cap10d1/codesign.txt
+            build/cap10d1-gates.log
       # CAP-10D0 L2b: the CAP-10 chain, RE-RUN from a repository path that
       # carries a SPACE.
       #
@@ -3216,6 +3266,52 @@ jobs:
             build/cap10d0/run-pas2js-stderr.txt
             build/cap10d0/race-run-stderr.txt
             build/cap10d0-gates.log
+
+      # ---------------------------------------------------------------------
+      # CAP-10D1: the distributable artifact. `pweb build --profile` turns the
+      # release CAP-10D0 committed into something somebody else can install or
+      # unpack, and every packaging input is a PINNED artifact verified
+      # offline - this job provisioned them for the CAP-6b steps, and the
+      # staging step below COPIES them into the SDK root. Nothing here
+      # downloads anything.
+      # ---------------------------------------------------------------------
+      - name: CAP-10D1 contract cross-checks (pins vs locks, five engine callers, the anti-fork twins, no signing, no network)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10d1/check_cap10d1_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10D1 contract cross-checks FAILED' }
+      - name: CAP-10D1 stage the packaging kit and build the suite and driver
+        shell: bash
+        timeout-minutes: 20
+        run: test/cap10d1/build_cap10d1.sh
+      - name: CAP-10D1 packaging gates + evidence
+        shell: bash
+        timeout-minutes: 150
+        run: |
+          xvfb-run -a pwsh -NoProfile -File test/cap10d1/run_cap10d1_gates.ps1 2>&1 |
+            tee build/cap10d1-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10D1 upload the packaging corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10d1-pack-linux
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10d1/cli-linux-x86_64.json
+            build/cap10d1/contracts.json
+            build/cap10d1/pack-corpus.txt
+            build/cap10d1/pack-observed.txt
+            build/cap10d1/d1tests.log
+            build/cap10d1/packdrv-report.txt
+            build/cap10d1/packdrv-report.txt.lines
+            build/cap10d1/packdrv-stdout.txt
+            build/cap10d1/packdrv-stderr.txt
+            build/cap10d1/cli-stderr.txt
+            build/cap10d1/codesign.txt
+            build/cap10d1-gates.log
       - name: CAP-7F emit the Linux evidence artifact
         shell: bash
         timeout-minutes: 10
@@ -4150,6 +4246,52 @@ jobs:
             build/cap10d0/run-pas2js-stderr.txt
             build/cap10d0/race-run-stderr.txt
             build/cap10d0-gates.log
+
+      # ---------------------------------------------------------------------
+      # CAP-10D1: the distributable artifact. `pweb build --profile` turns the
+      # release CAP-10D0 committed into something somebody else can install or
+      # unpack, and every packaging input is a PINNED artifact verified
+      # offline - this job provisioned them for the CAP-6b steps, and the
+      # staging step below COPIES them into the SDK root. Nothing here
+      # downloads anything.
+      # ---------------------------------------------------------------------
+      - name: CAP-10D1 contract cross-checks (pins vs locks, five engine callers, the anti-fork twins, no signing, no network)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10d1/check_cap10d1_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10D1 contract cross-checks FAILED' }
+      - name: CAP-10D1 stage the packaging kit and build the suite and driver
+        shell: bash
+        timeout-minutes: 20
+        run: test/cap10d1/build_cap10d1.sh
+      - name: CAP-10D1 packaging gates + evidence
+        shell: bash
+        timeout-minutes: 150
+        run: |
+          pwsh -NoProfile -File test/cap10d1/run_cap10d1_gates.ps1 2>&1 |
+            tee build/cap10d1-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10D1 upload the packaging corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10d1-pack-macos-x64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10d1/cli-macos-x86_64.json
+            build/cap10d1/contracts.json
+            build/cap10d1/pack-corpus.txt
+            build/cap10d1/pack-observed.txt
+            build/cap10d1/d1tests.log
+            build/cap10d1/packdrv-report.txt
+            build/cap10d1/packdrv-report.txt.lines
+            build/cap10d1/packdrv-stdout.txt
+            build/cap10d1/packdrv-stderr.txt
+            build/cap10d1/cli-stderr.txt
+            build/cap10d1/codesign.txt
+            build/cap10d1-gates.log
       - name: CAP-7F emit the macOS x64 evidence artifact
         shell: bash
         timeout-minutes: 10
@@ -5012,6 +5154,52 @@ jobs:
             build/cap10d0/run-pas2js-stderr.txt
             build/cap10d0/race-run-stderr.txt
             build/cap10d0-gates.log
+
+      # ---------------------------------------------------------------------
+      # CAP-10D1: the distributable artifact. `pweb build --profile` turns the
+      # release CAP-10D0 committed into something somebody else can install or
+      # unpack, and every packaging input is a PINNED artifact verified
+      # offline - this job provisioned them for the CAP-6b steps, and the
+      # staging step below COPIES them into the SDK root. Nothing here
+      # downloads anything.
+      # ---------------------------------------------------------------------
+      - name: CAP-10D1 contract cross-checks (pins vs locks, five engine callers, the anti-fork twins, no signing, no network)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10d1/check_cap10d1_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10D1 contract cross-checks FAILED' }
+      - name: CAP-10D1 stage the packaging kit and build the suite and driver
+        shell: bash
+        timeout-minutes: 20
+        run: test/cap10d1/build_cap10d1.sh
+      - name: CAP-10D1 packaging gates + evidence
+        shell: bash
+        timeout-minutes: 150
+        run: |
+          pwsh -NoProfile -File test/cap10d1/run_cap10d1_gates.ps1 2>&1 |
+            tee build/cap10d1-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10D1 upload the packaging corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10d1-pack-macos-arm64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10d1/cli-macos-arm64.json
+            build/cap10d1/contracts.json
+            build/cap10d1/pack-corpus.txt
+            build/cap10d1/pack-observed.txt
+            build/cap10d1/d1tests.log
+            build/cap10d1/packdrv-report.txt
+            build/cap10d1/packdrv-report.txt.lines
+            build/cap10d1/packdrv-stdout.txt
+            build/cap10d1/packdrv-stderr.txt
+            build/cap10d1/cli-stderr.txt
+            build/cap10d1/codesign.txt
+            build/cap10d1-gates.log
       - name: CAP-7F emit the macOS arm64 evidence artifact
         shell: bash
         timeout-minutes: 10

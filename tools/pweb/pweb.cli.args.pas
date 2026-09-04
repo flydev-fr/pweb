@@ -28,7 +28,7 @@
     pweb run --help
     pweb dev [--project <path>]
     pweb dev --help
-    pweb build [--project <path>]
+    pweb build [--project <path>] [--profile <name>]
     pweb build --help
 
   Long options only. There are no short forms in v1 - not because they are
@@ -82,6 +82,16 @@
   `--release`/`--debug` and no `--watch` to spell. Each of those absences is
   a contract rather than an omission: an option exposed before its semantics
   are ratified is an option that can never be taken back.
+
+  CAP-10D1 RATIFIES EXACTLY ONE OF THEM, `--profile`, and adds NO usage
+  cause. The accepted set - normal, offline, fixed-runtime, archive - lives
+  in pweb.cli.package and is the SAME on all four targets, because a parser
+  whose accepted values differed per platform would be the very defect the
+  `/foo` rule below exists to prevent. Whether the host can build the profile
+  that was named is not a command-line fact: it is answered after parsing,
+  with its own typed cause. Everything else CAP-10D0 refused - `--target`,
+  `--clean`, `--release`/`--debug`, `--json`, `--watch`, `--install`,
+  `--output`, `--force` - is still refused.
 
   DELIBERATELY NOT IMPLEMENTED: response files (`@file` is an ordinary
   positional and is never expanded), `--` as an argument terminator (it is
@@ -166,6 +176,16 @@ type
     Ui: RawUtf8;
     /// create: the --bundle-id value, verbatim
     BundleId: RawUtf8;
+    /// build: the --profile value, verbatim
+    // - CAP-10D1. The accepted SET lives in pweb.cli.package, and it is
+    // deliberately the SAME set on all four targets: a parser whose
+    // accepted values differed per platform is precisely the
+    // platform-divergent parsing this contract forbids in as many words.
+    // Whether THIS host can build the profile that was named is a
+    // different question, asked after the line has parsed and answered
+    // with its own typed cause (`profile_not_for_target`) - which is why
+    // CAP-10D1 adds no usage cause and the taxonomy above stays at thirteen
+    Profile: RawUtf8;
   end;
 
 /// stable text for a usage refusal
@@ -220,13 +240,14 @@ function PWebCliParseArgs(const Argv: TRawUtf8DynArray): TPWebCliArgs;
 var
   i, eq: PtrInt;
   token, name, value: RawUtf8;
-  hasValue, seenProject, seenUi, seenBundleId: Boolean;
+  hasValue, seenProject, seenUi, seenBundleId, seenProfile: Boolean;
   seenPositional, seenName: Boolean;
 begin
   Result := Default(TPWebCliArgs);
   seenProject := False;
   seenUi := False;
   seenBundleId := False;
+  seenProfile := False;
   seenPositional := False;
   seenName := False;
   i := 0;
@@ -421,6 +442,41 @@ begin
         Result.BundleId := value;
         seenBundleId := True;
       end
+      else if name = '--profile' then
+      begin
+        // the SAME value discipline as --project, --ui and --bundle-id,
+        // spelled out rather than factored: this file's whole job is that
+        // one grammar is visible
+        if seenProfile then
+        begin
+          Refuse(Result, pcuDuplicateOption, name);
+          exit;
+        end;
+        if not hasValue then
+        begin
+          if (i >= High(Argv)) or
+             (Copy(Argv[i + 1], 1, 1) = '-') then
+          begin
+            Refuse(Result, pcuMissingValue, name);
+            exit;
+          end;
+          Inc(i);
+          value := Argv[i];
+          if (Pos(#0, value) > 0) or
+             not PWebStrictUtf8(value) then
+          begin
+            Refuse(Result, pcuEncoding, '');
+            exit;
+          end;
+        end;
+        if value = '' then
+        begin
+          Refuse(Result, pcuEmptyValue, name);
+          exit;
+        end;
+        Result.Profile := value;
+        seenProfile := True;
+      end
       else
       begin
         Refuse(Result, pcuUnknownOption, name);
@@ -490,6 +546,14 @@ begin
       Refuse(Result, pcuOptionNotForCommand, '--ui')
     else
       Refuse(Result, pcuOptionNotForCommand, '--bundle-id');
+    exit;
+  end;
+  // CAP-10D1: --profile belongs to `build` and to nothing else, so it can
+  // never be silently ignored by a command that was not meant to take it
+  if (Result.Command <> pccBuild) and
+     seenProfile then
+  begin
+    Refuse(Result, pcuOptionNotForCommand, '--profile');
     exit;
   end;
   // create has no project to point at, and it emits no colour and no
