@@ -708,10 +708,39 @@ try {
                 ForEach-Object { "$($_.id)=$($_.status)/$($_.cause)" }) -join ',')
         }
         $cmDoctorStatus[$ui] = $cmDoctor
-        Require (($cmDoctor -eq 'pass') -or ($cmDoctor -eq 'warning')) `
-            "CM1: the doctor on the extracted SDK reported '$cmDoctor' for the $ui project with the checkout aside"
+        # THE ASSERTION IS THE PIPELINE'S RULE, NOT THE DOCTOR'S OVERALL
+        # STATUS, and the difference is a ratified one. `platform.webview`
+        # asks whether this machine can DISPLAY a WebView, and CAP-10C1
+        # (ledger C1-15) measured hosted macOS runners answering
+        # `framework_absent` on machines where the same projects build and
+        # run - so `FirstRequiredFailure` excludes that row from the BUILD
+        # verdict by name. A gate that required the doctor's overall status
+        # to be pass would be re-imposing exactly the requirement CAP-10C1
+        # removed. The row is still RECORDED, per target, in the rows field
+        # above; what is REQUIRED here is that no OTHER required row failed.
+        $blocking = @()
+        if ($null -ne $o) {
+            foreach ($c in $o.checks) {
+                if (($c.severity -eq 'required') -and ($c.status -eq 'fail') -and
+                    ($c.id -ne 'platform.webview')) {
+                    $blocking += "$($c.id)=$($c.cause)"
+                }
+            }
+        }
+        Require (($null -ne $o) -and ($blocking.Count -eq 0)) `
+            ("CM1: the doctor on the extracted SDK failed a build-blocking row " +
+             "for the $ui project with the checkout aside: [$($blocking -join ',')]")
         $b = CleanCli @('build', '--project', $proj) 2400000
         Row "clean_machine_${ui}_build_exit" "$($b.Code)"
+        # BOTH STREAMS on a failure. The pipeline's own lines go to stderr
+        # and every FORWARDED child line - the compiler's, the bundler's -
+        # goes to stdout, so a gate that printed only stderr reports
+        # `stage_exited 1` and throws away the sentence that says why. It
+        # cost a hosted macOS run to learn that once.
+        if ($b.Code -ne 0) {
+            Write-Host "----- CM $ui build (stdout, the children's own lines) -----"
+            Write-Host $b.Out
+        }
         Require ($b.Code -eq 0) "CM: the $ui build exited $($b.Code): $($b.Err)"
         foreach ($line in ($b.Err -split "`r?`n")) {
             if ($line -match '^pweb: (open|toolchain|stage_sdk|install|typecheck|build|pack|compile|layout|verify): (.+)$') {
@@ -755,6 +784,10 @@ try {
                 $pr = CleanCli @('build', '--project', $proj, '--profile',
                     $profile) 3000000
                 $profileResults += "$profile=$($pr.Code)"
+                if ($pr.Code -ne 0) {
+                    Write-Host "----- CM3 $profile (stdout, the children's own lines) -----"
+                    Write-Host $pr.Out
+                }
                 Require ($pr.Code -eq 0) `
                     "CM3: --profile $profile from the extracted SDK exited $($pr.Code): $($pr.Err)"
                 foreach ($line in ($pr.Err -split "`r?`n")) {
