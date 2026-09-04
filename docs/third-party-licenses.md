@@ -1,5 +1,37 @@
 # Third-party license notices
 
+## What the PWeb SDK distribution ships (CAP-10D2)
+
+This table is the **machine-readable** shipped subset. The SDK packager
+(`tools/pweb/pwebsdk.pas`) carries the same rows as a compiled table, the
+CAP-10D2 contract check requires the two to agree name for name and condition
+for condition, and the gate requires `share/pweb/licenses/` in a packaged SDK
+to contain exactly the rows that apply to its target — no more and no fewer.
+A notice nobody ratified is a notice nobody reviewed.
+
+| file | targets | component | terms |
+|---|---|---|---|
+| `LICENSE.mormot2.md` | all | mORMot 2 sources and statics | MPL 1.1 / GPL 2.0 / LGPL 2.1 tri-license |
+| `LICENSE.quickjs.txt` | not macos | QuickJS objects inside mORMot's static tree | MIT |
+| `LICENSE.webview.txt` | all | the webview library in `share/pweb/lib/<target>` | MIT |
+| `LICENSE.webview2sdk.txt` | windows-x86_64 | the WebView2 loader inside `webview.dll` and `pack/lib/WebView2Loader.dll` | BSD-style |
+
+`LICENSE.quickjs.txt` is absent on macOS because the pinned mORMot static
+tree carries `quickjs.o` for `x86_64-win64`, `x86_64-linux` and `delphi` and
+**not** for either Darwin architecture — measured, not assumed — so a macOS
+package redistributes no QuickJS object at all.
+
+**What the SDK does not ship, and therefore carries no notice for:** the
+Inno Setup compiler, the three Microsoft WebView2 runtime artifacts, FPC,
+Node.js, npm and the Pas2JS compiler. Each is a *pinned* input the SDK
+resolves or the doctor requires, never a bundled one — see
+[sdk-contract.md](sdk-contract.md) §2. React and react-dom appear below
+because a generated React application bundles them; PWeb's SDK does not.
+
+**PWeb's own terms are not stated anywhere in this repository**, so the
+distribution ships third-party notices only. That is recorded as a known
+limitation rather than resolved by inventing a licence.
+
 ## webview/webview (MIT)
 
 The raw binding units in `src/lib/` are generated from the C headers of
@@ -126,6 +158,28 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## mORMot 2 (MPL 1.1 / GPL 2.0 / LGPL 2.1 tri-license)
+
+The PWeb SDK ships mORMot 2's sources (`share/pweb/deps/mormot2/src`) and the
+static objects for its target (`share/pweb/deps/mormot2/static/<fpc-target>`,
+plus `static/delphi` on Windows, from which a Win64 build reaches two objects
+by a relative path). Every PWeb release links it. On Windows the shipped
+source is **CAP-3U-patched** — the patch is applied once at staging time,
+never on a user's machine — and travels with its `x64callmethod.obj`.
+
+The framework is released under a disjunctive MPL 1.1 / GPL 2.0 / LGPL 2.1
+three-license, the LGPL branch carrying the FPC static-linking exception. The
+full text ships verbatim as `share/pweb/licenses/LICENSE.mormot2.md`, copied
+from the pinned checkout's own `LICENCE.md` at the commit recorded in
+`mormot.lock`. `_bmad-output/specs/spec-pweb/SPEC.md` accepts the tri-license
+as-is; no relicensing work and no per-license impact analysis is in scope.
+
+The upstream `static/` tree additionally carries prebuilt third-party objects
+that mORMot itself redistributes — SQLite, zlib/libdeflate, Lizard and
+QuickJS among them — under their own upstream terms. QuickJS has its own
+generated notice below and in the shipped set; the others travel inside the
+mORMot distribution exactly as they reach this repository.
+
 ## Pas2JS / Free Pascal RTL (modified LGPL with linking exception)
 
 The CAP-5 Pas2JS SDK and example are compiled with the pinned
@@ -135,10 +189,21 @@ the Pas2JS run-time library (`rtl.js` and compiled RTL units), which is
 distributed under the Free Pascal RTL license: the GNU Library General
 Public License with the FPC static-linking exception, permitting
 distribution of executables/bundles that link the RTL without imposing
-LGPL terms on the application itself. The full license texts ship inside
-the pinned release archive (`COPYING.FPC` and companions in the Pas2JS
-distribution); they apply to all RTL material embedded in the compiled
-`app.js` bundles and the SDK test harness output.
+LGPL terms on the application itself. Those terms apply to all RTL material
+embedded in the compiled `app.js` bundles and the SDK test harness output.
+
+**Measured at CAP-10D2, and it corrects what this section used to claim:**
+the pinned Pas2JS 3.0.1 archive contains **no `COPYING.FPC`**. Its own
+`packages/rtl/README.txt` refers to a file "included in this distribution"
+that the archive does not carry, and `tools/get-pas2js.ps1` moves the whole
+archive root into `deps/`, so nothing is being filtered out. This repository
+therefore has no offline, pinned, verifiable licence text for the Pas2JS
+compiler or its RTL — which is one of the two reasons the SDK **pins** the
+compiler instead of shipping it (the other being that the SDK ships no
+compiler at all: see [sdk-contract.md](sdk-contract.md) §2). A generated
+application still embeds RTL material and is still governed by the terms
+above; what changed is that this document no longer claims a file exists
+that does not.
 
 TypeScript, esbuild and @types/* packages are build-time toolchain
 dependencies only (pinned in the respective `package-lock.json` files);

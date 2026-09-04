@@ -68,7 +68,11 @@ uses
   pweb.cli.paths,
   pweb.cli.project,
   pweb.cli.probe,
-  pweb.cli.toolchain;
+  pweb.cli.toolchain,
+  // CAP-10D2: the installation's own integrity, MEASURED elsewhere and
+  // reported here. The engine stays a pure function of its environment -
+  // the fact arrives in TPWebCliDoctorEnv exactly as the host facts do
+  pweb.cli.sdkmanifest;
 
 const
   /// the doctor JSON contract version - a PUBLIC CLI surface
@@ -130,6 +134,12 @@ type
     Release: RawUtf8;
     OsProductVersion: RawUtf8;   // '' when the platform publishes none
     Engine: TPWebCliEngineFact;
+    /// CAP-10D2: what the running executable's own SDK says about itself
+    // - a default-initialized environment carries Present = False, which is
+    // the UNPACKAGED state: the three sdk rows are then not_applicable, and
+    // a synthetic environment that never heard of a manifest reports the
+    // same thing this repository's own staged SDK root reports
+    Sdk: TPWebCliSdkFact;
     NodeKind: function(const Path: RawUtf8): TPWebCliNodeKind;
     DirWritable: function(const Dir: RawUtf8): Boolean;
     ProbeTool: function(const Tool, ProjectRoot: RawUtf8;
@@ -205,6 +215,11 @@ begin
   if not PWebCliOsProductVersion(Result.OsProductVersion) then
     Result.OsProductVersion := '';
   Result.Engine := PWebCliEngine;
+  // the running image's own SDK, by the one CAP-10B0 anchor rule. On an
+  // unpackaged root this is three directory reads and nothing else; on a
+  // packaged one it is the FULL inventory - measured at 288 files / 38 MB
+  // in 57 ms, which is why there is no sampling policy to argue about
+  Result.Sdk := PWebCliSdkVerify(PWEB_CLI_VERSION);
   Result.NodeKind := @PWebCliNodeKind;
   Result.DirWritable := @PWebCliDirWritable;
   Result.ProbeTool := @RealProbe;
@@ -616,6 +631,95 @@ begin
     Add(b, 'platform.webview', pdsPass, pdvRequired, 'ok',
       'the host WebView engine is usable', Env.Engine.Observed,
       Env.Engine.Expected, '', '');
+
+  { ---- the installation itself (CAP-10D2) ----
+
+    Three rows over one fact, and the split is deliberate: "there is no
+    manifest here", "the manifest is broken" and "a shipped byte moved" are
+    three different problems with three different answers, and a single
+    `sdk.ok` row would have flattened them into one.
+
+    An SDK with NO manifest is not a failure. This repository's own staged
+    build tree has none, and neither has any root a developer assembled by
+    hand; the rows say not_applicable with the reason recorded, exactly as
+    a Pas2JS row does for a React project. What is refused is a manifest
+    that is PRESENT and does not describe the tree it sits in. }
+  if not Env.Sdk.Present then
+  begin
+    if Env.Sdk.Manifest = psmRootUnresolved then
+    begin
+      Add(b, 'sdk.manifest', pdsFail, pdvRequired,
+        PWebSdkRefusalTextM(psmRootUnresolved),
+        'the SDK root of the running executable could not be resolved',
+        Env.Sdk.Detail, '<sdk>/bin/pweb', 'reinstall the PWeb SDK', '');
+      Add(b, 'sdk.integrity', pdsFail, pdvRequired,
+        PWebSdkRefusalTextM(psmRootUnresolved),
+        'the shipped file set could not be verified', Env.Sdk.Detail, '',
+        'reinstall the PWeb SDK', '');
+      Add(b, 'sdk.version', pdsFail, pdvRequired,
+        PWebSdkRefusalTextM(psmRootUnresolved),
+        'the SDK version could not be read', Env.Sdk.Detail,
+        PWEB_CLI_VERSION, 'reinstall the PWeb SDK', '');
+    end
+    else
+    begin
+      Add(b, 'sdk.manifest', pdsNotApplicable, pdvRequired,
+        PWebSdkRefusalTextM(psmAbsent),
+        'this SDK root carries no distribution manifest', '',
+        PWEB_SDK_MANIFEST, '', '');
+      Add(b, 'sdk.integrity', pdsNotApplicable, pdvRequired,
+        PWebSdkRefusalTextM(psmAbsent),
+        'there is no declared file set to verify', '', '', '', '');
+      Add(b, 'sdk.version', pdsNotApplicable, pdvRequired,
+        PWebSdkRefusalTextM(psmAbsent),
+        'there is no declared version to compare', '', PWEB_CLI_VERSION,
+        '', '');
+    end;
+  end
+  else
+  begin
+    if Env.Sdk.Manifest = psmNone then
+      Add(b, 'sdk.manifest', pdsPass, pdvRequired, 'ok',
+        'the distribution manifest is present, canonical and schema ' +
+          RawUtf8(IntToStr(PWEB_SDK_MANIFEST_SCHEMA)),
+        RawUtf8(IntToStr(Env.Sdk.Declared)) + ' files, ' +
+          RawUtf8(IntToStr(Env.Sdk.Licenses)) + ' licences',
+        'schema ' + RawUtf8(IntToStr(PWEB_SDK_MANIFEST_SCHEMA)), '',
+        PWEB_SDK_MANIFEST)
+    else
+      Add(b, 'sdk.manifest', pdsFail, pdvRequired,
+        PWebSdkRefusalTextM(Env.Sdk.Manifest),
+        'the distribution manifest is not one this release can read',
+        Env.Sdk.Detail, 'schema ' +
+          RawUtf8(IntToStr(PWEB_SDK_MANIFEST_SCHEMA)),
+        'extract the SDK archive again', PWEB_SDK_MANIFEST);
+    // NOT downgraded when the manifest failed: a set that could not be
+    // checked has not been checked, and reporting that as not_applicable
+    // would hide a failed prerequisite behind an absence
+    if Env.Sdk.Integrity = psmNone then
+      Add(b, 'sdk.integrity', pdsPass, pdvRequired, 'ok',
+        'every shipped file matches the manifest',
+        RawUtf8(IntToStr(Env.Sdk.Verified)) + '/' +
+          RawUtf8(IntToStr(Env.Sdk.Declared)) + ' files in ' +
+          RawUtf8(IntToStr(Env.Sdk.ElapsedMs)) + ' ms',
+        RawUtf8(IntToStr(Env.Sdk.Declared)) + ' files', '', '')
+    else
+      Add(b, 'sdk.integrity', pdsFail, pdvRequired,
+        PWebSdkRefusalTextM(Env.Sdk.Integrity),
+        'a shipped file is missing or is not the bytes the manifest declares',
+        Env.Sdk.Detail, RawUtf8(IntToStr(Env.Sdk.Declared)) + ' files',
+        'extract the SDK archive again', '');
+    if Env.Sdk.Version = psmNone then
+      Add(b, 'sdk.version', pdsPass, pdvRequired, 'ok',
+        'the manifest describes this release', Env.Sdk.PWebVersion,
+        PWEB_CLI_VERSION, '', '')
+    else
+      Add(b, 'sdk.version', pdsFail, pdvRequired,
+        PWebSdkRefusalTextM(Env.Sdk.Version),
+        'the manifest describes a different release',
+        Env.Sdk.PWebVersion, PWEB_CLI_VERSION,
+        'install one PWeb SDK, not two', '');
+  end;
 
   { ---- the compiler ---- }
   AddToolRow(b, Env, 'toolchain.fpc', PWEB_CLI_TOOL_FPC, '-iV', Project.Root,

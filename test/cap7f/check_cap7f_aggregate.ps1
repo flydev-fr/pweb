@@ -343,6 +343,47 @@ $required = @(
     # CAP-10D0, required PRESENT on every target and compared on none: each
     # is a fact about the host, and a target that stopped emitting one would
     # otherwise go unnoticed. `not_applicable` is a value; empty is not.
+    # CAP-10D2: the SDK distribution. EVERY field the shard emits is required
+    # PRESENT here; which of them are also COMPARED across four is decided
+    # once, in $equalityFields, and the split was made from the CAP-10D1
+    # lesson rather than after a green run produced 124 disagreements.
+    'sdk_corpus', 'sdk_suite', 'sdk_digest', 'sdk_corpus_lines',
+    'sdk_package_built', 'sdk_manifest_deterministic',
+    'sdk_archive_deterministic', 'sdk_inventory_deterministic',
+    'sdk_ship_table_digest', 'sdk_manifest_schema', 'sdk_protocol',
+    'sdk_version', 'sdk_lock_files_shipped',
+    'sdk_pinned_only_components_shipped', 'sdk_test_drivers_shipped',
+    'sdk_locks_count', 'sdk_licenses_complete', 'sdk_doctor_manifest',
+    'sdk_doctor_integrity', 'sdk_doctor_version',
+    'sdk_integrity_pass_pristine', 'sdk_integrity_fail_tampered',
+    'in2_tampered_cause', 'in2_removed_cause', 'in3_malformed_cause',
+    'in3_schema_cause', 'in3_version_cause', 'in3_noncanonical_cause',
+    'sdk_absent_manifest_row', 'pack_fixture_baseline', 'pack_link_leg_armed',
+    'pack_refusals', 'pack_refusal_count', 'packaging_network_calls',
+    'packaging_children_spawned', 'clean_machine_path_has_space',
+    'clean_machine_path_non_ascii', 'clean_machine_react_rpc',
+    'clean_machine_pas2js_rpc', 'clean_machine_react_build_exit',
+    'clean_machine_pas2js_build_exit', 'clean_machine_completed',
+    'checkout_path_in_argv', 'unit_paths_under_sdk', 'checkout_restored',
+    'env_root_variables_read', 'sdk_shipped_tool_rule',
+    'sdk_tool_rule_decoy_build_exit', 'c1_11_c_closed', 'cap10_ledger_gate',
+    'cap10_ledger_orphans', 'cap10_ledger_entries',
+    'cap10_spec_acceptance_lines_met', 'cap10_spec_acceptance_lines_deviated',
+    'cap10_runs_cited',
+    # CAP-10D2, required PRESENT on every target and compared on none: each
+    # is a per-target measurement by construction. `sdk_files` and every
+    # digest below it differ because the SHIPPED SET differs - Windows
+    # carries the packaging kit and `static/delphi`, macOS carries neither
+    # and no QuickJS notice - and `sdk_ship_table_digest` above is the
+    # DECISION they are all resolved from, which is what four targets agree
+    # about. `not_applicable` is a value; empty is not.
+    'sdk_files', 'sdk_inventory_digest', 'sdk_archive_sha256',
+    'sdk_archive_bytes', 'sdk_manifest_sha256', 'sdk_integrity_seconds',
+    'sdk_licenses_count', 'sdk_licenses_documented', 'sdk_licenses_shipped',
+    'clean_machine_doctor', 'clean_machine_profile_result',
+    'clean_machine_bin_mode', 'clean_machine_path', 'checkout_renamed_aside',
+    'unit_paths_seen', 'packaging_sampler_samples',
+    'packaging_sampler_members',
     'build_replace_while_running', 'build_race_build_exit',
     'long_path_rule', 'long_path_stage', 'long_path_project_chars',
     'long_path_exit', 'long_path_cause',
@@ -1073,6 +1114,44 @@ $equalityFields = @(
     'pack_interrupt_delivered', 'pack_descendants_after_interrupt',
     'pack_driver_ansi_seen', 'pack_interrupt_clean',
     'd0_corpus_without_profile_unchanged', 'ledger_items_disposed',
+    # CAP-10D2: the SDK distribution. The DECISIONS four targets must agree
+    # about - the corpus digest, the ship-table digest, the determinism
+    # verdicts, every typed refusal cause, the clean-machine 42s, and the
+    # phase-closure counts.
+    'sdk_corpus', 'sdk_suite', 'sdk_digest', 'sdk_corpus_lines',
+    'sdk_package_built', 'sdk_manifest_deterministic',
+    'sdk_archive_deterministic', 'sdk_inventory_deterministic',
+    'sdk_ship_table_digest', 'sdk_manifest_schema', 'sdk_protocol',
+    'sdk_version', 'sdk_lock_files_shipped',
+    'sdk_pinned_only_components_shipped', 'sdk_test_drivers_shipped',
+    'sdk_locks_count', 'sdk_licenses_complete', 'sdk_doctor_manifest',
+    'sdk_doctor_integrity', 'sdk_doctor_version',
+    'sdk_integrity_pass_pristine', 'sdk_integrity_fail_tampered',
+    'in2_tampered_cause', 'in2_removed_cause', 'in3_malformed_cause',
+    'in3_schema_cause', 'in3_version_cause', 'in3_noncanonical_cause',
+    'sdk_absent_manifest_row', 'pack_fixture_baseline', 'pack_link_leg_armed',
+    'pack_refusals', 'pack_refusal_count', 'packaging_network_calls',
+    'packaging_children_spawned', 'clean_machine_path_has_space',
+    'clean_machine_path_non_ascii', 'clean_machine_react_rpc',
+    'clean_machine_pas2js_rpc', 'clean_machine_react_build_exit',
+    'clean_machine_pas2js_build_exit', 'clean_machine_completed',
+    'checkout_path_in_argv', 'unit_paths_under_sdk', 'checkout_restored',
+    'env_root_variables_read', 'sdk_shipped_tool_rule',
+    'sdk_tool_rule_decoy_build_exit', 'c1_11_c_closed', 'cap10_ledger_gate',
+    'cap10_ledger_orphans', 'cap10_ledger_entries',
+    'cap10_spec_acceptance_lines_met', 'cap10_spec_acceptance_lines_deviated',
+    'cap10_runs_cited',
+    # CAP-10D2, DELIBERATELY ABSENT from the comparison - seventeen per-target
+    # facts, each REQUIRED PRESENT above. `sdk_files`, `sdk_inventory_digest`,
+    # `sdk_archive_*`, `sdk_manifest_sha256` and the three licence rows differ
+    # because the SHIPPED SET differs by target; `sdk_integrity_seconds`,
+    # `unit_paths_seen` and the two sampler rows are timings and counts of a
+    # machine; `clean_machine_profile_result` is Windows' three profiles and
+    # POSIX's one; `clean_machine_bin_mode` is a POSIX mode plane Windows has
+    # none of; `clean_machine_doctor`, `clean_machine_path` and
+    # `checkout_renamed_aside` are per-run text. What four targets DO agree
+    # about is `sdk_ship_table_digest` - the DECISION every one of them is
+    # resolved from - which is compared above.
     # CAP-10D1, DELIBERATELY ABSENT - forty-four per-family and per-host
     # packaging facts. Each is REQUIRED PRESENT on every target above, so a
     # target that stopped emitting one is still refused by name; none may be

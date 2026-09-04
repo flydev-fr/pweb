@@ -62,7 +62,21 @@ working directory)` and never spawns anything. Two consequences, both wanted:
 <root>/share/pweb/deps/mormot2/src/              mORMot, from the INSTALLATION
 <root>/share/pweb/deps/mormot2/static/<fpc-target>/
 <root>/share/pweb/lib/<os>-<arch>/               the platform artifacts
+<root>/share/pweb/pack/                          the CAP-10D1 kit (windows)
+<root>/share/pweb/licenses/                      CAP-10D2, additive
+<root>/share/pweb/sdk-manifest.json              CAP-10D2, additive
 ```
+
+**CAP-10D2 adds the last two entries and nothing else.** They are ADDITIVE:
+`sdk-manifest.json` is the distribution's own inventory and `licenses/` is
+every shipped third-party component's notice, and neither is read by any
+stage of the pipeline. What CAP-10D2 *did* change about a build is the
+question asked at the `open` stage, before anything is written or spawned:
+when the SDK carries a manifest, every declared file must be present at its
+declared length with its declared digest, or the build refuses with exit 4.
+An SDK with no manifest — this repository's own staged root, and any tree
+assembled by hand — is accepted unchanged. See
+[sdk-contract.md](sdk-contract.md).
 
 The root is resolved from the **running image** by the one CAP-10B0 anchor
 rule (`<sdk>/bin/pweb` → `parent(dir(image))`); every component below it is

@@ -822,12 +822,23 @@ if (Test-Path -LiteralPath $c10aFile) {
         ("SF2: cli_digest moved to $($c10a.cli_digest); CAP-10C2 closed on " +
          "$cliClosure -- the public parser surface moves only in the shard " +
          'that adds a command, and only with the supersession recorded')
+    # CAP-10D2 SUPERSESSION, recorded rather than claimed unchanged. The
+    # requirement graph gained three rows - `sdk.integrity`, `sdk.manifest`
+    # and `sdk.version` - so an SDK that carries a distribution manifest is
+    # diagnosed against it and one that does not is reported
+    # `not_applicable/sdk_unpackaged`. The digest is over the row SET and
+    # their severities and never over their statuses, so it is the same value
+    # on a packaged and an unpackaged root and on all four targets.
+    # CAP-10A's value was 2dda57ba...c8fa7aa; CAP-10C1's ratification (the
+    # npm row stays a presence row) is untouched and still the reason this
+    # pin exists at all.
     Row 'doctor_schema_digest_unchanged' (Bool (
-        "$($c10a.doctor_schema_digest)" -ceq '2dda57baa324708ebc6d709556fc2a4ae865d820e29069c47a0e0d412fa8c7aa'))
+        "$($c10a.doctor_schema_digest)" -ceq '3c597c8e09a442dbef93369bbfd2a8ce79011b455166584525330e8418eb493a'))
     Require ("$($c10a.doctor_schema_digest)" -ceq `
-        '2dda57baa324708ebc6d709556fc2a4ae865d820e29069c47a0e0d412fa8c7aa') `
+        '3c597c8e09a442dbef93369bbfd2a8ce79011b455166584525330e8418eb493a') `
         ("SF2: doctor_schema_digest moved to $($c10a.doctor_schema_digest); " +
-         'CAP-10C1 ratified leaving the npm row a presence row')
+         'CAP-10D2 ratified the three sdk.* rows and CAP-10C1 ratified ' +
+         'leaving the npm row a presence row')
 } else {
     Row 'cli_digest_unchanged' 'unmeasured'
     Row 'doctor_schema_digest_unchanged' 'unmeasured'

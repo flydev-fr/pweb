@@ -1574,6 +1574,51 @@ for f in pack_corpus \
     eval "${f}=\"\$(d1_str ${f})\""
 done
 
+# --- CAP-10D2: the SDK distribution ------------------------------------------
+# build/cap10d2/cli-<target>.json is ONE record: the headless suite's decision
+# corpus (digested), the real packager run twice for determinism, every typed
+# packaging refusal, the real archive extracted to a spaced non-ASCII path,
+# the doctor's three integrity rows on it, the tamper legs that must refuse a
+# build at exit 4 having staged and spawned nothing, and the clean-machine
+# proof with the checkout's framework trees renamed aside.
+d2_file="${repo_root}/build/cap10d2/cli-${target}.json"
+[ -f "${d2_file}" ] ||
+    die "cap10d2/cli-${target}.json missing -- the CAP-10D2 gates have not run in this workspace"
+d2_str() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+        "${d2_file}" | head -n 1
+}
+for f in sdk_corpus sdk_suite sdk_digest sdk_corpus_lines sdk_package_built \
+         sdk_manifest_deterministic sdk_archive_deterministic \
+         sdk_inventory_deterministic sdk_ship_table_digest \
+         sdk_manifest_schema sdk_protocol sdk_version \
+         sdk_lock_files_shipped sdk_pinned_only_components_shipped \
+         sdk_test_drivers_shipped sdk_locks_count sdk_licenses_complete \
+         sdk_doctor_manifest sdk_doctor_integrity sdk_doctor_version \
+         sdk_integrity_pass_pristine sdk_integrity_fail_tampered \
+         in2_tampered_cause in2_removed_cause in3_malformed_cause \
+         in3_schema_cause in3_version_cause in3_noncanonical_cause \
+         sdk_absent_manifest_row pack_fixture_baseline pack_link_leg_armed \
+         pack_refusals pack_refusal_count packaging_network_calls \
+         packaging_children_spawned clean_machine_path_has_space \
+         clean_machine_path_non_ascii clean_machine_react_rpc \
+         clean_machine_pas2js_rpc clean_machine_react_build_exit \
+         clean_machine_pas2js_build_exit clean_machine_completed \
+         checkout_path_in_argv unit_paths_under_sdk checkout_restored \
+         env_root_variables_read sdk_shipped_tool_rule \
+         sdk_tool_rule_decoy_build_exit c1_11_c_closed cap10_ledger_gate \
+         cap10_ledger_orphans cap10_ledger_entries \
+         cap10_spec_acceptance_lines_met cap10_spec_acceptance_lines_deviated \
+         cap10_runs_cited sdk_files sdk_inventory_digest sdk_archive_sha256 \
+         sdk_archive_bytes sdk_manifest_sha256 sdk_integrity_seconds \
+         sdk_licenses_count sdk_licenses_documented sdk_licenses_shipped \
+         clean_machine_doctor clean_machine_profile_result \
+         clean_machine_bin_mode clean_machine_path checkout_renamed_aside \
+         unit_paths_seen packaging_sampler_samples \
+         packaging_sampler_members; do
+    eval "${f}=\"\$(d2_str ${f})\""
+done
+
 c3_file="${repo_root}/build/cap10c3/cli-${target}.json"
 [ -f "${c3_file}" ] ||
     die "cap10c3/cli-${target}.json missing -- the CAP-10C3 gates have not run in this workspace"
@@ -2171,6 +2216,78 @@ cat > "${work}/evidence.json" <<EOF
   "long_path_refusal": "${long_path_refusal}",
   "long_path_refusal_cause": "${long_path_refusal_cause}",
   "long_path_refusal_exit": "${long_path_refusal_exit}",
+  "sdk_corpus": "${sdk_corpus}",
+  "sdk_suite": "${sdk_suite}",
+  "sdk_digest": "${sdk_digest}",
+  "sdk_corpus_lines": "${sdk_corpus_lines}",
+  "sdk_package_built": "${sdk_package_built}",
+  "sdk_manifest_deterministic": "${sdk_manifest_deterministic}",
+  "sdk_archive_deterministic": "${sdk_archive_deterministic}",
+  "sdk_inventory_deterministic": "${sdk_inventory_deterministic}",
+  "sdk_ship_table_digest": "${sdk_ship_table_digest}",
+  "sdk_manifest_schema": "${sdk_manifest_schema}",
+  "sdk_protocol": "${sdk_protocol}",
+  "sdk_version": "${sdk_version}",
+  "sdk_lock_files_shipped": "${sdk_lock_files_shipped}",
+  "sdk_pinned_only_components_shipped": "${sdk_pinned_only_components_shipped}",
+  "sdk_test_drivers_shipped": "${sdk_test_drivers_shipped}",
+  "sdk_locks_count": "${sdk_locks_count}",
+  "sdk_licenses_complete": "${sdk_licenses_complete}",
+  "sdk_doctor_manifest": "${sdk_doctor_manifest}",
+  "sdk_doctor_integrity": "${sdk_doctor_integrity}",
+  "sdk_doctor_version": "${sdk_doctor_version}",
+  "sdk_integrity_pass_pristine": "${sdk_integrity_pass_pristine}",
+  "sdk_integrity_fail_tampered": "${sdk_integrity_fail_tampered}",
+  "in2_tampered_cause": "${in2_tampered_cause}",
+  "in2_removed_cause": "${in2_removed_cause}",
+  "in3_malformed_cause": "${in3_malformed_cause}",
+  "in3_schema_cause": "${in3_schema_cause}",
+  "in3_version_cause": "${in3_version_cause}",
+  "in3_noncanonical_cause": "${in3_noncanonical_cause}",
+  "sdk_absent_manifest_row": "${sdk_absent_manifest_row}",
+  "pack_fixture_baseline": "${pack_fixture_baseline}",
+  "pack_link_leg_armed": "${pack_link_leg_armed}",
+  "pack_refusals": "${pack_refusals}",
+  "pack_refusal_count": "${pack_refusal_count}",
+  "packaging_network_calls": "${packaging_network_calls}",
+  "packaging_children_spawned": "${packaging_children_spawned}",
+  "clean_machine_path_has_space": "${clean_machine_path_has_space}",
+  "clean_machine_path_non_ascii": "${clean_machine_path_non_ascii}",
+  "clean_machine_react_rpc": "${clean_machine_react_rpc}",
+  "clean_machine_pas2js_rpc": "${clean_machine_pas2js_rpc}",
+  "clean_machine_react_build_exit": "${clean_machine_react_build_exit}",
+  "clean_machine_pas2js_build_exit": "${clean_machine_pas2js_build_exit}",
+  "clean_machine_completed": "${clean_machine_completed}",
+  "checkout_path_in_argv": "${checkout_path_in_argv}",
+  "unit_paths_under_sdk": "${unit_paths_under_sdk}",
+  "checkout_restored": "${checkout_restored}",
+  "env_root_variables_read": "${env_root_variables_read}",
+  "sdk_shipped_tool_rule": "${sdk_shipped_tool_rule}",
+  "sdk_tool_rule_decoy_build_exit": "${sdk_tool_rule_decoy_build_exit}",
+  "c1_11_c_closed": "${c1_11_c_closed}",
+  "cap10_ledger_gate": "${cap10_ledger_gate}",
+  "cap10_ledger_orphans": "${cap10_ledger_orphans}",
+  "cap10_ledger_entries": "${cap10_ledger_entries}",
+  "cap10_spec_acceptance_lines_met": "${cap10_spec_acceptance_lines_met}",
+  "cap10_spec_acceptance_lines_deviated": "${cap10_spec_acceptance_lines_deviated}",
+  "cap10_runs_cited": "${cap10_runs_cited}",
+  "sdk_files": "${sdk_files}",
+  "sdk_inventory_digest": "${sdk_inventory_digest}",
+  "sdk_archive_sha256": "${sdk_archive_sha256}",
+  "sdk_archive_bytes": "${sdk_archive_bytes}",
+  "sdk_manifest_sha256": "${sdk_manifest_sha256}",
+  "sdk_integrity_seconds": "${sdk_integrity_seconds}",
+  "sdk_licenses_count": "${sdk_licenses_count}",
+  "sdk_licenses_documented": "${sdk_licenses_documented}",
+  "sdk_licenses_shipped": "${sdk_licenses_shipped}",
+  "clean_machine_doctor": "${clean_machine_doctor}",
+  "clean_machine_profile_result": "${clean_machine_profile_result}",
+  "clean_machine_bin_mode": "${clean_machine_bin_mode}",
+  "clean_machine_path": "${clean_machine_path}",
+  "checkout_renamed_aside": "${checkout_renamed_aside}",
+  "unit_paths_seen": "${unit_paths_seen}",
+  "packaging_sampler_samples": "${packaging_sampler_samples}",
+  "packaging_sampler_members": "${packaging_sampler_members}",
   "dev_pas2js_corpus": "${dev_pas2js_corpus}",
   "dev_pas2js_suite": "${dev_pas2js_suite}",
   "dev_pas2js_digest": "${dev_pas2js_digest}",

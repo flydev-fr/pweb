@@ -9,7 +9,7 @@ pweb build [--project <path>] [--profile <name>]
 
 `--profile` turns the release directory CAP-10D0 committed into **one thing
 somebody else can install or unpack**, under
-`<output>/<os>-<arch>/dist/<profile>/`, with a `release-index.json` beside
+`<output>/<os>-<arch>/artifacts/<profile>/`, with a `release-index.json` beside
 it. Without it, `pweb build` is byte-for-byte
 [build-contract.md](build-contract.md).
 
@@ -108,7 +108,7 @@ somebody finds on a user's machine.
 
 | input | where | how it is verified |
 |---|---|---|
-| Inno Setup 6 | `<sdk>/share/pweb/deps/innosetup/ISCC.exe`, else PATH | the `.pweb-pin` stamp equals `innosetup.lock`'s installer sha256, **and** the binary announces `Inno Setup 6 Command-Line Compiler` |
+| Inno Setup 6 | `<sdk>/share/pweb/deps/innosetup/ISCC.exe`, and nowhere else | the `.pweb-pin` stamp equals `innosetup.lock`'s installer sha256, **and** the binary announces `Inno Setup 6 Command-Line Compiler` |
 | the bootstrapper / standalone / cabinet | `<sdk>/share/pweb/deps/webview2-runtime/` | sha256 then byte size, byte-exact against the pin |
 | `WebView2Loader.dll` | `<sdk>/share/pweb/pack/lib/` | sha256 then byte size |
 | the two CAP-13 setup helpers | `<sdk>/share/pweb/pack/bin/` | present; compiled once at SDK staging time |
@@ -202,7 +202,7 @@ option once a secret model exists outside the descriptor.
 ```
 <output>/<os>-<arch>/
   release/                        the run layout, UNTOUCHED by packaging
-  dist/<profile>/
+  artifacts/<profile>/
     <artifact>
     release-index.json
 ```
@@ -211,9 +211,9 @@ option once a secret model exists outside the descriptor.
 (`pack_release_altered`, exit 6): the artifact describes the release, and a
 packager that edited it would be describing something else.
 
-`dist/<profile>/` is replaced by the **CAP-10D0 rule, unchanged** —
-`stage_aside_rename_reclaim`: staged in `.pweb-pack.tmp`, the existing
-directory renamed aside to `.pweb-dist-old.tmp`, the staged one renamed into
+`artifacts/<profile>/` is replaced by the **CAP-10D0 rule, unchanged** —
+`stage_aside_rename_reclaim`: staged in `.pwpack.tmp`, the existing
+directory renamed aside to `.pwold.tmp`, the staged one renamed into
 place, the retired one reclaimed. A rename that would replace an existing
 path is never used, on either family, and a failed commit puts the previous
 artifacts back.
@@ -249,7 +249,7 @@ pweb: built demo
   release      dist/linux-x86_64/release
   app.pwb      487f732b…
   bytes        5298584
-  artifact     dist/linux-x86_64/dist/archive/demo-0.1.0-linux-x86_64.tar.gz
+  artifact     dist/linux-x86_64/artifacts/archive/demo-0.1.0-linux-x86_64.tar.gz
   sha256       c6d52d18…
 pweb: run it with `pweb run`
 ```
@@ -289,3 +289,16 @@ be a pipeline this shard had renegotiated.
 | [pipeline-contract.md](pipeline-contract.md) | the ten stages, their bounds, the SDK root, the mutation set and the release layout |
 | [cli-contract.md](cli-contract.md) | the command surface, `pweb.json` schema 1 and the six exit codes |
 | [supervision-contract.md](supervision-contract.md) | the one child-process engine every packaging child runs through |
+| [sdk-contract.md](sdk-contract.md) | the SDK distribution these pinned inputs are resolved out of, and the manifest that verifies it |
+
+## 11. Corrections recorded at CAP-10D2
+
+Three statements in this document had drifted from the shipped code between
+CAP-10D1's last commit and its closure, and CAP-10D2 measured them rather
+than inheriting them. **Nothing in the product moved; the document did.**
+
+| what it said | what the code says | where |
+|---|---|---|
+| the artifact directory is `dist/<profile>/` | `artifacts/<profile>/` — `PWEB_PACK_ARTIFACTS`, because `<output>/<target>/dist` is already the Pas2JS static assembly directory the frozen CAP-10C1 pipeline owns | §6, §7 |
+| the staging siblings are `.pweb-pack.tmp` and `.pweb-dist-old.tmp` | `.pwpack.tmp` and `.pwold.tmp` — `PWEB_PACK_STAGE` and `PWEB_PACK_OLD`, shortened because the fixed-runtime profile's deepest cabinet entry is 119 characters and every character of the staging path is one fewer a project root may have | §6 |
+| the Inno Setup compiler is resolved from the SDK, "else PATH" | from `<sdk>/share/pweb/deps/innosetup/ISCC.exe` **and nowhere else**: `pweb.cli.package` has no PATH branch for it at all, which is the CAP-10D2 tool-location rule stated in [sdk-contract.md](sdk-contract.md) §5 | §3 |

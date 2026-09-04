@@ -1183,6 +1183,55 @@ Write-Host ("[CAP-10D1] pack_corpus: $($d1.pack_corpus) (digest=$d1Digest " +
     "install_rpc=$($d1.windows_installed_rpc) " +
     "signing=$($d1.signing_identity_used))")
 
+# --- CAP-10D2: the SDK distribution ------------------------------------------
+# build/cap10d2/cli-<target>.json is ONE record: the headless suite's decision
+# corpus (digested), the REAL packager run twice for determinism, every typed
+# packaging refusal, the REAL archive extracted to a spaced non-ASCII path,
+# the doctor's three integrity rows on it, the tamper legs that must refuse a
+# build at exit 4 having staged and spawned nothing, and the clean-machine
+# proof with the checkout's framework trees renamed aside.
+$d2File = Join-Path $repoRoot 'build/cap10d2/cli-windows-x86_64.json'
+if (-not (Test-Path $d2File)) {
+    throw '[CAP-7F] cap10d2/cli-windows-x86_64.json missing -- the CAP-10D2 gates have not run in this workspace'
+}
+$d2 = Get-Content $d2File -Raw | ConvertFrom-Json
+if ("$($d2.sdk_corpus)" -notin @('PASS', 'FAIL')) {
+    throw "[CAP-7F] the CAP-10D2 record carries an unexpected verdict: $($d2.sdk_corpus)"
+}
+if ("$($d2.sdk_corpus)" -ceq 'PASS') {
+    if ("$($d2.sdk_inventory_digest)" -eq '') {
+        throw '[CAP-7F] the CAP-10D2 record records PASS with an empty sdk_inventory_digest'
+    }
+    # the claims a green verdict is MADE of, checked one at a time so a
+    # regression names itself rather than arriving as "CAP-10D2 FAILED"
+    foreach ($pair in @(@('sdk_manifest_deterministic', 'true'),
+                        @('sdk_archive_deterministic', 'true'),
+                        @('sdk_licenses_complete', 'true'),
+                        @('sdk_integrity_pass_pristine', 'true'),
+                        @('sdk_integrity_fail_tampered', 'true'),
+                        @('sdk_lock_files_shipped', '0'),
+                        @('sdk_pinned_only_components_shipped', '0'),
+                        @('sdk_test_drivers_shipped', '0'),
+                        @('packaging_network_calls', '0'),
+                        @('checkout_path_in_argv', '0'),
+                        @('unit_paths_under_sdk', 'true'),
+                        @('env_root_variables_read', '0'),
+                        @('clean_machine_react_rpc', '42'),
+                        @('clean_machine_pas2js_rpc', '42'),
+                        @('cap10_ledger_orphans', '0'),
+                        @('c1_11_c_closed', 'true'))) {
+        if ("$($d2.($pair[0]))" -ne $pair[1]) {
+            throw "[CAP-7F] the CAP-10D2 record records PASS with $($pair[0])=$($d2.($pair[0]))"
+        }
+    }
+}
+$d2Digest = "$($d2.sdk_digest)"
+if ($d2Digest.Length -gt 12) { $d2Digest = $d2Digest.Substring(0, 12) + '...' }
+Write-Host ("[CAP-10D2] sdk_corpus: $($d2.sdk_corpus) (digest=$d2Digest " +
+    "files=$($d2.sdk_files) licences=$($d2.sdk_licenses_count) " +
+    "integrity=$($d2.sdk_integrity_seconds)s react=$($d2.clean_machine_react_rpc) " +
+    "pas2js=$($d2.clean_machine_pas2js_rpc))")
+
 # --- run identity -----------------------------------------------------------
 $sha = $env:GITHUB_SHA
 if (-not $sha) { $sha = (& git rev-parse HEAD).Trim() }
@@ -1759,6 +1808,80 @@ $evidence = [ordered]@{
     long_path_refusal                   = "$($d1.long_path_refusal)"
     long_path_refusal_cause             = "$($d1.long_path_refusal_cause)"
     long_path_refusal_exit              = "$($d1.long_path_refusal_exit)"
+    # CAP-10D2: the SDK distribution
+    sdk_corpus                          = "$($d2.sdk_corpus)"
+    sdk_suite                           = "$($d2.sdk_suite)"
+    sdk_digest                          = "$($d2.sdk_digest)"
+    sdk_corpus_lines                    = "$($d2.sdk_corpus_lines)"
+    sdk_package_built                   = "$($d2.sdk_package_built)"
+    sdk_manifest_deterministic          = "$($d2.sdk_manifest_deterministic)"
+    sdk_archive_deterministic           = "$($d2.sdk_archive_deterministic)"
+    sdk_inventory_deterministic         = "$($d2.sdk_inventory_deterministic)"
+    sdk_ship_table_digest               = "$($d2.sdk_ship_table_digest)"
+    sdk_manifest_schema                 = "$($d2.sdk_manifest_schema)"
+    sdk_protocol                        = "$($d2.sdk_protocol)"
+    sdk_version                         = "$($d2.sdk_version)"
+    sdk_lock_files_shipped              = "$($d2.sdk_lock_files_shipped)"
+    sdk_pinned_only_components_shipped  = "$($d2.sdk_pinned_only_components_shipped)"
+    sdk_test_drivers_shipped            = "$($d2.sdk_test_drivers_shipped)"
+    sdk_locks_count                     = "$($d2.sdk_locks_count)"
+    sdk_licenses_complete               = "$($d2.sdk_licenses_complete)"
+    sdk_doctor_manifest                 = "$($d2.sdk_doctor_manifest)"
+    sdk_doctor_integrity                = "$($d2.sdk_doctor_integrity)"
+    sdk_doctor_version                  = "$($d2.sdk_doctor_version)"
+    sdk_integrity_pass_pristine         = "$($d2.sdk_integrity_pass_pristine)"
+    sdk_integrity_fail_tampered         = "$($d2.sdk_integrity_fail_tampered)"
+    in2_tampered_cause                  = "$($d2.in2_tampered_cause)"
+    in2_removed_cause                   = "$($d2.in2_removed_cause)"
+    in3_malformed_cause                 = "$($d2.in3_malformed_cause)"
+    in3_schema_cause                    = "$($d2.in3_schema_cause)"
+    in3_version_cause                   = "$($d2.in3_version_cause)"
+    in3_noncanonical_cause              = "$($d2.in3_noncanonical_cause)"
+    sdk_absent_manifest_row             = "$($d2.sdk_absent_manifest_row)"
+    pack_fixture_baseline               = "$($d2.pack_fixture_baseline)"
+    pack_link_leg_armed                 = "$($d2.pack_link_leg_armed)"
+    pack_refusals                       = "$($d2.pack_refusals)"
+    pack_refusal_count                  = "$($d2.pack_refusal_count)"
+    packaging_network_calls             = "$($d2.packaging_network_calls)"
+    packaging_children_spawned          = "$($d2.packaging_children_spawned)"
+    clean_machine_path_has_space        = "$($d2.clean_machine_path_has_space)"
+    clean_machine_path_non_ascii        = "$($d2.clean_machine_path_non_ascii)"
+    clean_machine_react_rpc             = "$($d2.clean_machine_react_rpc)"
+    clean_machine_pas2js_rpc            = "$($d2.clean_machine_pas2js_rpc)"
+    clean_machine_react_build_exit      = "$($d2.clean_machine_react_build_exit)"
+    clean_machine_pas2js_build_exit     = "$($d2.clean_machine_pas2js_build_exit)"
+    clean_machine_completed             = "$($d2.clean_machine_completed)"
+    checkout_path_in_argv               = "$($d2.checkout_path_in_argv)"
+    unit_paths_under_sdk                = "$($d2.unit_paths_under_sdk)"
+    checkout_restored                   = "$($d2.checkout_restored)"
+    env_root_variables_read             = "$($d2.env_root_variables_read)"
+    sdk_shipped_tool_rule               = "$($d2.sdk_shipped_tool_rule)"
+    sdk_tool_rule_decoy_build_exit      = "$($d2.sdk_tool_rule_decoy_build_exit)"
+    c1_11_c_closed                      = "$($d2.c1_11_c_closed)"
+    cap10_ledger_gate                   = "$($d2.cap10_ledger_gate)"
+    cap10_ledger_orphans                = "$($d2.cap10_ledger_orphans)"
+    cap10_ledger_entries                = "$($d2.cap10_ledger_entries)"
+    cap10_spec_acceptance_lines_met     = "$($d2.cap10_spec_acceptance_lines_met)"
+    cap10_spec_acceptance_lines_deviated = "$($d2.cap10_spec_acceptance_lines_deviated)"
+    cap10_runs_cited                    = "$($d2.cap10_runs_cited)"
+    # CAP-10D2, per-target: required present, compared on no target
+    sdk_files                           = "$($d2.sdk_files)"
+    sdk_inventory_digest                = "$($d2.sdk_inventory_digest)"
+    sdk_archive_sha256                  = "$($d2.sdk_archive_sha256)"
+    sdk_archive_bytes                   = "$($d2.sdk_archive_bytes)"
+    sdk_manifest_sha256                 = "$($d2.sdk_manifest_sha256)"
+    sdk_integrity_seconds               = "$($d2.sdk_integrity_seconds)"
+    sdk_licenses_count                  = "$($d2.sdk_licenses_count)"
+    sdk_licenses_documented             = "$($d2.sdk_licenses_documented)"
+    sdk_licenses_shipped                = "$($d2.sdk_licenses_shipped)"
+    clean_machine_doctor                = "$($d2.clean_machine_doctor)"
+    clean_machine_profile_result        = "$($d2.clean_machine_profile_result)"
+    clean_machine_bin_mode              = "$($d2.clean_machine_bin_mode)"
+    clean_machine_path                  = "$($d2.clean_machine_path)"
+    checkout_renamed_aside              = "$($d2.checkout_renamed_aside)"
+    unit_paths_seen                     = "$($d2.unit_paths_seen)"
+    packaging_sampler_samples           = "$($d2.packaging_sampler_samples)"
+    packaging_sampler_members           = "$($d2.packaging_sampler_members)"
     autoclose_stop_honoured         = "$($c1.autoclose_stop_honoured)"
     doctor_platform_webview         = "$($c1.doctor_platform_webview)"
     pipeline_corpus_lines           = "$($c1.pipeline_corpus_lines)"

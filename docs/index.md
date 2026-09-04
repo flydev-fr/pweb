@@ -29,10 +29,15 @@ every companion in its frontmatter.
 | [dev-contract.md](dev-contract.md) | the development loop for both frontends: the dev host, the generation, publish-by-rename, the poller, the acknowledgement, and the two change detectors | CAP-10C2 (React), CAP-10C3 (Pas2JS) |
 | [build-contract.md](build-contract.md) | the public `pweb build`: its grammar and the options it deliberately does not have, the one execution path, the release replacement rule and its failure table, the summary, and interruption | CAP-10D0 |
 | [distribution-contract.md](distribution-contract.md) | `pweb build --profile`: the four profile names, the identity every platform identifier is derived from, the pinned offline inputs, the deterministic archive, the macOS signing posture and the artifact layout | CAP-10D1 |
+| [sdk-contract.md](sdk-contract.md) | the SDK distribution itself: what ships and what is only pinned, the canonical manifest and its escape rule, the three integrity rows and the build refusal, the tool-location rule, and the installation model — extract, and nothing else | CAP-10D2 |
 
 `_bmad-output/implementation-artifacts/cap10c-closure-artifact.md` is the
 CAP-10C phase closure: the four hosted green runs, every digest supersession,
 a disposition for every deferred item, and the CAP-10D handoff.
+`_bmad-output/implementation-artifacts/cap10-closure-artifact.md` is the
+**phase** closure: eleven hosted green runs, the SPEC's CAP-10 acceptance
+line by line, a disposition for every CAP-10 ledger entry, and the CAP-11
+handoff.
 
 ## The platform semantics
 

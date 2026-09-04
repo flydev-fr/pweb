@@ -342,6 +342,7 @@ var
   excludes, prefixes, tokens: TRawUtf8DynArray;
   outputDir, targetDir, unitDir, binDir, distDir, assetsDir: RawUtf8;
   appPwb, exePath: RawUtf8;
+  sdkCause, sdkDetail: RawUtf8;
   frontendRoot, sdkStageParent, found: RawUtf8;
   unreadable: Boolean;
   stageRefusal: TPWebCliStageRefusal;
@@ -508,6 +509,26 @@ begin
 
   { --- 1. open ------------------------------------------------------------ }
   Enter(pskOpen);
+  // CAP-10D2: the SDK's OWN integrity, asked FIRST - before the descriptor
+  // is judged, before the read-only tree is digested, before a byte is
+  // written and before a child is spawned. A toolchain that cannot vouch
+  // for its own bytes has no business compiling anything, and it has no
+  // business diagnosing a machine either, which is why this is ahead of the
+  // project refusal rather than beside it.
+  //
+  // It is NOT an eleventh stage: build_stage_count is still ten, and the
+  // refusal is recorded on `open` exactly as CAP-10D1's project_root_too_long
+  // is. The category is UNAVAILABLE (exit 4) rather than PROJECT (3): a
+  // half-copied installation is a fact about the machine, and pointing a
+  // user at their own project for it would be the wrong diagnosis.
+  //
+  // An SDK with no manifest accepts, so this repository's own staged root
+  // and every CAP-10 gate before this shard behave byte-for-byte as they did
+  if not PWebCliSdkPreflight(sdkCause, sdkDetail) then
+  begin
+    Refuse(pskOpen, ppcUnavailable, sdkCause, sdkDetail);
+    exit;
+  end;
   if Project.Refusal <> pcrNone then
   begin
     Refuse(pskOpen, ppcProject,

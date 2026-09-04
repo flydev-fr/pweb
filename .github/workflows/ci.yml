@@ -2367,6 +2367,65 @@ jobs:
             Pop-Location
           }
           Write-Host '[L2b] the CAP-10 chain is green at a repository path carrying a space'
+      # ---------------------------------------------------------------------
+      # CAP-10D2: the SDK distribution. One private packager, one archive per
+      # target whose extracted tree IS the CAP-10C1 §2 SDK root, a canonical
+      # manifest verified by `pweb doctor` and by the build's `open` stage,
+      # and the clean-machine proof: extracted to a path with a space and a
+      # non-ASCII character, the checkout's six framework trees renamed
+      # aside, `create` + `build` + `run` -> 42 for both UIs. Nothing here
+      # downloads anything.
+      # ---------------------------------------------------------------------
+      - name: CAP-10D2 contract cross-checks (no network, no env root, the licence table, the tool rule)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10d2/check_cap10d2_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10D2 contract cross-checks FAILED' }
+      - name: CAP-10D2 the phase-wide CAP-10 ledger disposition (CL1-CL4)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10d2/check_cap10_ledger.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10 ledger disposition FAILED' }
+      - name: CAP-10D2 stage the licence set and build the packager and suite
+        shell: pwsh
+        timeout-minutes: 20
+        run: pwsh -NoProfile -File test/cap10d2/build_cap10d2.ps1
+      - name: CAP-10D2 SDK distribution gates (PK1-PK4, IN1-IN4, CM1-CM6, CL1-CL4) + evidence
+        shell: bash
+        timeout-minutes: 180
+        run: |
+          pwsh -NoProfile -File test/cap10d2/run_cap10d2_gates.ps1 2>&1 |
+            tee build/cap10d2-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10D2 upload the SDK distribution corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10d2-sdk-windows
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10d2/cli-windows-x86_64.json
+            build/cap10d2/contracts.json
+            build/cap10d2/ledger.json
+            build/cap10d2/sdk-corpus.txt
+            build/cap10d2/sdk-observed.txt
+            build/cap10d2/d2tests.log
+            build/cap10d2/cm-commands.txt
+            build/cap10d2/run1-manifest.json
+            build/cap10d2-gates.log
+      - name: CAP-10D2 upload the SDK archive and its manifest
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pweb-sdk-windows
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10d2/out/pweb-sdk-*.tar.gz
+            build/cap10b1/sdk/share/pweb/sdk-manifest.json
+
       - name: CAP-7F emit the Windows evidence artifact
         shell: pwsh
         timeout-minutes: 10
@@ -3312,6 +3371,65 @@ jobs:
             build/cap10d1/cli-stderr.txt
             build/cap10d1/codesign.txt
             build/cap10d1-gates.log
+      # ---------------------------------------------------------------------
+      # CAP-10D2: the SDK distribution. One private packager, one archive per
+      # target whose extracted tree IS the CAP-10C1 §2 SDK root, a canonical
+      # manifest verified by `pweb doctor` and by the build's `open` stage,
+      # and the clean-machine proof: extracted to a path with a space and a
+      # non-ASCII character, the checkout's six framework trees renamed
+      # aside, `create` + `build` + `run` -> 42 for both UIs. Nothing here
+      # downloads anything.
+      # ---------------------------------------------------------------------
+      - name: CAP-10D2 contract cross-checks (no network, no env root, the licence table, the tool rule)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10d2/check_cap10d2_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10D2 contract cross-checks FAILED' }
+      - name: CAP-10D2 the phase-wide CAP-10 ledger disposition (CL1-CL4)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10d2/check_cap10_ledger.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10 ledger disposition FAILED' }
+      - name: CAP-10D2 stage the licence set and build the packager and suite
+        shell: bash
+        timeout-minutes: 20
+        run: test/cap10d2/build_cap10d2.sh
+      - name: CAP-10D2 SDK distribution gates (PK1-PK4, IN1-IN4, CM1-CM6, CL1-CL4) + evidence
+        shell: bash
+        timeout-minutes: 180
+        run: |
+          xvfb-run -a pwsh -NoProfile -File test/cap10d2/run_cap10d2_gates.ps1 2>&1 |
+            tee build/cap10d2-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10D2 upload the SDK distribution corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10d2-sdk-linux
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10d2/cli-linux-x86_64.json
+            build/cap10d2/contracts.json
+            build/cap10d2/ledger.json
+            build/cap10d2/sdk-corpus.txt
+            build/cap10d2/sdk-observed.txt
+            build/cap10d2/d2tests.log
+            build/cap10d2/cm-commands.txt
+            build/cap10d2/run1-manifest.json
+            build/cap10d2-gates.log
+      - name: CAP-10D2 upload the SDK archive and its manifest
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pweb-sdk-linux
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10d2/out/pweb-sdk-*.tar.gz
+            build/cap10b1/sdk/share/pweb/sdk-manifest.json
+
       - name: CAP-7F emit the Linux evidence artifact
         shell: bash
         timeout-minutes: 10
@@ -4292,6 +4410,65 @@ jobs:
             build/cap10d1/cli-stderr.txt
             build/cap10d1/codesign.txt
             build/cap10d1-gates.log
+      # ---------------------------------------------------------------------
+      # CAP-10D2: the SDK distribution. One private packager, one archive per
+      # target whose extracted tree IS the CAP-10C1 §2 SDK root, a canonical
+      # manifest verified by `pweb doctor` and by the build's `open` stage,
+      # and the clean-machine proof: extracted to a path with a space and a
+      # non-ASCII character, the checkout's six framework trees renamed
+      # aside, `create` + `build` + `run` -> 42 for both UIs. Nothing here
+      # downloads anything.
+      # ---------------------------------------------------------------------
+      - name: CAP-10D2 contract cross-checks (no network, no env root, the licence table, the tool rule)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10d2/check_cap10d2_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10D2 contract cross-checks FAILED' }
+      - name: CAP-10D2 the phase-wide CAP-10 ledger disposition (CL1-CL4)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10d2/check_cap10_ledger.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10 ledger disposition FAILED' }
+      - name: CAP-10D2 stage the licence set and build the packager and suite
+        shell: bash
+        timeout-minutes: 20
+        run: test/cap10d2/build_cap10d2.sh
+      - name: CAP-10D2 SDK distribution gates (PK1-PK4, IN1-IN4, CM1-CM6, CL1-CL4) + evidence
+        shell: bash
+        timeout-minutes: 180
+        run: |
+          pwsh -NoProfile -File test/cap10d2/run_cap10d2_gates.ps1 2>&1 |
+            tee build/cap10d2-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10D2 upload the SDK distribution corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10d2-sdk-macos-x64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10d2/cli-macos-x86_64.json
+            build/cap10d2/contracts.json
+            build/cap10d2/ledger.json
+            build/cap10d2/sdk-corpus.txt
+            build/cap10d2/sdk-observed.txt
+            build/cap10d2/d2tests.log
+            build/cap10d2/cm-commands.txt
+            build/cap10d2/run1-manifest.json
+            build/cap10d2-gates.log
+      - name: CAP-10D2 upload the SDK archive and its manifest
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pweb-sdk-macos-x64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10d2/out/pweb-sdk-*.tar.gz
+            build/cap10b1/sdk/share/pweb/sdk-manifest.json
+
       - name: CAP-7F emit the macOS x64 evidence artifact
         shell: bash
         timeout-minutes: 10
@@ -5200,6 +5377,65 @@ jobs:
             build/cap10d1/cli-stderr.txt
             build/cap10d1/codesign.txt
             build/cap10d1-gates.log
+      # ---------------------------------------------------------------------
+      # CAP-10D2: the SDK distribution. One private packager, one archive per
+      # target whose extracted tree IS the CAP-10C1 §2 SDK root, a canonical
+      # manifest verified by `pweb doctor` and by the build's `open` stage,
+      # and the clean-machine proof: extracted to a path with a space and a
+      # non-ASCII character, the checkout's six framework trees renamed
+      # aside, `create` + `build` + `run` -> 42 for both UIs. Nothing here
+      # downloads anything.
+      # ---------------------------------------------------------------------
+      - name: CAP-10D2 contract cross-checks (no network, no env root, the licence table, the tool rule)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10d2/check_cap10d2_contracts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10D2 contract cross-checks FAILED' }
+      - name: CAP-10D2 the phase-wide CAP-10 ledger disposition (CL1-CL4)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap10d2/check_cap10_ledger.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10 ledger disposition FAILED' }
+      - name: CAP-10D2 stage the licence set and build the packager and suite
+        shell: bash
+        timeout-minutes: 20
+        run: test/cap10d2/build_cap10d2.sh
+      - name: CAP-10D2 SDK distribution gates (PK1-PK4, IN1-IN4, CM1-CM6, CL1-CL4) + evidence
+        shell: bash
+        timeout-minutes: 180
+        run: |
+          pwsh -NoProfile -File test/cap10d2/run_cap10d2_gates.ps1 2>&1 |
+            tee build/cap10d2-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10D2 upload the SDK distribution corpus
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10d2-sdk-macos-arm64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10d2/cli-macos-arm64.json
+            build/cap10d2/contracts.json
+            build/cap10d2/ledger.json
+            build/cap10d2/sdk-corpus.txt
+            build/cap10d2/sdk-observed.txt
+            build/cap10d2/d2tests.log
+            build/cap10d2/cm-commands.txt
+            build/cap10d2/run1-manifest.json
+            build/cap10d2-gates.log
+      - name: CAP-10D2 upload the SDK archive and its manifest
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pweb-sdk-macos-arm64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10d2/out/pweb-sdk-*.tar.gz
+            build/cap10b1/sdk/share/pweb/sdk-manifest.json
+
       - name: CAP-7F emit the macOS arm64 evidence artifact
         shell: bash
         timeout-minutes: 10

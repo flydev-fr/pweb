@@ -79,7 +79,8 @@ uses
   pweb.cli.probe,
   pweb.cli.stage,
   pweb.cli.project,
-  pweb.cli.doctor;
+  pweb.cli.doctor,
+  pweb.cli.sdkmanifest;
 
 const
   /// the doctor row a BUILD does not depend on - see FirstRequiredFailure
@@ -176,6 +177,16 @@ procedure PWebCliExpectedFpcTarget(Os: TPWebCliOs; Arch: TPWebCliArch;
 // any tool is spawned and before anything is written
 function PWebCliResolveToolset(const Project: TPWebCliProject;
   Os: TPWebCliOs; Arch: TPWebCliArch): TPWebCliToolset;
+
+/// the SDK's OWN integrity, asked before anything else (CAP-10D2)
+// - this is the earliest question a build can ask, and it is deliberately
+// earlier than the requirement graph: a toolchain that cannot vouch for its
+// own bytes has no business diagnosing a machine, and the answer costs
+// three directory reads on an unpackaged root
+// - False with the machine-stable cause and the logical detail when the
+// running executable's SDK carries a manifest that does not describe it. An
+// SDK with NO manifest is accepted: see pweb.cli.sdkmanifest's header
+function PWebCliSdkPreflight(out Cause, Detail: RawUtf8): Boolean;
 
 
 implementation
@@ -377,6 +388,20 @@ begin
   for i := 1 to Length(Result) do
     if Result[i] in ['A' .. 'Z'] then
       Result[i] := AnsiChar(Ord(Result[i]) + 32);
+end;
+
+function PWebCliSdkPreflight(out Cause, Detail: RawUtf8): Boolean;
+var
+  fact: TPWebCliSdkFact;
+begin
+  Cause := '';
+  Detail := '';
+  fact := PWebCliSdkVerify(PWEB_CLI_VERSION);
+  Result := PWebCliSdkFactAccepted(fact);
+  if Result then
+    exit;
+  Cause := PWebCliSdkFactCause(fact);
+  Detail := fact.Detail;
 end;
 
 function PWebCliResolveToolset(const Project: TPWebCliProject;

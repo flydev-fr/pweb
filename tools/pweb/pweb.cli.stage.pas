@@ -99,7 +99,11 @@ uses
   mormot.core.unicode,
   mormot.crypt.core,
   pweb.cli.platform,
-  pweb.cli.toolchain;
+  pweb.cli.toolchain,
+  // CAP-10D2: the ONE canonical JSON string rule, so the TypeScript-SDK
+  // re-emitter below and the SDK distribution manifest cannot disagree
+  // about what an escape looks like
+  pweb.cli.sdkmanifest;
 
 type
   /// ONE child the pipeline will run: an exact executable, an argument
@@ -678,7 +682,20 @@ begin
     if S.Text[S.Pos] = '"' then
     begin
       Inc(S.Pos);
-      Result := Copy(S.Text, start, S.Pos - start);
+      // CANONICALIZED, not copied - deferred item C1-11 (c). Until CAP-10D2
+      // this returned the SOURCE BYTES of the literal, which agrees with
+      // JSON.stringify only while the input happens to carry no redundant
+      // escape: `A` and `\/` are legal JSON that stringify re-emits as
+      // `A` and `/`, and a source-byte copy would have re-emitted them
+      // unchanged. pweb.cli.sdkmanifest owns the one escape rule the whole
+      // distribution uses; a literal it cannot decode is a REFUSAL rather
+      // than a value this function guesses at
+      if not PWebSdkJsonCanonical(Copy(S.Text, start, S.Pos - start),
+           Result) then
+      begin
+        Result := '';
+        S.Ok := False;
+      end;
       exit;
     end;
     Inc(S.Pos);
