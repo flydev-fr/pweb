@@ -2232,15 +2232,21 @@ jobs:
           }
           New-Item -ItemType Directory -Force $spaced | Out-Null
           Write-Host "[L2b] copying the prepared workspace to: $spaced"
-          # robocopy's exit codes below 8 are success. ONLY .git is excluded:
-          # build/ has to travel, because it carries artifacts this step must
-          # not rebuild - build/webview-dist/webview.dll above all, which is
-          # the cmake+MSVC output test/cap10c1/build_cap10c1.ps1 stages into
-          # the SDK root. Every CAP-10 build script reclaims its own subtree
-          # before it writes, so nothing stale survives into what is measured;
-          # what survives is exactly the pinned platform artifact.
-          robocopy . $spaced /E /NFL /NDL /NJH /NJS /NP /XD .git |
-            Out-Null
+          # robocopy's exit codes below 8 are success. build/ has to travel,
+          # because it carries artifacts this step must not rebuild -
+          # build/webview-dist/webview.dll above all, which is the cmake+MSVC
+          # output test/cap10c1/build_cap10c1.ps1 stages into the SDK root.
+          # Every CAP-10 build script reclaims its own subtree before it
+          # writes, so nothing stale survives into what is measured.
+          #
+          # THE EXCLUSION IS THIS REPOSITORY'S OWN .git, BY FULL PATH, and
+          # not the name. MEASURED: `/XD .git` excludes every directory of
+          # that name at any depth, which takes deps/mormot2/.git with it -
+          # and tools/patch-cap3u.ps1 needs mORMot to be a real git checkout,
+          # so the CAP-10C1 staging died with `mORMot checkout not found`.
+          # A name-based exclusion cannot say "the top-level one".
+          robocopy . $spaced /E /NFL /NDL /NJH /NJS /NP `
+            /XD (Join-Path $PWD '.git') | Out-Null
           if ($LASTEXITCODE -ge 8) {
             throw "[L2b] robocopy failed with $LASTEXITCODE"
           }
