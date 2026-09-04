@@ -185,9 +185,17 @@ $help = RunCli $pweb $repoRoot @('--help')
 Require ($help.Code -eq 0) '--help did not exit 0'
 Require ($help.Out.Contains('pweb create NAME --ui react|pas2js')) `
     'the global help does not advertise create with both frontend kinds'
-# (`pweb run` left this list with CAP-10C0 and `pweb dev` with CAP-10C2, each
-# implemented and measured by the shard that added it; `build` stays alone)
-foreach ($absent in 'pweb build') {
+foreach ($present in 'pweb create', 'pweb doctor', 'pweb run', 'pweb dev',
+                     'pweb build') {
+    Require ($help.Out.Contains($present)) `
+        "the global help does not advertise the implemented command: $present"
+}
+# (`pweb run` left this list with CAP-10C0, `pweb dev` with CAP-10C2 and
+# `pweb build` with CAP-10D0, each implemented and measured by the shard that
+# added it. The list is INVERTED rather than emptied: its subject is a name
+# no shard will ratify, because the claim is that the help advertises exactly
+# what this build can perform)
+foreach ($absent in 'pweb publish') {
     Require (-not $help.Out.Contains($absent)) `
         "the global help advertises an unimplemented command: $absent"
 }

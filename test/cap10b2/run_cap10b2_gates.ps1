@@ -111,7 +111,12 @@ Set-Location $repoRoot
 # The Pas2JS template is UNTOUCHED by this shard, which is why only the
 # React trio moves here.
 #
-# 16 -> 16, and 71416 -> 72884 bytes:
+# 16 -> 16, and 71416 -> 72784 bytes. THE VALUE IS FOR A PROJECT NAMED
+# `demo`, which is what this gate and test/cap10b1 both scaffold: the
+# project name is substituted into the generated files, so the same template
+# measured through a project named `demoreact` reads 100 bytes larger. A pin
+# taken from the wrong project name is a pin that goes red on a runner for a
+# reason that has nothing to do with the template - measured, once.
 #
 # CAP-10D0 SUPERSEDES README.md IN BOTH TEMPLATES. The B1/B2 READMEs
 # described creation's next steps without naming a command, because until
@@ -127,9 +132,9 @@ Set-Location $repoRoot
 # digest moves - CAP-10D0 re-measures every c1_app_pwb_* and records them
 # unchanged rather than claiming they are.
 $CAP10B1_REACT_INVENTORY_DIGEST =
-    '06e47ba8a8df19b6164fdabd89deb674e3fe1f5e767e30dbcef1026f99116a77'
+    '578a30933f3a37d66fac5f9ac554e5fb92227ca5ba839e4e57647301eaa145f0'
 $CAP10B1_REACT_FILE_COUNT = 16
-$CAP10B1_REACT_TOTAL_BYTES = 72884
+$CAP10B1_REACT_TOTAL_BYTES = 72784
 
 $exeSuffix = if ($IsWindows) { '.exe' } else { '' }
 $work = Join-Path $repoRoot 'build/cap10b2'
