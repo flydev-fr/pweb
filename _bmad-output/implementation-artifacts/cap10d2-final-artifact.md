@@ -80,10 +80,14 @@ result to equal the bytes on disk, so "canonical" is a *measurement*. Measured
 independently: the real 288-file manifest is byte-identical to
 `JSON.stringify(JSON.parse(it), null, 2) + "\n"` in Node.
 
-**Verification is FULL, never sampled — 288 files and 38 MB in 51 ms.** That
-number is why there is no sample policy to argue about: a sample would have
-made "one altered file is detected" probabilistic, and a probabilistic tamper
-claim is not one worth gating a build on.
+**Verification is FULL, never sampled.** Measured on the four hosted runners
+over each target's own shipped set: **34 ms** on Linux (215 files), **81 ms**
+on Windows (288 files), **283 ms** and **402 ms** on the two macOS runners
+(210 and 213 files) — the slowest of them two fifths of a second, paid on
+every doctor run and before every build. That is why there is no sample
+policy to argue about: a sample would have made "one altered file is
+detected" probabilistic, and a probabilistic tamper claim is not one worth
+gating a build on.
 
 | what it catches | what it does not |
 |---|---|
@@ -370,12 +374,19 @@ per-target facts required present and compared on none, and **forty-eight**
 absolute pins — the values four targets could agree on and still be wrong. Ten
 negative self-test legs (e1–e10) prove the new refusals fire.
 
-**The hosted run.** CAP-10D2's closure HEAD and the hosted run that was green
-on it:
+**The hosted runs.** The closure HEAD, and the closure commit's own
+aggregation:
 
-| shard | closure HEAD | hosted run |
+| HEAD | hosted run | what was green |
 |---|---|---|
-| CAP-10D2 | `1714b65c` | 33919712393 |
+| `1714b65c` | 33919712393 | the closure HEAD: all six jobs, ONE `sdk_digest` `b33df77e…` and ONE `sdk_ship_table_digest` `1308731a…` on four targets, **42** from both UIs out of an extracted SDK on every one, and the CAP-7F negative self-test firing its ten new refusals before the aggregate ran |
+| `a32cd668` | 33924083318 | the closure COMMIT's own aggregation: all six jobs green again over the artifacts this shard wrote, with `cap10_runs_cited` at eleven and `cap10_ledger_orphans` at zero on four targets |
+
+Three hosted runs were spent, and the two that were not green each bought a
+real defect: 33914729625 measured the macOS clean-machine failure that a
+gate printing only stderr could not explain, and 33917202306 printed the
+children's own lines and named it — `ld: warning: search path
+'/Users/runner/work/_temp/étude' not found`.
 
 ## 11. Cross-links
 

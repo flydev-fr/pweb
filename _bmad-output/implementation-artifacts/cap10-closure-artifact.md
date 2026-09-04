@@ -382,6 +382,10 @@ three platform adapters, and every dependency pin.
 
 ## Verdict
 
+The closure commit `a32cd668` has its own green aggregation, hosted run
+**33924083318** - all six jobs, over the artifacts this phase closure is made
+of.
+
 **CAP-10 CLOSED.** Five public commands, one public option, eleven hosted
 green runs, 165 ledger entries disposed with 0 orphans, seven SPEC acceptance
 clauses met and one ratified deviation named, and a distribution a machine
