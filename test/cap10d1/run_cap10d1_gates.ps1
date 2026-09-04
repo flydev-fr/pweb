@@ -91,6 +91,17 @@ function TargetName {
 }
 $target = TargetName
 Row 'target' $target
+# THE RUNTIME STAGING MARKER, read from the constants rather than restated:
+# the fixed profile's payload listing has to be split into the files this
+# product owns and the pinned Microsoft tree, and a second spelling of the
+# staging names is a second thing to keep in step
+$packPinsSrc = [System.IO.File]::ReadAllText(
+    (Join-Path $repoRoot 'tools/pweb/pweb.cli.packpins.pas'))
+$stageName = if ($packPinsSrc -match "PWEB_PACK_STAGE\s*=\s*'([^']+)'") {
+    $Matches[1] } else { '.pwpack.tmp' }
+$runtimeName = if ($packPinsSrc -match "PWEB_PACK_RUNTIME\s*=\s*'([^']+)'") {
+    $Matches[1] } else { 'rt' }
+$runtimeMarker = "\$stageName\$runtimeName\"
 Row 'profiles_for_target' $(if ($IsWindows) { 'normal,offline,fixed-runtime' }
                             else { 'archive' })
 
@@ -380,12 +391,17 @@ foreach ($profile in $profiles) {
     # through the same sink the pipeline's stages use. An index that named
     # the right artifact would say nothing about what is INSIDE it.
     if ($IsWindows) {
-        $embedded = SortOrdinal @(($r.Out -split "`n") |
+        # the full listing paths first: the fixed profile's payload contains
+        # a 256-file Microsoft runtime tree, and telling THAT apart from the
+        # application's own payload needs the path rather than the basename
+        $listed = @(($r.Out -split "`n") |
             Where-Object { $_ -match 'Compressing: ' } |
             ForEach-Object {
                 (($_ -replace '^.*Compressing: ', '') -replace
                     '\s+\([^)]*\)\s*$', '').Trim()
-            } | ForEach-Object { Split-Path -Leaf $_ } | Sort-Object -Unique)
+            })
+        $embedded = SortOrdinal @($listed |
+            ForEach-Object { Split-Path -Leaf $_ } | Sort-Object -Unique)
         Row "windows_${profile}_payload" ($embedded -join ',')
         $want = switch ($profile) {
             'normal'  { @('MicrosoftEdgeWebview2Setup.exe', 'app.pwb',
@@ -415,13 +431,23 @@ foreach ($profile in $profiles) {
                 ("$profile`: the embedded payload is [" +
                  ($embedded -join ', ') + ']')
         }
-        # no loose frontend file, ever - in any profile
-        $loose = @($embedded | Where-Object {
-            $_ -match '\.(html|css|map|json)$' })
+        # NO LOOSE FRONTEND FILE, EVER - the CAP-6b1 assertion, scoped to
+        # the payload this product owns. The pinned Fixed Version Runtime
+        # tree legitimately ships external_extensions.json, manifest.json
+        # and vk_swiftshader_icd.json, and sweeping those would be asserting
+        # something about Microsoft's cabinet rather than about this build.
+        $ours = @($listed | Where-Object {
+            $_ -notmatch [regex]::Escape($runtimeMarker) })
+        $loose = @($ours | ForEach-Object { Split-Path -Leaf $_ } |
+            Where-Object { $_ -match '\.(html|css|map|json)$' })
+        Row "windows_${profile}_own_payload_files" "$($ours.Count)"
+        Require ($ours.Count -gt 0) `
+            "$profile`: the listing shows no payload of this product's own"
         Require ($loose.Count -eq 0) `
             "$profile`: loose frontend file(s) embedded: $($loose -join ', ')"
     } else {
         Row "windows_${profile}_payload" 'not_applicable'
+        Row "windows_${profile}_own_payload_files" 'not_applicable'
     }
     # W8 / the release is the INPUT and must not move
     $after = InventoryOf (ReleaseDirOf $projA)
@@ -440,6 +466,7 @@ if (-not $IsWindows) {
     # emitting one is a required-field failure rather than a silence
     foreach ($p in 'normal', 'offline', 'fixed-runtime') {
         Row "windows_${p}_payload" 'not_applicable'
+        Row "windows_${p}_own_payload_files" 'not_applicable'
     }
 }
 Row 'windows_offline_built' $(

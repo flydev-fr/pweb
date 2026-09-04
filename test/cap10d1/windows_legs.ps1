@@ -193,14 +193,18 @@ try {
 # schema 1's grammars exclude every one of them and the reader refuses before
 # the packaging driver is called at all. The derivation's OWN refusal is
 # measured purely by the suite; this is the end-to-end half.
+# SCAFFOLDED rather than copied: $projA now carries a ~500 MB artifacts
+# tree, and copying it to edit one descriptor field would be half a gigabyte
+# of I/O to prove a refusal that never reaches a build
 $bad = Join-Path $spaced 'badident'
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $bad
-Copy-Item -Recurse -Force $projA $bad
-Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $bad 'dist')
+$mkBad = RunCli @('create', 'badident', '--ui', 'pas2js',
+    '--bundle-id', 'com.example.badident') $spaced 300000
+Require ($mkBad.Code -eq 0) "W7: the fixture project could not be created"
 $desc = Join-Path $bad 'pweb.json'
 $descText = [System.IO.File]::ReadAllText($desc)
 [System.IO.File]::WriteAllText($desc,
-    $descText.Replace('"name": "demopack"', '"name": "demo{pack}"'))
+    $descText.Replace('"name": "badident"', '"name": "bad{ident}"'))
 $badRun = RunCli @('build', '--project', $bad, '--profile', 'normal') $cwd 300000
 Row 'profile_identity_metacharacter_exit' "$($badRun.Code)"
 Row 'profile_identity_metacharacter_refused' (Bool ($badRun.Code -eq 3))

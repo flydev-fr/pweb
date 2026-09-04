@@ -1565,7 +1565,7 @@ for f in pack_corpus \
          macos_archive_run \
          macos_codesign_observation \
          macos_bundle_identity \
-         archive_program_mode          windows_normal_payload          windows_offline_payload \
+         archive_program_mode          windows_normal_payload          windows_offline_payload          windows_normal_own_payload_files          windows_offline_own_payload_files          fixed_tree_max_rel_measured          fixed_tree_max_rel_pinned \
          long_path_ok_chars \
          long_path_fail_chars \
          long_path_refusal \
@@ -2161,6 +2161,11 @@ cat > "${work}/evidence.json" <<EOF
   "windows_normal_payload": "${windows_normal_payload}",
   "windows_offline_payload": "${windows_offline_payload}",
   "windows_fixed-runtime_payload": "$(d1_str 'windows_fixed-runtime_payload')",
+  "windows_normal_own_payload_files": "${windows_normal_own_payload_files}",
+  "windows_offline_own_payload_files": "${windows_offline_own_payload_files}",
+  "windows_fixed-runtime_own_payload_files": "$(d1_str 'windows_fixed-runtime_own_payload_files')",
+  "fixed_tree_max_rel_measured": "${fixed_tree_max_rel_measured}",
+  "fixed_tree_max_rel_pinned": "${fixed_tree_max_rel_pinned}",
   "long_path_ok_chars": "${long_path_ok_chars}",
   "long_path_fail_chars": "${long_path_fail_chars}",
   "long_path_refusal": "${long_path_refusal}",

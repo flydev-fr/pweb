@@ -334,7 +334,10 @@ $required = @(
     'macos_codesign_observation', 'macos_bundle_identity',
     'archive_program_mode', 'pack_interrupt_stage',
     'windows_normal_payload', 'windows_offline_payload',
-    'windows_fixed-runtime_payload',
+    'windows_fixed-runtime_payload', 'windows_normal_own_payload_files',
+    'windows_offline_own_payload_files',
+    'windows_fixed-runtime_own_payload_files',
+    'fixed_tree_max_rel_measured', 'fixed_tree_max_rel_pinned',
     'long_path_ok_chars', 'long_path_fail_chars', 'long_path_refusal',
     'long_path_refusal_cause', 'long_path_refusal_exit', 'd0_build_digest',
     # CAP-10D0, required PRESENT on every target and compared on none: each
@@ -1070,7 +1073,10 @@ $equalityFields = @(
     'macos_codesign_observation', 'macos_bundle_identity',
     'archive_program_mode', 'archive_deterministic', 'pack_interrupt_stage',
     'windows_normal_payload', 'windows_offline_payload',
-    'windows_fixed-runtime_payload',
+    'windows_fixed-runtime_payload', 'windows_normal_own_payload_files',
+    'windows_offline_own_payload_files',
+    'windows_fixed-runtime_own_payload_files',
+    'fixed_tree_max_rel_measured', 'fixed_tree_max_rel_pinned',
     'profiles_for_target', 'long_path_ok_chars', 'long_path_fail_chars',
     'long_path_refusal', 'long_path_refusal_cause', 'long_path_refusal_exit',
     'd0_build_digest'
