@@ -246,66 +246,66 @@ five commands honestly, recording every digest that moves.
 
 **Execution:**
 
-- [ ] `tools/pweb/pweb.cli.args.pas` -- add `pccBuild`, the `build` token and
+- [x] `tools/pweb/pweb.cli.args.pas` -- add `pccBuild`, the `build` token and
   `build` to the `--verbose`/`--no-color` refusal clause -- one parser, one
   grammar, no new usage cause.
-- [ ] `tools/pweb/pweb.cli.report.pas` -- add `PWebCliBuildHelp` and the two
+- [x] `tools/pweb/pweb.cli.report.pas` -- add `PWebCliBuildHelp` and the two
   banner lines -- the help text is where a reader learns the surface.
-- [ ] `tools/pweb/pweb.cli.build.pas` -- NEW: the private driver that calls
+- [x] `tools/pweb/pweb.cli.build.pas` -- NEW: the private driver that calls
   `PWebCliRunPipeline` once and measures the committed layout -- one
   execution path, and a unit whose linkage and process-freedom are both
   measurable.
-- [ ] `tools/pweb/pweb.pas` -- add `RunBuild`, dispatch `pccBuild`, wire its
+- [x] `tools/pweb/pweb.pas` -- add `RunBuild`, dispatch `pccBuild`, wire its
   help, print the six-field summary and the conditional `pweb run` line --
   the dispatch layer decides exit codes and prints, and does nothing else.
-- [ ] `test/cap10d0/psargs.ps1` -- NEW: the one pwsh argument-quoting helper
+- [x] `test/cap10d0/psargs.ps1` -- NEW: the one pwsh argument-quoting helper
   (CRT rules, mirroring `PWebCliWindowsCommandLine`), proven by a round trip
   against `test/cap10c0/pwebchild` -- closes C1-11(a)/C0-12(b).
-- [ ] `test/cap10a,b0,b1,b2,c0,c1,c2,c3/*.ps1` -- adopt `psargs.ps1` at every
+- [x] `test/cap10a,b0,b1,b2,c0,c1,c2,c3/*.ps1` -- adopt `psargs.ps1` at every
   `Start-Process -ArgumentList` call site -- one helper, every gate, all at
   once, as the ledger entry requires.
-- [ ] `test/cap10d0/pweb.test.build.pas`, `d0tests.pas` -- NEW: the headless
+- [x] `test/cap10d0/pweb.test.build.pas`, `d0tests.pas` -- NEW: the headless
   decision corpus (grammar, help, the driver's pure parts, the replacement
   table, mutation-set membership) -- a corpus four targets must agree on.
-- [ ] `test/cap10d0/pwebbuilddrv.pas` -- NEW: spawns the real `pweb build`
+- [x] `test/cap10d0/pwebbuilddrv.pas` -- NEW: spawns the real `pweb build`
   with `SeparateConsole` and delivers a real interrupt -- B5 on four targets,
   and the Windows measurement CAP-10C1's ST10 recorded as `not_measured`.
-- [ ] `test/cap10d0/build_cap10d0.{ps1,sh}` -- NEW: compile the suite and the
+- [x] `test/cap10d0/build_cap10d0.{ps1,sh}` -- NEW: compile the suite and the
   driver against the staged SDK root -- mirrors `build_cap10c3.*`.
-- [ ] `test/cap10d0/check_cap10d0_contracts.ps1` -- NEW, checkout-only: one
+- [x] `test/cap10d0/check_cap10d0_contracts.ps1` -- NEW, checkout-only: one
   `PWebCliExecute` call site; the driver names no process API; the ten stage
   names and eight bounds unchanged; the mutation set unchanged; five
   commands advertised; no unratified option token in the parser; the C1-11(d)
   name pairs byte-equal; `docs/index.md` cross-links `build-contract.md`.
-- [ ] `test/cap10d0/run_cap10d0_gates.ps1` -- NEW: B1-B12, L1-L3, R1-R2;
+- [x] `test/cap10d0/run_cap10d0_gates.ps1` -- NEW: B1-B12, L1-L3, R1-R2;
   emits `build/cap10d0/cli-<target>.json`.
-- [ ] `test/cap10b0,b1,b2,c0,c1,c2,c3` -- invert every "`build` is unknown"
+- [x] `test/cap10b0,b1,b2,c0,c1,c2,c3` -- invert every "`build` is unknown"
   pin, each with a comment naming CAP-10D0 -- inverted, never deleted.
-- [ ] `test/cap10a/pweb.test.cli.pas` -- move `args|build|...` to `ok` and add
+- [x] `test/cap10a/pweb.test.cli.pas` -- move `args|build|...` to `ok` and add
   the six option rows; re-baseline `$cliClosure` in
   `test/cap10c1/run_cap10c1_gates.ps1` with the old value in a comment.
-- [ ] `tools/templates/react/README.md`, `tools/templates/pas2js/README.md`
+- [x] `tools/templates/react/README.md`, `tools/templates/pas2js/README.md`
   -- supersede: document `create doctor build dev run` honestly -- the
   READMEs promise steps that now have names.
-- [ ] `test/cap10b2/run_cap10b2_gates.ps1` -- re-pin
+- [x] `test/cap10b2/run_cap10b2_gates.ps1` -- re-pin
   `$CAP10B1_REACT_INVENTORY_DIGEST` and `$CAP10B1_REACT_TOTAL_BYTES`, old
   values in a comment naming CAP-10D0 -- a recorded supersession.
-- [ ] `test/cap7f/emit_evidence.ps1`, `check_cap7f_aggregate.ps1`,
+- [x] `test/cap7f/emit_evidence.ps1`, `check_cap7f_aggregate.ps1`,
   `check_cap7f_selftest.ps1` -- read the D0 record, add its equality fields
   and absolute pins, and one negative self-test leg per new refusal.
-- [ ] `.github/workflows/ci.yml` -- four native jobs gain the D0 build,
+- [x] `.github/workflows/ci.yml` -- four native jobs gain the D0 build,
   contracts, gates and upload steps after C3; the Windows job gains the L1
   long-path leg; L2b only if ratified.
-- [ ] `docs/build-contract.md` -- NEW: the public build command, the grammar,
+- [x] `docs/build-contract.md` -- NEW: the public build command, the grammar,
   the output, the replacement rule with its window and its failure table, the
   exit mapping by reference, and what a build does not do.
-- [ ] `docs/index.md`, `docs/cli-contract.md`, `docs/pipeline-contract.md`,
+- [x] `docs/index.md`, `docs/cli-contract.md`, `docs/pipeline-contract.md`,
   `docs/supervision-contract.md`, `docs/dev-contract.md` -- supersede every
   sentence that says `build` is unknown.
-- [ ] `_bmad-output/implementation-artifacts/deferred-work.md` -- append the
+- [x] `_bmad-output/implementation-artifacts/deferred-work.md` -- append the
   CAP-10D0 entries, including the C0-12 and C1-11 dispositions with their
   measurements and the CAP-10D1 handoff.
-- [ ] `_bmad-output/implementation-artifacts/cap10d0-final-artifact.md` --
+- [x] `_bmad-output/implementation-artifacts/cap10d0-final-artifact.md` --
   the closure: the hosted green run, every supersession recorded, every
   ledger disposition, and the freeze result.
 
