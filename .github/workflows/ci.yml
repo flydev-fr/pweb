@@ -2191,6 +2191,9 @@ jobs:
             build/cap10d0/builddrv-stdout.txt
             build/cap10d0/builddrv-stderr.txt
             build/cap10d0/cli-stderr.txt
+            build/cap10d0/run-react-stderr.txt
+            build/cap10d0/run-pas2js-stderr.txt
+            build/cap10d0/race-run-stderr.txt
             build/cap10d0-gates.log
       # CAP-10D0 L2b: the CAP-10 chain, RE-RUN from a repository path that
       # carries a SPACE.
@@ -3159,7 +3162,7 @@ jobs:
         shell: bash
         timeout-minutes: 120
         run: |
-          pwsh -NoProfile -File test/cap10d0/run_cap10d0_gates.ps1 2>&1 |
+          xvfb-run -a pwsh -NoProfile -File test/cap10d0/run_cap10d0_gates.ps1 2>&1 |
             tee build/cap10d0-gates.log
           test "${PIPESTATUS[0]}" -eq 0
 
@@ -3181,6 +3184,9 @@ jobs:
             build/cap10d0/builddrv-stdout.txt
             build/cap10d0/builddrv-stderr.txt
             build/cap10d0/cli-stderr.txt
+            build/cap10d0/run-react-stderr.txt
+            build/cap10d0/run-pas2js-stderr.txt
+            build/cap10d0/race-run-stderr.txt
             build/cap10d0-gates.log
       - name: CAP-7F emit the Linux evidence artifact
         shell: bash
@@ -4112,6 +4118,9 @@ jobs:
             build/cap10d0/builddrv-stdout.txt
             build/cap10d0/builddrv-stderr.txt
             build/cap10d0/cli-stderr.txt
+            build/cap10d0/run-react-stderr.txt
+            build/cap10d0/run-pas2js-stderr.txt
+            build/cap10d0/race-run-stderr.txt
             build/cap10d0-gates.log
       - name: CAP-7F emit the macOS x64 evidence artifact
         shell: bash
@@ -4971,6 +4980,9 @@ jobs:
             build/cap10d0/builddrv-stdout.txt
             build/cap10d0/builddrv-stderr.txt
             build/cap10d0/cli-stderr.txt
+            build/cap10d0/run-react-stderr.txt
+            build/cap10d0/run-pas2js-stderr.txt
+            build/cap10d0/race-run-stderr.txt
             build/cap10d0-gates.log
       - name: CAP-7F emit the macOS arm64 evidence artifact
         shell: bash

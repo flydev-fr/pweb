@@ -451,7 +451,13 @@ function RunApplication([string]$Ui) {
     $p.WaitForExit()
     Remove-Item Env:PWEB_SMOKE_AUTOCLOSE_MS -ErrorAction SilentlyContinue
     $out = if (Test-Path $so) { [System.IO.File]::ReadAllText($so) } else { '' }
-    Write-Host "----- $Ui run -----"; Write-Host $out
+    # BOTH streams. The application's own lines go to stdout and the
+    # supervisor's to stderr, and a run that dies before its first window
+    # says why only on the second - which is how a missing display reads as
+    # "returned -1" and nothing else. Measured: it cost a hosted run.
+    $err = if (Test-Path $se) { [System.IO.File]::ReadAllText($se) } else { '' }
+    Write-Host "----- $Ui run (stdout) -----"; Write-Host $out
+    Write-Host "----- $Ui run (stderr) -----"; Write-Host $err
     $value = -1
     foreach ($line in ($out -split "`n")) {
         # the program identifier is the PROJECT's, not a fixed `demo`: this
@@ -646,6 +652,9 @@ if (-not $rp.WaitForExit(120000)) {
 $rp.WaitForExit()
 Remove-Item Env:PWEB_SMOKE_AUTOCLOSE_MS -ErrorAction SilentlyContinue
 $raceOut = if (Test-Path $rso) { [System.IO.File]::ReadAllText($rso) } else { '' }
+$raceErr = if (Test-Path $rse) { [System.IO.File]::ReadAllText($rse) } else { '' }
+Write-Host "----- race run (stdout) -----"; Write-Host $raceOut
+Write-Host "----- race run (stderr) -----"; Write-Host $raceErr
 $raceValue = -1
 foreach ($line in ($raceOut -split "`n")) {
     if ($line -match '^\w+: ready (\{.*\})\s*$') {

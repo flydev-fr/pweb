@@ -64,7 +64,7 @@ $statics = '-Fldeps/mormot2/static/x86_64-win64'
 Write-Host '[CAP-10D0] layering: pweb.cli.build stands on the pipeline alone'
 & fpc -MObjFPC -Sh -B -Px86_64 -Twin64 -Xm -FUbuild/cap10d0/iso `
     -Futools/pweb -Fusrc/rpc -Fusrc/security -Fusrc/assets `
-    @mormotCore tools/pweb/pweb.cli.build.pas
+    -Fusrc/platform/windows @mormotCore tools/pweb/pweb.cli.build.pas
 if ($LASTEXITCODE -ne 0) {
     throw 'pweb.cli.build.pas failed its isolation compile'
 }
@@ -72,10 +72,15 @@ if ($LASTEXITCODE -ne 0) {
 # --- 2. the suite and the real-`pweb build` driver --------------------------
 Write-Host '[CAP-10D0] the suite and the real-`pweb build` driver'
 foreach ($prog in 'd0tests', 'pwebbuilddrv') {
+    # -Fusrc/platform/windows: pweb.cli.platform uses the ratified CAP-6b0
+    # WebView2 detector on this platform and on no other, which is the same
+    # asymmetry test/cap10c1 and test/cap10c3 carry. Without it the compile
+    # dies on `Can't find unit pweb.platform.webview2.runtime`, which names
+    # the missing PATH rather than the missing unit.
     & fpc -Sh -B -Px86_64 -Twin64 -Xm -FUbuild/cap10d0/test-units `
         -FEbuild/cap10d0/bin -Futools/pweb -Futest/cap10d0 -Fusrc/rpc `
-        -Fusrc/security -Fusrc/assets @mormotTest $statics `
-        "test/cap10d0/$prog.pas"
+        -Fusrc/security -Fusrc/assets -Fusrc/platform/windows `
+        @mormotTest $statics "test/cap10d0/$prog.pas"
     if ($LASTEXITCODE -ne 0) { throw "$prog.pas compile FAILED" }
     if (-not (Test-Path -LiteralPath "build/cap10d0/bin/$prog.exe")) {
         throw "expected build/cap10d0/bin/$prog.exe"
