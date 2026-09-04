@@ -477,12 +477,19 @@ if ($packSrc -match 'PWebCliResolveToolset') {
 $facts['pack_resolves_toolset'] = 'false'
 # C1-11 (f): the CLI has exactly TWO console write sites, both in pweb.pas
 # and both immediately flushed, so a line-buffering setup would have no
-# failing property to fix. pwebtemplates.pas is excluded BY NAME: it is the
-# build-time pack builder, a separate program that is never linked into the
-# CLI (test/cap10b0/check_cap10b0_contracts.ps1 measures that absence).
+# failing property to fix. Two PROGRAMS are excluded BY NAME, and both for
+# the same reason: they are private build-time tools that are never linked
+# into the CLI, and each one's absence from the shipped executable is
+# measured by its own shard's contract check -
+#   pwebtemplates.pas  the CAP-10B0 pack builder
+#                      (test/cap10b0/check_cap10b0_contracts.ps1)
+#   pwebsdk.pas        the CAP-10D2 SDK packager
+#                      (test/cap10d2/check_cap10d2_contracts.ps1, which
+#                      requires pweb.pas not to name it at all)
+# CAP-10D2 SUPERSESSION: the excluded set moves from one program to two.
 $writers = @()
 foreach ($f in (Get-ChildItem -Path 'tools/pweb' -Filter '*.pas')) {
-    if ($f.Name -eq 'pwebtemplates.pas') { continue }
+    if (($f.Name -eq 'pwebtemplates.pas') -or ($f.Name -eq 'pwebsdk.pas')) { continue }
     $t = [System.IO.File]::ReadAllText($f.FullName)
     if ($t -match '(?m)^\s*(Write|WriteLn)\s*\(') { $writers += $f.Name }
 }

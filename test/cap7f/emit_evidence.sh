@@ -1613,7 +1613,8 @@ for f in sdk_corpus sdk_suite sdk_digest sdk_corpus_lines sdk_package_built \
          sdk_archive_bytes sdk_manifest_sha256 sdk_integrity_seconds \
          sdk_licenses_count sdk_licenses_documented sdk_licenses_shipped \
          clean_machine_doctor clean_machine_profile_result \
-         clean_machine_bin_mode clean_machine_path checkout_renamed_aside \
+         clean_machine_bin_mode clean_machine_path clean_machine_extractor \
+         checkout_renamed_aside \
          unit_paths_seen packaging_sampler_samples \
          packaging_sampler_members; do
     eval "${f}=\"\$(d2_str ${f})\""
@@ -2284,6 +2285,7 @@ cat > "${work}/evidence.json" <<EOF
   "clean_machine_profile_result": "${clean_machine_profile_result}",
   "clean_machine_bin_mode": "${clean_machine_bin_mode}",
   "clean_machine_path": "${clean_machine_path}",
+  "clean_machine_extractor": "${clean_machine_extractor}",
   "checkout_renamed_aside": "${checkout_renamed_aside}",
   "unit_paths_seen": "${unit_paths_seen}",
   "packaging_sampler_samples": "${packaging_sampler_samples}",

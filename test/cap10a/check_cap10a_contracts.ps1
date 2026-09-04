@@ -165,9 +165,17 @@ $shellPatterns = @(
 # command must not resolve anything from where it happened to be invoked; a
 # build tool that takes an explicit --source argument and makes it absolute
 # is doing the opposite of that, and forbidding it would forbid the argument.
+# the CLI's UNIT set: every .pas under tools/pweb except the PROGRAMS. There
+# are three programs, each a separate main whose absence from the shipped
+# executable its own shard measures - `pweb.pas` (the CLI itself),
+# `pwebtemplates.pas` (the CAP-10B0 pack builder) and, since CAP-10D2,
+# `pwebsdk.pas` (the SDK packager). A program legitimately resolves its own
+# working directory and writes its own summary; a UNIT may do neither.
+# CAP-10D2 SUPERSESSION: the excluded set moves from two programs to three.
 $cliSources = @(Get-ChildItem tools/pweb -File -Filter '*.pas' |
     Where-Object { ($_.Name -cne 'pweb.pas') -and
-                   ($_.Name -cne 'pwebtemplates.pas') })
+                   ($_.Name -cne 'pwebtemplates.pas') -and
+                   ($_.Name -cne 'pwebsdk.pas') })
 if ($cliSources.Count -lt 8) {
     Violation "expected the CLI unit set under tools/pweb, found $($cliSources.Count)"
 }

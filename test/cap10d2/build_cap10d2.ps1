@@ -100,8 +100,15 @@ $mormotTest = $mormotCore + @('-Fudeps/mormot2/src/net')
 $statics = '-Fldeps/mormot2/static/x86_64-win64'
 
 Write-Host '[CAP-10D2] layering: pweb.cli.sdkmanifest stands on mORMot and the anchor'
+# -Fusrc/platform/windows is the ONE extra path, and it is not a weakening:
+# pweb.cli.platform itself uses the WebView2 runtime detector on this OS, so
+# the unit under test would be refused for a dependency of its dependency.
+# What the isolation proves is what pweb.cli.sdkmanifest does NOT reach - the
+# pipeline, the process engine, the toolset and the doctor - and
+# check_cap10d2_contracts.ps1 measures that at the source as well.
 & fpc -MObjFPC -Sh -B -Px86_64 -Twin64 -Xm -FUbuild/cap10d2/iso `
-    -Futools/pweb @mormotCore tools/pweb/pweb.cli.sdkmanifest.pas
+    -Futools/pweb -Fusrc/platform/windows @mormotCore `
+    tools/pweb/pweb.cli.sdkmanifest.pas
 if ($LASTEXITCODE -ne 0) {
     throw 'pweb.cli.sdkmanifest.pas failed its isolation compile'
 }

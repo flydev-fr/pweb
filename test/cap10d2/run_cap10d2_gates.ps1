@@ -334,8 +334,10 @@ function BuildFixtureRoot {
     # baseline reaches the end of the tool rather than its template check
     Copy-Item -Force -LiteralPath (Join-Path $sdk 'share/pweb/pweb-templates.zip') `
         -Destination (Join-Path $fixRoot 'share/pweb/pweb-templates.zip')
-    Copy-Item -Force -Recurse -LiteralPath (Join-Path $sdk 'share/pweb/licenses/*') `
-        -Destination (Join-Path $fixRoot 'share/pweb/licenses')
+    foreach ($lf in (Get-ChildItem -LiteralPath (Join-Path $sdk 'share/pweb/licenses') -File)) {
+        Copy-Item -Force -LiteralPath $lf.FullName `
+            -Destination (Join-Path $fixRoot "share/pweb/licenses/$($lf.Name)")
+    }
     New-Item -ItemType Directory -Force $fixRepo | Out-Null
     foreach ($lock in 'fpc.lock', 'innosetup.lock', 'mormot.lock',
                       'pas2js.lock', 'webview.lock', 'webview2-runtime.lock') {
@@ -435,13 +437,19 @@ $licDoc = [System.IO.File]::ReadAllText(
     (Join-Path $repoRoot 'docs/third-party-licenses.md'))
 $docRows = @()
 foreach ($line in ($licDoc -split "`r?`n")) {
-    if ($line -match '^\|\s*`([A-Za-z0-9._-]+)`\s*\|\s*([a-z, -]+?)\s*\|') {
-        $docRows += [pscustomobject]@{ Name = $Matches[1]; Targets = $Matches[2] }
+    if ($line -match '^\|\s*`([A-Za-z0-9._-]+)`\s*\|\s*([a-z0-9_, -]+?)\s*\|') {
+        $docRows += [pscustomobject]@{ Name = $Matches[1]; Targets = $Matches[2].Trim() }
     }
 }
-$wantLicences = @($docRows |
-    Where-Object { ($_.Targets -eq 'all') -or ($_.Targets -match $target) } |
-    ForEach-Object { $_.Name } | Sort-Object)
+# the document's three condition spellings, read rather than re-derived:
+# `all`, `not <os>`, and an exact target name
+$wantLicences = @($docRows | Where-Object {
+        if ($_.Targets -ceq 'all') { return $true }
+        if ($_.Targets -clike 'not *') {
+            return -not $target.StartsWith($_.Targets.Substring(4))
+        }
+        return $_.Targets -ceq $target
+    } | ForEach-Object { $_.Name } | Sort-Object)
 $gotLicences = @($manifestObj.licenses | Sort-Object)
 Row 'sdk_licenses_documented' ($wantLicences -join ',')
 Row 'sdk_licenses_shipped' ($gotLicences -join ',')
@@ -464,12 +472,26 @@ $cleanBase = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else {
     [System.IO.Path]::GetTempPath() }
 $cleanHome = Join-Path $cleanBase ([char]0x00E9 + 'tude sdk')
 $cleanCwd = Join-Path $cleanBase ([char]0x00E9 + 'tude cwd')
+# `tar` is the extractor on every target: it is in Windows' System32 since
+# 10 1803, and one extraction rule beats three. On Windows it is resolved
+# from the SYSTEM DIRECTORY by exact name and never through PATH - the same
+# rule CAP-10D1 ratified for `expand.exe`, and for the same reason a
+# developer machine makes visible: a Git or MSYS `tar` earlier on PATH is a
+# different program that does not understand a Windows drive letter, and
+# picking it up would make this leg fail for a reason that has nothing to do
+# with the archive.
+$tarExe = if ($IsWindows) {
+    Join-Path $env:SystemRoot 'System32/tar.exe'
+} else { 'tar' }
+if ($IsWindows) {
+    Require (Test-Path -LiteralPath $tarExe) `
+        "the system tar is absent at $tarExe (Windows 10 1803 or later ships it)"
+}
+Row 'clean_machine_extractor' $(if ($IsWindows) { 'System32/tar.exe' } else { 'tar' })
 function ResetExtraction {
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $cleanHome
     New-Item -ItemType Directory -Force $cleanHome | Out-Null
-    # `tar` is the extractor on every target: it is in Windows' System32
-    # since 10 1803, and one extraction rule beats three
-    $t = RunTool 'tar' @('-xzf', $archivePath, '-C', $cleanHome) $repoRoot 600000
+    $t = RunTool $tarExe @('-xzf', $archivePath, '-C', $cleanHome) $repoRoot 600000
     Require ($t.Code -eq 0) "extraction failed: $($t.Err)"
 }
 ResetExtraction
@@ -527,7 +549,7 @@ Require ("$($sdkRows['sdk.integrity'])" -ceq 'pass/ok') 'IN1: sdk.integrity did 
 Require ("$($sdkRows['sdk.version'])" -ceq 'pass/ok') 'IN1: sdk.version did not pass'
 
 # --- 8. IN2/IN3: tamper, and every wrong manifest ---------------------------
-$probeRoot = Join-Path $cleanBase ([char]0x00E9 + 'tude proj')
+$probeRoot = Join-Path $cleanBase 'cap10d2 probe'
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $probeRoot
 New-Item -ItemType Directory -Force $probeRoot | Out-Null
 $cr = CleanCli @('create', 'probe', '--ui', 'pas2js', '--bundle-id',
@@ -634,11 +656,12 @@ try {
             $to = "$from.d2aside"
             Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $to
             Rename-Item -LiteralPath $from -NewName (Split-Path -Leaf $to)
-            $aside += [pscustomobject]@{ From = $from; To = $to }
+            $aside += [pscustomobject]@{ From = $from; To = $to; Rel = $rel }
         }
     }
-    Row 'checkout_renamed_aside' (($aside | ForEach-Object {
-        Split-Path -Leaf $_.From }) -join ',')
+    # the RELATIVE names, because `build/cap10b1/sdk` and `sdk` have the same
+    # leaf and a reader of the evidence has to be able to tell them apart
+    Row 'checkout_renamed_aside' (($aside | ForEach-Object { $_.Rel }) -join ',')
     Require ($aside.Count -eq $asideNames.Count) `
         "CM: only $($aside.Count) of $($asideNames.Count) checkout trees were renamed aside"
 
@@ -648,7 +671,19 @@ try {
     $env:PWEB_MORMOT = $env:PWEB_SDK
     $env:PWEB_TEMPLATES = $env:PWEB_SDK
 
-    $projRoot = Join-Path $cleanBase ([char]0x00E9 + 'tude apps')
+    # THE PROJECTS LIVE AT A SPACED path, not a non-ASCII one, and the split
+    # is a MEASUREMENT rather than a preference. The brief asks for the SDK to
+    # be extracted to a path with a space and a non-ASCII character, and it
+    # is - `<temp>/<e-acute>tude sdk/`, above. The PROJECT path is the one
+    # CAP-10D0 and CAP-10D1 ratified as spaced, and it stays spaced here for
+    # a reason this leg found: `pwebbundle`, the FROZEN CAP-6 bundler, reads
+    # its argv through the RTL's ANSI conversion on Windows, so a project
+    # root carrying a non-ASCII character reaches it as `?tude apps` and the
+    # `pack` stage fails with `dist directory not found`. That is a real
+    # limitation of a frozen program, it is ledgered with its owner, and it
+    # is not this shard's to fix - but a gate that quietly demanded it would
+    # be measuring CAP-6 rather than the SDK distribution.
+    $projRoot = Join-Path $cleanBase 'cap10d2 apps'
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $projRoot
     New-Item -ItemType Directory -Force $projRoot | Out-Null
     $cmdLines = New-Object System.Collections.Generic.List[string]
@@ -774,7 +809,7 @@ try {
     # CM5: the SDK-shipped tool rule. `pwebbundle` is resolved from the SDK
     # root and PATH is never consulted for it; a decoy of the same name
     # earlier on PATH changes nothing.
-    $decoy = Join-Path $cleanBase ([char]0x00E9 + 'tude decoy')
+    $decoy = Join-Path $cleanBase 'cap10d2 decoy'
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $decoy
     New-Item -ItemType Directory -Force $decoy | Out-Null
     $decoyBundler = Join-Path $decoy "pwebbundle$exeSuffix"

@@ -89,7 +89,7 @@ Re-measured **unchanged** by CAP-10D2 and required so: `build_digest`,
 
 ## 4. The phase-wide ledger, disposed
 
-161 entries across eleven shards, every one with exactly one judgement from
+163 entries across eleven shards, every one with exactly one judgement from
 the closed set `RESOLVED | RECORDED-ONLY | CAP-11 | CAP-12 | CAP-13 | LATER`.
 `test/cap10d2/check_cap10_ledger.ps1` re-derives every key and every digest
 from `deferred-work.md` on every CI leg, so an entry ADDED, REMOVED or
@@ -245,7 +245,7 @@ reason.
 | D1-5 | 723ad529 | RESOLVED | `artifacts/<profile>/` rather than `dist/<profile>/`, found by the gate's first real run; the contract document caught up at D2-9 |
 | D1-6 | 83e0f997 | RECORDED-ONLY | the profile name is `fixed-runtime` and never `fixed`; a ratification whose reason is the CAP-6b4 marker gate |
 | D1-7 | 6f2d4612 | RESOLVED | the CAP-10D2 handoff was consumed by CAP-10D2, including its one named ledger item C1-11 (c) |
-| D1-8 | 1e23241c | RECORDED-ONLY | the offline and fixed-runtime profiles are proven as BUILDS for a generated application and as INSTALLS by CAP-6b2 and CAP-6b3 over byte-identical `[Code]`. CAP-10D2 changes nothing about it: the clean-machine leg builds all three profiles from the extracted SDK and proves install/run/uninstall for `normal`, which is the same claim one layer further out. A shard that wants the other two install matrices should say so and pay the hour of hosted Windows time |
+| D1-8 | 1e23241c | RECORDED-ONLY | the offline and fixed-runtime profiles are proven as BUILDS for a generated application and as INSTALLS by CAP-6b2 and CAP-6b3 over byte-identical `[Code]`. CAP-10D2 widens the build half and not the install half: the clean-machine leg BUILDS all three profiles from the EXTRACTED SDK - clean_machine_profile_result reads normal=0,offline=0,fixed-runtime=0 - and the install/run/uninstall claim stays CAP-10D1's, over an installer the identical code path produced. Re-installing from the extracted SDK would re-prove CAP-10D1 at about twenty minutes of hosted Windows time for no new claim; a shard that wants the other two install matrices should say so and pay for them |
 | D1-9 | 7e800df5 | RECORDED-ONLY | the archive's byte-determinism is a per-target claim; the same is true of the SDK archive CAP-10D2 writes with the same writer, and both are pinned per target rather than across four |
 | D1-10 | 606376c8 | RESOLVED | the cabinet expander is resolved from the system directory rather than through PATH |
 | D1-11 | 73e5221d | RESOLVED | the fixed profile's own MAX_PATH ceiling, refused in the preflight and re-measured on every Windows leg |
@@ -266,6 +266,8 @@ reason.
 | D2-9 | cf28989d | RESOLVED | three statements in `docs/distribution-contract.md` had drifted from the shipped code; all three corrected, and section 11 of that document records what moved and why |
 | D2-10 | 7e66f6b4 | CAP-11 | the `ci.yml` budget, now 253 KB and 5429 lines before this shard's own steps. CAP-11 owns the split, and what it must preserve is stated: the four platform jobs run the SAME step sequence, which is the property the CAP-7F aggregator exists to check |
 | D2-11 | 58acec74 | RESOLVED | the CAP-11 handoff, written; it is section 6 of this artifact |
+| D2-12 | eb03bf0d | RESOLVED | the SDK root could not be resolved from a non-ASCII path on Windows, because the RTL hands ParamStr(0) to a process through an ANSI conversion. PWebCliImageDir asks the kernel instead - GetModuleFileNameW - and the clean-machine leg that found it now passes at that very path |
+| D2-13 | c3483e49 | LATER | the frozen CAP-6 bundler reads its argv through the same ANSI conversion, so a PROJECT at a non-ASCII path fails at the pack stage with a message about a directory that is plainly there. Closing it is either CAP-6 surface (a UTF-16 argv in pwebbundle) or a new exit-3 cause at the open stage the way CAP-10D1 refuses project_root_too_long; neither is additive to this shard, both routes are named in the entry, and the clean-machine leg keeps the non-ASCII where the brief asks for it - the extracted SDK root |
 
 ## 5. Known limitations of the phase, stated
 
@@ -379,6 +381,6 @@ three platform adapters, and every dependency pin.
 ## Verdict
 
 **CAP-10 CLOSED.** Five public commands, one public option, eleven hosted
-green runs, 161 ledger entries disposed with 0 orphans, seven SPEC acceptance
+green runs, 163 ledger entries disposed with 0 orphans, seven SPEC acceptance
 clauses met and one ratified deviation named, and a distribution a machine
 that never built this repository can extract and use.

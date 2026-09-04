@@ -1038,6 +1038,43 @@ begin
   Result := False; // NTFS carries no such bit; the caller records that
 end;
 
+// the running image's own directory, from the KERNEL rather than from the
+// RTL's argv (CAP-10D2)
+//
+// MEASURED, and it cost a clean-machine leg to find it: the RTL's
+// ParamStr(0) reaches this process as an ANSI string, so an SDK extracted
+// into a directory whose name carries a non-ASCII character resolved to a
+// path the filesystem does not have - and every command refused with
+// `sdk_share_missing` while the tree sat there complete. GetModuleFileNameW
+// answers in UTF-16 and cannot lose a character, which is the same reason
+// every other filesystem call in this unit is a W one.
+function PWebCliImageDir(out Dir: RawUtf8): Boolean;
+var
+  wide: array[0 .. 32767] of WideChar;
+  got: DWORD;
+  full: RawUtf8;
+  i: PtrInt;
+begin
+  Dir := '';
+  Result := False;
+  got := GetModuleFileNameW(0, @wide[0], Length(wide));
+  if (got = 0) or
+     (got >= Length(wide)) then
+    exit;
+  wide[got] := #0;
+  full := U(SynUnicode(PWideChar(@wide[0])));
+  // the directory is everything up to the last separator, kept WITH it so
+  // what comes back is a directory spelling the canonicalizer accepts
+  for i := Length(full) downto 1 do
+    if (full[i] = '\') or
+       (full[i] = '/') then
+    begin
+      Dir := Copy(full, 1, i);
+      Result := Dir <> '';
+      exit;
+    end;
+end;
+
 function PWebCliSystemDir(out Dir: RawUtf8): Boolean;
 var
   buf: array[0 .. MAX_PATH] of WideChar;
@@ -2278,6 +2315,16 @@ begin
   Result := True;
 end;
 
+// the running image's own directory (CAP-10D2)
+// - on POSIX a path is BYTES and the RTL hands them through unchanged, so
+// the executable's own directory is what mORMot already resolved. The
+// Windows body cannot use the same source: see its comment
+function PWebCliImageDir(out Dir: RawUtf8): Boolean;
+begin
+  Dir := StringToUtf8(Executable.ProgramFilePath);
+  Result := Dir <> '';
+end;
+
 function PWebCliSystemDir(out Dir: RawUtf8): Boolean;
 begin
   // POSIX has no single directory the operating system's own utilities live
@@ -3208,14 +3255,22 @@ end;
   --------------------------------------------------------------------------- }
 
 function PWebCliExeDir(out Dir: RawUtf8): Boolean;
+var
+  raw: RawUtf8;
 begin
-  // Executable.ProgramFilePath is absolute and independent of the working
-  // directory - the SAME source of truth PWebReleaseDirectory already uses
-  // to find app.pwb and plugins.zip beside a running application. It is
-  // then canonicalized through the kernel, so what comes back is the real
+  // the image's own directory, absolute and independent of the working
+  // directory, asked of the PLATFORM (PWebCliImageDir) and then
+  // canonicalized through the kernel - so what comes back is the real
   // directory rather than the spelling the loader happened to be given.
-  Result := PWebCliCanonicalDir(
-    StringToUtf8(Executable.ProgramFilePath), Dir);
+  //
+  // CAP-10D2 moved the first half off the RTL's argv on Windows, because
+  // an SDK extracted into a directory whose name carries a non-ASCII
+  // character resolved to a path the filesystem does not have. See the
+  // Windows body of PWebCliImageDir.
+  Result := PWebCliImageDir(raw) and
+            PWebCliCanonicalDir(raw, Dir);
+  if not Result then
+    Dir := '';
 end;
 
 const

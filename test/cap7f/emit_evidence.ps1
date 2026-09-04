@@ -1878,6 +1878,7 @@ $evidence = [ordered]@{
     clean_machine_profile_result        = "$($d2.clean_machine_profile_result)"
     clean_machine_bin_mode              = "$($d2.clean_machine_bin_mode)"
     clean_machine_path                  = "$($d2.clean_machine_path)"
+    clean_machine_extractor             = "$($d2.clean_machine_extractor)"
     checkout_renamed_aside              = "$($d2.checkout_renamed_aside)"
     unit_paths_seen                     = "$($d2.unit_paths_seen)"
     packaging_sampler_samples           = "$($d2.packaging_sampler_samples)"

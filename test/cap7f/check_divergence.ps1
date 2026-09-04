@@ -151,6 +151,18 @@ $allow = @{
     # therefore deliberately absent from this list.
     'tools/pweb/pwebtemplates.pas'       = @{ directives = 2;
         fingerprint = '0dc7a84a71485678f01dc0e7032093d6858fb389878b52157a2f69671187305d' }
+    # CAP-10D2: the private SDK packager, and its ONLY conditional is the
+    # same `{$apptype console}` guard every program in this repository
+    # carries - the identical two directives and therefore the identical
+    # fingerprint as pwebtemplates.pas above. It selects a Windows subsystem
+    # and decides nothing. The two new units it stands on
+    # (pweb.cli.sdkmanifest) and the units CAP-10D2 touched
+    # (doctor, pipeline, stage, toolset) carry ZERO conditionals and are
+    # therefore deliberately absent from this list; pweb.cli.platform's own
+    # entry is UNCHANGED, because PWebCliImageDir went INSIDE the two
+    # platform bodies that already existed.
+    'tools/pweb/pwebsdk.pas'             = @{ directives = 2;
+        fingerprint = '0dc7a84a71485678f01dc0e7032093d6858fb389878b52157a2f69671187305d' }
 }
 
 function Get-DirectiveFingerprint([string[]]$Texts) {

@@ -124,9 +124,15 @@ mormot_test=( "${mormot_core[@]}" -Fudeps/mormot2/src/net )
 statics="-Fldeps/mormot2/static/${fpc_target}"
 platform_units="-Fusrc/platform/${target_os/darwin/macos}"
 
+# the platform unit path is the ONE extra, and it is not a weakening:
+# pweb.cli.platform itself reaches a platform unit on some targets, so the
+# unit under test would be refused for a dependency of its dependency. What
+# the isolation proves is what pweb.cli.sdkmanifest does NOT reach - the
+# pipeline, the process engine, the toolset and the doctor - and
+# check_cap10d2_contracts.ps1 measures that at the source as well.
 step 'layering: pweb.cli.sdkmanifest stands on mORMot and the anchor'
-fpc -MObjFPC -Sh -B -FUbuild/cap10d2/iso -Futools/pweb "${mormot_core[@]}" \
-    tools/pweb/pweb.cli.sdkmanifest.pas ||
+fpc -MObjFPC -Sh -B -FUbuild/cap10d2/iso -Futools/pweb "${platform_units}" \
+    "${mormot_core[@]}" tools/pweb/pweb.cli.sdkmanifest.pas ||
     die 'pweb.cli.sdkmanifest.pas failed its isolation compile'
 
 # --- 3. the private packager -------------------------------------------------
