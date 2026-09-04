@@ -31,7 +31,7 @@ extracted tree is the SDK root those commands run out of.
 | CAP-10C3 | `99bee05b8247c0ef7f99121d709f21f42c50c12c` | 33794370400 | `pweb dev` for Pas2JS: one content-fingerprint detector, one ladder, and the CAP-10C phase closure |
 | CAP-10D0 | `a67978ef` | 33851014894 | the public `pweb build` over the frozen pipeline: ONE `build_digest` on four targets and **42** through the real `pweb run` after the real `pweb build`, for both frontend kinds |
 | CAP-10D1 | `89538dee` | 33883767131 | `pweb build --profile`: three Windows installer profiles over the CAP-13 mechanics, one deterministic archive on Linux and macOS, one identity derived from `pweb.json` and refused rather than escaped |
-| CAP-10D2 | `pending` | pending | the SDK distribution, its integrity model, the clean-machine proof and this closure |
+| CAP-10D2 | `1714b65c` | 33919712393 | the SDK distribution, its integrity model, the clean-machine proof and this closure: one archive per target extracted to a spaced non-ASCII path with the checkout aside, **42** from both UIs on four targets, ONE `sdk_digest` `b33df77e…` and ONE `sdk_ship_table_digest` `1308731a…` |
 
 ## 2. The SPEC's CAP-10 acceptance, line by line
 
