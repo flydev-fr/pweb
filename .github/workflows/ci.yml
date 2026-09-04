@@ -2292,8 +2292,15 @@ jobs:
                 # belongs.
                 'test/cap10b0/run_cap10b0_gates.ps1',
                 'test/cap10b1/run_cap10b1_gates.ps1',
+                # the two GUI build proofs are IN the chain, not beside it:
+                # they leave build/cap10b{1,2}/{project,stage,release}, which
+                # the CAP-10C0 and CAP-10C1 gates below require by name. The
+                # build scripts above reclaim those trees, so the copies that
+                # travelled in the robocopy are gone by the time they matter
+                'test/cap10b1/prove_cap10b1.ps1',
                 'test/cap10b2/check_cap10b2_contracts.ps1',
                 'test/cap10b2/run_cap10b2_gates.ps1',
+                'test/cap10b2/prove_cap10b2.ps1',
                 'test/cap10c0/check_cap10c0_contracts.ps1',
                 'test/cap10c0/run_cap10c0_gates.ps1',
                 'test/cap10c1/check_cap10c1_contracts.ps1',
