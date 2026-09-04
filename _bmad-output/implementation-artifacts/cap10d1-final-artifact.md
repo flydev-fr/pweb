@@ -206,6 +206,8 @@ refactoring a frozen unit's spine to keep a count at four is the worse trade.
 | the D0 unratified-option list | nine | **eight**, `--profile` removed | it left the list in the shard that ratified its semantics |
 | the pipeline bounds table | eight | **nine**, `PWEB_CLI_PIPE_MAX_ROOT_CHARS` | the first entry that table has ever gained, and the only one that is measured on a runner rather than chosen |
 | the CAP-10A `--profile` case | `unknown_option` | accepted, with six new rows | the recorded supersession behind `cli_digest` |
+| the D0 gate's option matrix (B9) | `--profile offline` → `unknown_option` | **three legs**: bare → `missing_value`, empty → `empty_value`, `run --profile` → `option_not_for_command` | ratifying an option is a supersession in **two** places, and the first hosted run found the one that was missed. The matrix does not get shorter: `--profile` is held to the same grammar every other build option obeys, so B9 still measures "the surface refuses everything it has not ratified" |
+| the CAP-10C3 driver's whole-file write | one delete-then-`CREATE_NEW` | the same, **retried** for a bounded two seconds | PD7 rewrites the input set ~25×/s *while a build is in flight*, so it races PAS2JS's own read of that file. Nothing in the product changed; a driver that reported a compiler's file handle as `move_write_failed` was reporting the wrong thing |
 | `build_digest`, `pipeline_digest`, `dev_digest`, `dev_pas2js_digest`, `supervision_digest`, `doctor_schema_digest` | | **unchanged**, re-measured | CAP-10D1 changes no decision any of them froze |
 
 Nothing else moved. The seven frozen interfaces, `TInvocationContext`,

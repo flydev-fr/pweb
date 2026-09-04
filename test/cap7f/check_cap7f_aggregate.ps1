@@ -1050,35 +1050,50 @@ $equalityFields = @(
     'build_interrupt_clean', 'build_race_run_rpc', 'build_race_run_exit',
     'release_path_observations_disposed',
     'd0_template_supersession_recorded', 'd0_pas2js_on_path',
-    # CAP-10D1: the per-family and per-host packaging facts. windows_* and
-    # the three Inno-input refusals are `not_applicable` off Windows;
-    # linux_*/macos_* are `not_applicable` off their family;
-    # archive_program_mode is a POSIX mode and archive_deterministic a POSIX
-    # claim (an Inno compile stamps its own output); long_path_* is a Windows
-    # measurement; pack_interrupt_stage names WHICH child was interrupted,
-    # which differs by family because the packaging work does.
-    'windows_offline_built', 'windows_fixed_built',
-    'windows_artifact_replaced', 'windows_install_exit',
-    'windows_installed_layout', 'windows_profile_marker',
-    'windows_installed_rpc', 'windows_uninstall_residue',
-    'windows_normal_install_run_uninstall', 'windows_profile_collision',
-    'windows_two_bundleids_side_by_side', 'windows_profile_self_replace',
-    'profile_missing_input_exit', 'profile_missing_input_cause',
-    'profile_missing_input_names_script', 'profile_drifted_input_exit',
-    'profile_drifted_input_cause', 'profile_iscc_identity_exit',
-    'profile_iscc_identity_cause', 'profile_identity_metacharacter_exit',
-    'profile_identity_metacharacter_refused',
-    'linux_archive_inventory_equals_release', 'linux_archive_run',
-    'macos_archive_inventory_equals_release', 'macos_archive_run',
-    'macos_codesign_observation', 'macos_bundle_identity',
-    'archive_program_mode', 'archive_deterministic', 'pack_interrupt_stage',
-    'windows_normal_payload', 'windows_offline_payload',
-    'windows_fixed-runtime_payload', 'windows_normal_own_payload_files',
-    'windows_offline_own_payload_files',
-    'windows_fixed-runtime_own_payload_files',
-    'fixed_tree_max_rel_measured', 'fixed_tree_max_rel_pinned',
-    'profiles_for_target', 'long_path_ok_chars', 'long_path_fail_chars',
-    'long_path_refusal', 'long_path_refusal_cause', 'long_path_refusal_exit',
+    # CAP-10D1: the packaging verdict, the decision corpus behind it, and
+    # every claim that is a fact about the RULE rather than about the
+    # machine - the one execution path and its enumerated callers, the
+    # driver that spawns nothing, the two byte-identical `[Code]` twins, the
+    # pins checked against their locks, the long-path bound, the whole
+    # no-signing/no-secret claim, the identity and index rules, the parser's
+    # per-command scope, CAP-10D0 left unchanged without `--profile`, the
+    # foreign-profile refusal, the untouched release, the rollback seam and
+    # the interrupt. MEASURED equal on all four targets of run 33870028829
+    # before being written here.
+    'pack_corpus', 'pack_suite', 'pack_digest', 'pack_corpus_lines',
+    'pack_execute_callers', 'pack_build_driver_spawns', 'pack_code_twins',
+    'pack_pins_checked', 'pack_pins_mismatched', 'long_path_bound_chars',
+    'signing_identity_used', 'secrets_read', 'profile_identity_rule',
+    'profile_index_shape', 'build_profile_available',
+    'profile_fixed_shorthand_refused', 'profile_option_scoped_to_build',
+    'd0_summary_extra_rows_without_profile', 'd0_no_artifacts_without_profile',
+    'profile_foreign_exit', 'profile_foreign_cause',
+    'profile_foreign_built_nothing', 'release_untouched_by_packaging',
+    'rollback_seam_exercised', 'pack_interrupt_armed',
+    'pack_interrupt_delivered', 'pack_descendants_after_interrupt',
+    'pack_driver_ansi_seen', 'pack_interrupt_clean',
+    'd0_corpus_without_profile_unchanged', 'ledger_items_disposed',
+    # CAP-10D1, DELIBERATELY ABSENT - forty-four per-family and per-host
+    # packaging facts. Each is REQUIRED PRESENT on every target above, so a
+    # target that stopped emitting one is still refused by name; none may be
+    # COMPARED, because `not_applicable` is the correct answer off the
+    # platform that measures it and comparing it would demand that four
+    # machines agree about a thing three of them cannot do:
+    #   windows_* (the twelve installer facts), the nine Inno-input and
+    #   identity refusals (profile_missing_input_*, profile_drifted_input_*,
+    #   profile_iscc_identity_*, profile_identity_metacharacter_*), the six
+    #   payload rows and fixed_tree_max_rel_* - Windows only;
+    #   linux_archive_* - Linux only; macos_archive_*, macos_codesign_
+    #   observation and macos_bundle_identity - macOS only;
+    #   archive_program_mode is a POSIX mode and archive_deterministic a
+    #   POSIX claim (an Inno compile stamps its own output);
+    #   profiles_for_target IS the per-target answer this shard ratified;
+    #   long_path_* is a Windows measurement; and pack_interrupt_stage names
+    #   WHICH child was interrupted, which differs by family because the
+    #   packaging work does.
+    # MEASURED: they were pasted into this list once, and four green targets
+    # produced 124 disagreements that were all the aggregate asking Linux to
+    # have installed a Windows setup.
     'd0_build_digest'
 )
 # the CAP-9C2 semantic gate names, carried in ONE place across the two
