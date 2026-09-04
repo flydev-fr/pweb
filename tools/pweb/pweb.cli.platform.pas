@@ -180,6 +180,18 @@ function PWebCliDirWritable(const Dir: RawUtf8): Boolean;
 function PWebCliReadSmallFile(const Path: RawUtf8; MaxBytes: PtrInt;
   out Content: RawByteString; out TooBig: Boolean): Boolean;
 
+/// the operating system's OWN system directory, canonical; False where the
+/// platform has no such thing
+// - CAP-10D1. This exists because a Windows SYSTEM UTILITY must not be
+// resolved by PATH. MEASURED: `expand` on a developer machine resolves to
+// Git for Windows' GNU coreutils `expand.exe` - the tab expander - because
+// its usr/bin precedes System32, and the cabinet tool never runs at all.
+// The CAP-10A executable resolver is for TOOLCHAIN tools a developer
+// installs and may legitimately shadow; an OS component is not one of them,
+// and asking the kernel where it lives is the only answer that cannot be
+// changed by a shell profile
+function PWebCliSystemDir(out Dir: RawUtf8): Boolean;
+
 /// the canonical directory holding the RUNNING executable
 // - the ONE trusted anchor the SDK-root resolver is allowed to start from.
 // Never the working directory, never a caller-supplied path, never an
@@ -1024,6 +1036,23 @@ end;
 function PWebCliExecutableBit(const Path: RawUtf8): Boolean;
 begin
   Result := False; // NTFS carries no such bit; the caller records that
+end;
+
+function PWebCliSystemDir(out Dir: RawUtf8): Boolean;
+var
+  buf: array[0 .. MAX_PATH] of WideChar;
+  len: UINT;
+begin
+  // the KERNEL's answer, canonicalized like every other directory this unit
+  // hands out. Never %SystemRoot%, never PATH: both are environment, and an
+  // environment a build path trusts is an environment somebody can change
+  Result := False;
+  Dir := '';
+  len := GetSystemDirectoryW(@buf[0], MAX_PATH);
+  if (len = 0) or
+     (len > MAX_PATH) then
+    exit;
+  Result := PWebCliCanonicalDir(U(SynUnicode(PWideChar(@buf[0]))), Dir);
 end;
 
 function PWebCliCreateDir(const Dir: RawUtf8): Boolean;
@@ -2247,6 +2276,16 @@ end;
 function PWebCliHasFileModes: Boolean;
 begin
   Result := True;
+end;
+
+function PWebCliSystemDir(out Dir: RawUtf8): Boolean;
+begin
+  // POSIX has no single directory the operating system's own utilities live
+  // in, and nothing on this platform's packaging path needs one: the archive
+  // writer is pweb.cli.tar and the compressor is mORMot. A caller records
+  // the absence rather than inventing /usr/bin
+  Dir := '';
+  Result := False;
 end;
 
 function PWebCliExecutableBit(const Path: RawUtf8): Boolean;

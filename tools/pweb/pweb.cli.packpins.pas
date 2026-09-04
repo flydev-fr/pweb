@@ -196,8 +196,37 @@ const
   /// the staging sibling and the retired-artifact sibling, both dot-leading
   // and both under <output>/<target>, exactly as the CAP-10C1 release layout
   // names its own two
-  PWEB_PACK_STAGE = '.pweb-pack.tmp';
-  PWEB_PACK_OLD = '.pweb-dist-old.tmp';
+  //
+  // THE STAGING NAME IS SHORT ON PURPOSE, and the reason is measured below:
+  // the fixed-runtime profile expands a Microsoft cabinet whose deepest
+  // entry is 119 characters, and every character of the staging path is one
+  // fewer a project root may have before ISCC - which uses ordinary
+  // MAX_PATH paths - fails with an opaque Windows error after a ten-minute
+  // compile. `.pweb-pack.tmp` and `runtime` cost 19 characters more than
+  // these two do, which is 19 characters of a developer's own directory
+  // name
+  PWEB_PACK_STAGE = '.pwpack.tmp';
+  PWEB_PACK_OLD = '.pwold.tmp';
+  /// where the fixed profile expands its cabinet, inside the staging tree
+  PWEB_PACK_RUNTIME = 'rt';
+
+  { --- the fixed-runtime profile's MAX_PATH arithmetic --------------------- }
+
+  /// the deepest RELATIVE path inside the expanded Fixed Version Runtime
+  // tree, in characters
+  // - MEASURED on the pinned cabinet 151.0.4129.78: 256 files, and the
+  // deepest is
+  //   <tree>\AdSelectionAttestationsPreloadedd-selection-attestations.dat
+  // at 119 characters, of which 55 are the tree's own name. The CAP-10D1
+  // Windows gate re-measures it against the tree CAP-6b3 already expanded in
+  // the same job and refuses a pin below what it finds, so this stays a
+  // measurement rather than a number somebody typed
+  PWEB_PACK_FIXED_TREE_MAX_REL = 119;
+
+  /// the ordinary Windows path ceiling, in characters
+  // - ISCC is not extended-length aware, so the tree it is asked to compress
+  // has to fit inside MAX_PATH-1 exactly as any other program's would
+  PWEB_PACK_MAX_PATH = 259;
 
   { --- the bounds ---------------------------------------------------------- }
 

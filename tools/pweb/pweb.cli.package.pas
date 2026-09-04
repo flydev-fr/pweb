@@ -121,8 +121,10 @@ const
   PWEB_PACK_FIXED = 'fixed-runtime';
   PWEB_PACK_ARCHIVE = 'archive';
 
-  /// the system utility the fixed profile expands its cabinet with
-  PWEB_PACK_TOOL_EXPAND = 'expand';
+  /// the system utility the fixed profile expands its cabinet with,
+  // named with its extension because it is resolved from the SYSTEM
+  // DIRECTORY by exact on-disk spelling rather than through PATHEXT
+  PWEB_PACK_TOOL_EXPAND = 'expand.exe';
 
   /// the Inno metacharacter set. `{` and `}` open and close a constant,
   // `"` ends a define's value, `;` starts a comment, CR and LF end a
@@ -162,6 +164,9 @@ type
     pkrInputDigest,
     /// the cabinet expander is missing (exit 4)
     pkrExpandMissing,
+    /// the project root leaves the fixed profile's staging tree past
+    /// MAX_PATH (exit 3)
+    pkrFixedRootTooLong,
     /// a staging file operation failed (exit 6)
     pkrStage,
     /// a packaging child failed, died or was stopped (exit 5)
@@ -283,6 +288,11 @@ function PWebCliRunPackage(const Project: TPWebCliProject;
 
 implementation
 
+function PackIntText(Value: Int64): RawUtf8;
+begin
+  Result := RawUtf8(IntToStr(Value));
+end;
+
 function PWebCliPackRefusalText(Refusal: TPWebCliPackRefusal): RawUtf8;
 begin
   case Refusal of
@@ -297,6 +307,7 @@ begin
     pkrInputMissing:        Result := 'pack_input_missing';
     pkrInputDigest:         Result := 'pack_input_digest';
     pkrExpandMissing:       Result := 'pack_expand_missing';
+    pkrFixedRootTooLong:    Result := 'pack_root_too_long_for_fixed';
     pkrStage:               Result := 'pack_stage_failed';
     pkrChildFailed:         Result := 'pack_child_failed';
     pkrInterrupted:         Result := 'pack_interrupted';
@@ -371,7 +382,8 @@ begin
     pkrProfileNotForTarget:
       Result := 2;                    // the command line was refused
     pkrIdentityRefused,
-    pkrIdentityTooLong:
+    pkrIdentityTooLong,
+    pkrFixedRootTooLong:
       Result := 3;                    // the project or its descriptor
     pkrSdkUnresolved,
     pkrKitMissing,
@@ -724,6 +736,43 @@ begin
 end;
 
 
+{ THE FIXED PROFILE'S OWN PATH CEILING, and why it is a separate rule from
+  the pipeline's.
+
+  The pipeline's PWEB_CLI_PIPE_MAX_ROOT_CHARS bounds what the COMPILERS can
+  take. This bounds what ISCC can take, and it is stricter for one measured
+  reason: the fixed profile expands a Microsoft cabinet whose deepest entry
+  is PWEB_PACK_FIXED_TREE_MAX_REL characters, under a staging directory this
+  CLI builds inside the project's own output tree. ISCC is not
+  extended-length aware, so the whole of that has to fit inside MAX_PATH.
+
+  MEASURED, and it is not a theoretical limit: a project at
+  ...uild\cap10d1\spaced work\demopack - 97 characters, an ordinary
+  developer path - put the deepest entry at exactly 260 and ISCC failed with
+  `the specified path could not be found` AFTER compressing 690 MB. This
+  refusal turns that into one second and a cause. }
+function FixedRootBound(const Project: TPWebCliProject;
+  const Target: RawUtf8): Integer;
+begin
+  // <root>\<output>\<target>\<stage>\<rt>\<deepest entry>
+  Result := PWEB_PACK_MAX_PATH - PWEB_PACK_FIXED_TREE_MAX_REL - 1 -
+    (Length(Project.Output) + 1) - (Length(Target) + 1) -
+    (Length(PWEB_PACK_STAGE) + 1) - (Length(PWEB_PACK_RUNTIME) + 1);
+end;
+
+// the cabinet expander, by the ONE rule that cannot be changed by a shell
+// profile: the kernel's own system directory, walked one component at a time
+// like every other input this unit resolves
+function ResolveExpand(out Full: RawUtf8): Boolean;
+var
+  systemDir: RawUtf8;
+begin
+  Full := '';
+  Result := PWebCliSystemDir(systemDir) and
+            KitStep(systemDir, PWEB_PACK_TOOL_EXPAND, False, Full);
+end;
+
+
 { ---------------------------------------------------------------------------
   PREFLIGHT
   --------------------------------------------------------------------------- }
@@ -832,18 +881,26 @@ begin
           Result := Fail(pkrKitMissing, PWEB_PACK_HELPER_FIXED);
           exit;
         end;
-        // the cabinet expander, resolved by the CAP-10A rule like every
-        // other tool this CLI runs - never by an absolute system path this
-        // code invented
-        outcome := PWebCliResolveTool(PWEB_PACK_TOOL_EXPAND, Project.Root,
-          dups, duplicates);
-        // ppoCompleted is this resolver's success value, and
-        // ppoInsideProject is the CAP-10A rule that a candidate inside the
-        // project is reported and NEVER executed - a project carrying its
-        // own `expand` is an unexplained binary with a familiar name
-        if outcome <> ppoCompleted then
+        // THE CABINET EXPANDER, FROM THE SYSTEM DIRECTORY AND NOT FROM
+        // PATH. MEASURED: `expand` on a developer machine resolves to Git
+        // for Windows' GNU coreutils `expand.exe` - the tab expander -
+        // because its usr/bin precedes System32, and the cabinet tool never
+        // runs at all. The CAP-10A resolver is for TOOLCHAIN tools a
+        // developer installs and may legitimately shadow; an OS component
+        // is not one of them
+        if not ResolveExpand(dups) then
         begin
           Result := Fail(pkrExpandMissing, PWEB_PACK_TOOL_EXPAND);
+          exit;
+        end;
+        // the ceiling, BEFORE the pipeline: a ten-minute build that ends in
+        // an opaque Windows error is the outcome this refusal exists to
+        // replace
+        if Length(PWebCliDisplayPath(Project.Root)) >
+             FixedRootBound(Project, PWebCliRunTargetName(Os, Arch)) then
+        begin
+          Result := Fail(pkrFixedRootTooLong,
+            PackIntText(Length(PWebCliDisplayPath(Project.Root))));
           exit;
         end;
       end;
@@ -888,11 +945,6 @@ begin
     Notify(Opaque, 'pweb: ' + Line, {FromChild=}False);
 end;
 
-function PackInt(Value: Int64): RawUtf8;
-begin
-  Result := RawUtf8(IntToStr(Value));
-end;
-
 // one JSON string value, escaped by the two rules a schema-1 value can
 // possibly need. Every field written here is a filename, a profile name or
 // a lowercase hex digest, so the alphabet is already narrow; the escape
@@ -921,12 +973,12 @@ function IndexDocument(const Profile, FileName, Sha: RawUtf8;
 begin
   Result :=
     '{'#10 +
-    '  "schema": ' + PackInt(PWEB_PACK_INDEX_SCHEMA) + ','#10 +
+    '  "schema": ' + PackIntText(PWEB_PACK_INDEX_SCHEMA) + ','#10 +
     '  "profiles": ['#10 +
     '    {'#10 +
     '      "profile": ' + JsonText(Profile) + ','#10 +
     '      "filename": ' + JsonText(FileName) + ','#10 +
-    '      "bytes": ' + PackInt(Bytes) + ','#10 +
+    '      "bytes": ' + PackIntText(Bytes) + ','#10 +
     '      "sha256": ' + JsonText(Sha) + #10 +
     '    }'#10 +
     '  ]'#10 +
@@ -1189,7 +1241,7 @@ var
     if Profile <> ppfFixedRuntime then
     begin
       Define(cmd, 'PWEB_WV2_SUBJECT', PWEB_PACK_WV2_SUBJECT);
-      Define(cmd, 'PWEB_WV2_TIMEOUT_MS', PackInt(PWEB_PACK_WV2_TIMEOUT_MS));
+      Define(cmd, 'PWEB_WV2_TIMEOUT_MS', PackIntText(PWEB_PACK_WV2_TIMEOUT_MS));
     end;
     SetLength(cmd.Args, Length(cmd.Args) + 2);
     cmd.Args[High(cmd.Args) - 1] := '/O' + PWebCliArgPath(outDir);
@@ -1374,15 +1426,14 @@ begin
         Result := res;
         exit;
       end;
-      if not PWebCliPipeEnsureDir(stageDir, 'runtime', runtimeDir,
+      if not PWebCliPipeEnsureDir(stageDir, PWEB_PACK_RUNTIME, runtimeDir,
            stageRefusal) then
       begin
-        Fail(pkrStage, 'runtime');
+        Fail(pkrStage, PWEB_PACK_RUNTIME);
         Result := res;
         exit;
       end;
-      if PWebCliResolveTool(PWEB_PACK_TOOL_EXPAND, Project.Root, expandExe,
-           duplicates) <> ppoCompleted then
+      if not ResolveExpand(expandExe) then
       begin
         Fail(pkrExpandMissing, PWEB_PACK_TOOL_EXPAND);
         Result := res;
@@ -1463,8 +1514,8 @@ begin
       Result := res;
       exit;
     end;
-    PackSay(Notify, Opaque, 'archive: ' + PackInt(Length(entries)) +
-      ' entries, ' + PackInt(Length(gz)) + ' bytes');
+    PackSay(Notify, Opaque, 'archive: ' + PackIntText(Length(entries)) +
+      ' entries, ' + PackIntText(Length(gz)) + ' bytes');
   end;
 
   { --- measure what actually landed, then publish it ------------------- }

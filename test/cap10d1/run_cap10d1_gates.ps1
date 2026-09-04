@@ -605,7 +605,8 @@ if ($IsWindows) {
                    'profile_identity_metacharacter_refused',
                    'long_path_ok_chars', 'long_path_fail_chars',
                    'long_path_refusal', 'long_path_refusal_cause',
-                   'long_path_refusal_exit') {
+                   'long_path_refusal_exit', 'fixed_tree_max_rel_measured',
+                   'fixed_tree_max_rel_pinned') {
         Row $k 'not_applicable'
     }
 }
@@ -621,7 +622,14 @@ $drvReport = Join-Path $work 'packdrv-report.txt'
 # committed artifacts exactly as they were.
 $drvStage = if ($IsWindows) { 'iscc' } else { 'compile' }
 Row 'pack_interrupt_stage' $drvStage
-$drvProfile = $profiles[0]
+# WHICH PROFILE IS INTERRUPTED, and it is not the first one. MEASURED: the
+# normal profile's Inno compile of a ~2 MB setup finishes in about a second,
+# so a driver that waits 1500 ms for the child to get under way finds it
+# already gone and delivers nothing. The offline profile embeds a 212 MB
+# installer and compresses it for minutes, which is a child a real interrupt
+# can actually land in. On POSIX there is no packaging child at all, so the
+# `compile` stage of the same profiled run is the subject instead.
+$drvProfile = if ($IsWindows) { 'offline' } else { $profiles[0] }
 $beforeDist = InventoryOf (DistDirOf $projA $drvProfile)
 $drvArgs = @('--pweb', $pweb, '--project', $projA, '--profile', $drvProfile,
     '--report', $drvReport, '--cwd', $cwd, '--scenario', 'interrupt',
