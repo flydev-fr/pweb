@@ -2478,6 +2478,105 @@ $e.pack_suite = 'FAIL'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap10d1-suite-failed' 'pack_suite'
 
+# --- CAP-10D2: the SDK distribution's own refusals, each proved to FIRE ----
+# Ten aggregator rejects the CAP-10D2 objective names, and every one of them
+# gets a leg here for the reason CAP-10D1 established: a refusal nobody has
+# watched fire is a refusal nobody knows is wired.
+
+# (e1) the SDK inventory stopped being deterministic on ONE target
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.sdk_manifest_deterministic = 'false'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d2-manifest-nondeterministic' 'sdk_manifest_deterministic'
+
+# (e2) the four targets' SHIP DECISION diverged. The digest is of the TABLE,
+# so this is the one CAP-10D2 field a per-target difference may never explain
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.sdk_ship_table_digest = ('0' * 64)
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d2-ship-table-diverged' 'sdk_ship_table_digest'
+
+# (e3) the licence set was incomplete, in unison. An absolute-shaped claim,
+# because four targets that all shipped three of four notices would agree
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.sdk_licenses_complete = 'false'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10d2-licences-incomplete' 'sdk_licenses_complete'
+
+# (e4) a tampered SDK was NOT detected
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.sdk_integrity_fail_tampered = 'false'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10d2-tamper-undetected' 'sdk_integrity_fail_tampered'
+
+# (e5) the checkout reached a spawned command line
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.checkout_path_in_argv = '2'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10d2-checkout-in-argv' 'checkout_path_in_argv'
+
+# (e6) an environment root variable was read
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.env_root_variables_read = '1'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10d2-env-root-read' 'env_root_variables_read'
+
+# (e7) packaging reached the network
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.packaging_network_calls = '3'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10d2-packaging-network' 'packaging_network_calls'
+
+# (e8) an application built from the EXTRACTED SDK did not answer 42
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.clean_machine_pas2js_rpc = '0'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d2-clean-machine-rpc' 'clean_machine_pas2js_rpc'
+
+# (e9) a CAP-10 ledger entry was left without a disposition
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.cap10_ledger_orphans = '4'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10d2-ledger-orphan' 'cap10_ledger_orphans'
+
+# (e10) the SDK suite verdict rewritten to FAIL -> mustPass refusal
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.sdk_suite = 'FAIL'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10d2-suite-failed' 'sdk_suite'
+
 Remove-Item -Force -ErrorAction SilentlyContinue $matrix
 # a floor, so a leg that silently stops running is caught. It is deliberately
 # NOT an equality: adding a refusal branch is normal and should not require

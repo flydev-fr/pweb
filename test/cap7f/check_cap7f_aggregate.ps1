@@ -778,6 +778,71 @@ $absolutePins = @{
     pack_driver_ansi_seen              = 'false'
     pack_interrupt_clean               = 'true'
     ledger_items_disposed              = '4'
+    # CAP-10D2: the values four targets could agree on and still be wrong.
+    # Each of these is a claim about what the DISTRIBUTION is, and four
+    # machines that all packaged a lock file, all missed a tamper or all let
+    # the checkout into an argv would agree perfectly - which is exactly
+    # what an equality comparison cannot catch.
+    sdk_manifest_deterministic         = 'true'
+    sdk_archive_deterministic          = 'true'
+    sdk_inventory_deterministic        = 'true'
+    sdk_package_built                  = 'true'
+    sdk_manifest_schema                = '1'
+    sdk_protocol                       = '1'
+    sdk_locks_count                    = '6'
+    # the locks and the pin-only components never ship, and no private test
+    # driver ever does
+    sdk_lock_files_shipped             = '0'
+    sdk_pinned_only_components_shipped = '0'
+    sdk_test_drivers_shipped           = '0'
+    sdk_licenses_complete              = 'true'
+    # the three integrity rows on a PRISTINE extracted SDK, and the tamper
+    # that has to be caught
+    sdk_doctor_manifest                = 'pass/ok'
+    sdk_doctor_integrity               = 'pass/ok'
+    sdk_doctor_version                 = 'pass/ok'
+    sdk_integrity_pass_pristine        = 'true'
+    sdk_integrity_fail_tampered        = 'true'
+    in2_tampered_cause                 = 'sdk_integrity_mismatch'
+    in2_removed_cause                  = 'sdk_integrity_missing'
+    in3_malformed_cause                = 'sdk_manifest_malformed'
+    in3_schema_cause                   = 'sdk_manifest_schema'
+    in3_version_cause                  = 'sdk_version_mismatch'
+    in3_noncanonical_cause             = 'sdk_manifest_noncanonical'
+    sdk_absent_manifest_row            = 'not_applicable/sdk_unpackaged'
+    # the packager: every refusal armed, no child, no socket
+    pack_fixture_baseline              = 'true'
+    pack_link_leg_armed                = 'true'
+    pack_refusal_count                 = '10'
+    packaging_network_calls            = '0'
+    packaging_children_spawned         = 'false'
+    # the clean machine: the path shape, the 42s, and the properties the
+    # rename only demonstrates
+    clean_machine_path_has_space       = 'true'
+    clean_machine_path_non_ascii       = 'true'
+    clean_machine_react_rpc            = '42'
+    clean_machine_pas2js_rpc           = '42'
+    clean_machine_react_build_exit     = '0'
+    clean_machine_pas2js_build_exit    = '0'
+    clean_machine_completed            = 'true'
+    checkout_path_in_argv              = '0'
+    unit_paths_under_sdk               = 'true'
+    checkout_restored                  = 'true'
+    env_root_variables_read            = '0'
+    sdk_tool_rule_decoy_build_exit     = '0'
+    sdk_shipped_tool_rule              =
+        'sdk_root_only:pwebbundle,iscc|path_only:fpc,node,pas2js'
+    # the phase closure
+    c1_11_c_closed                     = 'true'
+    cap10_ledger_gate                  = 'PASS'
+    cap10_ledger_orphans               = '0'
+    cap10_spec_acceptance_lines_deviated = '1'
+    # `cap10_runs_cited` is deliberately NOT pinned: it reads 10 while
+    # CAP-10D2's own hosted run is `pending` and 11 after the closure commit
+    # names it, exactly as the CAP-10C closure's own row was written. What
+    # IS required is the shape, and test/cap10d2/check_cap10_ledger.ps1
+    # requires it: eleven rows in the runs table, and `pending` refused for
+    # every shard that is already closed.
 }
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
 $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
@@ -785,6 +850,8 @@ $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
     'build_help_matrix', 'gate_quoting_space_path',
     # CAP-10D1: the packaging verdict and the suite behind it
     'pack_corpus', 'pack_suite',
+    # CAP-10D2: the SDK distribution verdict and the suite behind it
+    'sdk_corpus', 'sdk_suite',
     'navigation_security', 'security_corpus', 'quickjs_corpus',
     'quickjs_package_corpus', 'quickjs_lifecycle_corpus',
     'quickjs_release_corpus', 'quickjs_gui_corpus',

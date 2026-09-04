@@ -2,7 +2,7 @@
 title: 'CAP-10D2 — the PWeb SDK distribution, its integrity model, and the closure of CAP-10'
 type: 'feature'
 created: '2026-09-04'
-status: 'draft'
+status: 'done'
 review_loop_iteration: 0
 context: []
 ---
