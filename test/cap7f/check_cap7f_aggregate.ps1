@@ -363,7 +363,9 @@ $required = @(
     'packaging_children_spawned', 'clean_machine_path_has_space',
     'clean_machine_path_non_ascii', 'clean_machine_project_path',
     'clean_machine_project_has_space', 'nonascii_project_path',
-    'nonascii_project_non_ascii', 'nonascii_build_exit',
+    'nonascii_project_non_ascii', 'nonascii_project_form',
+    'nonascii_build_exit_react', 'nonascii_build_exit_pas2js',
+    'nonascii_app_run_react', 'nonascii_app_run_pas2js',
     'nonascii_pack_lines', 'clean_machine_react_rpc',
     'clean_machine_pas2js_rpc', 'clean_machine_react_build_exit',
     'clean_machine_pas2js_build_exit', 'clean_machine_completed',
@@ -393,7 +395,37 @@ $required = @(
     'long_path_exit', 'long_path_cause',
     'build_pas2js_sampler_members', 'build_pas2js_sampler_samples',
     'release_layout', 'no_listener', 'app_pwb_react_sha256',
-    'logical_inventory_sha256_react', 'github_sha', 'github_run_id', 'waivers'
+    'logical_inventory_sha256_react',
+    # CAP-10E: the kernel-resolved image path. The SPLIT between required,
+    # compared and per-target was made from the ledger lesson that cost two
+    # red runs on CAP-10D2's own CM7 rows - a per-target fact that lands in
+    # $equalityFields makes four targets argue about a measurement only one
+    # of them can make.
+    #
+    # COMPARED (below, in $equalityFields): image_path_source,
+    # image_dir_non_ascii, cli_equals_helper, probe_verdict,
+    # nonascii_release_host, paramstr0_path_sites, programfilepath_sites,
+    # image_reader_count - every one of them a DECISION four targets must
+    # agree on.
+    #
+    # PER-TARGET, required present and compared on none:
+    #   image_dir_hex          the sandbox path differs per runner, and the
+    #                          bytes are the point - this is where macOS's
+    #                          NFD/NFC behaviour is READ rather than assumed
+    #   rtl_equals_kernel      FALSE on Windows and TRUE on POSIX, which is
+    #                          the defect's own shape: POSIX argv is bytes
+    #                          the RTL hands over unchanged
+    #   symlink_rule           real_image on POSIX, posix_only on Windows
+    #   junction_on_chain,
+    #   long_path_*            Windows-only measurements
+    #   fixed_profile_nonascii_dir  typed by the CAP-6b3 profile gates
+    'image_path_source', 'image_dir_non_ascii', 'image_dir_hex',
+    'cli_equals_helper', 'rtl_equals_kernel', 'probe_verdict',
+    'nonascii_release_host', 'symlink_rule', 'junction_on_chain',
+    'long_path_outcome', 'fixed_profile_nonascii_dir',
+    'paramstr0_path_sites', 'programfilepath_sites', 'image_reader_count',
+    'image_reader_files',
+    'github_sha', 'github_run_id', 'waivers'
 )
 # absolute pins: equality across targets is not enough - four targets that
 # all drifted to protocol 2 would agree perfectly, and this matrix is the
@@ -824,10 +856,11 @@ $absolutePins = @{
     clean_machine_path_has_space       = 'true'
     clean_machine_path_non_ascii       = 'true'
     # the PROJECT root's shape, beside the SDK root's - spaced on all four.
-    # CM7's four `nonascii_*` rows are required present but deliberately NOT
-    # compared: the leg is Windows-only by measurement (the D2-13 argv defect
-    # was the Windows RTL's), POSIX answers not_applicable, and the Windows
-    # gate carries its own Require that the root really is accented
+    # CM7's rows are pinned below, under CAP-10E: CAP-10D2 left them out of
+    # every comparison because the leg was Windows-only by measurement (the
+    # D2-13 argv defect was the Windows RTL's), and CAP-10E made the leg run
+    # on all four and made it RUN the application rather than stopping at
+    # the build.
     clean_machine_project_has_space    = 'true'
     clean_machine_react_rpc            = '42'
     clean_machine_pas2js_rpc           = '42'
@@ -852,6 +885,28 @@ $absolutePins = @{
     # IS required is the shape, and test/cap10d2/check_cap10_ledger.ps1
     # requires it: eleven rows in the runs table, and `pending` refused for
     # every shard that is already closed.
+    # CAP-10E: the values four agreeing targets could still all be wrong
+    # about. `image_path_source` is the whole shard in one word - a target
+    # that reverted to the RTL would report something else here rather than
+    # merely disagreeing with its neighbours; the two source counts are the
+    # one-rule property, which is a fact about the CHECKOUT and therefore
+    # identical everywhere by construction; and the three 42s are the
+    # user-facing claim: an application installed under a non-ASCII path
+    # starts.
+    image_path_source                  = 'kernel'
+    image_dir_non_ascii                = 'true'
+    cli_equals_helper                  = 'true'
+    probe_verdict                      = 'PASS'
+    nonascii_release_host              = '42'
+    nonascii_app_run_react             = '42'
+    nonascii_app_run_pas2js            = '42'
+    nonascii_build_exit_react          = '0'
+    nonascii_build_exit_pas2js         = '0'
+    nonascii_project_non_ascii         = 'true'
+    paramstr0_path_sites               = '0'
+    programfilepath_sites              = '0'
+    image_reader_count                 = '1'
+    image_reader_files                 = 'src/security/pweb.imagepath.pas'
 }
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
 $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
@@ -1219,6 +1274,28 @@ $equalityFields = @(
     'cap10_ledger_orphans', 'cap10_ledger_entries',
     'cap10_spec_acceptance_lines_met', 'cap10_spec_acceptance_lines_deviated',
     'cap10_runs_cited',
+    # CAP-10E: the kernel-resolved image path. What four targets MUST agree
+    # about is the RULE and its outcome - that the image path comes from the
+    # kernel, that the CLI seam and the shipped hosts resolve it identically,
+    # that a generated application and the release host both answer 42 at a
+    # non-ASCII location, and that no shipped file reads ParamStr(0) or
+    # ProgramFilePath any more. CM7's build and run rows join them, and that
+    # is a CHANGE: CAP-10D2 kept them out of this list because the leg was
+    # Windows-only, and CAP-10E made the leg run on all four.
+    #
+    # Not here, and each for the reason recorded beside it in $required:
+    # image_dir_hex (per-runner bytes, and the macOS NFD/NFC reading),
+    # rtl_equals_kernel (false on Windows, true on POSIX - the defect's own
+    # shape), symlink_rule / junction_on_chain / long_path_outcome /
+    # fixed_profile_nonascii_dir (measurements only one family can make),
+    # nonascii_project_path and nonascii_project_form (macOS composes the
+    # leaf differently ON PURPOSE).
+    'image_path_source', 'image_dir_non_ascii', 'cli_equals_helper',
+    'probe_verdict', 'nonascii_release_host', 'paramstr0_path_sites',
+    'programfilepath_sites', 'image_reader_count', 'image_reader_files',
+    'nonascii_project_non_ascii', 'nonascii_build_exit_react',
+    'nonascii_build_exit_pas2js', 'nonascii_app_run_react',
+    'nonascii_app_run_pas2js',
     # CAP-10D2, DELIBERATELY ABSENT from the comparison - seventeen per-target
     # facts, each REQUIRED PRESENT above. `sdk_files`, `sdk_inventory_digest`,
     # `sdk_archive_*`, `sdk_manifest_sha256` and the three licence rows differ
@@ -1228,12 +1305,14 @@ $equalityFields = @(
     # POSIX's one; `clean_machine_bin_mode` is a POSIX mode plane Windows has
     # none of; `clean_machine_doctor`, `clean_machine_path`,
     # `clean_machine_project_path` and `checkout_renamed_aside` are per-run
-    # text; CM7's four `nonascii_*` rows are the D2-13 pack-stage proof,
-    # which is Windows-only by measurement and REQUIRED there by the
-    # CAP-10D2 gate's own assertions rather than by a comparison three
-    # machines would have to answer `not_applicable` to. What four targets DO agree
-    # about is `sdk_ship_table_digest` - the DECISION every one of them is
-    # resolved from - which is compared above.
+    # text. CM7's rows are NO LONGER among them: CAP-10D2 kept them out
+    # because the leg was Windows-only and three machines would have had to
+    # answer `not_applicable` to a comparison, and CAP-10E made the leg run
+    # on all four - so its build, pack and RUN rows are compared above, and
+    # only `nonascii_project_path` and `nonascii_project_form` stay out,
+    # because macOS composes that leaf DECOMPOSED on purpose. What four
+    # targets DO agree about is `sdk_ship_table_digest` - the DECISION every
+    # one of them is resolved from - which is compared above.
     # CAP-10D1, DELIBERATELY ABSENT - forty-four per-family and per-host
     # packaging facts. Each is REQUIRED PRESENT on every target above, so a
     # target that stopped emitting one is still refused by name; none may be

@@ -66,6 +66,18 @@ function Get-PlatformDirectiveMatches([string]$Line) {
 # plus the sha256 fingerprint of the ordered matched directive texts
 # (joined by LF, UTF-8) - both must hold, or the allowlist is re-ratified
 # in the same commit
+# CAP-10E RE-RATIFIED THE FIVE ROWS IT TOUCHED - releaseapp.pas,
+# quickjsapp.pas, pweb.webview.host.pas, pweb.script.release.pas and
+# pweb.cli.platform.pas - AND EVERY ONE OF THEM MEASURED UNCHANGED, count
+# and fingerprint alike. That is worth stating rather than leaving to be
+# noticed, because the ledger entry that commissioned the shard predicted
+# all four call-site rows would MOVE. They did not, and the reason is the
+# shape of the fix: the kernel-resolved image path went into ONE new unit
+# (src/security/pweb.imagepath.pas, its own row below) instead of being
+# inlined per site, so every call site changed the SOURCE of a string and
+# added no conditional at all. In the CLI the two PWebCliImageDir platform
+# bodies were REMOVED, and the count still did not move, because both lived
+# inside conditional regions that other primitives keep open.
 $allow = @{
     'examples/08-release/releaseapp.pas' = @{ directives = 38;  # +6: the CAP-8B guard construction/teardown platform regions
         fingerprint = '8ee3c9085f4af8c3129fd822915f1b6578da94f6d96f6a2f3e9ea5d37fdd572a' }
@@ -101,6 +113,23 @@ $allow = @{
         fingerprint = '23fcee7876fc7fb2b865d48926e0d9b5b3bdafbb04cfbcbb03170d6c21f08b40' }
     'src/assets/pweb.assets.folder.pas'  = @{ directives = 10;  # Darwin F_GETPATH / Windows wide-API split
         fingerprint = '145ed55144e2e7c509bfda6cc19fadc863a58f41f31747f8835c26ec2e5c48c9' }
+    # CAP-10E: THE running image's path, asked of the kernel, and the ONE
+    # reader of it in shipped code. Six regions and not one of them decides
+    # anything: the implementation uses clause (windows vs baseunix) and the
+    # three whole function bodies - GetModuleFileNameW, _NSGetExecutablePath
+    # + realpath, readlink /proc/self/exe. The {$else} directives carry no
+    # platform symbol and are therefore not matches, which is why six and
+    # not nine.
+    #
+    # A NEW ROW rather than three files under src/platform/: that tree is
+    # skipped WHOLESALE by this sweep (see the header) because each unit
+    # there is ONE platform's body, so a three-body unit there would hide
+    # three real regions from the gate that exists to catch them. It sits in
+    # src/security because it is the root of the CAP-9C1 startup trust chain
+    # and because src/security is already one of the five unit directories
+    # the SDK stages and hands to the compiler.
+    'src/security/pweb.imagepath.pas'    = @{ directives = 6;
+        fingerprint = '39f51825cb0b124686f13069127735a6142936b53b0ddec0ead6116ac7cc83ef' }
     'src/assets/pweb.assets.bundle.pas'  = @{ directives = 6;   # I/O mechanism only (ratified)
         fingerprint = '7fc1e97c840d75a47f92771c8880861bc45a757806738932d4e80f39611a68b9' }
     # RE-RATIFIED at 8 (was 6, fingerprint 7e329077...): the frozen CAP-6

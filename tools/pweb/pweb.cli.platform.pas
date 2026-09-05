@@ -192,6 +192,14 @@ function PWebCliReadSmallFile(const Path: RawUtf8; MaxBytes: PtrInt;
 // changed by a shell profile
 function PWebCliSystemDir(out Dir: RawUtf8): Boolean;
 
+/// the running image's own directory, as the KERNEL reports it
+// - CAP-10E: a thin RawUtf8 wrapper over pweb.imagepath's PWebImageDir, and
+// NOT a second implementation of that rule. It stays exported so the
+// CAP-10E probe can measure the identity across four targets instead of
+// asserting it, and so the SDK-root resolver keeps naming the step it takes
+// - the un-canonicalized answer; PWebCliExeDir below is the canonical one
+function PWebCliImageDir(out Dir: RawUtf8): Boolean;
+
 /// the canonical directory holding the RUNNING executable
 // - the ONE trusted anchor the SDK-root resolver is allowed to start from.
 // Never the working directory, never a caller-supplied path, never an
@@ -504,6 +512,7 @@ implementation
 
 uses
   mormot.core.os,
+  pweb.imagepath, // CAP-10E: the ONE kernel-resolved image path, shared
   {$ifdef WINDOWS}
   windows,
   pweb.platform.webview2.runtime;
@@ -1036,43 +1045,6 @@ end;
 function PWebCliExecutableBit(const Path: RawUtf8): Boolean;
 begin
   Result := False; // NTFS carries no such bit; the caller records that
-end;
-
-// the running image's own directory, from the KERNEL rather than from the
-// RTL's argv (CAP-10D2)
-//
-// MEASURED, and it cost a clean-machine leg to find it: the RTL's
-// ParamStr(0) reaches this process as an ANSI string, so an SDK extracted
-// into a directory whose name carries a non-ASCII character resolved to a
-// path the filesystem does not have - and every command refused with
-// `sdk_share_missing` while the tree sat there complete. GetModuleFileNameW
-// answers in UTF-16 and cannot lose a character, which is the same reason
-// every other filesystem call in this unit is a W one.
-function PWebCliImageDir(out Dir: RawUtf8): Boolean;
-var
-  wide: array[0 .. 32767] of WideChar;
-  got: DWORD;
-  full: RawUtf8;
-  i: PtrInt;
-begin
-  Dir := '';
-  Result := False;
-  got := GetModuleFileNameW(0, @wide[0], Length(wide));
-  if (got = 0) or
-     (got >= Length(wide)) then
-    exit;
-  wide[got] := #0;
-  full := U(SynUnicode(PWideChar(@wide[0])));
-  // the directory is everything up to the last separator, kept WITH it so
-  // what comes back is a directory spelling the canonicalizer accepts
-  for i := Length(full) downto 1 do
-    if (full[i] = '\') or
-       (full[i] = '/') then
-    begin
-      Dir := Copy(full, 1, i);
-      Result := Dir <> '';
-      exit;
-    end;
 end;
 
 function PWebCliSystemDir(out Dir: RawUtf8): Boolean;
@@ -2315,16 +2287,6 @@ begin
   Result := True;
 end;
 
-// the running image's own directory (CAP-10D2)
-// - on POSIX a path is BYTES and the RTL hands them through unchanged, so
-// the executable's own directory is what mORMot already resolved. The
-// Windows body cannot use the same source: see its comment
-function PWebCliImageDir(out Dir: RawUtf8): Boolean;
-begin
-  Dir := StringToUtf8(Executable.ProgramFilePath);
-  Result := Dir <> '';
-end;
-
 function PWebCliSystemDir(out Dir: RawUtf8): Boolean;
 begin
   // POSIX has no single directory the operating system's own utilities live
@@ -3254,19 +3216,35 @@ end;
   CAP-7F sweep counts those regions for exactly that reason.
   --------------------------------------------------------------------------- }
 
+// CAP-10E: ONE body, over the one shared rule. This function had two
+// platform bodies until CAP-10E - the Windows one asking GetModuleFileNameW
+// (CAP-10D2, ledger D2-12) and the POSIX one reading mORMot's
+// Executable.ProgramFilePath - and both moved into pweb.imagepath when the
+// shipped hosts turned out to need the identical answer. The CLI is now a
+// CALLER of that rule rather than its second implementation, which is what
+// test/cap10e/check_image_path.ps1 pins and test/cap10e/imageprobe measures
+// on all four targets.
+//
+// It also moved the POSIX half OFF the RTL, and that is a real change
+// rather than a tidy-up: /proc/self/exe and realpath resolve every symlink
+// where ExpandFileName(ParamStr(0)) resolved none. The CLI's own final
+// answer does not move, because PWebCliCanonicalDir below already resolved
+// them; the SHIPPED HOSTS' answers do, and pweb.imagepath's header states
+// that supersession.
+function PWebCliImageDir(out Dir: RawUtf8): Boolean;
+begin
+  Dir := StringToUtf8(PWebImageDir);
+  Result := Dir <> '';
+end;
+
 function PWebCliExeDir(out Dir: RawUtf8): Boolean;
 var
   raw: RawUtf8;
 begin
   // the image's own directory, absolute and independent of the working
-  // directory, asked of the PLATFORM (PWebCliImageDir) and then
-  // canonicalized through the kernel - so what comes back is the real
+  // directory, asked of the KERNEL (PWebCliImageDir, and through it
+  // pweb.imagepath) and then canonicalized - so what comes back is the real
   // directory rather than the spelling the loader happened to be given.
-  //
-  // CAP-10D2 moved the first half off the RTL's argv on Windows, because
-  // an SDK extracted into a directory whose name carries a non-ASCII
-  // character resolved to a path the filesystem does not have. See the
-  // Windows body of PWebCliImageDir.
   Result := PWebCliImageDir(raw) and
             PWebCliCanonicalDir(raw, Dir);
   if not Result then

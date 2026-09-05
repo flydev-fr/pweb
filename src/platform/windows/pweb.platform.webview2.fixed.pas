@@ -11,9 +11,9 @@
   that mechanism on the app side:
 
     PWebWv2FixedPrepare
-      -> resolve   (Executable.ProgramFilePath ONLY - never the CWD,
-                    never an environment variable, never app.pwb,
-                    never JS)
+      -> resolve   (the kernel-resolved image path ONLY, through
+                    pweb.imagepath - never the CWD, never an
+                    environment variable, never app.pwb, never JS)
       -> validate  (path shape, local non-UNC drive, required files,
                     strict 4-part version == the ratified pin and
                     >= the CAP-4W minimum, PE machine AMD64, the
@@ -117,6 +117,7 @@ uses
   mormot.core.base,
   mormot.core.unicode,
   mormot.core.os,
+  pweb.imagepath, // CAP-10E: the kernel-resolved trusted location
   pweb.platform.webview2.runtime,
   pweb.platform.webview2.provision;
 
@@ -283,8 +284,8 @@ type
 function PWebWv2FixedTreeName: TFileName;
 
 /// the bundled runtime root beside the executable
-// - Executable.ProgramFilePath ONLY: never the CWD, never an
-// environment variable, never app.pwb, never JS
+// - the kernel-resolved image path ONLY (CAP-10E, pweb.imagepath): never
+// the CWD, never an environment variable, never app.pwb, never JS
 // - '' when the executable path is unknown (fail closed)
 function PWebWv2FixedRuntimeRoot: TFileName;
 
@@ -639,8 +640,14 @@ begin
   // the ONE resolution rule: beside the executable. Never
   // GetCurrentDir, never an environment variable, never app.pwb,
   // never anything a page could influence.
+  //
+  // CAP-10E: the image path comes from the KERNEL (pweb.imagepath) rather
+  // than from Executable.ProgramFilePath, whose ParamStr(0) source mangles
+  // a Windows path outside the active code page - so a fixed-runtime
+  // profile installed with an accented /DIR= resolves its runtime tree
+  // instead of reporting it missing. '' still refuses, as it always did.
   Result := '';
-  exeDir := Executable.ProgramFilePath;
+  exeDir := PWebImageDir;
   if exeDir = '' then
     exit;
   Result := IncludeTrailingPathDelimiter(

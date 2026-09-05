@@ -134,6 +134,7 @@ uses
   pweb.webview.binding,
   pweb.assets.intf,
   pweb.assets.bundle,
+  pweb.imagepath, // CAP-10E: the kernel-resolved trusted location
   {$ifdef DARWIN}
   pweb.platform.cocoa
   {$else}
@@ -646,18 +647,27 @@ end;
   makes the process exit nonzero - zero bundle JS can ever execute. }
 function LoadReleaseBundle: IAssetStore;
 var
-  bundleFile: TFileName;
+  imageDir, bundleFile: TFileName;
   refusal: TPWebBundleRefusal;
 begin
+  // CAP-10E: the KERNEL's answer for the running image, never the RTL's
+  // argv - see pweb.imagepath. '' is a refusal, never a bare file name.
+  imageDir := PWebImageDir;
+  if imageDir = '' then
+  begin
+    WriteLn(StdErr, LOG_PREFIX, ': app.pwb REFUSED (image path unavailable)');
+    raise Exception.Create(
+      'image path unavailable - no WebView was created');
+  end;
   {$ifdef DARWIN}
   // CAP-7M2: inside a .app the executable lives in Contents/MacOS and the
   // bundle in Contents/Resources. ExpandFileName only folds the '..' out of
-  // an already-absolute path here - ProgramFilePath is absolute - so the
+  // an already-absolute path here - PWebImageDir is absolute - so the
   // resolution never consults the working directory.
-  bundleFile := ExpandFileName(Executable.ProgramFilePath + '..' +
+  bundleFile := ExpandFileName(imageDir + '..' +
     PathDelim + 'Resources' + PathDelim + 'app.pwb');
   {$else}
-  bundleFile := Executable.ProgramFilePath + 'app.pwb';
+  bundleFile := imageDir + 'app.pwb';
   {$endif DARWIN}
   if not PWebBundleLoadFile(bundleFile, PWEB_SUPPORTED_PROTOCOLS,
        PWEB_RUNTIME_VERSION, Result, refusal) then

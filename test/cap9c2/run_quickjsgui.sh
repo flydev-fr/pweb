@@ -264,7 +264,10 @@ discovery_rx='FindFirst|FindNext|FileAge|ReadDirectory|FindFirstChangeNotificati
 hits="$(grep -c -E "${cwd_rx}" examples/07-quickjs/quickjsapp.pas || true)"
 add_row 'host_no_cwd_resolution' \
     "$([ "${hits}" = '0' ] && echo 1 || echo 0)" "hits=${hits}"
-anchor="$(grep -c -E 'Executable\.ProgramFilePath' examples/07-quickjs/quickjsapp.pas || true)"
+# CAP-10E re-pointed this anchor; see the ps1 sibling for why. The claim is
+# unchanged - the host resolves from its own IMAGE, never the CWD - and only
+# the answerer moved, from the RTL's ParamStr(0) to the kernel.
+anchor="$(grep -c -E 'PWebImageDir' examples/07-quickjs/quickjsapp.pas || true)"
 add_row 'host_resolves_from_executable' \
     "$([ "${anchor}" -ge 2 ] && echo 1 || echo 0)" "sites=${anchor}"
 hits="$(cat examples/07-quickjs/quickjsapp.pas test/cap9c2/quickjsgui.pas |
@@ -387,6 +390,9 @@ run_host() {
     local out="${work}/run-${tag}.out"
     local sample="${1:-}"
     if [ "${sample}" = 'sample' ]; then shift; fi
+    # CAP-10E: which binary, so the same body can run the ratified layout
+    # and its relocated non-ASCII twin
+    local exe="${run_host_exe:-${exe}}"
     rm -f -- "${out}"
     # `exec` so the backgrounded subshell BECOMES the host: without it $!
     # is the subshell and the listener sampling below would be watching a
@@ -474,6 +480,43 @@ ok=1
 if [ "${host_exit}" -ne 0 ]; then ok=0; fi
 if ! printf '%s' "${host_text}" | grep -qF "${host_pass}"; then ok=0; fi
 add_row 'layout_recovers_after_negatives' "${ok}" "exit=${host_exit}"
+
+# --- 5b. CAP-10E E3: the SAME layout at a non-ASCII directory ------------
+# The QuickJS host resolves TWO trusted files beside its image - app.pwb
+# directly and plugins.zip through pweb.script.release's
+# PWebReleaseDirectory - and CAP-10E moved both onto the kernel-resolved
+# image path. This leg moves the WHOLE ratified layout, unchanged, to a
+# directory carrying a space AND an accent (composed NFD on macOS, where
+# the filesystem's normalisation is the variable being measured) and
+# requires the identical verdicts.
+if [ "${os_name}" = 'Darwin' ]; then
+    na_leaf="$(printf 'e\xcc\x81tude cap9c2')"
+else
+    na_leaf="$(printf '\xc3\xa9tude cap9c2')"
+fi
+na_dir="${work}/${na_leaf}"
+rm -rf -- "${na_dir}"
+mkdir -p -- "${na_dir}"
+cp -R -- "${release}/." "${na_dir}/"
+add_row 'nonascii_layout_dir_non_ascii' 1 "dir=${na_leaf}"
+na_rows="${work}/nonascii-host-rows.txt"
+rm -f -- "${na_rows}"
+run_host_exe="${na_dir}/${exe_rel}"
+run_host nonascii "--pweb-corpus=${na_rows}" '--pweb-autoclose-ms=240000'
+unset run_host_exe
+ok=1
+if [ "${host_exit}" -ne 0 ]; then ok=0; fi
+if ! printf '%s' "${host_text}" | grep -qF "${host_pass}"; then ok=0; fi
+add_row 'nonascii_quickjs_host' "${ok}" "exit=${host_exit}"
+# the host writes its corpus as `<name>=yes|no`, and `ui_add=yes` IS the
+# claim "the UI round-trip returned 42" - the host asserts the 42 itself
+na_ui="$(sed -n 's/^ui_add=//p' "${na_rows}" 2>/dev/null | head -n 1)"
+na_qjs="$(sed -n 's/^quickjs_add=//p' "${na_rows}" 2>/dev/null | head -n 1)"
+add_row 'nonascii_ui_add' \
+    "$([ "${na_ui}" = 'yes' ] && echo 1 || echo 0)" "value=${na_ui}"
+add_row 'nonascii_quickjs_add' \
+    "$([ "${na_qjs}" = 'yes' ] && echo 1 || echo 0)" "value=${na_qjs}"
+rm -rf -- "${na_dir}"
 
 # --- 6. the hostile-package real-GUI harness -----------------------------
 cp -f -- "${dist}/${dylib_name}" "${work}/gui-bin/"

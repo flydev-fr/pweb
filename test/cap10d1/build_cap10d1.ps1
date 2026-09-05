@@ -72,8 +72,13 @@ New-Item -ItemType Directory -Force build/cap10d1/helper-units,
 $mormotCore = @('-Fideps/mormot2/src', '-Fudeps/mormot2/src/core',
     '-Fudeps/mormot2/src/lib', '-Fudeps/mormot2/src/crypt')
 foreach ($helper in 'pwebwv2prov', 'pwebwv2fixed') {
+    # -Fusrc/security is CAP-10E: pweb.platform.webview2.fixed resolves the
+    # bundled runtime root through pweb.imagepath, the ONE kernel-resolved
+    # image path. Both helpers are compiled with the same line rather than
+    # one of them being special-cased, because a per-helper flag list is a
+    # list that drifts.
     & fpc -MObjFPC -Sh -B -FUbuild/cap10d1/helper-units `
-        -FEbuild/cap10d1/helper-bin -Fusrc/platform/windows `
+        -FEbuild/cap10d1/helper-bin -Fusrc/platform/windows -Fusrc/security `
         @mormotCore "tools/setup/$helper.pas"
     if ($LASTEXITCODE -ne 0) { throw "$helper compile FAILED" }
     Copy-Item -Force "build/cap10d1/helper-bin/$helper.exe" `

@@ -1391,6 +1391,25 @@ jobs:
             Tee-Object -FilePath build/cap6b3-gates.log
           if ($LASTEXITCODE -ne 0) { throw 'CAP-6b3 fixed setup gates FAILED' }
 
+      # CAP-10E E4: THE SAME GATE BODY, a second time, at an install
+      # directory whose name carries a space and a non-ASCII character.
+      # Parameterised rather than copied - a copy would drift away from the
+      # ten legs above the first time one of them changed. It runs AFTER the
+      # ratified one, on the same machine, so a failure here is about the
+      # path and about nothing else; and it runs unconditionally rather than
+      # only on Windows-with-a-session, because the gate's own SKIP policy
+      # already decides what an absent desktop session means.
+      - name: CAP-10E E4 fixed-runtime profile at a non-ASCII install directory
+        shell: pwsh
+        timeout-minutes: 75
+        run: |
+          $leaf = 'Programs\PWebRelease ' + ([char]0x00E9) + 'tude'
+          pwsh -NoProfile -File test/cap6b3/run_fixed_setup_gates.ps1 `
+            -InstallLeaf $leaf `
+            -RecordFile (Join-Path $PWD 'build/cap6b3/fixed-nonascii.json') 2>&1 |
+            Tee-Object -FilePath build/cap6b3-nonascii-gates.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10E E4 fixed setup gates at a non-ASCII directory FAILED' }
+
       # same deliberate deviation as CAP-6b2: the fixed-profile setup
       # (~276 MB) is NOT uploaded on failure - the logs, listing and
       # lockfacts below identify any defect, and the binary is
@@ -2427,6 +2446,42 @@ jobs:
             build/cap10d2/out/pweb-sdk-*.tar.gz
             build/cap10b1/sdk/share/pweb/sdk-manifest.json
 
+      # CAP-10E: the one-rule SOURCE gate, then the runtime one. The source
+      # gate is checkout-only and runs on every target BY DESIGN, so
+      # paramstr0_path_sites and its siblings are a COMPARED fact rather
+      # than one machine's word for it.
+      - name: CAP-10E image-path source gate (zero ParamStr(0), zero ProgramFilePath, one reader)
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          pwsh -NoProfile -File test/cap10e/check_image_path.ps1 2>&1 |
+            Tee-Object -FilePath build/cap10e-sources.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10E image-path source gate FAILED' }
+
+      - name: CAP-10E kernel image path - non-ASCII release host, junction, long path (E1/E2/E6/E7/E9)
+        shell: pwsh
+        timeout-minutes: 45
+        run: |
+          pwsh -NoProfile -File test/cap10e/run_cap10e_gates.ps1 2>&1 |
+            Tee-Object -FilePath build/cap10e-gates.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10E Windows gates FAILED' }
+
+      - name: CAP-10E upload the Windows image-path record
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10e-imagepath-windows
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10e/image-path-windows-x86_64.json
+            build/cap10e/image-path-sources.json
+            build/cap10e/rows-windows-x86_64.txt
+            build/cap10e/probe-nonascii.txt
+            build/cap6b3/fixed-nonascii.json
+            build/cap10e-gates.log
+            build/cap10e-sources.log
+
       - name: CAP-7F emit the Windows evidence artifact
         shell: pwsh
         timeout-minutes: 10
@@ -3430,6 +3485,39 @@ jobs:
           path: |
             build/cap10d2/out/pweb-sdk-*.tar.gz
             build/cap10b1/sdk/share/pweb/sdk-manifest.json
+
+      # CAP-10E: the one-rule SOURCE gate, then the runtime one. The source
+      # gate is checkout-only and runs on every target BY DESIGN, so
+      # paramstr0_path_sites and its siblings are a COMPARED fact rather
+      # than one machine's word for it. The runtime gate needs a display,
+      # for the same reason every other release-host gate on this runner
+      # does.
+      - name: CAP-10E image-path source gate (zero ParamStr(0), zero ProgramFilePath, one reader)
+        shell: bash
+        timeout-minutes: 10
+        run: pwsh -NoProfile -File test/cap10e/check_image_path.ps1
+
+      - name: CAP-10E kernel image path - non-ASCII release host and the symlink rule (E1/E2/E5/E9)
+        shell: bash
+        timeout-minutes: 30
+        run: |
+          xvfb-run -a test/cap10e/run_cap10e_gates.sh 2>&1 |
+            tee build/cap10e-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10E upload the Linux image-path record
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10e-imagepath-linux
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10e/image-path-linux-x86_64.json
+            build/cap10e/image-path-sources.json
+            build/cap10e/rows.txt
+            build/cap10e/probe-linux-x86_64.txt
+            build/cap10e-gates.log
 
       - name: CAP-7F emit the Linux evidence artifact
         shell: bash
@@ -4470,6 +4558,36 @@ jobs:
             build/cap10d2/out/pweb-sdk-*.tar.gz
             build/cap10b1/sdk/share/pweb/sdk-manifest.json
 
+      # CAP-10E: see the Linux job for the split. macOS needs no virtual
+      # display, and it is the target where the NFD/NFC question is real:
+      # the gate composes its directory decomposed and records the bytes
+      # the filesystem hands back.
+      - name: CAP-10E image-path source gate (zero ParamStr(0), zero ProgramFilePath, one reader)
+        shell: bash
+        timeout-minutes: 10
+        run: pwsh -NoProfile -File test/cap10e/check_image_path.ps1
+
+      - name: CAP-10E kernel image path - non-ASCII (NFD) release host and the symlink rule (E1/E2/E5/E9)
+        shell: bash
+        timeout-minutes: 30
+        run: |
+          test/cap10e/run_cap10e_gates.sh 2>&1 | tee build/cap10e-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10E upload the macOS x64 image-path record
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10e-imagepath-macos-x64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10e/image-path-macos-x86_64.json
+            build/cap10e/image-path-sources.json
+            build/cap10e/rows.txt
+            build/cap10e/probe-macos-x86_64.txt
+            build/cap10e-gates.log
+
       - name: CAP-7F emit the macOS x64 evidence artifact
         shell: bash
         timeout-minutes: 10
@@ -5436,6 +5554,34 @@ jobs:
           path: |
             build/cap10d2/out/pweb-sdk-*.tar.gz
             build/cap10b1/sdk/share/pweb/sdk-manifest.json
+
+      # CAP-10E: see the Linux job for the split, and the macOS x64 job for
+      # why the NFD composition matters on this family.
+      - name: CAP-10E image-path source gate (zero ParamStr(0), zero ProgramFilePath, one reader)
+        shell: bash
+        timeout-minutes: 10
+        run: pwsh -NoProfile -File test/cap10e/check_image_path.ps1
+
+      - name: CAP-10E kernel image path - non-ASCII (NFD) release host and the symlink rule (E1/E2/E5/E9)
+        shell: bash
+        timeout-minutes: 30
+        run: |
+          test/cap10e/run_cap10e_gates.sh 2>&1 | tee build/cap10e-gates.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: CAP-10E upload the macOS arm64 image-path record
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap10e-imagepath-macos-arm64
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            build/cap10e/image-path-macos-arm64.json
+            build/cap10e/image-path-sources.json
+            build/cap10e/rows.txt
+            build/cap10e/probe-macos-arm64.txt
+            build/cap10e-gates.log
 
       - name: CAP-7F emit the macOS arm64 evidence artifact
         shell: bash

@@ -97,7 +97,8 @@ uses
   mormot.core.unicode,
   pweb.platform.webview2.runtime,
   pweb.platform.webview2.provision,
-  pweb.platform.webview2.fixed;
+  pweb.platform.webview2.fixed,
+  pwebsetupargs; // CAP-10E: argv from the kernel, so an accented /DIR= survives
 
 const
   EXIT_OK = 0;
@@ -173,13 +174,21 @@ begin
   LogFile := '';
   try
     try
-      Mode := ParamStr(1);
-      Target := ParamStr(2);
-      Second := ParamStr(3);
+      // CAP-10E: FIRST, before any argument is read. Inno hands this helper
+      // ExpandConstant('{app}\...'), so an installation directory carrying a
+      // character outside the active code page reaches the RTL's Ansi argv
+      // as U+FFFD and every path below is then a directory that does not
+      // exist. A failure here raises and is reported by the handler below as
+      // an ordinary crash, which is the correct outcome: a setup helper that
+      // cannot read its own arguments must not guess them.
+      PWebSetupReadArgs;
+      Mode := ArgStr(1);
+      Target := ArgStr(2);
+      Second := ArgStr(3);
       if Mode = '--pin' then
       begin
-        if ParamCount >= 2 then
-          LogFile := ParamStr(2);
+        if ArgCount >= 2 then
+          LogFile := ArgStr(2);
         Emit('WV2FIXED_MODE pin target=');
         // compiled-in constants ONLY - never an observed tree; see the
         // header note on why this line and WV2FIXED_VALIDATED differ
@@ -194,8 +203,8 @@ begin
       end;
       if Mode = '--detect' then
       begin
-        if ParamCount >= 2 then
-          LogFile := ParamStr(2);
+        if ArgCount >= 2 then
+          LogFile := ArgStr(2);
         Emit('WV2FIXED_MODE detect target=');
         // the frozen CAP-6b0 Evergreen detector, reported and NOT
         // acted upon: this profile's runtime is the bundled tree, and
@@ -216,10 +225,10 @@ begin
          (Mode = '--validate') or
          (Mode = '--file-version') then
       begin
-        if ParamCount >= 3 then
-          LogFile := ParamStr(3);
-        if (ParamCount < 2) or
-           (ParamCount > 3) or
+        if ArgCount >= 3 then
+          LogFile := ArgStr(3);
+        if (ArgCount < 2) or
+           (ArgCount > 3) or
            (Target = '') then
         begin
           Emit('WV2FIXED_USAGE pwebwv2fixed ' + StringToUtf8(Mode) +
@@ -233,10 +242,10 @@ begin
               (Mode = '--manifest-write') or
               (Mode = '--manifest-verify') then
       begin
-        if ParamCount >= 4 then
-          LogFile := ParamStr(4);
-        if (ParamCount < 3) or
-           (ParamCount > 4) or
+        if ArgCount >= 4 then
+          LogFile := ArgStr(4);
+        if (ArgCount < 3) or
+           (ArgCount > 4) or
            (Target = '') or
            (Second = '') then
         begin

@@ -50,7 +50,26 @@
 #      no verdict file, so Setup cannot find the last [Files] entry's
 #      external source and aborts itself
 #
+# CAP-10E PARAMETERISED THE INSTALL DIRECTORY, and parameterised is the
+# operative word: this is the SAME gate body, run a second time at a
+# directory whose name carries a space and a non-ASCII character, rather
+# than a copy of it that could drift away from the original. E4 of that
+# shard is exactly the ten legs above with one variable changed, and the
+# interesting ones are 5 (the ACL verified BY SID on an accented path), 7
+# (the installed app resolves its bundled runtime through the kernel image
+# path and answers 42) and 9 (the uninstall leaves nothing, with the
+# path-scoped drain doing the waiting).
+#
 # Usage: pwsh -File test/cap6b3/run_fixed_setup_gates.ps1
+#        pwsh -File test/cap6b3/run_fixed_setup_gates.ps1 -InstallLeaf 'Programs\PWebRelease étude'
+param(
+    # relative to %LOCALAPPDATA%. The default is the ratified CAP-6b3 path
+    # and is passed to Setup exactly as before - no /DIR= at all - so the
+    # ordinary run's command line is byte-for-byte what it always was.
+    [string]$InstallLeaf = 'Programs\PWebRelease',
+    # where this run's row record goes; CAP-10E reads it for the aggregate
+    [string]$RecordFile = ''
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -74,12 +93,23 @@ try {
     if (-not (Test-Path $RuntimeDir)) {
         throw "staged runtime dir missing: $RuntimeDir"
     }
-    $InstallDir = Join-Path $env:LOCALAPPDATA 'Programs\PWebRelease'
+    $InstallDir = Join-Path $env:LOCALAPPDATA $InstallLeaf
+    # /DIR= is passed ONLY when the caller asked for somewhere else, so the
+    # ratified run's command line does not change at all
+    $DefaultLeaf = 'Programs\PWebRelease'
+    $DirArgs = if ($InstallLeaf -cne $DefaultLeaf) { @("/DIR=$InstallDir") } else { @() }
+    $InstallNonAscii = (($InstallDir.ToCharArray() |
+        Where-Object { [int]$_ -gt 127 }).Count -gt 0)
+    Write-Host ("CAP-6b3 install directory: $InstallDir " +
+        "(non-ASCII=$InstallNonAscii, /DIR= passed=$($DirArgs.Count -gt 0))")
     # per-user (PrivilegesRequired=lowest) Inno uninstall key for AppId
     # {7C3E9A1B-...} - the literal AppId from tools/setup/pwebappsetup.issi
     $UninstKey = ('HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\' +
         '{7C3E9A1B-5D24-4F68-A0C9-2B8E6D4F1A57}_is1')
     $InstalledRuntime = Join-Path $InstallDir 'runtime\webview2'
+    # CAP-10E: unset until gate 7 decides; a record written without it would
+    # claim nothing rather than claiming falsely
+    $FixedSmokeVerdict = 'unmeasured'
     $InstalledTree = Join-Path $InstalledRuntime $facts.TreeName
     New-Item -ItemType Directory -Force build/cap6b3 | Out-Null
 
@@ -167,8 +197,8 @@ try {
         if (($contents -join ',') -cne $IsolatedName) {
             throw "isolated dir is not exactly [$IsolatedName]: $($contents -join ', ')"
         }
-        $r = Invoke-Bounded (Join-Path $Isolated $IsolatedName) @('/VERYSILENT',
-            '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/LOG=$log") 1200000 `
+        $r = Invoke-Bounded (Join-Path $Isolated $IsolatedName) (@('/VERYSILENT',
+            '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/LOG=$log") + $DirArgs) 1200000 `
             'silent fixed setup' $Isolated
         if ($r.Code -ne 0) {
             if (Test-Path $log) { Get-Content $log | Select-Object -Last 40 | Write-Host }
@@ -371,6 +401,7 @@ try {
             throw ("NO-FALLBACK BROKEN: the browser process ran from OUTSIDE " +
                 "the bundled tree: $($outside -join ', ')")
         }
+        $FixedSmokeVerdict = '42'
         Write-Host ('CAP-6b3 gate 7 PASS (installed app selected the bundled ' +
             "runtime, OBSERVED $($facts.FixedVersion), spawned $($seen.Count) " +
             'browser image(s) INSIDE the bundled tree and returned 42)')
@@ -399,6 +430,7 @@ try {
                 "machine opened a WebView (control exit $($c.Code)) - the " +
                 'bundled-runtime selection is broken, not the session')
         }
+        $FixedSmokeVerdict = 'skip_no_session'
         Write-Host ("CAP-6b3 gate 7 SKIP (fixed runtime selected, but the " +
             "Evergreen CONTROL host also failed with webview_create nil on " +
             "this machine - no desktop session; fixed exit $smokeCode)")
@@ -632,6 +664,28 @@ try {
          'verified by SID, exact-set layout, observed pinned identity, ' +
          'no-fallback negative legs, clean uninstall incl. registry') |
             Out-File -Append $env:GITHUB_STEP_SUMMARY
+    }
+    # CAP-10E E4: the record this run made, written whenever the caller asked
+    # for one. It carries the ONE fact the aggregate needs from here - what a
+    # fixed-runtime profile installed under this directory did - plus the
+    # directory itself, so a reader can see that the accented run really was
+    # accented rather than trusting the invocation.
+    if ($RecordFile -ne '') {
+        $rec = [ordered]@{
+            schema                      = 1
+            install_dir                 = $InstallDir
+            install_dir_non_ascii       = $(if ($InstallNonAscii) { 'true' } else { 'false' })
+            install_dir_arg_passed      = $(if ($DirArgs.Count -gt 0) { 'true' } else { 'false' })
+            fixed_profile_smoke         = "$FixedSmokeVerdict"
+            fixed_profile_nonascii_dir  = $(if ($InstallNonAscii) {
+                "$FixedSmokeVerdict" } else { 'not_measured_here' })
+            verdict                     = 'PASS'
+        }
+        New-Item -ItemType Directory -Force (Split-Path -Parent $RecordFile) | Out-Null
+        [System.IO.File]::WriteAllText($RecordFile,
+            (($rec | ConvertTo-Json -Depth 3) + "`n"),
+            [System.Text.UTF8Encoding]::new($false))
+        Write-Host ($rec | ConvertTo-Json -Depth 3)
     }
     Write-Host 'CAP6B3_SETUP_GATES_PASS'
 }

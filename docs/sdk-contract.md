@@ -49,6 +49,28 @@ build tool that can be pointed at a different framework by exporting a
 variable is a build tool whose trusted input is whatever the last shell
 profile said it was.
 
+**"The running image" means the KERNEL's answer (CAP-10E),** and it is one
+rule shared by the CLI and by every application it builds:
+`src/security/pweb.imagepath.pas` asks `GetModuleFileNameW` on Windows,
+`readlink /proc/self/exe` on Linux and `_NSGetExecutablePath` + `realpath`
+on macOS. It is never `ParamStr(0)` and never mORMot's
+`Executable.ProgramFilePath`, because the RTL hands a Windows process its
+argv through an ANSI conversion — so an SDK extracted into a directory whose
+name carries a character outside the active code page used to resolve to a
+path the filesystem does not have, and an application installed under one
+used to refuse at launch with `app.pwb REFUSED (bundle file missing)`.
+`test/cap10e/check_image_path.ps1` pins the one-rule property on every
+target: zero `ParamStr(0)`, zero `ProgramFilePath`, one reader.
+
+Two consequences are ratified rather than incidental. On POSIX the kernel's
+answer is the **real image**, so an SDK or an application reached through a
+symlink resolves its neighbours beside the real binary and never beside the
+link — the stricter rule, and the one a writable directory cannot subvert.
+On Windows the loader's path is **final**: the helper follows no link and
+adds no `\\?\` prefix, so a junction on the chain names the same files it
+always named and nothing is silently re-resolved. An unanswerable kernel is
+a refusal, never a relative path.
+
 ## 2. What ships, and what is only pinned
 
 The SDK ships PWeb's framework, its two frontend SDKs, its bundler, its

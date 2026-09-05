@@ -91,7 +91,7 @@ pass_line="releaseapp$(sed -n "s/^  VERDICT_PASS = '\([^']*\)';\$/\1/p" \
 printf '[CAP-7F] canonical verdict line: %s\n' "${pass_line}"
 
 # CWD=/ and LD_LIBRARY_PATH stripped, exactly like run_release_layout.sh:
-# app.pwb from Executable.ProgramFilePath, the .so from RUNPATH alone.
+# app.pwb from the kernel-resolved image path (CAP-10E), the .so from RUNPATH alone.
 run_code=0
 run_release() {
     local log="$1"

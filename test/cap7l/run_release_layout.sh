@@ -5,7 +5,7 @@
 #
 #   dist/linux-x64/release/
 #     releaseapp            -rpath=$ORIGIN, no CWD dependence
-#     app.pwb               resolved from Executable.ProgramFilePath
+#     app.pwb               resolved from the KERNEL image path (CAP-10E)
 #     libwebview.so.0.12    the DT_NEEDED name (MEASURED)
 #     LICENSE.webview
 #
@@ -67,7 +67,7 @@ assert_layout() {
 
 # --- L18/L19 + L16/L17 --------------------------------------------------------
 # CWD deliberately somewhere with no relationship to the layout: app.pwb
-# must be found from Executable.ProgramFilePath and the shared object from
+# must be found from the kernel-resolved image path (CAP-10E) and the shared object from
 # RUNPATH=$ORIGIN, never from the working directory.
 run_release_case() {
     local name="$1" frontend="$2" log="${logs}/release-${1}.log"

@@ -95,6 +95,7 @@ uses
   pweb.script.plugin,
   pweb.script.release,
   pweb.script.startup,
+  pweb.imagepath, // CAP-10E: the kernel-resolved trusted location
   {$ifdef DARWIN}
   pweb.platform.cocoa
   {$else}
@@ -906,14 +907,27 @@ end;
 
 { app.pwb, resolved from the EXECUTABLE/BUNDLE location and never the
   CWD. Inside a .app the executable lives in Contents/MacOS and the
-  bundle in Contents/Resources. }
+  bundle in Contents/Resources.
+
+  CAP-10E: the image location comes from the KERNEL (pweb.imagepath) and
+  no longer from Executable.ProgramFilePath, whose ParamStr(0) source
+  mangles a Windows path outside the active code page. '' propagates as an
+  empty result, which LoadAppBundle refuses through the ordinary
+  bundle-missing path rather than by looking beside the working directory:
+  ExpandFileName('' + '..') would do exactly that, so the guard is here. }
 function AppBundleFile: TFileName;
+var
+  imageDir: TFileName;
 begin
+  Result := '';
+  imageDir := PWebImageDir;
+  if imageDir = '' then
+    exit;
   {$ifdef DARWIN}
-  Result := ExpandFileName(Executable.ProgramFilePath + '..' +
+  Result := ExpandFileName(imageDir + '..' +
     PathDelim + 'Resources' + PathDelim + 'app.pwb');
   {$else}
-  Result := Executable.ProgramFilePath + 'app.pwb';
+  Result := imageDir + 'app.pwb';
   {$endif DARWIN}
 end;
 
@@ -922,7 +936,10 @@ end;
 function PackageDirectory: TFileName;
 begin
   {$ifdef DARWIN}
-  Result := ExpandFileName(Executable.ProgramFilePath + '..' +
+  Result := PWebImageDir;
+  if Result = '' then
+    exit;
+  Result := ExpandFileName(Result + '..' +
     PathDelim + 'Resources') + PathDelim;
   {$else}
   Result := PWebReleaseDirectory;

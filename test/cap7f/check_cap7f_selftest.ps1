@@ -2137,6 +2137,54 @@ $e.advertised_ui_dev = 'react'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap10c3-advertised-ui' 'advertised_ui_dev'
 
+# --- (E-1) CAP-10E: one target reverting to the RTL for its image path ------
+# The whole shard in one field. A target that went back to
+# Executable.ProgramFilePath would still pass its own gates on an ASCII
+# runner, so the aggregate has to refuse the WORD rather than wait for a
+# non-ASCII path to expose it.
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.image_path_source = 'rtl'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10e-image-source' 'image_path_source'
+
+# --- (E-2) CAP-10E: a ParamStr(0) creeping back into shipped code -----------
+# the count is DERIVED by test/cap10e/check_image_path.ps1 from the
+# checkout, so a nonzero value means the sweep found one - and it is
+# identical on four targets by construction, which is why it is pinned
+# rather than merely compared
+Reset-Fixture
+foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$t/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.paramstr0_path_sites = '1'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10e-paramstr0' 'paramstr0_path_sites'
+
+# --- (E-3) CAP-10E: the generated application refusing at a non-ASCII root --
+# the user-facing claim, and the exact shape hosted run 33955241980
+# measured before the fix: pack and verify succeed, then the built
+# executable cannot find its own app.pwb
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.nonascii_app_run_react = '-1'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap10e-nonascii-run' 'nonascii_app_run_react'
+
+# --- (E-4) CAP-10E: a SECOND reader of the running image appearing ---------
+# one rule, and the source gate counts the files that implement it
+Reset-Fixture
+foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$t/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.image_reader_count = '2'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap10e-second-reader' 'image_reader_count'
+
 # --- (d) divergence sweep must refuse an off-allowlist conditional -----------
 $fixturePas = 'src/zz_cap7f_selftest_fixture.pas'
 Remove-Item -Force -ErrorAction SilentlyContinue $fixturePas
@@ -2581,9 +2629,14 @@ Remove-Item -Force -ErrorAction SilentlyContinue $matrix
 # a floor, so a leg that silently stops running is caught. It is deliberately
 # NOT an equality: adding a refusal branch is normal and should not require
 # editing this line, while LOSING one is the failure worth naming
-if ($script:AggRefusals -lt 215) {
+# CAP-10E raised the floor from 215 to 219 with the four legs it added. The
+# comment above says adding a branch should not require editing this line,
+# and that is true of the NUMBER but not of the GUARD: leaving the floor
+# where it was would have exempted exactly the four newest legs from the one
+# check that notices a leg quietly ceasing to run. The margin is unchanged.
+if ($script:AggRefusals -lt 219) {
     throw ("selftest: only $($script:AggRefusals) aggregator refusals fired, " +
-        'expected at least 215 -- a negative leg stopped running')
+        'expected at least 219 -- a negative leg stopped running')
 }
 if ($script:SweepRefusals -lt 2) {
     throw ("selftest: only $($script:SweepRefusals) divergence refusals fired, " +

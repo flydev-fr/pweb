@@ -89,6 +89,7 @@ uses
   pweb.assets.zip,
   pweb.assets.bundle,   // the ratified deterministic-ZIP constants
   pweb.assets.folder,   // Darwin's O_NOFOLLOW lives in its interface
+  pweb.imagepath,       // CAP-10E: the kernel-resolved trusted location
   pweb.script.package;
 
 type
@@ -1577,9 +1578,16 @@ end;
 
 function PWebReleaseDirectory: TFileName;
 begin
-  // Executable.ProgramFilePath is absolute and independent of the
-  // current working directory - the same rule app.pwb already follows
-  Result := Executable.ProgramFilePath;
+  // CAP-10E: the KERNEL's answer for the running image, absolute and
+  // independent of the current working directory - the same rule app.pwb
+  // already follows, now through the same code. It replaces
+  // Executable.ProgramFilePath, which mORMot fills from
+  // ExpandFileName(ParamStr(0)) and which therefore mangles a Windows path
+  // outside the active code page; pweb.imagepath's header carries the
+  // measurement. '' propagates as a refusal through AbsoluteDirectory
+  // above, which is where a non-absolute release directory has always
+  // been refused.
+  Result := PWebImageDir;
 end;
 
 { THE read. Two whole platform bodies rather than one body stitched from

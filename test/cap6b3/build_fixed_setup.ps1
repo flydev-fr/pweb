@@ -194,8 +194,13 @@ try {
     # --- 4a) the compiled native helper ---------------------------------------
     New-Item -ItemType Directory -Force build/cap6b3/fpc, build/cap6b3/bin |
         Out-Null
+    # -Fusrc/security is CAP-10E: pweb.platform.webview2.fixed resolves the
+    # bundled runtime root through pweb.imagepath, the ONE kernel-resolved
+    # image path, instead of mORMot's Executable.ProgramFilePath - which is
+    # what lets a fixed profile installed with an accented /DIR= find its
+    # own runtime tree
     fpc -MObjFPC -Sh -B -FUbuild/cap6b3/fpc -FEbuild/cap6b3/bin `
-        -Fusrc/platform/windows `
+        -Fusrc/platform/windows -Fusrc/security `
         -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
         -Fudeps/mormot2/src/crypt `
         tools/setup/pwebwv2fixed.pas

@@ -166,8 +166,15 @@ $cwdRx = 'GetCurrentDir|SetCurrentDir|ChDir'
 $discoveryRx = 'FindFirst|FindNext|FileAge|ReadDirectory|FindFirstChangeNotification|inotify|FSEvent|kqueue'
 $hits = @(Select-String -Path 'examples/07-quickjs/quickjsapp.pas' -Pattern $cwdRx)
 Add-Row 'host_no_cwd_resolution' ($hits.Count -eq 0) "hits=$($hits.Count)"
+# CAP-10E RE-POINTED THIS ANCHOR, and the claim it makes is unchanged: the
+# host resolves app.pwb and plugins.zip from its own IMAGE and never from the
+# working directory. What moved is WHO IS ASKED - mORMot's
+# Executable.ProgramFilePath, which is ExpandFileName(ParamStr(0)) and
+# therefore mangles a Windows path outside the active code page, became
+# pweb.imagepath's PWebImageDir, which asks the kernel. Anchoring on the
+# retired spelling would have kept this row green while measuring nothing.
 $anchor = @(Select-String -Path 'examples/07-quickjs/quickjsapp.pas' `
-    -Pattern 'Executable\.ProgramFilePath')
+    -Pattern 'PWebImageDir')
 Add-Row 'host_resolves_from_executable' ($anchor.Count -ge 2) "sites=$($anchor.Count)"
 $hits = @(Select-String -Path 'examples/07-quickjs/quickjsapp.pas',
     'test/cap9c2/quickjsgui.pas' -Pattern $discoveryRx)
@@ -252,11 +259,13 @@ $goldenArchive = Join-Path $work 'plugins.zip.golden'
 Copy-Item -Force (Join-Path $release 'plugins.zip') $goldenArchive
 
 # --- 4. run the host from an unrelated CWD, sampling listeners -------------
-function Invoke-Host([string]$Tag, [string[]]$HostArgs, [switch]$SampleListeners) {
+function Invoke-Host([string]$Tag, [string[]]$HostArgs, [switch]$SampleListeners,
+                    [string]$ExePath = '') {
     $outFile = Join-Path $work "run-$Tag.out"
     $errFile = Join-Path $work "run-$Tag.err"
     Remove-Item -Force -ErrorAction SilentlyContinue $outFile, $errFile
-    $proc = Start-Process -FilePath $exe -ArgumentList $HostArgs `
+    if ($ExePath -eq '') { $ExePath = $exe }
+    $proc = Start-Process -FilePath $ExePath -ArgumentList $HostArgs `
         -WorkingDirectory ([System.IO.Path]::GetTempPath()) `
         -RedirectStandardOutput $outFile -RedirectStandardError $errFile `
         -NoNewWindow -PassThru
@@ -398,6 +407,48 @@ $r = Invoke-Host 'restored' @("--pweb-corpus=$hostRows",
 Add-Row 'layout_recovers_after_negatives' `
     (($r.Exit -eq 0) -and ($r.Text -cmatch [regex]::Escape($hostPass))) `
     "exit=$($r.Exit)"
+
+# --- 5b. CAP-10E E3: the SAME layout at a non-ASCII directory --------------
+# The QuickJS host resolves TWO trusted files beside its image - app.pwb
+# directly and plugins.zip through pweb.script.release's
+# PWebReleaseDirectory - and until CAP-10E both came from mORMot's
+# Executable.ProgramFilePath, i.e. ExpandFileName(ParamStr(0)), which mangles
+# a Windows path outside the active code page. This leg moves the WHOLE
+# ratified layout, unchanged, to a directory carrying a space AND an accent
+# and requires the identical verdicts: the same PASS marker, and ui_add and
+# quickjs_add both 42 read out of the host's OWN corpus rather than out of a
+# log line.
+$naDir = Join-Path ([System.IO.Path]::GetTempPath()) `
+    (([char]0x00E9) + 'tude cap9c2')
+Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $naDir
+New-Item -ItemType Directory -Force -Path $naDir | Out-Null
+Get-ChildItem $release -File | ForEach-Object {
+    Copy-Item -Force $_.FullName (Join-Path $naDir $_.Name)
+}
+$naNonAscii = (($naDir.ToCharArray() | Where-Object { [int]$_ -gt 127 }).Count -gt 0)
+Add-Row 'nonascii_layout_dir_non_ascii' $naNonAscii "dir=$(Split-Path -Leaf $naDir)"
+$naRows = Join-Path $work 'nonascii-host-rows.txt'
+Remove-Item -Force -ErrorAction SilentlyContinue $naRows
+$rNa = Invoke-Host 'nonascii' @("--pweb-corpus=$naRows",
+    '--pweb-autoclose-ms=240000') -ExePath (Join-Path $naDir 'quickjsapp.exe')
+Add-Row 'nonascii_quickjs_host' `
+    (($rNa.Exit -eq 0) -and ($rNa.Text -cmatch [regex]::Escape($hostPass))) `
+    "exit=$($rNa.Exit)"
+function Na-Row([string]$Name) {
+    if (-not (Test-Path $naRows)) { return '' }
+    foreach ($line in (Get-Content $naRows)) {
+        if ($line -like "$Name=*") { return ($line -replace "^$Name=", '') }
+    }
+    return ''
+}
+# the host writes its corpus as `<name>=yes|no`, and `ui_add=yes` IS the
+# claim "the UI round-trip returned 42" - the host asserts the 42 itself
+# (JsonHas(uiJson, '"value":42')) and the row is its verdict on it
+$naUiAdd = Na-Row 'ui_add'
+$naQjsAdd = Na-Row 'quickjs_add'
+Add-Row 'nonascii_ui_add' ($naUiAdd -ceq 'yes') "value=$naUiAdd"
+Add-Row 'nonascii_quickjs_add' ($naQjsAdd -ceq 'yes') "value=$naQjsAdd"
+Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $naDir
 
 # --- 6. the hostile-package real-GUI harness -------------------------------
 Copy-Item -Force build/webview-dist/webview.dll build/cap9c2/gui-bin/

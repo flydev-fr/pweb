@@ -71,7 +71,8 @@ uses
   mormot.core.base,
   mormot.core.unicode,
   pweb.platform.webview2.runtime,
-  pweb.platform.webview2.provision;
+  pweb.platform.webview2.provision,
+  pwebsetupargs; // CAP-10E: argv from the kernel, so an accented {app} survives
 
 const
   EXIT_OK = 0;
@@ -211,13 +212,18 @@ begin
   LogFile := '';
   try
     try
-      VerifyOnly := (ParamCount >= 1) and
-                    (ParamStr(1) = '--verify-only');
+      // CAP-10E: FIRST, before any argument is read - see pwebsetupargs.
+      // This helper's log path is {app}, which an accented /DIR= makes
+      // non-ASCII, and its installer path is {tmp}, which a non-ASCII user
+      // name does.
+      PWebSetupReadArgs;
+      VerifyOnly := (ArgCount >= 1) and
+                    (ArgStr(1) = '--verify-only');
       ArgBase := 0;
       if VerifyOnly then
         ArgBase := 1;
-      if (ParamCount < ArgBase + 3) or
-         (ParamCount > ArgBase + 4 + Ord(not VerifyOnly)) then
+      if (ArgCount < ArgBase + 3) or
+         (ArgCount > ArgBase + 4 + Ord(not VerifyOnly)) then
       begin
         Emit('WV2PROV_USAGE pwebwv2prov <installer> <sha256> <subject>' +
           ' [timeout-ms] [logfile] | pwebwv2prov --verify-only <file>' +
@@ -225,13 +231,13 @@ begin
         Emit('WV2PROV_RESULT outcome=Failed step=usage');
         exit;
       end;
-      InstallerPath := ParamStr(ArgBase + 1);
-      ExpectedSha := StringToUtf8(ParamStr(ArgBase + 2));
-      ExpectedSubject := StringToUtf8(ParamStr(ArgBase + 3));
+      InstallerPath := ArgStr(ArgBase + 1);
+      ExpectedSha := StringToUtf8(ArgStr(ArgBase + 2));
+      ExpectedSubject := StringToUtf8(ArgStr(ArgBase + 3));
       if VerifyOnly then
       begin
-        if ParamCount >= ArgBase + 4 then
-          LogFile := ParamStr(ArgBase + 4);
+        if ArgCount >= ArgBase + 4 then
+          LogFile := ArgStr(ArgBase + 4);
         if (InstallerPath = '') or
            (ExpectedSha = '') or
            (ExpectedSubject = '') then
@@ -245,10 +251,10 @@ begin
         exit;
       end;
       TimeoutMs := PWEB_WV2_INSTALL_TIMEOUT_MS;
-      if ParamCount >= 4 then
-        TimeoutMs := StrToIntDef(ParamStr(4), -1);
-      if ParamCount >= 5 then
-        LogFile := ParamStr(5);
+      if ArgCount >= 4 then
+        TimeoutMs := StrToIntDef(ArgStr(4), -1);
+      if ArgCount >= 5 then
+        LogFile := ArgStr(5);
       if (InstallerPath = '') or
          (ExpectedSha = '') or
          (ExpectedSubject = '') or

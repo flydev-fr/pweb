@@ -104,6 +104,22 @@ CAP-13 file untouched.
 CAP-13 gate body that moves without its twin is a red step, not a divergence
 somebody finds on a user's machine.
 
+**An install directory may carry a non-ASCII character (CAP-10E).** Two
+things had to be true for that, and until CAP-10E neither was. The
+installed application resolves its bundled Fixed Runtime tree, and its
+`app.pwb`, from the **kernel-resolved image path**
+(`src/security/pweb.imagepath.pas`) rather than from mORMot's
+`Executable.ProgramFilePath`, whose `ParamStr(0)` source arrives through the
+RTL's ANSI conversion and comes back as `?tude` for a directory plainly
+called `étude`. And the two compiled setup helpers, which receive `{app}`
+and `{tmp}` **on a command line**, read that command line from the kernel
+through `tools/setup/pwebsetupargs.pas` — the ratified D2-13 region, applied
+where Inno actually hands a path over. The proof is the CAP-6b3 gate body
+run a second time with `-InstallLeaf` pointing at an accented directory:
+the same ten legs, one variable changed, so the ACL is still verified by
+SID, the installed application still answers **42** on its bundled runtime,
+and the uninstall still leaves nothing behind under the path-scoped drain.
+
 ### The inputs, and the refusal that is not a download
 
 | input | where | how it is verified |

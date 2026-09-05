@@ -868,76 +868,117 @@ try {
     Row 'clean_machine_doctor' (($cmDoctorStatus.Keys | Sort-Object |
         ForEach-Object { "$_=$($cmDoctorStatus[$_])" }) -join ',')
 
-    # --- CM7: the PACK STAGE at a non-ASCII PROJECT root (ledger D2-13) ----
-    # The frozen CAP-6 bundler used to read its argv through the RTL's Ansi
-    # conversion on Windows, so a project root carrying a non-ASCII character
-    # reached it as `?tude apps` and `pack` failed with `dist directory not
-    # found` about a directory that was plainly there. The bundler now asks
-    # the kernel for its command line, and THIS LEG IS THE PROOF: a real
-    # `pweb build` of a real generated project, from the extracted SDK, with
-    # the checkout aside, at a root that carries a space AND the accent.
+    # --- CM7: BUILD AND RUN at a non-ASCII PROJECT root ---------------------
+    # WHAT THIS LEG WAS, AND WHY IT GREW (CAP-10E). CAP-10D2 added CM7 to
+    # prove ledger D2-13: the frozen CAP-6 bundler used to read its argv
+    # through the RTL's Ansi conversion on Windows, so a project root carrying
+    # a non-ASCII character reached it as `?tude apps` and `pack` failed about
+    # a directory that was plainly there. That leg BUILT AND DELIBERATELY
+    # STOPPED, because `pweb run` at the same root then failed for a DIFFERENT
+    # defect one layer out: the generated application resolved its own
+    # `app.pwb` through mORMot's `Executable.ProgramFilePath`, which is
+    # `ExpandFileName(ParamStr(0))`, and answered
+    # `app.pwb REFUSED (bundle file missing)` on hosted run 33955241980.
     #
-    # WINDOWS ONLY, and not for convenience: the defect was the Windows RTL's
-    # argv conversion. POSIX never had it - argv there is bytes the RTL hands
-    # over unchanged, measured on Linux with the same binary - and macOS
-    # normalises the Unicode in a filename, so an accented POSIX root would
-    # spend ten minutes of hosted time adding an OS-normalisation variable
-    # rather than measuring this correction. POSIX records not_applicable.
+    # CAP-10E closed that defect - every shipped host now asks the KERNEL for
+    # its own image (src/security/pweb.imagepath.pas) - so the leg no longer
+    # has to stop. It now CREATES, BUILDS AND RUNS both frontends at the
+    # accented root and requires 42 from each, which is the end-to-end claim a
+    # user actually cares about: an application installed under
+    # `C:\Users\<accented name>\...` starts.
     #
-    # IT BUILDS AND STOPS THERE, and the boundary is a MEASURED one rather
-    # than a shortcut. `pweb run` at this root FAILS, and not because of the
-    # bundler: the generated application resolves `app.pwb` beside its own
-    # executable through mORMot's `Executable.ProgramFilePath`, which is
-    # `ExpandFileName(ParamStr(0))` - the SAME RTL Ansi layer, one level out,
-    # in the SHIPPED application rather than in a build tool. It answered
-    # `app.pwb REFUSED (bundle file missing)` on hosted run 33955241980. That
-    # is a real user-facing defect with its own ledger entry and its own
-    # owner; it is NOT this correction's, and a leg that quietly ran the
-    # application here would be red for a reason it does not name. The 42s
-    # are measured above, at the ratified spaced root.
-    if ($IsWindows) {
-        $naRoot = Join-Path $cleanBase ([char]0x00E9 + 'tude apps')
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $naRoot
-        New-Item -ItemType Directory -Force -Path $naRoot | Out-Null
-        $naLeaf = Split-Path -Leaf $naRoot
-        Row 'nonascii_project_path' $naLeaf
-        Row 'nonascii_project_non_ascii' (Bool (
-            ($naLeaf.ToCharArray() | Where-Object { [int]$_ -gt 127 }).Count -gt 0))
-        # asserted from the path the build actually uses, so the literal
-        # above cannot be reverted to ASCII with the gate staying green
-        Require (($naLeaf.ToCharArray() |
-            Where-Object { [int]$_ -gt 127 }).Count -gt 0) `
-            ("CM7: the project root '$naLeaf' carries no non-ASCII " +
-             'character - D2-13 is measured HERE, and an ASCII root ' +
-             'measures the shape that never failed')
-        $nc = CleanCli @('create', 'demoaccent', '--ui', 'react',
-            '--bundle-id', 'com.example.demoaccent') 600000 $naRoot
+    # IT IS NO LONGER WINDOWS ONLY, and that is the second CAP-10E change.
+    # D2-13 was a Windows-RTL defect and POSIX genuinely did not have it, so
+    # measuring POSIX bought nothing. CAP-10E's rule is different in kind: the
+    # image path is now asked of three different kernels, and macOS
+    # additionally NORMALISES the Unicode in a filename - which CAP-10D2 named
+    # as the reason to stay away and which is now exactly the variable that
+    # has to be measured rather than reasoned about. So macOS composes the
+    # directory name DECOMPOSED (e + U+0301) and the leg records the bytes
+    # that come back.
+    $naLeaf = if ($IsMacOS) {
+        # NFD: LATIN SMALL LETTER E + COMBINING ACUTE ACCENT
+        'e' + ([char]0x0301) + 'tude apps'
+    } else {
+        # NFC: LATIN SMALL LETTER E WITH ACUTE
+        ([char]0x00E9) + 'tude apps'
+    }
+    $naRoot = Join-Path $cleanBase $naLeaf
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $naRoot
+    New-Item -ItemType Directory -Force -Path $naRoot | Out-Null
+    Row 'nonascii_project_path' $naLeaf
+    Row 'nonascii_project_form' $(if ($IsMacOS) { 'nfd' } else { 'nfc' })
+    Row 'nonascii_project_non_ascii' (Bool (
+        ($naLeaf.ToCharArray() | Where-Object { [int]$_ -gt 127 }).Count -gt 0))
+    # asserted from the path the build actually uses, so the literal above
+    # cannot be reverted to ASCII with the gate staying green
+    Require (($naLeaf.ToCharArray() |
+        Where-Object { [int]$_ -gt 127 }).Count -gt 0) `
+        ("CM7: the project root '$naLeaf' carries no non-ASCII character - " +
+         'D2-13 and CAP-10E are measured HERE, and an ASCII root measures ' +
+         'the shape that never failed')
+
+    $naPackTotal = 0
+    foreach ($ui in 'react', 'pas2js') {
+        $naName = "demoaccent$ui"
+        $nc = CleanCli @('create', $naName, '--ui', $ui,
+            '--bundle-id', "com.example.$naName") 600000 $naRoot
         Require ($nc.Code -eq 0) `
-            "CM7: create at a non-ASCII root exited $($nc.Code): $($nc.Err)"
-        $naProj = Join-Path $naRoot 'demoaccent'
+            "CM7: create --ui $ui at a non-ASCII root exited $($nc.Code): $($nc.Err)"
+        $naProj = Join-Path $naRoot $naName
         $nb = CleanCli @('build', '--project', $naProj) 2400000
-        Row 'nonascii_build_exit' "$($nb.Code)"
+        Row "nonascii_build_exit_$ui" "$($nb.Code)"
         if ($nb.Code -ne 0) {
-            Write-Host '----- CM7 build (stdout, the children s own lines) -----'
+            Write-Host "----- CM7 $ui build (stdout, the children's own lines) -----"
             Write-Host $nb.Out
         }
         Require ($nb.Code -eq 0) `
-            "CM7: the build at a non-ASCII project root exited $($nb.Code): $($nb.Err)"
-        # the PACK STAGE by name, from the pipeline's own forwarded lines -
-        # an exit code alone would not say that `pack` is the stage that ran
+            "CM7: the $ui build at a non-ASCII project root exited $($nb.Code): $($nb.Err)"
+        # the PACK STAGE by name, from the pipeline's own forwarded lines - an
+        # exit code alone would not say that `pack` is the stage that ran
         $naPack = @($nb.Err -split "`r?`n" |
             Where-Object { $_ -match '^pweb: pack: ' })
-        Row 'nonascii_pack_lines' "$($naPack.Count)"
+        $naPackTotal += $naPack.Count
         Require ($naPack.Count -ge 1) `
-            'CM7: the build reported no pack stage at a non-ASCII project root'
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $naRoot
+            "CM7: the $ui build reported no pack stage at a non-ASCII project root"
+
+        # THE CAP-10E CLAIM: the built application, at this root, STARTS and
+        # answers 42. Same shape as the spaced-root runs above - an unrelated
+        # working directory, the extracted bin/ off PATH - so the only
+        # variable between them is the accent.
+        $so = Join-Path $work "cm7-run-$ui-stdout.txt"
+        $se = Join-Path $work "cm7-run-$ui-stderr.txt"
+        Remove-Item -Force -ErrorAction SilentlyContinue $so, $se
+        $env:PWEB_SMOKE_AUTOCLOSE_MS = '20000'
+        $rp = Start-PWebProcess -FilePath $cleanPweb -PassThru -NoNewWindow `
+            -ArgumentList @('run', '--project', $naProj) `
+            -WorkingDirectory $cleanCwd -RedirectStandardOutput $so `
+            -RedirectStandardError $se
+        if (-not $rp.WaitForExit(180000)) {
+            try { $rp.Kill() } catch { }
+            $rp.WaitForExit(10000) | Out-Null
+            Require $false "CM7: the $ui run at a non-ASCII root did not exit inside 180 s"
+        }
+        $rp.WaitForExit()
+        Remove-Item Env:PWEB_SMOKE_AUTOCLOSE_MS -ErrorAction SilentlyContinue
+        $rout = if (Test-Path $so) { [System.IO.File]::ReadAllText($so) } else { '' }
+        $rerr = if (Test-Path $se) { [System.IO.File]::ReadAllText($se) } else { '' }
+        Write-Host "----- CM7 $ui run (stdout) -----"; Write-Host $rout
+        Write-Host "----- CM7 $ui run (stderr) -----"; Write-Host $rerr
+        $value = -1
+        foreach ($line in ($rout -split "`n")) {
+            if ($line -match '^\w+: ready (\{.*\})\s*$') {
+                $value = ($Matches[1] | ConvertFrom-Json).value
+            }
+        }
+        Row "nonascii_app_run_$ui" "$value"
+        Require ($value -eq 42) `
+            ("CM7: the $ui application at a non-ASCII root answered $value, " +
+             'not 42 - this is the CAP-10E claim, and the refusal to look for ' +
+             'is `app.pwb REFUSED (bundle file missing)`')
     }
-    else {
-        Row 'nonascii_project_path' 'not_applicable'
-        Row 'nonascii_project_non_ascii' 'not_applicable'
-        Row 'nonascii_build_exit' 'not_applicable'
-        Row 'nonascii_pack_lines' 'not_applicable'
-    }
+    Row 'nonascii_pack_lines' "$naPackTotal"
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $naRoot
     $cmDone = $true
 }
 finally {

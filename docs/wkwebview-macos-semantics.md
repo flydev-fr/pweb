@@ -992,9 +992,21 @@ gated.
 **`Contents/Resources` is the bundle's data directory, resolved from the
 executable.** Inside a `.app` the executable lives in `Contents/MacOS` and
 `app.pwb` in `Contents/Resources`; the host resolves it as
-`<exedir>/../Resources/app.pwb` through `ExpandFileName` over
-`Executable.ProgramFilePath` — an already-absolute path, so the working
-directory is never consulted. Every **42-verdict** launch (direct and
+`<exedir>/../Resources/app.pwb` through `ExpandFileName` over the
+kernel-resolved image path — an already-absolute path, so the working
+directory is never consulted. **CAP-10E superseded who is asked, not the
+rule:** `<exedir>` came from mORMot's `Executable.ProgramFilePath` until
+that shard and now comes from `pweb.imagepath`, which asks
+`_NSGetExecutablePath` and `realpath` on this platform. Two consequences
+are ratified rather than incidental. A `.app` reached through a **symlink**
+resolves `Contents/Resources` beside the REAL bundle, never beside the
+link, which is the stricter rule and is measured by
+`test/cap10e/run_cap10e_gates.sh` with a corrupt decoy `app.pwb` beside the
+link. And the directory name's **Unicode composition** is whatever the
+filesystem hands back rather than whatever was asked for: the gate composes
+its directory NFD (`e` + U+0301) and records the bytes it reads back, so
+APFS's normalisation-preserving behaviour is a measurement here and not an
+assumption. Every **42-verdict** launch (direct and
 LaunchServices alike) runs from `cwd=/` with all three `DYLD_*` hints
 stripped, against a relocated copy under a path carrying a space and a
 non-ASCII character, so that rule is measured rather than assumed; the

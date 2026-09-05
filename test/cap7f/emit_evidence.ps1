@@ -1195,6 +1195,31 @@ if (-not (Test-Path $d2File)) {
     throw '[CAP-7F] cap10d2/cli-windows-x86_64.json missing -- the CAP-10D2 gates have not run in this workspace'
 }
 $d2 = Get-Content $d2File -Raw | ConvertFrom-Json
+
+# --- CAP-10E: the kernel-resolved image path --------------------------------
+# TWO records, and both are required rather than optional: the RUNTIME one
+# (test/cap10e/run_cap10e_gates.ps1) says what a real host at a real
+# non-ASCII location did, and the SOURCE one
+# (test/cap10e/check_image_path.ps1) says that no shipped file can quietly
+# go back to the RTL. A shard whose runtime proof is green and whose source
+# gate never ran is a shard that is one careless edit from returning.
+$eFile = Join-Path $repoRoot 'build/cap10e/image-path-windows-x86_64.json'
+if (-not (Test-Path $eFile)) {
+    throw '[CAP-7F] cap10e/image-path-windows-x86_64.json missing -- the CAP-10E gates have not run in this workspace'
+}
+$e = Get-Content $eFile -Raw | ConvertFrom-Json
+if ("$($e.verdict)" -cne 'PASS') {
+    throw "[CAP-7F] the CAP-10E runtime record carries verdict $($e.verdict)"
+}
+$eSrcFile = Join-Path $repoRoot 'build/cap10e/image-path-sources.json'
+if (-not (Test-Path $eSrcFile)) {
+    throw '[CAP-7F] cap10e/image-path-sources.json missing -- test/cap10e/check_image_path.ps1 has not run in this workspace'
+}
+$eSrc = Get-Content $eSrcFile -Raw | ConvertFrom-Json
+if ("$($eSrc.verdict)" -cne 'PASS') {
+    throw "[CAP-7F] the CAP-10E source gate carries verdict $($eSrc.verdict)"
+}
+
 if ("$($d2.sdk_corpus)" -notin @('PASS', 'FAIL')) {
     throw "[CAP-7F] the CAP-10D2 record carries an unexpected verdict: $($d2.sdk_corpus)"
 }
@@ -1850,8 +1875,28 @@ $evidence = [ordered]@{
     clean_machine_project_has_space     = "$($d2.clean_machine_project_has_space)"
     nonascii_project_path               = "$($d2.nonascii_project_path)"
     nonascii_project_non_ascii          = "$($d2.nonascii_project_non_ascii)"
-    nonascii_build_exit                 = "$($d2.nonascii_build_exit)"
+    nonascii_project_form               = "$($d2.nonascii_project_form)"
+    nonascii_build_exit_react           = "$($d2.nonascii_build_exit_react)"
+    nonascii_build_exit_pas2js          = "$($d2.nonascii_build_exit_pas2js)"
+    nonascii_app_run_react              = "$($d2.nonascii_app_run_react)"
+    nonascii_app_run_pas2js             = "$($d2.nonascii_app_run_pas2js)"
     nonascii_pack_lines                 = "$($d2.nonascii_pack_lines)"
+    # CAP-10E: the kernel-resolved image path
+    image_path_source                   = "$($e.image_path_source)"
+    image_dir_non_ascii                 = "$($e.image_dir_non_ascii)"
+    image_dir_hex                       = "$($e.image_dir_hex)"
+    cli_equals_helper                   = "$($e.cli_equals_helper)"
+    rtl_equals_kernel                   = "$($e.rtl_equals_kernel)"
+    probe_verdict                       = "$($e.probe_verdict)"
+    nonascii_release_host               = "$($e.nonascii_release_host)"
+    symlink_rule                        = "$($e.symlink_rule)"
+    junction_on_chain                   = "$($e.junction_on_chain)"
+    long_path_outcome                   = "$($e.long_path_outcome)"
+    fixed_profile_nonascii_dir          = "$($e.fixed_profile_nonascii_dir)"
+    paramstr0_path_sites                = "$($eSrc.paramstr0_path_sites)"
+    programfilepath_sites               = "$($eSrc.programfilepath_sites)"
+    image_reader_count                  = "$($eSrc.image_reader_count)"
+    image_reader_files                  = "$($eSrc.image_reader_files)"
     clean_machine_react_rpc             = "$($d2.clean_machine_react_rpc)"
     clean_machine_pas2js_rpc            = "$($d2.clean_machine_pas2js_rpc)"
     clean_machine_react_build_exit      = "$($d2.clean_machine_react_build_exit)"

@@ -1603,7 +1603,9 @@ for f in sdk_corpus sdk_suite sdk_digest sdk_corpus_lines sdk_package_built \
          packaging_children_spawned clean_machine_path_has_space \
          clean_machine_path_non_ascii clean_machine_project_path \
          clean_machine_project_has_space nonascii_project_path \
-         nonascii_project_non_ascii nonascii_build_exit \
+         nonascii_project_non_ascii nonascii_project_form \
+         nonascii_build_exit_react nonascii_build_exit_pas2js \
+         nonascii_app_run_react nonascii_app_run_pas2js \
          nonascii_pack_lines clean_machine_react_rpc \
          clean_machine_pas2js_rpc clean_machine_react_build_exit \
          clean_machine_pas2js_build_exit clean_machine_completed \
@@ -1621,6 +1623,48 @@ for f in sdk_corpus sdk_suite sdk_digest sdk_corpus_lines sdk_package_built \
          unit_paths_seen packaging_sampler_samples \
          packaging_sampler_members; do
     eval "${f}=\"\$(d2_str ${f})\""
+done
+
+# --- CAP-10E: the kernel-resolved image path --------------------------------
+# TWO records, and both are required rather than optional: the RUNTIME one
+# (test/cap10e/run_cap10e_gates.sh) says what a real host at a real
+# non-ASCII location did, and the SOURCE one
+# (test/cap10e/check_image_path.ps1) says that no shipped file can quietly go
+# back to the RTL. A shard whose runtime proof is green and whose source gate
+# never ran is a shard that is one careless edit from returning.
+#
+# This block exists in BOTH emitters on purpose. The last time a shard added
+# rows to one of them and not the other it cost a hosted run
+# (33957698297, "AGGREGATE FAIL: REQUIRED FIELD MISSING/EMPTY" x6 per
+# target), and the ledger entry for it is the reason this comment is here.
+e_file="${repo_root}/build/cap10e/image-path-${target}.json"
+[ -f "${e_file}" ] ||
+    die "cap10e/image-path-${target}.json missing -- the CAP-10E gates have not run in this workspace"
+e_str() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+        "${e_file}" | head -n 1
+}
+[ "$(e_str verdict)" = 'PASS' ] ||
+    die "the CAP-10E runtime record carries verdict $(e_str verdict)"
+for f in image_path_source image_dir_non_ascii image_dir_hex \
+         cli_equals_helper rtl_equals_kernel probe_verdict \
+         nonascii_release_host symlink_rule junction_on_chain \
+         long_path_outcome fixed_profile_nonascii_dir; do
+    eval "${f}=\"\$(e_str ${f})\""
+done
+
+e_src_file="${repo_root}/build/cap10e/image-path-sources.json"
+[ -f "${e_src_file}" ] ||
+    die 'cap10e/image-path-sources.json missing -- test/cap10e/check_image_path.ps1 has not run in this workspace'
+e_src_str() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\?\([^\",]*\)\"\?.*/\1/p" \
+        "${e_src_file}" | head -n 1
+}
+[ "$(e_src_str verdict)" = 'PASS' ] ||
+    die "the CAP-10E source gate carries verdict $(e_src_str verdict)"
+for f in paramstr0_path_sites programfilepath_sites image_reader_count \
+         image_reader_files; do
+    eval "${f}=\"\$(e_src_str ${f})\""
 done
 
 c3_file="${repo_root}/build/cap10c3/cli-${target}.json"
@@ -2261,8 +2305,27 @@ cat > "${work}/evidence.json" <<EOF
   "clean_machine_project_has_space": "${clean_machine_project_has_space}",
   "nonascii_project_path": "${nonascii_project_path}",
   "nonascii_project_non_ascii": "${nonascii_project_non_ascii}",
-  "nonascii_build_exit": "${nonascii_build_exit}",
+  "nonascii_project_form": "${nonascii_project_form}",
+  "nonascii_build_exit_react": "${nonascii_build_exit_react}",
+  "nonascii_build_exit_pas2js": "${nonascii_build_exit_pas2js}",
+  "nonascii_app_run_react": "${nonascii_app_run_react}",
+  "nonascii_app_run_pas2js": "${nonascii_app_run_pas2js}",
   "nonascii_pack_lines": "${nonascii_pack_lines}",
+  "image_path_source": "${image_path_source}",
+  "image_dir_non_ascii": "${image_dir_non_ascii}",
+  "image_dir_hex": "${image_dir_hex}",
+  "cli_equals_helper": "${cli_equals_helper}",
+  "rtl_equals_kernel": "${rtl_equals_kernel}",
+  "probe_verdict": "${probe_verdict}",
+  "nonascii_release_host": "${nonascii_release_host}",
+  "symlink_rule": "${symlink_rule}",
+  "junction_on_chain": "${junction_on_chain}",
+  "long_path_outcome": "${long_path_outcome}",
+  "fixed_profile_nonascii_dir": "${fixed_profile_nonascii_dir}",
+  "paramstr0_path_sites": "${paramstr0_path_sites}",
+  "programfilepath_sites": "${programfilepath_sites}",
+  "image_reader_count": "${image_reader_count}",
+  "image_reader_files": "${image_reader_files}",
   "clean_machine_react_rpc": "${clean_machine_react_rpc}",
   "clean_machine_pas2js_rpc": "${clean_machine_pas2js_rpc}",
   "clean_machine_react_build_exit": "${clean_machine_react_build_exit}",
