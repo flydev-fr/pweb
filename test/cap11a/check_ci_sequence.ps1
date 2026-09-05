@@ -205,11 +205,17 @@ foreach ($t in $TARGETS[1..3]) {
         }
     }
 }
+# ONE LINE PER STEP, LF-TERMINATED - byte-for-byte the form both evidence
+# emitters hash the DECLARED table with. That is what makes the two digests
+# comparable, and comparing them is the point: the emitters publish the sequence
+# each leg was GIVEN, and this publishes the sequence they RAN. A shard that
+# edited the table without regenerating the workflow, or the reverse, would ship
+# two structures that agree with themselves and not with each other.
 $seqDigest = ''
 if ($failures.Count -eq 0) {
     $sha = [System.Security.Cryptography.SHA256]::Create()
     try {
-        $bytes = [System.Text.Encoding]::UTF8.GetBytes(($ref -join "`n"))
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes((($ref -join "`n") + "`n"))
         $seqDigest = ([System.BitConverter]::ToString($sha.ComputeHash($bytes)) -replace '-', '').ToLowerInvariant()
     } finally { $sha.Dispose() }
     Write-Host "[cap11a] four identical sequences of $($ref.Count) steps, digest $seqDigest"
@@ -286,6 +292,24 @@ foreach ($n in $declared.Keys) {
 }
 Write-Host ("[cap11a] applicability: $(@($conditional.Values | Where-Object { $_ }).Count) conditional " +
     "of $($declared.Count) steps")
+
+# THE SEQUENCE GIVEN vs THE SEQUENCE RUN. Both digests are over the same bytes -
+# one step name per line, LF-terminated - so they must be equal, and the
+# evidence emitters publish the first while this measures the second.
+if ($seqDigest) {
+    $declaredNames = @($declared.Keys)
+    $sha2 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $declaredDigest = ([System.BitConverter]::ToString($sha2.ComputeHash(
+            [System.Text.Encoding]::UTF8.GetBytes((($declaredNames -join "`n") + "`n")))) -replace '-', '').ToLowerInvariant()
+    } finally { $sha2.Dispose() }
+    if ($declaredDigest -cne $seqDigest) {
+        Fail ("the sequence RUN does not digest to the sequence DECLARED: run=$seqDigest " +
+            "declared=$declaredDigest -- the workflow and step-applicability.tsv disagree")
+    } else {
+        Write-Host "[cap11a] the sequence run is the sequence declared ($seqDigest)"
+    }
+}
 
 # --- 3. NO STEP DISAPPEARED OR REORDERED, measured from the run -------------
 # The source-level proof is `check_migration_map.ps1`; this is the same claim
