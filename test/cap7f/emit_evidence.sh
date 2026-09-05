@@ -1656,9 +1656,20 @@ done
 e_src_file="${repo_root}/build/cap10e/image-path-sources.json"
 [ -f "${e_src_file}" ] ||
     die 'cap10e/image-path-sources.json missing -- test/cap10e/check_image_path.ps1 has not run in this workspace'
+# The source-gate record mixes QUOTED strings and UNQUOTED numbers, so this
+# reader takes everything after the colon and then strips the decoration.
+#
+# NO `\?` ANYWHERE, and that is the whole point of writing it this way: the
+# first version used `\"\?` to make the quote optional, which is a GNU sed
+# extension. It read correctly on Linux and, on macOS, matched a LITERAL
+# question mark - so `verdict` came back empty and the macos-arm64 job died
+# with `the CAP-10E source gate carries verdict ` on run 33982323388, with
+# every gate it was reporting on green. Every construct below is POSIX.
 e_src_str() {
-    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\?\([^\",]*\)\"\?.*/\1/p" \
-        "${e_src_file}" | head -n 1
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\(.*\)/\1/p" "${e_src_file}" |
+        head -n 1 |
+        sed -e 's/^"//' -e 's/",*$//' -e 's/,$//' |
+        tr -d '\r'
 }
 [ "$(e_src_str verdict)" = 'PASS' ] ||
     die "the CAP-10E source gate carries verdict $(e_src_str verdict)"
