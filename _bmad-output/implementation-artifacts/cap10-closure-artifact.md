@@ -31,7 +31,7 @@ extracted tree is the SDK root those commands run out of.
 | CAP-10C3 | `99bee05b8247c0ef7f99121d709f21f42c50c12c` | 33794370400 | `pweb dev` for Pas2JS: one content-fingerprint detector, one ladder, and the CAP-10C phase closure |
 | CAP-10D0 | `a67978ef` | 33851014894 | the public `pweb build` over the frozen pipeline: ONE `build_digest` on four targets and **42** through the real `pweb run` after the real `pweb build`, for both frontend kinds |
 | CAP-10D1 | `89538dee` | 33883767131 | `pweb build --profile`: three Windows installer profiles over the CAP-13 mechanics, one deterministic archive on Linux and macOS, one identity derived from `pweb.json` and refused rather than escaped |
-| CAP-10D2 | `1714b65c` | 33919712393 | the SDK distribution, its integrity model, the clean-machine proof and this closure: one archive per target extracted to a spaced non-ASCII path with the checkout aside, **42** from both UIs on four targets, ONE `sdk_digest` `b33df77e…` and ONE `sdk_ship_table_digest` `1308731a…` |
+| CAP-10D2 | `2e2903c0` | 33962919229 | the SDK distribution, its integrity model, the clean-machine proof and this closure: one archive per target extracted to a spaced non-ASCII path with the checkout aside, **42** from both UIs on four targets, ONE `sdk_digest` `b33df77e…` and ONE `sdk_ship_table_digest` `1308731a…`. RE-RATIFIED on a newer green run when D2-13 was closed as CAP-6 surface: the gate gained CM7 (`nonascii_build_exit` 0, `nonascii_pack_lines` 3 at `<e-acute>tude apps`), and `sdk_digest` is UNCHANGED at its closure value, which is the check that says the correction moved no recorded verdict. The first closure was `1714b65c` on run 33919712393 |
 
 ## 2. The SPEC's CAP-10 acceptance, line by line
 

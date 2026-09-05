@@ -2,7 +2,7 @@
 title: 'CAP-6 bundler: a UTF-16 argv so a non-ASCII project path packs (ledger D2-13)'
 type: 'bugfix'
 created: '2026-09-05'
-status: 'in-review'
+status: 'done'
 baseline_commit: 'b78e0fb24bce947984821f4aae51c0519878e796'
 review_loop_iteration: 0
 context: []
@@ -99,11 +99,11 @@ argv layer and nothing else.
   `<e-acute>tude dist` to `<e-acute>tude out.pwb`, require exit 0 and SHA256 ==
   `$h1`, re-run with `--min-runtime=0.2.0` and read the stamped manifest, then
   `--verify` the accented bundle; renumber the observational benchmark.
-- [x] `test/cap10d2/run_cap10d2_gates.ps1` — on Windows, move `$projRoot` to a
-  spaced AND accented name via `[char]0x00E9`; rewrite the comment from "it stays
-  spaced because the bundler cannot" to what it now measures, and say why POSIX
-  keeps the ASCII name (macOS normalises Unicode filenames, so an accented POSIX
-  path would measure the OS rather than this fix).
+- [x] `test/cap10d2/run_cap10d2_gates.ps1` — DELIVERED AS CM7, a separate
+  Windows-only leg, rather than by moving `$projRoot` as the frozen Approach
+  proposed: it creates and BUILDS a project at a spaced AND accented root via
+  `[char]0x00E9`, requires the `pack` stage by name, records the shape, and stops
+  before `run`. See the Spec Change Log for why the first shape was wrong.
 - [x] `_bmad-output/implementation-artifacts/deferred-work.md` — append the
   resolution entry; `cap10-closure-artifact.md` — flip the D2-13 row to RESOLVED
   with its new digest and a one-line reason.
@@ -124,6 +124,29 @@ argv layer and nothing else.
   `ledger_reworded: 0` — while the closure row's disposition reads RESOLVED; the
   resolution is carried by an appended entry and by a `superseded_by` note on
   D2-13's `evidence:` line, which the digest does not cover.
+
+## Spec Change Log
+
+- **Trigger:** hosted run 33955241980. The frozen Approach proposed moving the
+  CAP-10D2 clean-machine project root to a spaced-and-accented path. Every stage
+  of the react build passed there — `pack: ok`, `verify: ok` — and the leg then
+  went red at `pweb run`: the generated application resolves `app.pwb` through
+  `Executable.ProgramFilePath`, which `mormot.core.os.pas:10008` fills from
+  `ExpandFileName(ParamStr(0))` — the same RTL layer one level further out, and
+  this time in SHIPPED code.
+  **Amended:** the clean-machine projects went back to the ratified spaced ASCII
+  root, and the brief's leg became CM7 — a separate Windows-only leg that builds
+  at an accented root, requires the `pack` stage by name, records the shape, and
+  stops before `run` while naming the reason and citing the run that measured it.
+  **Known-bad state avoided:** a gate red for a defect it does not measure, and a
+  five-unit, three-layer fix to the shipped runtime smuggled into a bundler
+  correction. That defect has its own ledger entry and is its own next shard.
+  **KEEP:** the byte-equality assertion in CAP-6 leg 9 — it is what proves the
+  archive did not move; asserting the accent from the path the build actually
+  used rather than from the literal; and the `nonascii_*` rows being REQUIRED on
+  all four targets but COMPARED on none — two hosted runs were lost to getting
+  that distinction wrong across `check_cap7f_aggregate.ps1` and the two evidence
+  emitters, which are four hand-maintained lists with nothing checking them.
 
 ## Verification
 
