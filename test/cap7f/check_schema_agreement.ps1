@@ -19,6 +19,13 @@
 # require, and a field the aggregator requires that either emitter does not
 # write. Both directions matter - the first is a row nobody reads (which is how a
 # field quietly stops being compared), the second is the red run above.
+#
+# THE NAME PATTERN ALLOWS A HYPHEN, and that is a measurement rather than
+# generosity: `windows_fixed-runtime_payload` and
+# `windows_fixed-runtime_own_payload_files` are ratified row names, and a
+# `[a-z0-9_]` class dropped both from all three lists at once - so the gate
+# reported perfect agreement over 722 fields while two were being compared by
+# nobody. A gate with a blind spot is worse than no gate, because it is quoted.
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
@@ -45,7 +52,10 @@ function Get-PsFields([string]$Path) {
     for ($i = $start + 1; $i -lt $lines.Count; $i++) {
         if ($lines[$i] -match '^\}\s*$') { return $out }
         if ($lines[$i] -match '^\s*#') { continue }
-        if ($lines[$i] -match '^\s{4}([a-z][a-z0-9_]*)\s*=') { $out.Add($Matches[1]) }
+        # a key carrying a hyphen must be QUOTED in a PowerShell literal, so both
+        # forms are read: bare, and single-quoted
+        if ($lines[$i] -match "^\s{4}'([a-z][a-z0-9_-]*)'\s*=") { $out.Add($Matches[1]); continue }
+        if ($lines[$i] -match '^\s{4}([a-z][a-z0-9_-]*)\s*=') { $out.Add($Matches[1]) }
     }
     throw "${Path}: the evidence literal is not closed"
 }
@@ -61,7 +71,7 @@ function Get-ShFields([string]$Path) {
     $out = New-Object System.Collections.Generic.List[string]
     for ($i = $start + 1; $i -lt $lines.Count; $i++) {
         if ($lines[$i] -match '^EOF\s*$') { return $out }
-        if ($lines[$i] -match '^\s{2}"([a-z][a-z0-9_]*)"\s*:') { $out.Add($Matches[1]) }
+        if ($lines[$i] -match '^\s{2}"([a-z][a-z0-9_-]*)"\s*:') { $out.Add($Matches[1]) }
     }
     throw "${Path}: the evidence.json heredoc is not closed"
 }
@@ -77,7 +87,7 @@ function Get-RequiredFields([string]$Path) {
     $out = New-Object System.Collections.Generic.List[string]
     for ($i = $start + 1; $i -lt $lines.Count; $i++) {
         if ($lines[$i] -match '^\)\s*$') { return $out }
-        foreach ($m in [regex]::Matches($lines[$i], "'([a-z][a-z0-9_]*)'")) {
+        foreach ($m in [regex]::Matches($lines[$i], "'([a-z][a-z0-9_-]*)'")) {
             # a comment line may quote a field name in prose; only take the
             # quoted names that sit in the list itself
             if ($lines[$i] -match '^\s*#') { continue }
