@@ -15,7 +15,12 @@
 # `if-no-files-found: error` and by the aggregator, which are the two places that
 # know what "required" means.
 param(
-    [Parameter(Mandatory = $true)][string]$Target
+    [Parameter(Mandatory = $true)][string]$Target,
+    # THE DIAGNOSTICS CLASS IS THE `if: failure()` ONE. Staging it on a green
+    # leg copies tens of megabytes nothing will ever upload, so the caller
+    # passes the job's own status and a green leg stages the four classes that
+    # are actually collected.
+    [string]$JobStatus = 'success'
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -37,6 +42,12 @@ $report = [ordered]@{}
 $totalFiles = 0
 
 foreach ($cls in $spec.PSObject.Properties.Name) {
+    if ($cls -eq 'diagnostics' -and $JobStatus -eq 'success') {
+        $report[$cls] = [ordered]@{ files = 0; bytes = 0; paths = @($spec.$cls).Count
+                                    paths_absent = 0; skipped = 'leg green' }
+        Write-Host "[cap11a] staged $cls skipped (the leg is green; nothing would upload it)"
+        continue
+    }
     $dest = Join-Path $root $cls
     New-Item -ItemType Directory -Force $dest | Out-Null
     $bytes = 0L
@@ -44,11 +55,25 @@ foreach ($cls in $spec.PSObject.Properties.Name) {
     $missing = New-Object System.Collections.Generic.List[string]
     foreach ($p in @($spec.$cls)) {
         $rel = $p.TrimEnd('/', '\')
-        # a declared path is a file, a directory or a glob - resolve all three
-        # the same way, and treat "resolves to nothing" as information
+        # A declared path is a FILE, a DIRECTORY or a GLOB, and the three resolve
+        # differently. MEASURED on the dev host: `Get-ChildItem -Path <file>
+        # -Recurse` does NOT return that file - it treats the leaf as a filter
+        # and searches the PARENT recursively, so the four declared evidence
+        # paths staged twenty-seven files, including copies of `evidence.json`
+        # from the aggregator's own selftest fixtures under `build/cap7f/
+        # selftest/`. The aggregate then picks one BY NAME, and picking a
+        # fixture instead of the real record is exactly the kind of quiet
+        # wrongness this shard exists to remove.
         $items = @()
         try {
-            $items = @(Get-ChildItem -Path $rel -Force -ErrorAction SilentlyContinue -Recurse -File)
+            if (Test-Path -LiteralPath $rel -PathType Leaf) {
+                $items = @(Get-Item -LiteralPath $rel -Force)
+            } elseif (Test-Path -LiteralPath $rel -PathType Container) {
+                $items = @(Get-ChildItem -LiteralPath $rel -Force -Recurse -File -ErrorAction SilentlyContinue)
+            } else {
+                # a glob: it matches at the level it names, never below it
+                $items = @(Get-ChildItem -Path $rel -Force -File -ErrorAction SilentlyContinue)
+            }
         } catch { $items = @() }
         if ($items.Count -eq 0) { $missing.Add($p); continue }
         foreach ($f in $items) {
@@ -60,7 +85,7 @@ foreach ($cls in $spec.PSObject.Properties.Name) {
             $out = Join-Path $dest $r
             $dir = Split-Path -Parent $out
             if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Force $dir | Out-Null }
-            Copy-Item -LiteralPath $full -Destination $out -Force
+            [System.IO.File]::Copy($full, $out, $true)
             $bytes += $f.Length
             $files++
         }

@@ -600,7 +600,7 @@ $w.Add('        if: always()')
 $w.Add('        timeout-minutes: 10')
 $w.Add('        shell: pwsh')
 $w.Add('        run: |')
-$w.Add('          pwsh -NoProfile -File test/cap11a/stage_collection.ps1 -Target "${{ inputs.target }}"')
+$w.Add('          pwsh -NoProfile -File test/cap11a/stage_collection.ps1 -Target "${{ inputs.target }}" -JobStatus "${{ job.status }}"')
 $w.Add('          if ($LASTEXITCODE -ne 0) { throw ''CAP-11A collection staging FAILED'' }')
 $w.Add('')
 foreach ($cls in @('evidence', 'records', 'release', 'dist', 'diagnostics')) {

@@ -952,7 +952,7 @@ jobs:
         timeout-minutes: 10
         shell: pwsh
         run: |
-          pwsh -NoProfile -File test/cap11a/stage_collection.ps1 -Target "${{ inputs.target }}"
+          pwsh -NoProfile -File test/cap11a/stage_collection.ps1 -Target "${{ inputs.target }}" -JobStatus "${{ job.status }}"
           if ($LASTEXITCODE -ne 0) { throw 'CAP-11A collection staging FAILED' }
 
       - name: CAP-11A collect the leg evidence (attempt 1 of 3)

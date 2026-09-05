@@ -114,7 +114,13 @@ jobs:
             found=0
             for kind in manifest inventory; do
               for fe in react pas2js; do
-                src="$(find "invraw/${side}" -type f -name "${kind}-${fe}.txt" | head -n 1)"
+                exact="invraw/${side}/build/cap7m/release-apps/${kind}-${fe}.txt"
+                src=''
+                if [ -f "${exact}" ]; then
+                  src="${exact}"
+                else
+                  src="$(find "invraw/${side}" -type f -path '*/release-apps/'"${kind}-${fe}.txt" | head -n 1)"
+                fi
                 if [ -n "${src}" ]; then cp "${src}" "inv/${side}/${kind}-${fe}.txt"; found=$((found+1)); fi
               done
             done
@@ -211,11 +217,23 @@ jobs:
         shell: bash
         run: |
           set -eu
+          # THE EXACT PATH FIRST. The collection preserves each file's
+          # repository-relative path, so the record the aggregate wants is at
+          # `build/cap7f/<name>` inside the artifact - and a bare name search
+          # would also match the aggregator's own selftest fixtures under
+          # `build/cap7f/selftest/ev/*/evidence.json`. Comparing a fixture to
+          # three real targets is the kind of quiet wrongness that would read as
+          # a real disagreement.
           for t in windows linux macos-x64 macos-arm64; do
             mkdir -p "ev/${t}"
             for f in evidence.json host-args.json manifest-react.txt; do
-              src="$(find "evraw/leg-evidence-${t}" -type f -name "${f}" 2>/dev/null | head -n 1 || true)"
-              if [ -n "${src:-}" ]; then cp "${src}" "ev/${t}/${f}"; fi
+              exact="evraw/leg-evidence-${t}/build/cap7f/${f}"
+              if [ -f "${exact}" ]; then
+                cp "${exact}" "ev/${t}/${f}"
+              else
+                src="$(find "evraw/leg-evidence-${t}" -type f -path '*/build/cap7f/'"${f}" 2>/dev/null | head -n 1 || true)"
+                if [ -n "${src:-}" ]; then cp "${src}" "ev/${t}/${f}"; fi
+              fi
             done
             echo "ev/${t}: $(ls -1 "ev/${t}" | wc -l) file(s)"
           done
@@ -223,8 +241,13 @@ jobs:
             mkdir -p "inv/${side}"
             for kind in manifest inventory; do
               for fe in react pas2js; do
-                src="$(find "invraw/leg-release-macos-${side}" -type f -name "${kind}-${fe}.txt" 2>/dev/null | head -n 1 || true)"
-                if [ -n "${src:-}" ]; then cp "${src}" "inv/${side}/${kind}-${fe}.txt"; fi
+                exact="invraw/leg-release-macos-${side}/build/cap7m/release-apps/${kind}-${fe}.txt"
+                if [ -f "${exact}" ]; then
+                  cp "${exact}" "inv/${side}/${kind}-${fe}.txt"
+                else
+                  src="$(find "invraw/leg-release-macos-${side}" -type f -path '*/release-apps/'"${kind}-${fe}.txt" 2>/dev/null | head -n 1 || true)"
+                  if [ -n "${src:-}" ]; then cp "${src}" "inv/${side}/${kind}-${fe}.txt"; fi
+                fi
               done
             done
           done
