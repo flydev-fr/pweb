@@ -35,10 +35,27 @@ Set-Location $repoRoot
 $OBSERVATION_SUFFIXES = @(
     '_elapsed_ms', '_ms', '_pid', '_pids', '_rows', '_samples', '_count_observed'
 )
+# EVERY NAME BELOW EARNED ITS PLACE BY MEASUREMENT, not by being inconvenient.
+# The Linux legs of the twin finished first and were compared field by field:
+# 724 fields on each side, no field present on one side only, and FOURTEEN
+# differing values - every one of them a fact about one execution. Ten fall out
+# of the suffix rules above; these four are named because their suffixes do not
+# say what they are:
+#   image_dir_hex          the CAP-10E probe directory carries a per-run random
+#                          suffix (`cap10e.RnWQTm` vs `cap10e.DXDvsW`), which is
+#                          why the aggregate already records it per target and
+#                          compares it across none
+#   run_descendants_drained  how many descendants existed when the drain ran
+#   pd7_moving_writes      writes observed while a generation was moving - a race
+#                          count, and the point of the leg is that the RESULT is
+#                          stable, not the count
+#   sdk_integrity_seconds  a duration that forgot to end in _ms
 $OBSERVATION_FIELDS = @(
     'github_run_id', 'run_elapsed_ms', 'pas2js_run_elapsed_ms',
     'fetch_retry_rows', 'u3_drain_rows', 'flake_nonreport_causes',
-    'dev5_burst_edits', 'run_drain_passes'
+    'dev5_burst_edits', 'run_drain_passes',
+    'image_dir_hex', 'run_descendants_drained', 'pd7_moving_writes',
+    'sdk_integrity_seconds'
 )
 function Test-Observation([string]$Name) {
     if ($OBSERVATION_FIELDS -contains $Name) { return $true }
