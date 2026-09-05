@@ -259,6 +259,17 @@ looks like before the first build. Whether a path must *exist* is an
 environment question the doctor answers; syntax, case and the link refusal are
 descriptor questions and refuse at load.
 
+**A project root may carry non-ASCII characters, on every platform including
+Windows.** Nothing in the path is read through a code page: the CLI takes its
+own argv from `GetCommandLineW`, resolves its image directory from
+`GetModuleFileNameW`, and hands every child a UTF-16 command line built by
+`PWebCliWindowsCommandLine`. The one tool that stood outside that rule was the
+frozen CAP-6 bundler `pwebbundle`, which read its argv through the RTL and
+therefore failed the `pack` stage on such a root; it now reads the kernel's
+command line too, so the guarantee is whole (ledger D2-13). The Windows path
+**length** ceiling is a separate matter and still refuses — see
+`docs/distribution-contract.md` and `project_root_too_long`.
+
 ### Project discovery
 
 1. `--project <path>` names either the descriptor or its containing directory.

@@ -237,17 +237,25 @@ directory.
    without a space comes back byte-for-byte unchanged and not one argument
    vector CAP-10C1 pinned moves. The CAP-10C1 suite was re-run and is
    unchanged at 213 assertions.
-3. **MEASURED, NOT FIXED, with its owner named.** `pwebbundle` — the FROZEN
-   CAP-6 bundler — reads its own argv through the same ANSI conversion as
-   (1), so a PROJECT at a non-ASCII path fails at the `pack` stage with a
-   message about a directory that is plainly there. The CLI's half is
-   correct: `CreateProcessW` delivers a UTF-16 command line intact, and
-   every stage before `pack` succeeds on exactly that path. Closing it is
-   either CAP-6 surface (a UTF-16 argv in the bundler) or a new exit-3 cause
-   at `open`; neither is additive to this shard, both are named in the
-   ledger, and the clean-machine leg keeps the non-ASCII **where the brief
-   asks for it** — the extracted SDK root — with the project path spaced,
-   which is what CAP-10D0 and CAP-10D1 ratified for a project.
+3. **MEASURED HERE, FIXED AFTERWARDS — ledger D2-13, now RESOLVED.** As this
+   shard closed, `pwebbundle` — the FROZEN CAP-6 bundler — still read its own
+   argv through the same ANSI conversion as (1), so a PROJECT at a non-ASCII
+   path failed at the `pack` stage with a message about a directory that is
+   plainly there. The CLI's half was already correct: `CreateProcessW`
+   delivers a UTF-16 command line intact, and every stage before `pack`
+   succeeded on exactly that path. **It was closed on the CAP-6 route this
+   shard named as the honest one**, in a separate commit: the bundler reads
+   `GetCommandLineW` through `CommandLineToArgvW` on Windows and `ParamStr`
+   on POSIX, no option, exit code or archive byte moved, and the CAP-6 gate
+   pins the archive from an accented path byte for byte against the
+   ASCII-path one. **This shard's clean-machine leg moved with it**: the
+   REACT project root now carries a space *and* the accent on Windows — so
+   `pack` runs exactly where this paragraph said it could not — while the
+   pas2js project and the three `--profile` builds keep the spaced ASCII root
+   CAP-10D0 and CAP-10D1 ratified, because the pas2js compiler is itself an
+   FPC program whose own argv layer nothing has measured. The shape is
+   recorded (`clean_machine_project_path`, `_has_space`, `_non_ascii`) and
+   required by name on Windows.
 
 **And one gate defect, worth naming because it is the general shape.** CM1's
 first draft required `pweb doctor` on the extracted SDK to report `pass` or
