@@ -508,6 +508,29 @@ foreach ($s in $uploadSteps) {
     foreach ($sp in $stepPaths) { $uploadPaths.Add(($s.Job, $s.Name, $cls, $sp) -join "`t") }
     $map.Add(($s.Job, $s.Name, $s.Line, "collection:$cls", "leg-$cls-`${target}") -join "`t")
 }
+# THIS SHARD'S OWN EVIDENCE, which no legacy upload could have declared. The
+# instrumentation writes rows a human is meant to read - the per-attempt fetch
+# rows, the U3 drain report, the smoke observation samples and the four CAP-11A
+# gate records - and a collection built only from the legacy path union would
+# leave every one of them on the runner. Measured on the first green leg of the
+# third twin, where the rows existed and nothing collected them.
+$classPaths['records'] += @(
+    'build/fetch/rows.txt',
+    'build/cap11a/structure.json',
+    'build/cap11a/migration.json',
+    'build/cap11a/flakes.json',
+    'build/cap11a/sequence.json',
+    'build/cap11a/cases.json',
+    'build/cap11a/fetchtest.json',
+    'build/cap11a/collection-bytes.json',
+    'build/cap7f/schema-agreement.json',
+    'build/cap6b4/u3-drain.txt',
+    'build/cap6/smoke-observations.txt',
+    'build/cap5/smoke-observations-react.txt',
+    'build/cap5/smoke-observations-pas2js.txt',
+    'build/cap4/smoke-observations-folder.txt',
+    'build/cap4/smoke-observations-zip.txt'
+)
 foreach ($k in @($classPaths.Keys)) {
     $classPaths[$k] = @($classPaths[$k] | Sort-Object -Unique)
 }
