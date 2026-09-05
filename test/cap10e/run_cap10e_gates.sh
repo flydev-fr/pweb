@@ -78,19 +78,20 @@ if [ "${os}" = 'linux' ]; then
     platform_units='-Fusrc/platform/linux'
     static_dir='deps/mormot2/static/x86_64-linux'
 else
+    # EVERY macOS compile and link decision comes from the ONE place that owns
+    # them, never re-spelled here: the deployment target, the static directory
+    # and the aarch64 -no_fixup_chains flag are exactly the facts
+    # tools/macos-buildenv.sh exists to keep in one file, and a gate that
+    # retyped them would be the drift it is meant to prevent. pweb_macos_init_fpc
+    # is the variant that also resolves the fpc-derived facts.
     # shellcheck source=tools/macos-buildenv.sh
     . "${repo_root}/tools/macos-buildenv.sh"
-    pweb_macos_init
+    pweb_macos_init_fpc
     host_bin="${repo_root}/build/cap7m/ex/releaseapp"
     bundler="${repo_root}/build/cap7m/bin/pwebbundle"
     dist_dir="${PWEB_MACOS_DIST}"
     lib_name="${PWEB_MACOS_DYLIB_VERSIONED}"
     platform_units='-Fusrc/platform/macos'
-    if [ "${arch}" = 'arm64' ]; then
-        static_dir='deps/mormot2/static/aarch64-darwin'
-    else
-        static_dir='deps/mormot2/static/x86_64-darwin'
-    fi
 fi
 
 [ -x "${host_bin}" ] || die "release host missing: ${host_bin}"
@@ -166,14 +167,30 @@ trap cleanup EXIT
 # ---------------------------------------------------------------------------
 step 'E1/E9 the image-path probe at a non-ASCII directory'
 mkdir -p -- "${work}/probe-units" "${work}/probe-bin"
-# shellcheck disable=SC2086
-fpc -MObjFPC -Sh -B -FU"${work}/probe-units" -FE"${work}/probe-bin" \
-    -Fusrc/security -Futools/pweb -Fusrc/rpc -Fusrc/assets ${platform_units} \
-    -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib \
-    -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net -Fudeps/mormot2/src/db \
-    -Fudeps/mormot2/src/orm -Fudeps/mormot2/src/rest -Fudeps/mormot2/src/soa \
-    "-Fl${static_dir}" test/cap10e/imageprobe.pas > "${work}/probe-build.log" 2>&1 ||
-    { tail -30 "${work}/probe-build.log" >&2; die 'the CAP-10E probe compile FAILED'; }
+# ONE invocation per platform rather than a shared flags array: macOS still
+# ships bash 3.2, where "${arr[@]}" under `set -u` on an EMPTY array is an
+# error - the CAP-9C1 lesson that test/cap9c2/run_quickjsgui.sh states in its
+# own header, applied here from the start.
+if [ "${os}" = 'macos' ]; then
+    # shellcheck disable=SC2086
+    fpc -MObjFPC -Sh -B -FU"${work}/probe-units" -FE"${work}/probe-bin" \
+        -Fusrc/security -Futools/pweb -Fusrc/rpc -Fusrc/assets ${platform_units} \
+        -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib \
+        -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net -Fudeps/mormot2/src/db \
+        -Fudeps/mormot2/src/orm -Fudeps/mormot2/src/rest -Fudeps/mormot2/src/soa \
+        "${PWEB_MACOS_FPC_FLAGS[@]}" "${PWEB_MACOS_FPC_LINK_MORMOT[@]}" \
+        test/cap10e/imageprobe.pas > "${work}/probe-build.log" 2>&1 ||
+        { tail -30 "${work}/probe-build.log" >&2; die 'the CAP-10E probe compile FAILED'; }
+else
+    # shellcheck disable=SC2086
+    fpc -MObjFPC -Sh -B -FU"${work}/probe-units" -FE"${work}/probe-bin" \
+        -Fusrc/security -Futools/pweb -Fusrc/rpc -Fusrc/assets ${platform_units} \
+        -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib \
+        -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net -Fudeps/mormot2/src/db \
+        -Fudeps/mormot2/src/orm -Fudeps/mormot2/src/rest -Fudeps/mormot2/src/soa \
+        "-Fl${static_dir}" test/cap10e/imageprobe.pas > "${work}/probe-build.log" 2>&1 ||
+        { tail -30 "${work}/probe-build.log" >&2; die 'the CAP-10E probe compile FAILED'; }
+fi
 
 probe_dir="${sandbox}/${accent_dir}"
 mkdir -p -- "${probe_dir}"
