@@ -248,14 +248,19 @@ directory.
    `GetCommandLineW` through `CommandLineToArgvW` on Windows and `ParamStr`
    on POSIX, no option, exit code or archive byte moved, and the CAP-6 gate
    pins the archive from an accented path byte for byte against the
-   ASCII-path one. **This shard's clean-machine leg moved with it**: the
-   REACT project root now carries a space *and* the accent on Windows — so
-   `pack` runs exactly where this paragraph said it could not — while the
-   pas2js project and the three `--profile` builds keep the spaced ASCII root
-   CAP-10D0 and CAP-10D1 ratified, because the pas2js compiler is itself an
-   FPC program whose own argv layer nothing has measured. The shape is
-   recorded (`clean_machine_project_path`, `_has_space`, `_non_ascii`) and
-   required by name on Windows.
+   ASCII-path one. **This shard's clean-machine gate gained CM7 with it**: a
+   Windows-only leg that creates and BUILDS a generated project at a spaced
+   *and* accented root from the extracted SDK, and requires the `pack` stage
+   by name — so `pack` runs exactly where this paragraph said it could not.
+   The shape is recorded (`nonascii_project_path`, `nonascii_project_non_ascii`,
+   `nonascii_build_exit`, `nonascii_pack_lines`) and the accent is required,
+   read back from the path the build actually used. **CM7 stops before
+   `run`**, and the boundary is a measurement: the first shape of this leg
+   moved the existing react project onto the accented root and went red at
+   `pweb run` — `pack` passed — because the generated *application* resolves
+   its own `app.pwb` through `Executable.ProgramFilePath`, the same RTL layer
+   one level further out and this time in shipped code. That is a separate
+   user-facing defect with its own ledger entry and its own owner.
 
 **And one gate defect, worth naming because it is the general shape.** CM1's
 first draft required `pweb doctor` on the extracted SDK to report `pass` or

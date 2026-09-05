@@ -362,8 +362,9 @@ $required = @(
     'pack_refusals', 'pack_refusal_count', 'packaging_network_calls',
     'packaging_children_spawned', 'clean_machine_path_has_space',
     'clean_machine_path_non_ascii', 'clean_machine_project_path',
-    'clean_machine_project_has_space', 'clean_machine_project_non_ascii',
-    'clean_machine_react_rpc',
+    'clean_machine_project_has_space', 'nonascii_project_path',
+    'nonascii_project_non_ascii', 'nonascii_build_exit',
+    'nonascii_pack_lines', 'clean_machine_react_rpc',
     'clean_machine_pas2js_rpc', 'clean_machine_react_build_exit',
     'clean_machine_pas2js_build_exit', 'clean_machine_completed',
     'checkout_path_in_argv', 'unit_paths_under_sdk', 'checkout_restored',
@@ -822,11 +823,11 @@ $absolutePins = @{
     # rename only demonstrates
     clean_machine_path_has_space       = 'true'
     clean_machine_path_non_ascii       = 'true'
-    # the PROJECT root's shape, beside the SDK root's. Spaced on all four;
-    # `clean_machine_project_non_ascii` is required present but deliberately
-    # NOT compared, because the accent is Windows-only by measurement (the
-    # D2-13 argv defect was the Windows RTL's) and the Windows gate carries
-    # its own Require for it
+    # the PROJECT root's shape, beside the SDK root's - spaced on all four.
+    # CM7's four `nonascii_*` rows are required present but deliberately NOT
+    # compared: the leg is Windows-only by measurement (the D2-13 argv defect
+    # was the Windows RTL's), POSIX answers not_applicable, and the Windows
+    # gate carries its own Require that the root really is accented
     clean_machine_project_has_space    = 'true'
     clean_machine_react_rpc            = '42'
     clean_machine_pas2js_rpc           = '42'
@@ -1209,8 +1210,9 @@ $equalityFields = @(
     'pack_refusals', 'pack_refusal_count', 'packaging_network_calls',
     'packaging_children_spawned', 'clean_machine_path_has_space',
     'clean_machine_path_non_ascii', 'clean_machine_project_path',
-    'clean_machine_project_has_space', 'clean_machine_project_non_ascii',
-    'clean_machine_react_rpc',
+    'clean_machine_project_has_space', 'nonascii_project_path',
+    'nonascii_project_non_ascii', 'nonascii_build_exit',
+    'nonascii_pack_lines', 'clean_machine_react_rpc',
     'clean_machine_pas2js_rpc', 'clean_machine_react_build_exit',
     'clean_machine_pas2js_build_exit', 'clean_machine_completed',
     'checkout_path_in_argv', 'unit_paths_under_sdk', 'checkout_restored',
@@ -1228,10 +1230,10 @@ $equalityFields = @(
     # POSIX's one; `clean_machine_bin_mode` is a POSIX mode plane Windows has
     # none of; `clean_machine_doctor`, `clean_machine_path`,
     # `clean_machine_project_path` and `checkout_renamed_aside` are per-run
-    # text; `clean_machine_project_non_ascii` is the accent the D2-13
-    # correction closed, which is Windows-only by measurement and is
-    # REQUIRED there by the CAP-10D2 gate's own assertion rather than by a
-    # comparison four machines could not agree on. What four targets DO agree
+    # text; CM7's four `nonascii_*` rows are the D2-13 pack-stage proof,
+    # which is Windows-only by measurement and REQUIRED there by the
+    # CAP-10D2 gate's own assertions rather than by a comparison three
+    # machines would have to answer `not_applicable` to. What four targets DO agree
     # about is `sdk_ship_table_digest` - the DECISION every one of them is
     # resolved from - which is compared above.
     # CAP-10D1, DELIBERATELY ABSENT - forty-four per-family and per-host

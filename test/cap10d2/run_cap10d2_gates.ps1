@@ -671,77 +671,33 @@ try {
     $env:PWEB_MORMOT = $env:PWEB_SDK
     $env:PWEB_TEMPLATES = $env:PWEB_SDK
 
-    # THE PROJECTS LIVE AT A SPACED path, and the REACT one on WINDOWS at a
-    # spaced AND non-ASCII path. Every part of that split is a MEASUREMENT
-    # rather than a preference.
+    # THE PROJECTS LIVE AT A SPACED path, which is what CAP-10D0 and
+    # CAP-10D1 ratified for a project, and the brief's non-ASCII character
+    # lives where it asks for it - the extracted SDK root
+    # `<temp>/<e-acute>tude sdk/`, above.
     #
-    # The brief asks for the SDK to be extracted to a path with a space and a
-    # non-ASCII character, and it is - `<temp>/<e-acute>tude sdk/`, above.
-    # THE PROJECT PATH USED TO BE SPACED ONLY, for a reason this leg found:
-    # `pwebbundle`, the frozen CAP-6 bundler, read its argv through the RTL's
-    # Ansi conversion on Windows, so a project root carrying a non-ASCII
-    # character reached it as `?tude apps` and the `pack` stage failed with
-    # `dist directory not found` about a directory that was plainly there
-    # (ledger D2-13). THAT IS FIXED - the bundler asks the kernel for its
-    # command line - so the react project root carries the accent on Windows
-    # and `pack` running there IS the proof. The literal is composed with
-    # [char]0x00E9 rather than typed, exactly as the SDK root above is.
-    #
-    # THE ACCENT STOPS AT THE REACT PROJECT, and the boundary is where the
-    # EVIDENCE stops. The react chain - node, npm, vite, tsc, the bundler and
-    # fpc - was measured end to end at exactly this shape before the accent
-    # was widened here. The pas2js chain was not, and there is a specific
-    # reason to be careful rather than optimistic about it: `pas2js` is
-    # itself an FPC program and may carry the very RTL argv layer this
-    # correction routes around, which no leg anywhere has measured. The
-    # `--profile` builds run on the pas2js project and add `iscc` to that
-    # list. So they stay at the spaced ASCII root CAP-10D0 and CAP-10D1
-    # ratified; widening them is a claim somebody must pay a hosted run to
-    # make, not one to smuggle in beside a bundler fix.
-    #
-    # POSIX KEEPS THE ASCII NAME for both, deliberately: the defect was the
-    # Windows RTL's argv conversion and POSIX never had it (argv there is
-    # bytes the RTL hands over unchanged), while macOS normalises the Unicode
-    # in a filename - so an accented POSIX root would add an OS-normalisation
-    # variable this correction does not own.
+    # A NON-ASCII PROJECT ROOT IS MEASURED TOO, in CM7 below, and it is a
+    # SEPARATE leg on purpose rather than a widening of this one. CM7 builds
+    # and stops at the last stage the evidence covers; these legs also RUN
+    # the application, and running it at a non-ASCII root is a different
+    # claim that a different defect currently refuses - see CM7's comment
+    # and the ledger entry it names.
     $projRoot = Join-Path $cleanBase 'cap10d2 apps'
-    $projRootReact = if ($IsWindows) {
-        Join-Path $cleanBase ([char]0x00E9 + 'tude apps')
-    } else {
-        $projRoot
-    }
-    foreach ($r in (@($projRoot, $projRootReact) | Select-Object -Unique)) {
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $r
-        New-Item -ItemType Directory -Force -Path $r | Out-Null
-    }
-    # RECORDED, and on Windows REQUIRED. The D2-13 closure is sold on the
-    # react project's `pack` stage running at a non-ASCII root; without this
-    # the literal above could be reverted to ASCII and every gate on every
-    # target would stay green while the proof quietly disappeared. The shape
-    # is read back from the path the legs actually use, not from the literal.
-    $reactLeaf = Split-Path -Leaf $projRootReact
-    Row 'clean_machine_project_path' $reactLeaf
-    Row 'clean_machine_project_has_space' (Bool ($reactLeaf -like '* *'))
-    Row 'clean_machine_project_non_ascii' (Bool (
-        ($reactLeaf.ToCharArray() | Where-Object { [int]$_ -gt 127 }).Count -gt 0))
-    Require ($reactLeaf -like '* *') `
-        "CM: the react project root '$reactLeaf' carries no space"
-    if ($IsWindows) {
-        Require (($reactLeaf.ToCharArray() |
-            Where-Object { [int]$_ -gt 127 }).Count -gt 0) `
-            ("CM: the react project root '$reactLeaf' carries no non-ASCII " +
-             'character - the D2-13 closure is measured HERE, and an ASCII ' +
-             'root measures the shape that never failed')
-    }
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $projRoot
+    New-Item -ItemType Directory -Force -Path $projRoot | Out-Null
+    $projLeaf = Split-Path -Leaf $projRoot
+    Row 'clean_machine_project_path' $projLeaf
+    Row 'clean_machine_project_has_space' (Bool ($projLeaf -like '* *'))
+    Require ($projLeaf -like '* *') `
+        "CM: the project root '$projLeaf' carries no space"
     $cmdLines = New-Object System.Collections.Generic.List[string]
     $cmDoctorStatus = @{}
     foreach ($ui in 'react', 'pas2js') {
         $name = "demo$ui"
-        $root = if ($ui -eq 'react') { $projRootReact } else { $projRoot }
         $c = CleanCli @('create', $name, '--ui', $ui, '--bundle-id',
-            "com.example.$name") 600000 $root
+            "com.example.$name") 600000 $projRoot
         Require ($c.Code -eq 0) "CM: create --ui $ui exited $($c.Code): $($c.Err)"
-        $proj = Join-Path $root $name
+        $proj = Join-Path $projRoot $name
         # THE DOCTOR, on a REAL project, from the extracted SDK, with the
         # checkout aside. Without a project the graph reports
         # project.descriptor absent and nothing below it, which is a
@@ -911,6 +867,77 @@ try {
     Row 'sdk_shipped_tool_rule' 'sdk_root_only:pwebbundle,iscc|path_only:fpc,node,pas2js'
     Row 'clean_machine_doctor' (($cmDoctorStatus.Keys | Sort-Object |
         ForEach-Object { "$_=$($cmDoctorStatus[$_])" }) -join ',')
+
+    # --- CM7: the PACK STAGE at a non-ASCII PROJECT root (ledger D2-13) ----
+    # The frozen CAP-6 bundler used to read its argv through the RTL's Ansi
+    # conversion on Windows, so a project root carrying a non-ASCII character
+    # reached it as `?tude apps` and `pack` failed with `dist directory not
+    # found` about a directory that was plainly there. The bundler now asks
+    # the kernel for its command line, and THIS LEG IS THE PROOF: a real
+    # `pweb build` of a real generated project, from the extracted SDK, with
+    # the checkout aside, at a root that carries a space AND the accent.
+    #
+    # WINDOWS ONLY, and not for convenience: the defect was the Windows RTL's
+    # argv conversion. POSIX never had it - argv there is bytes the RTL hands
+    # over unchanged, measured on Linux with the same binary - and macOS
+    # normalises the Unicode in a filename, so an accented POSIX root would
+    # spend ten minutes of hosted time adding an OS-normalisation variable
+    # rather than measuring this correction. POSIX records not_applicable.
+    #
+    # IT BUILDS AND STOPS THERE, and the boundary is a MEASURED one rather
+    # than a shortcut. `pweb run` at this root FAILS, and not because of the
+    # bundler: the generated application resolves `app.pwb` beside its own
+    # executable through mORMot's `Executable.ProgramFilePath`, which is
+    # `ExpandFileName(ParamStr(0))` - the SAME RTL Ansi layer, one level out,
+    # in the SHIPPED application rather than in a build tool. It answered
+    # `app.pwb REFUSED (bundle file missing)` on hosted run 33955241980. That
+    # is a real user-facing defect with its own ledger entry and its own
+    # owner; it is NOT this correction's, and a leg that quietly ran the
+    # application here would be red for a reason it does not name. The 42s
+    # are measured above, at the ratified spaced root.
+    if ($IsWindows) {
+        $naRoot = Join-Path $cleanBase ([char]0x00E9 + 'tude apps')
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $naRoot
+        New-Item -ItemType Directory -Force -Path $naRoot | Out-Null
+        $naLeaf = Split-Path -Leaf $naRoot
+        Row 'nonascii_project_path' $naLeaf
+        Row 'nonascii_project_non_ascii' (Bool (
+            ($naLeaf.ToCharArray() | Where-Object { [int]$_ -gt 127 }).Count -gt 0))
+        # asserted from the path the build actually uses, so the literal
+        # above cannot be reverted to ASCII with the gate staying green
+        Require (($naLeaf.ToCharArray() |
+            Where-Object { [int]$_ -gt 127 }).Count -gt 0) `
+            ("CM7: the project root '$naLeaf' carries no non-ASCII " +
+             'character - D2-13 is measured HERE, and an ASCII root ' +
+             'measures the shape that never failed')
+        $nc = CleanCli @('create', 'demoaccent', '--ui', 'react',
+            '--bundle-id', 'com.example.demoaccent') 600000 $naRoot
+        Require ($nc.Code -eq 0) `
+            "CM7: create at a non-ASCII root exited $($nc.Code): $($nc.Err)"
+        $naProj = Join-Path $naRoot 'demoaccent'
+        $nb = CleanCli @('build', '--project', $naProj) 2400000
+        Row 'nonascii_build_exit' "$($nb.Code)"
+        if ($nb.Code -ne 0) {
+            Write-Host '----- CM7 build (stdout, the children s own lines) -----'
+            Write-Host $nb.Out
+        }
+        Require ($nb.Code -eq 0) `
+            "CM7: the build at a non-ASCII project root exited $($nb.Code): $($nb.Err)"
+        # the PACK STAGE by name, from the pipeline's own forwarded lines -
+        # an exit code alone would not say that `pack` is the stage that ran
+        $naPack = @($nb.Err -split "`r?`n" |
+            Where-Object { $_ -match '^pweb: pack: ' })
+        Row 'nonascii_pack_lines' "$($naPack.Count)"
+        Require ($naPack.Count -ge 1) `
+            'CM7: the build reported no pack stage at a non-ASCII project root'
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $naRoot
+    }
+    else {
+        Row 'nonascii_project_path' 'not_applicable'
+        Row 'nonascii_project_non_ascii' 'not_applicable'
+        Row 'nonascii_build_exit' 'not_applicable'
+        Row 'nonascii_pack_lines' 'not_applicable'
+    }
     $cmDone = $true
 }
 finally {
