@@ -158,6 +158,18 @@ foreach ($t in $TARGETS) {
         if ($s.Conclusion -ne 'skipped') { $observed[$s.Name].Add($t) }
     }
 }
+# A leg that went RED stops early, so every step after the failure reports
+# `skipped` for a reason that has nothing to do with applicability. Only a
+# leg with NO FAILED STEP can be held to the declared set.
+#
+# The test cannot be "did the last step run": the collection block is
+# `if: always()`, so its steps run on a red leg too and the last step's
+# conclusion says nothing about whether the gates in front of it did.
+$complete = @($TARGETS | Where-Object {
+    @($legs[$_].Steps | Where-Object { $_.Conclusion -eq 'failure' }).Count -eq 0 })
+
+Write-Host "[cap11a] legs held to the declared applicability: [$($complete -join ',')]"
+
 foreach ($n in $observed.Keys) {
     if (-not $declared.Contains($n)) {
         Fail "step '$n' ran but is not in step-applicability.tsv"
@@ -165,10 +177,6 @@ foreach ($n in $observed.Keys) {
     }
     $exp = @($TARGETS | Where-Object { $declared[$n] -contains $_ })
     $got = @($TARGETS | Where-Object { $observed[$n] -contains $_ })
-    # A leg that went RED stops early, so every step after the failure reports
-    # `skipped` for a reason that has nothing to do with applicability. Only a
-    # leg that RAN TO THE END can be held to the declared set.
-    $complete = @($TARGETS | Where-Object { $legs[$_].Steps[-1].Conclusion -ne 'skipped' })
     $expC = @($exp | Where-Object { $complete -contains $_ })
     $gotC = @($got | Where-Object { $complete -contains $_ })
     if (($expC -join ',') -cne ($gotC -join ',')) {
