@@ -39,6 +39,14 @@ Set-Location $repoRoot
 $work = Join-Path $repoRoot 'build/cap10e'
 New-Item -ItemType Directory -Force $work | Out-Null
 
+# THE RATIFIED QUOTING HELPER, and nowhere is it more load-bearing than
+# here: `Start-Process -ArgumentList <array>` joins without quoting, and
+# every path this gate launches from carries a SPACE and a non-ASCII
+# character by design. C0-12 (b) / C1-11 (a), enforced across every CAP-10
+# gate by test/cap10d0/check_cap10d0_contracts.ps1 - which is where this
+# gate's first hosted run was refused for calling Start-Process directly.
+. (Join-Path $repoRoot 'test/cap10d0/psargs.ps1')
+
 $rows = New-Object System.Collections.Generic.List[string]
 $violations = New-Object System.Collections.Generic.List[string]
 function Row([string]$Name, [string]$Value) { $rows.Add("$Name=$Value") }
@@ -126,7 +134,7 @@ function Invoke-Probe([string]$Dir, [string]$Tag) {
     Copy-Item -Force "$work/probe-bin/imageprobe.exe" $exe
     $out = Join-Path $work "probe-$Tag.txt"
     Remove-Item -Force -ErrorAction SilentlyContinue $out
-    $p = Start-Process -FilePath $exe -NoNewWindow -Wait -PassThru `
+    $p = Start-PWebProcess -FilePath $exe -NoNewWindow -Wait -PassThru `
         -WorkingDirectory ([System.IO.Path]::GetTempPath()) -RedirectStandardOutput $out
     $text = if (Test-Path -LiteralPath $out) {
         [System.IO.File]::ReadAllText($out) } else { '' }
@@ -173,7 +181,7 @@ function Invoke-Host([string]$Exe, [string]$Tag) {
     Remove-Item -Force -ErrorAction SilentlyContinue $so, $se
     $env:PWEB_SMOKE_AUTOCLOSE_MS = '8000'
     try {
-        $p = Start-Process -FilePath $Exe -NoNewWindow -PassThru `
+        $p = Start-PWebProcess -FilePath $Exe -NoNewWindow -PassThru `
             -WorkingDirectory ([System.IO.Path]::GetTempPath()) `
             -RedirectStandardOutput $so -RedirectStandardError $se
         if (-not $p.WaitForExit(180000)) {
@@ -311,7 +319,7 @@ if ($deepOk) {
         @{ Form = 'device'; Path = "\\?\$deep\imageprobe.exe" })) {
         Remove-Item -Force -ErrorAction SilentlyContinue $lo
         try {
-            $p = Start-Process -FilePath $attempt.Path -NoNewWindow -Wait -PassThru `
+            $p = Start-PWebProcess -FilePath $attempt.Path -NoNewWindow -Wait -PassThru `
                 -WorkingDirectory ([System.IO.Path]::GetTempPath()) -RedirectStandardOutput $lo
             if (($p.ExitCode -eq 0) -and (Test-Path -LiteralPath $lo)) {
                 $lt = [System.IO.File]::ReadAllText($lo)
@@ -386,10 +394,23 @@ Row 'symlink_rule' 'posix_only'
     foreach ($j in @((Join-Path $sandbox 'link'))) {
         if (Test-Path -LiteralPath $j) { [System.IO.Directory]::Delete($j, $false) }
     }
-    if (Test-Path -LiteralPath $sandbox) {
-        # the deep tree needs the \\?\ form to be removable at all
+    # the recursive delete is CONFINED before it runs, not trusted because of
+    # where the variable came from: this gate creates junctions and a
+    # 318-character tree, and both are exactly the shapes a careless cleanup
+    # gets wrong. $sandbox must still be a GUID-named child of the temp
+    # directory or nothing is deleted at all.
+    $tempRoot = [System.IO.Path]::GetTempPath().TrimEnd('\')
+    $sandboxLeaf = Split-Path -Leaf $sandbox
+    if (($sandbox -like "$tempRoot\*") -and
+        ($sandboxLeaf -match '^cap10e-[0-9a-f]{32}$') -and
+        (Test-Path -LiteralPath $sandbox)) {
+        # the deep tree needs the \\?\ form to be removable at all;
+        # Directory.Delete does not follow reparse points, it removes them
         try { [System.IO.Directory]::Delete("\\?\$sandbox", $true) } catch { }
         Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $sandbox
+    } elseif (Test-Path -LiteralPath $sandbox) {
+        Write-Host ("[CAP-10E] REFUSING to remove '$sandbox': it is not a " +
+            'GUID-named child of the temp directory')
     }
 }
 

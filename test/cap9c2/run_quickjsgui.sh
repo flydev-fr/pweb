@@ -502,7 +502,12 @@ na_dir="${work}/${na_leaf}"
 rm -rf -- "${na_dir}"
 mkdir -p -- "${na_dir}"
 cp -R -- "${release}/." "${na_dir}/"
-add_row 'nonascii_layout_dir_non_ascii' 1 "dir=${na_leaf}"
+# MEASURED from the leaf the copy actually used, never asserted from the
+# literal above: a row that says `yes` because somebody typed a 1 is a row
+# that stays green after the accent is edited out of the name
+na_high="$(printf '%s' "${na_leaf}" | LC_ALL=C grep -c '[^ -~]' || true)"
+add_row 'nonascii_layout_dir_non_ascii' \
+    "$([ "${na_high}" != '0' ] && echo 1 || echo 0)" "dir=${na_leaf}"
 na_rows="${work}/nonascii-host-rows.txt"
 rm -f -- "${na_rows}"
 run_host_exe="${na_dir}/${exe_rel}"

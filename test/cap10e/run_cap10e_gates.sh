@@ -122,12 +122,20 @@ row 'host_binary_carries_cap10e' 'true'
 # here: the same single-source discipline test/cap7m/run_cap7m_release.sh
 # applies, and for the same reason - a gate that carries its own copy of a
 # marker stops testing the host the day somebody edits one of the two.
-marker_lines="$(grep -cE "^  VERDICT_PASS = '[^']+';\$" \
-    examples/08-release/releaseapp.pas || true)"
+#
+# The CR strip is not decoration. This gate is meant to be runnable on the
+# dev host under WSL against the Windows working tree, and Git for Windows
+# checks Pascal sources out CRLF - so without it the marker would come back
+# with a trailing carriage return and every grep for it would silently miss.
+# The sibling CAP-9C1 gate has exactly that shape and cannot be run locally
+# for exactly that reason; there was no sense in adding a second one.
+marker_src="$(tr -d '\r' < examples/08-release/releaseapp.pas)"
+marker_lines="$(printf '%s\n' "${marker_src}" |
+    grep -cE "^  VERDICT_PASS = '[^']+';\$" || true)"
 [ "${marker_lines}" = '1' ] ||
     die "expected exactly one VERDICT_PASS constant in releaseapp.pas, found ${marker_lines}"
-pass_marker="$(sed -n "s/^  VERDICT_PASS = '\([^']*\)';\$/\1/p" \
-    examples/08-release/releaseapp.pas)"
+pass_marker="$(printf '%s\n' "${marker_src}" |
+    sed -n "s/^  VERDICT_PASS = '\([^']*\)';\$/\1/p")"
 [ -n "${pass_marker}" ] || die 'could not extract the VERDICT_PASS marker'
 printf '[CAP-10E] canonical release marker: %s\n' "${pass_marker}"
 
