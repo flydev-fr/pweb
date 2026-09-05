@@ -130,9 +130,17 @@ platform_units="-Fusrc/platform/${target_os/darwin/macos}"
 # the isolation proves is what pweb.cli.sdkmanifest does NOT reach - the
 # pipeline, the process engine, the toolset and the doctor - and
 # check_cap10d2_contracts.ps1 measures that at the source as well.
+#
+# CAP-10E added -Fusrc/security for the SAME reason and with the same
+# reservation: pweb.cli.platform now stands on src/security/pweb.imagepath,
+# the ONE kernel-resolved image path the shipped hosts and the CLI share, so
+# without it this compile is refused for a dependency of its dependency. It
+# is a LEAF - the RTL and mormot.core.base/.unicode and no PWeb unit at all -
+# so nothing about what sdkmanifest may reach has been widened. Every other
+# CLI isolation compile in this repository already carried the path.
 step 'layering: pweb.cli.sdkmanifest stands on mORMot and the anchor'
 fpc -MObjFPC -Sh -B -FUbuild/cap10d2/iso -Futools/pweb "${platform_units}" \
-    "${mormot_core[@]}" tools/pweb/pweb.cli.sdkmanifest.pas ||
+    -Fusrc/security "${mormot_core[@]}" tools/pweb/pweb.cli.sdkmanifest.pas ||
     die 'pweb.cli.sdkmanifest.pas failed its isolation compile'
 
 # --- 3. the private packager -------------------------------------------------
