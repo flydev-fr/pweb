@@ -215,6 +215,13 @@ fi
 
 # the layout each platform's host actually resolves: beside the executable on
 # Linux, Contents/Resources beside Contents/MacOS on macOS
+# the .app suffix on macOS is not decoration: the host's DARWIN branch
+# resolves Contents/Resources, and the upstream Cocoa code asks NSBundle
+# whether it is bundled - so a relocated tree without the suffix and the
+# plist would be a DIFFERENT launch shape rather than the same layout at a
+# different path, and this leg is about the path alone.
+if [ "${os}" = 'macos' ]; then bundle_suffix='.app'; else bundle_suffix=''; fi
+
 assemble_release() {
     local root="$1" pwb_src="$2"
     if [ "${os}" = 'macos' ]; then
@@ -222,6 +229,24 @@ assemble_release() {
         cp -f -- "${host_bin}" "${root}/Contents/MacOS/releaseapp"
         cp -f -- "${dist_dir}/${lib_name}" "${root}/Contents/MacOS/${lib_name}"
         cp -f -- "${pwb_src}" "${root}/Contents/Resources/app.pwb"
+        # the smallest plist NSBundle accepts as an identity; the full
+        # product plist is CAP-7M2's and is not what this leg measures
+        cat > "${root}/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleExecutable</key>
+	<string>releaseapp</string>
+	<key>CFBundleIdentifier</key>
+	<string>dev.pweb.cap10e.imagepath</string>
+	<key>CFBundleName</key>
+	<string>PWebCap10E</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+</dict>
+</plist>
+PLIST
         printf '%s\n' "${root}/Contents/MacOS/releaseapp"
     else
         mkdir -p -- "${root}"
@@ -236,7 +261,7 @@ good_pwb="${work}/app.pwb"
 "${bundler}" "${frontend}" "${good_pwb}" > "${work}/bundle.log" 2>&1 ||
     { cat "${work}/bundle.log" >&2; die 'app.pwb build FAILED'; }
 
-accent_root="${sandbox}/${accent_dir}/release"
+accent_root="${sandbox}/${accent_dir}/release${bundle_suffix}"
 accent_exe="$(assemble_release "${accent_root}" "${good_pwb}")"
 accent_log="${work}/release-nonascii.log"
 set +e
@@ -260,8 +285,8 @@ require "$(grep -Fq "${pass_marker}" "${accent_log}" && echo true || echo false)
 # E5: the symlink rule, with a decoy
 # ---------------------------------------------------------------------------
 step 'E5 a symlinked launch resolves the REAL image, not the link'
-real_root="${sandbox}/real"
-link_root="${sandbox}/link"
+real_root="${sandbox}/real${bundle_suffix}"
+link_root="${sandbox}/link${bundle_suffix}"
 real_exe="$(assemble_release "${real_root}" "${good_pwb}")"
 mkdir -p -- "${link_root}"
 
@@ -305,8 +330,13 @@ require "$(grep -Fq "${pass_marker}" "${link_log}" && echo true || echo false)" 
 # ---------------------------------------------------------------------------
 # the Windows-only legs, recorded rather than silently absent
 # ---------------------------------------------------------------------------
+# the NAMES matter as much as the values: these rows are read straight out
+# of this JSON by test/cap7f/emit_evidence.sh and required by name in
+# check_cap7f_aggregate.ps1, so a row spelled differently here is a
+# REQUIRED FIELD MISSING on three targets - the failure mode ledger entry
+# D2-10's neighbour records as having cost a hosted run once already
 row 'junction_on_chain' 'not_applicable'
-row 'long_path_image_dir' 'not_applicable'
+row 'long_path_outcome' 'not_applicable'
 row 'fixed_profile_nonascii_dir' 'not_applicable'
 
 # ---------------------------------------------------------------------------

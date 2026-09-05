@@ -89,7 +89,14 @@ foreach ($seed in 'clean_machine_bin_mode', 'clean_machine_profile_result',
                   'clean_machine_react_build_exit',
                   'clean_machine_pas2js_build_exit', 'clean_machine_react_rpc',
                   'clean_machine_pas2js_rpc', 'clean_machine_doctor',
-                  'sdk_tool_rule_decoy_build_exit') {
+                  'sdk_tool_rule_decoy_build_exit',
+                  # CAP-10E: CM7's own rows, seeded by the same rule. `Row`
+                  # overwrites, so a seed is a floor and never a value that
+                  # outlives its measurement.
+                  'nonascii_project_path', 'nonascii_project_form',
+                  'nonascii_project_non_ascii', 'nonascii_pack_lines',
+                  'nonascii_build_exit_react', 'nonascii_build_exit_pas2js',
+                  'nonascii_app_run_react', 'nonascii_app_run_pas2js') {
     Row $seed 'not_applicable'
 }
 
@@ -919,6 +926,14 @@ try {
          'the shape that never failed')
 
     $naPackTotal = 0
+    # collected in the loop, EMITTED AS LITERAL ROW NAMES after it. An
+    # interpolated `Row "nonascii_app_run_$ui"` would be invisible to a grep,
+    # and these row names are hand-maintained in five places - both CAP-7F
+    # emitters, the aggregate's required list, its equality list and its
+    # pins - which is exactly the shape ledger D2-10's neighbour records as
+    # having cost two hosted runs.
+    $naBuildExit = @{}
+    $naRunValue = @{}
     foreach ($ui in 'react', 'pas2js') {
         $naName = "demoaccent$ui"
         $nc = CleanCli @('create', $naName, '--ui', $ui,
@@ -927,7 +942,7 @@ try {
             "CM7: create --ui $ui at a non-ASCII root exited $($nc.Code): $($nc.Err)"
         $naProj = Join-Path $naRoot $naName
         $nb = CleanCli @('build', '--project', $naProj) 2400000
-        Row "nonascii_build_exit_$ui" "$($nb.Code)"
+        $naBuildExit[$ui] = "$($nb.Code)"
         if ($nb.Code -ne 0) {
             Write-Host "----- CM7 $ui build (stdout, the children's own lines) -----"
             Write-Host $nb.Out
@@ -971,12 +986,16 @@ try {
                 $value = ($Matches[1] | ConvertFrom-Json).value
             }
         }
-        Row "nonascii_app_run_$ui" "$value"
+        $naRunValue[$ui] = "$value"
         Require ($value -eq 42) `
             ("CM7: the $ui application at a non-ASCII root answered $value, " +
              'not 42 - this is the CAP-10E claim, and the refusal to look for ' +
              'is `app.pwb REFUSED (bundle file missing)`')
     }
+    Row 'nonascii_build_exit_react'  "$($naBuildExit['react'])"
+    Row 'nonascii_build_exit_pas2js' "$($naBuildExit['pas2js'])"
+    Row 'nonascii_app_run_react'     "$($naRunValue['react'])"
+    Row 'nonascii_app_run_pas2js'    "$($naRunValue['pas2js'])"
     Row 'nonascii_pack_lines' "$naPackTotal"
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $naRoot
     $cmDone = $true

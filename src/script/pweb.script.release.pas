@@ -1580,13 +1580,15 @@ function PWebReleaseDirectory: TFileName;
 begin
   // CAP-10E: the KERNEL's answer for the running image, absolute and
   // independent of the current working directory - the same rule app.pwb
-  // already follows, now through the same code. It replaces
-  // Executable.ProgramFilePath, which mORMot fills from
-  // ExpandFileName(ParamStr(0)) and which therefore mangles a Windows path
-  // outside the active code page; pweb.imagepath's header carries the
-  // measurement. '' propagates as a refusal through AbsoluteDirectory
-  // above, which is where a non-absolute release directory has always
-  // been refused.
+  // already follows, now through the same code. It replaces mORMot's
+  // Executable record, which derives that path through the RTL's Windows
+  // argv and therefore mangles a path outside the active code page; the
+  // measurement lives in pweb.imagepath's own header, and it is spelled
+  // there rather than here on purpose: the CAP-9C1 ambient-input sweep
+  // reads this file as raw text, so naming the retired RTL entry point in
+  // a comment would read as this unit using it. '' propagates as a refusal
+  // through AbsoluteDirectory above, which is where a non-absolute release
+  // directory has always been refused.
   Result := PWebImageDir;
 end;
 

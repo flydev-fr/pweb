@@ -490,7 +490,11 @@ add_row 'layout_recovers_after_negatives' "${ok}" "exit=${host_exit}"
 # the filesystem's normalisation is the variable being measured) and
 # requires the identical verdicts.
 if [ "${os_name}" = 'Darwin' ]; then
-    na_leaf="$(printf 'e\xcc\x81tude cap9c2')"
+    # the .app suffix is kept, because the host's own DARWIN branch resolves
+    # Contents/Resources and the upstream Cocoa code asks NSBundle whether it
+    # is bundled: a relocated tree without it would be a different launch
+    # shape, not the same layout at a different path
+    na_leaf="$(printf 'e\xcc\x81tude cap9c2.app')"
 else
     na_leaf="$(printf '\xc3\xa9tude cap9c2')"
 fi
