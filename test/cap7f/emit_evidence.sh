@@ -1803,10 +1803,23 @@ cap11a_json() {
     # $1 = file, $2 = key. String or number, both shapes, first match wins.
     sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\{0,1\}\([^\",]*\)\"\{0,1\},\{0,1\}.*/\1/p" "$1" | head -n 1
 }
-for f in build/cap11a/structure.json build/cap11a/migration.json          build/cap11a/flakes.json build/cap7f/schema-agreement.json; do
-    [ -f "${f}" ] || { printf 'missing precondition: %s -- the CAP-11A gates must have run in this workspace
-' "${f}" >&2; exit 1; }
-done
+# READ, or RE-EXECUTE - see the PowerShell twin for the reasoning: the twin run
+# puts the OLD single-file workflow and the new structure on one commit on
+# purpose, and the old file has no CAP-11A steps. These gates are checkout-only
+# and take seconds, and one that FAILS here still kills the evidence.
+cap11a_record() {
+    # $1 = record file, $2 = the gate that produces it
+    if [ ! -f "$1" ]; then
+        printf '[CAP-7F] %s absent; re-executing %s
+' "$1" "$2"
+        pwsh -NoProfile -File "$2" >/dev/null || die "$2 FAILED while producing $1"
+        [ -f "$1" ] || die "$2 produced no $1"
+    fi
+}
+cap11a_record build/cap11a/structure.json test/cap11a/check_ci_structure.ps1
+cap11a_record build/cap11a/migration.json test/cap11a/check_migration_map.ps1
+cap11a_record build/cap11a/flakes.json test/cap11a/check_flake_instrumentation.ps1
+cap11a_record build/cap7f/schema-agreement.json test/cap7f/check_schema_agreement.ps1
 ci_file_max_bytes="$(cap11a_json build/cap11a/structure.json ci_file_max_bytes)"
 ci_file_bound_bytes="$(cap11a_json build/cap11a/structure.json ci_file_bound_bytes)"
 ci_legacy_present="$(cap11a_json build/cap11a/structure.json ci_legacy_present | tr '[:upper:]' '[:lower:]')"

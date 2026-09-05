@@ -1265,17 +1265,29 @@ if (-not $runId) { $runId = '<local>' }
 
 # --- CAP-11A: the records the structure, migration, schema and flake gates
 # --- wrote on this job, plus the two facts that are read rather than measured.
-function Read-Cap11aJson([string]$Path) {
+# READ, or RE-EXECUTE. The CAP-11A gates run as their own steps in the one
+# sequence and this normally reads what they wrote - the same discipline as
+# every other row here. But the TWIN RUN puts the OLD single-file workflow and
+# the new structure on one commit on purpose, and the old file has no such
+# steps; an emitter that could only read would make the control leg of the
+# migration proof unrunnable. Re-executing here is the emitter's other ratified
+# source ("either re-executed here ... or read from the verdict record of a gate
+# that ran EARLIER IN THE SAME JOB"), the gates are checkout-only and take
+# seconds, and a gate that FAILS here still kills the evidence.
+function Read-Cap11aJson([string]$Path, [string]$Gate) {
     if (-not (Test-Path -LiteralPath $Path)) {
-        throw ("missing precondition: $Path -- the CAP-11A gates must have run " +
-            'in this workspace before evidence can summarize them')
+        if (-not $Gate) { throw "missing precondition: $Path" }
+        Write-Host "[CAP-7F] $Path absent; re-executing $Gate"
+        & pwsh -NoProfile -File $Gate | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "$Gate FAILED while producing $Path" }
+        if (-not (Test-Path -LiteralPath $Path)) { throw "$Gate produced no $Path" }
     }
     return (Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json)
 }
-$cap11aStructure = Read-Cap11aJson 'build/cap11a/structure.json'
-$cap11aMigration = Read-Cap11aJson 'build/cap11a/migration.json'
-$cap11aFlakes = Read-Cap11aJson 'build/cap11a/flakes.json'
-$cap11aSchema = Read-Cap11aJson 'build/cap7f/schema-agreement.json'
+$cap11aStructure = Read-Cap11aJson 'build/cap11a/structure.json' 'test/cap11a/check_ci_structure.ps1'
+$cap11aMigration = Read-Cap11aJson 'build/cap11a/migration.json' 'test/cap11a/check_migration_map.ps1'
+$cap11aFlakes = Read-Cap11aJson 'build/cap11a/flakes.json' 'test/cap11a/check_flake_instrumentation.ps1'
+$cap11aSchema = Read-Cap11aJson 'build/cap7f/schema-agreement.json' 'test/cap7f/check_schema_agreement.ps1'
 # THE SEQUENCE DIGEST IS OVER THE SOURCE, not over the run: four targets must
 # agree that they were given the same list, and the run-measured half - that
 # they actually EXECUTED the same list - is the aggregate's own gate.
