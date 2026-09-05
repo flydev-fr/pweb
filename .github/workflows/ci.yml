@@ -1107,6 +1107,7 @@ jobs:
             build/cap6/maps-optin.pwb
             build/cap6/minrt.pwb
             build/cap6/limited.pwb
+            build/cap6/nonascii-out.pwb
             build/cap6/release-tampered/app.pwb
             build/cap6/release-proto2/app.pwb
 

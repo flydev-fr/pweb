@@ -361,7 +361,9 @@ $required = @(
     'sdk_absent_manifest_row', 'pack_fixture_baseline', 'pack_link_leg_armed',
     'pack_refusals', 'pack_refusal_count', 'packaging_network_calls',
     'packaging_children_spawned', 'clean_machine_path_has_space',
-    'clean_machine_path_non_ascii', 'clean_machine_react_rpc',
+    'clean_machine_path_non_ascii', 'clean_machine_project_path',
+    'clean_machine_project_has_space', 'clean_machine_project_non_ascii',
+    'clean_machine_react_rpc',
     'clean_machine_pas2js_rpc', 'clean_machine_react_build_exit',
     'clean_machine_pas2js_build_exit', 'clean_machine_completed',
     'checkout_path_in_argv', 'unit_paths_under_sdk', 'checkout_restored',
@@ -820,6 +822,12 @@ $absolutePins = @{
     # rename only demonstrates
     clean_machine_path_has_space       = 'true'
     clean_machine_path_non_ascii       = 'true'
+    # the PROJECT root's shape, beside the SDK root's. Spaced on all four;
+    # `clean_machine_project_non_ascii` is required present but deliberately
+    # NOT compared, because the accent is Windows-only by measurement (the
+    # D2-13 argv defect was the Windows RTL's) and the Windows gate carries
+    # its own Require for it
+    clean_machine_project_has_space    = 'true'
     clean_machine_react_rpc            = '42'
     clean_machine_pas2js_rpc           = '42'
     clean_machine_react_build_exit     = '0'
@@ -1200,7 +1208,9 @@ $equalityFields = @(
     'sdk_absent_manifest_row', 'pack_fixture_baseline', 'pack_link_leg_armed',
     'pack_refusals', 'pack_refusal_count', 'packaging_network_calls',
     'packaging_children_spawned', 'clean_machine_path_has_space',
-    'clean_machine_path_non_ascii', 'clean_machine_react_rpc',
+    'clean_machine_path_non_ascii', 'clean_machine_project_path',
+    'clean_machine_project_has_space', 'clean_machine_project_non_ascii',
+    'clean_machine_react_rpc',
     'clean_machine_pas2js_rpc', 'clean_machine_react_build_exit',
     'clean_machine_pas2js_build_exit', 'clean_machine_completed',
     'checkout_path_in_argv', 'unit_paths_under_sdk', 'checkout_restored',
@@ -1216,8 +1226,12 @@ $equalityFields = @(
     # `unit_paths_seen` and the two sampler rows are timings and counts of a
     # machine; `clean_machine_profile_result` is Windows' three profiles and
     # POSIX's one; `clean_machine_bin_mode` is a POSIX mode plane Windows has
-    # none of; `clean_machine_doctor`, `clean_machine_path` and
-    # `checkout_renamed_aside` are per-run text. What four targets DO agree
+    # none of; `clean_machine_doctor`, `clean_machine_path`,
+    # `clean_machine_project_path` and `checkout_renamed_aside` are per-run
+    # text; `clean_machine_project_non_ascii` is the accent the D2-13
+    # correction closed, which is Windows-only by measurement and is
+    # REQUIRED there by the CAP-10D2 gate's own assertion rather than by a
+    # comparison four machines could not agree on. What four targets DO agree
     # about is `sdk_ship_table_digest` - the DECISION every one of them is
     # resolved from - which is compared above.
     # CAP-10D1, DELIBERATELY ABSENT - forty-four per-family and per-host

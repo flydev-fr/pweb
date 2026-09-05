@@ -15,7 +15,9 @@
 #   8. native compat refusals end-to-end: a crafted protocol-2 bundle
 #      and a minRuntime-above-runtime bundle both refuse with their
 #      typed markers before any WebView exists
-#   9. observational ZIP load benchmark recorded to the step summary
+#   9. a non-ASCII input AND output path packs, and packs to the very
+#      bytes leg 1 produced (ledger D2-13)
+#  10. observational ZIP load benchmark recorded to the step summary
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -226,7 +228,91 @@ if ($r.Out -notmatch 'app\.pwb REFUSED \(runtime below bundle minimum\)') {
 }
 Write-Host 'CAP-6 native compat refusals PASS (protocol 2 + minRuntime 0.2.0, typed markers, no WebView)'
 
-# --- 9) observational ZIP benchmark (no gate) ---
+# --- 9) a non-ASCII path is the CALLER'S, not the code page's (D2-13) ---
+# The bundler used to read its two arguments through the RTL, whose Windows
+# argv is an Ansi conversion of the command line, so a project root carrying
+# a non-ASCII character arrived as `?tude dist` and the `pack` stage of
+# `pweb build` refused a directory that was plainly there. THE ASSERTION IS
+# BYTE EQUALITY rather than merely exit 0: the archive is a function of the
+# logical corpus, so the same dist packed from an accented directory to an
+# accented output must land on exactly the bytes leg 1 produced - which is
+# also how this leg would catch a "fix" that quietly changed the container.
+# The accented literal is COMPOSED with [char]0x00E9 rather than typed, the
+# way the CAP-10D2 clean-machine roots are: a source file's own encoding is
+# then never part of what the gate measures.
+$eacute = [char]0x00E9
+$accDir = "build/cap6/${eacute}tude dist"
+if (Test-Path -LiteralPath $accDir) { Remove-Item -Recurse -Force -LiteralPath $accDir }
+Copy-Item examples/04-react/frontend/dist $accDir -Recurse
+$accOut = "build/cap6/${eacute}tude out.pwb"
+Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath $accOut
+& build/cap6/bin/pwebbundle.exe $accDir $accOut
+if ($LASTEXITCODE -ne 0) { throw 'CAP-6 non-ASCII path build failed' }
+$hAcc = (Get-FileHash -LiteralPath $accOut -Algorithm SHA256).Hash
+if ($hAcc -ne $h1) {
+    throw "CAP-6 non-ASCII path archive drifted: $hAcc vs $h1"
+}
+# the OPTIONS still parse when they follow an accented positional, and the
+# result is compared to leg 4's ASCII-path twin BY BYTES rather than by
+# reading the manifest string back: an option-parse divergence at an
+# accented path then fails here directly
+$accMin = "build/cap6/${eacute}tude minrt.pwb"
+Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath $accMin
+& build/cap6/bin/pwebbundle.exe $accDir $accMin --min-runtime=0.2.0
+if ($LASTEXITCODE -ne 0) { throw 'CAP-6 non-ASCII --min-runtime build failed' }
+$manifest = Get-ZipEntryText $accMin 'manifest.json'
+if ($manifest -cne '{"pweb":{"protocol":1,"minRuntime":"0.2.0"}}') {
+    throw "non-ASCII path stamped the manifest wrong: $manifest"
+}
+$hAccMin = (Get-FileHash -LiteralPath $accMin -Algorithm SHA256).Hash
+$hAsciiMin = (Get-FileHash -LiteralPath build/cap6/minrt.pwb -Algorithm SHA256).Hash
+if ($hAccMin -ne $hAsciiMin) {
+    throw "--min-runtime at an accented path drifted: $hAccMin vs $hAsciiMin"
+}
+# --verify reads its bundle out of argv as well, so it is the same question;
+# the CYCLE COUNT is asserted, not just the exit code, because a --verify
+# that silently ran zero cycles would exit 0 too
+$out = & build/cap6/bin/pwebbundle.exe --verify $accOut 3 2>&1 | Out-String
+if ($LASTEXITCODE -ne 0) { throw "CAP-6 non-ASCII --verify failed: $out" }
+if ($out -notmatch 'verify OK \(3 load\+read cycle\(s\)') {
+    throw "non-ASCII --verify did not report three cycles: $out"
+}
+# and a genuinely ABSENT accented directory must still be refused with its
+# name spelled back correctly.
+#
+# THE TRANSPORT IS PINNED FIRST, and the reason is worth stating: the bundler
+# writes UTF-8 bytes, pwsh decodes a native child's output with
+# [Console]::OutputEncoding, and a runner whose console page cannot represent
+# the character would render a `?` that came from the CONSOLE rather than
+# from argv - which is the opposite of what this leg claims to measure. With
+# the encoding pinned to UTF-8 the only thing left that can put a `?` in that
+# message is the defect itself.
+$accGone = "build/cap6/${eacute}tude absent"
+# stale state from an aborted run would make BOTH assertions below diagnose
+# the wrong thing - a leftover directory packs (so "did not refuse" fires on
+# a correct refusal path) and a leftover gone.pwb fails the "created nothing"
+# check. Leg 4 clears limited.pwb for exactly this reason.
+Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $accGone
+Remove-Item -Force -ErrorAction SilentlyContinue build/cap6/gone.pwb
+$prevEnc = [Console]::OutputEncoding
+try {
+    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+    $out = & build/cap6/bin/pwebbundle.exe $accGone build/cap6/gone.pwb 2>&1 |
+        Out-String -Width 4096
+} finally { [Console]::OutputEncoding = $prevEnc }
+if ($LASTEXITCODE -eq 0) { throw 'an absent dist directory did not refuse' }
+if ($out -notmatch [regex]::Escape("${eacute}tude absent")) {
+    throw "the refusal did not spell the accented path back: $out"
+}
+if (Test-Path build/cap6/gone.pwb) { throw 'refused build left an output' }
+# an ASCII-named copy of the accented archive, so that a byte-equality
+# failure on a hosted runner ships the artifact needed to diagnose it
+# (the CI upload list cannot name a file this leg spells with an accent)
+Copy-Item -LiteralPath $accOut -Destination build/cap6/nonascii-out.pwb -Force
+Write-Host ('CAP-6 non-ASCII argv PASS (byte-identical archive ' +
+    "SHA256 $hAcc; options, --verify and the refusal all read the real path)")
+
+# --- 10) observational ZIP benchmark (no gate) ---
 $iters = 50
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 $out = & build/cap6/bin/pwebbundle.exe --verify build/cap6/app.pwb $iters 2>&1 | Out-String

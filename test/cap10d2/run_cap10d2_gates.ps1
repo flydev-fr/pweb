@@ -671,29 +671,77 @@ try {
     $env:PWEB_MORMOT = $env:PWEB_SDK
     $env:PWEB_TEMPLATES = $env:PWEB_SDK
 
-    # THE PROJECTS LIVE AT A SPACED path, not a non-ASCII one, and the split
-    # is a MEASUREMENT rather than a preference. The brief asks for the SDK to
-    # be extracted to a path with a space and a non-ASCII character, and it
-    # is - `<temp>/<e-acute>tude sdk/`, above. The PROJECT path is the one
-    # CAP-10D0 and CAP-10D1 ratified as spaced, and it stays spaced here for
-    # a reason this leg found: `pwebbundle`, the FROZEN CAP-6 bundler, reads
-    # its argv through the RTL's ANSI conversion on Windows, so a project
-    # root carrying a non-ASCII character reaches it as `?tude apps` and the
-    # `pack` stage fails with `dist directory not found`. That is a real
-    # limitation of a frozen program, it is ledgered with its owner, and it
-    # is not this shard's to fix - but a gate that quietly demanded it would
-    # be measuring CAP-6 rather than the SDK distribution.
+    # THE PROJECTS LIVE AT A SPACED path, and the REACT one on WINDOWS at a
+    # spaced AND non-ASCII path. Every part of that split is a MEASUREMENT
+    # rather than a preference.
+    #
+    # The brief asks for the SDK to be extracted to a path with a space and a
+    # non-ASCII character, and it is - `<temp>/<e-acute>tude sdk/`, above.
+    # THE PROJECT PATH USED TO BE SPACED ONLY, for a reason this leg found:
+    # `pwebbundle`, the frozen CAP-6 bundler, read its argv through the RTL's
+    # Ansi conversion on Windows, so a project root carrying a non-ASCII
+    # character reached it as `?tude apps` and the `pack` stage failed with
+    # `dist directory not found` about a directory that was plainly there
+    # (ledger D2-13). THAT IS FIXED - the bundler asks the kernel for its
+    # command line - so the react project root carries the accent on Windows
+    # and `pack` running there IS the proof. The literal is composed with
+    # [char]0x00E9 rather than typed, exactly as the SDK root above is.
+    #
+    # THE ACCENT STOPS AT THE REACT PROJECT, and the boundary is where the
+    # EVIDENCE stops. The react chain - node, npm, vite, tsc, the bundler and
+    # fpc - was measured end to end at exactly this shape before the accent
+    # was widened here. The pas2js chain was not, and there is a specific
+    # reason to be careful rather than optimistic about it: `pas2js` is
+    # itself an FPC program and may carry the very RTL argv layer this
+    # correction routes around, which no leg anywhere has measured. The
+    # `--profile` builds run on the pas2js project and add `iscc` to that
+    # list. So they stay at the spaced ASCII root CAP-10D0 and CAP-10D1
+    # ratified; widening them is a claim somebody must pay a hosted run to
+    # make, not one to smuggle in beside a bundler fix.
+    #
+    # POSIX KEEPS THE ASCII NAME for both, deliberately: the defect was the
+    # Windows RTL's argv conversion and POSIX never had it (argv there is
+    # bytes the RTL hands over unchanged), while macOS normalises the Unicode
+    # in a filename - so an accented POSIX root would add an OS-normalisation
+    # variable this correction does not own.
     $projRoot = Join-Path $cleanBase 'cap10d2 apps'
-    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $projRoot
-    New-Item -ItemType Directory -Force $projRoot | Out-Null
+    $projRootReact = if ($IsWindows) {
+        Join-Path $cleanBase ([char]0x00E9 + 'tude apps')
+    } else {
+        $projRoot
+    }
+    foreach ($r in (@($projRoot, $projRootReact) | Select-Object -Unique)) {
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $r
+        New-Item -ItemType Directory -Force -Path $r | Out-Null
+    }
+    # RECORDED, and on Windows REQUIRED. The D2-13 closure is sold on the
+    # react project's `pack` stage running at a non-ASCII root; without this
+    # the literal above could be reverted to ASCII and every gate on every
+    # target would stay green while the proof quietly disappeared. The shape
+    # is read back from the path the legs actually use, not from the literal.
+    $reactLeaf = Split-Path -Leaf $projRootReact
+    Row 'clean_machine_project_path' $reactLeaf
+    Row 'clean_machine_project_has_space' (Bool ($reactLeaf -like '* *'))
+    Row 'clean_machine_project_non_ascii' (Bool (
+        ($reactLeaf.ToCharArray() | Where-Object { [int]$_ -gt 127 }).Count -gt 0))
+    Require ($reactLeaf -like '* *') `
+        "CM: the react project root '$reactLeaf' carries no space"
+    if ($IsWindows) {
+        Require (($reactLeaf.ToCharArray() |
+            Where-Object { [int]$_ -gt 127 }).Count -gt 0) `
+            ("CM: the react project root '$reactLeaf' carries no non-ASCII " +
+             'character - the D2-13 closure is measured HERE, and an ASCII ' +
+             'root measures the shape that never failed')
+    }
     $cmdLines = New-Object System.Collections.Generic.List[string]
     $cmDoctorStatus = @{}
     foreach ($ui in 'react', 'pas2js') {
         $name = "demo$ui"
+        $root = if ($ui -eq 'react') { $projRootReact } else { $projRoot }
         $c = CleanCli @('create', $name, '--ui', $ui, '--bundle-id',
-            "com.example.$name") 600000 $projRoot
+            "com.example.$name") 600000 $root
         Require ($c.Code -eq 0) "CM: create --ui $ui exited $($c.Code): $($c.Err)"
-        $proj = Join-Path $projRoot $name
+        $proj = Join-Path $root $name
         # THE DOCTOR, on a REAL project, from the extracted SDK, with the
         # checkout aside. Without a project the graph reports
         # project.descriptor absent and nothing below it, which is a

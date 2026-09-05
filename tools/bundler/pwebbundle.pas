@@ -57,6 +57,100 @@ type
 
 var
   inputs: array of TInputFile;
+  // argv as this program reads it, indexed the way ParamStr indexes it:
+  // [1 .. High] are the arguments. [0] is the image, which this program
+  // never reads - on Windows it is the command line's OWN spelling of the
+  // executable and therefore not necessarily ParamStr(0)'s module path,
+  // so a future caller wanting the image must ask for it, not take [0]
+  args: array of string;
+
+{$ifdef OSWINDOWS}
+// argv from the KERNEL rather than through the RTL's Ansi conversion.
+//
+// MEASURED, and it is the same defect PWebCliImageDir closed one layer in:
+// the RTL's Windows argv is an Ansi conversion of the command line, so
+// `pwebbundle "<a directory whose name carries a non-ASCII character>\dist"`
+// reaches ParamStr as codepage bytes that are then read back as UTF-8 -
+// mORMot sets DefaultSystemCodePage to CP_UTF8 for the whole process - and
+// the pack stage refuses a dist directory that is plainly there.
+// GetCommandLineW answers in UTF-16 and cannot lose a character. It is the
+// only shell32 import here and it PARSES rather than executes: nothing in
+// this program launches anything.
+//
+// TWO CONSEQUENCES, both deliberate. First, the splitting GRAMMAR on Windows
+// is now the C runtime's, which is the grammar PWebCliWindowsCommandLine
+// quotes FOR - so the CLI's own spawns round-trip exactly, where before two
+// different parsers faced one quoter. Second, this is a SECOND COPY of
+// pweb.cli.platform's PWebCliRawArgs, and it has to be: CAP-6 compiles this
+// program against the assets and rpc layers alone, and depending on a
+// tools/pweb unit would be the layering the CAP-6 gate exists to prove.
+function CommandLineToArgvW(lpCmdLine: PWideChar;
+  var pNumArgs: Integer): PPWideChar;
+  stdcall; external 'shell32.dll' name 'CommandLineToArgvW';
+
+procedure ReadArgs;
+var
+  argv, p: PPWideChar;
+  n, i: Integer;
+begin
+  n := 0;
+  argv := CommandLineToArgvW(GetCommandLineW, n);
+  // NO FALLBACK TO ParamStr. The RTL argv is the defect this function
+  // exists to route around, so quietly reverting to it would undo the fix
+  // in the one case nobody watches - and leave the same misleading
+  // "directory not found" behind. If the kernel cannot split its own
+  // command line, this program does not know its arguments and says so.
+  if (argv = nil) or
+     (n <= 0) then
+    raise Exception.CreateFmt(
+      'cannot read the command line (Win32 error %d)', [GetLastError]);
+  try
+    SetLength(args, n);
+    for i := 0 to n - 1 do
+    begin
+      p := argv;
+      Inc(p, i);
+      // the same explicit UTF-16 -> UTF-8 -> TFileName round trip Collect
+      // uses below, and lossless for the same reason
+      args[i] := Utf8ToString(SynUnicodeToUtf8(SynUnicode(WideString(p^))));
+    end;
+  finally
+    LocalFree(HLOCAL(argv));
+  end;
+end;
+{$else}
+procedure ReadArgs;
+var
+  i: PtrInt;
+begin
+  // POSIX argv is BYTES and the RTL hands them over unchanged, so there is
+  // nothing for this program to ask the kernel for
+  SetLength(args, ParamCount + 1);
+  for i := 0 to ParamCount do
+    args[i] := ParamStr(i);
+end;
+{$endif OSWINDOWS}
+
+// ParamCount and ParamStr, exactly - so every call site below reads the way
+// it always did and only the SOURCE of the bytes moved. The clamp and the
+// range check below are unreachable through either ReadArgs (both fill
+// args[0] before any argument) and exist so that a future caller reaching
+// past the end gets '' rather than a range error inside a build tool.
+function ArgCount: Integer;
+begin
+  Result := Length(args) - 1;
+  if Result < 0 then
+    Result := 0;
+end;
+
+function ArgStr(Index: Integer): string;
+begin
+  if (Index < 0) or
+     (Index > High(args)) then
+    Result := ''
+  else
+    Result := args[Index];
+end;
 
 {$ifdef OSWINDOWS}
 // The walk goes straight to the wide Win32 API over explicit UTF-8 <->
@@ -199,16 +293,16 @@ var
   started, elapsed: Int64;
   totalBytes: Int64;
 begin
-  if (ParamCount < 2) or
-     (ParamCount > 3) then
+  if (ArgCount < 2) or
+     (ArgCount > 3) then
   begin
     Usage;
     raise Exception.Create('--verify expects <bundle.pwb> [iterations]');
   end;
-  bundleFile := ExpandFileName(ParamStr(2));
+  bundleFile := ExpandFileName(ArgStr(2));
   iterations := 1;
-  if ParamCount = 3 then
-    iterations := StrToIntDef(ParamStr(3), 0);
+  if ArgCount = 3 then
+    iterations := StrToIntDef(ArgStr(3), 0);
   if iterations < 1 then
     raise Exception.Create('invalid iteration count');
   totalBytes := 0;
@@ -256,9 +350,9 @@ begin
   maxAssetBytes := 0; // writer applies the ratified 32 MiB default
   includeSourcemaps := False;
   positional := 0;
-  for i := 1 to ParamCount do
+  for i := 1 to ArgCount do
   begin
-    arg := ParamStr(i);
+    arg := ArgStr(i);
     if Copy(arg, 1, 2) = '--' then
     begin
       argU := StringToUtf8(arg);
@@ -380,8 +474,9 @@ end;
 begin
   ExitCode := 0;
   try
-    if (ParamCount >= 1) and
-       (ParamStr(1) = '--verify') then
+    ReadArgs;
+    if (ArgCount >= 1) and
+       (ArgStr(1) = '--verify') then
       RunVerify
     else
       RunBuild;

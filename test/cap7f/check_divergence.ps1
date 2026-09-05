@@ -103,12 +103,31 @@ $allow = @{
         fingerprint = '145ed55144e2e7c509bfda6cc19fadc863a58f41f31747f8835c26ec2e5c48c9' }
     'src/assets/pweb.assets.bundle.pas'  = @{ directives = 6;   # I/O mechanism only (ratified)
         fingerprint = '7fc1e97c840d75a47f92771c8880861bc45a757806738932d4e80f39611a68b9' }
-    'tools/bundler/pwebbundle.pas'       = @{ directives = 6;   # Windows wide-API walk (ledgered)
-        fingerprint = '7e329077ac3048bfe7a25495f63fb060ebc782fce0115613120ca7ae51718842' }
+    # RE-RATIFIED at 8 (was 6, fingerprint 7e329077...): the frozen CAP-6
+    # bundler gained ONE region, and it is the argv reader that closes ledger
+    # D2-13. The Windows body asks the kernel for the command line
+    # (GetCommandLineW + CommandLineToArgvW) because the RTL's argv is an Ansi
+    # conversion that turns a non-ASCII project path into `?tude dist`; the
+    # POSIX body is ParamStr, because argv there is bytes the RTL hands over
+    # unchanged. It selects a whole platform body and decides nothing, which is
+    # the rule this allowlist holds every entry to. Its fingerprint therefore no
+    # longer equals pwebqjspack.pas's below - the two files no longer carry the
+    # same directive TEXTS, and that is the fingerprint working as intended.
+    'tools/bundler/pwebbundle.pas'       = @{ directives = 8;   # Windows wide-API walk + kernel argv (ledgered)
+        fingerprint = '63c3fec252f00eb8a911bd1982ce9ce5bd79d2561e8a02a4d52b2de4b1a762ea' }
     'src/script/pweb.script.quickjs.pas' = @{ directives = 4;   # CAP-9A darwin {$L quickjs.o} link + aarch64-darwin pas_* export block (the pin ships no darwin QuickJS support)
         fingerprint = 'dc0f70734b16d12e29ef25343797ab4318cd78d7fa0f7ed2c38a7438bba3f75b' }
     'src/script/pweb.script.release.pas' = @{ directives = 10;  # CAP-9C1: the ONE handle strategy (reparse/O_NOFOLLOW refusal, split as two whole bodies), the absolute-path predicate and the CAP-6 atomic-replace mechanism
         fingerprint = '218a2592aef612d4d6f7fa21de022d015f84a1b1462d7e487520ad9ae5475c19' }
+    # UNCHANGED at 6, and it keeps the value pwebbundle.pas used to share.
+    # SAID PLAINLY, and said accurately: this packager reads its own two paths
+    # through ParamStr too, so it carries the identical latent argv class. It
+    # does NOT ship in the SDK, so no USER path reaches it - but the CAP-9C1
+    # gate hands it an ABSOLUTE staging root derived from $repoRoot, so a
+    # CHECKOUT under a non-ASCII directory would meet it on Windows. That is
+    # CAP-9C1 surface with a supersession of its own, it has its own ledger
+    # entry naming the owner, and doing it here would have widened a
+    # correction the brief scoped to the bundler.
     'tools/quickjs/pwebqjspack.pas'      = @{ directives = 6;   # CAP-9C1: the Windows wide-API source walk (the pwebbundle precedent - the RTL Ansi filesystem layer mistranslates concatenated paths)
         fingerprint = '7e329077ac3048bfe7a25495f63fb060ebc782fce0115613120ca7ae51718842' }
     # CAP-10A: the CLI's platform seam, and the ONLY CLI file with any
