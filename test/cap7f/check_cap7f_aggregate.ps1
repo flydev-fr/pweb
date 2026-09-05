@@ -2052,6 +2052,26 @@ $matrix = [ordered]@{
         shutdown_order                 = $first.shutdown_order
         logical_inventory_sha256_react = $first.logical_inventory_sha256_react
         logical_inventory_sha256_pas2js = $evidence['linux-x86_64'].logical_inventory_sha256_pas2js
+        # CAP-11A: the CI structure the four legs were given, published in the
+        # matrix so the closure record says what shape of pipeline produced it.
+        # These are deliberately NOT part of the twin-run comparison: the twin
+        # exists to prove the split changed nothing that existed BEFORE it, and
+        # comparing the split's own new rows against themselves would prove
+        # nothing at all.
+        ci_sequence_digest             = $first.ci_sequence_digest
+        ci_file_max_bytes              = $first.ci_file_max_bytes
+        ci_file_bound_bytes            = $first.ci_file_bound_bytes
+        ci_legacy_present              = $first.ci_legacy_present
+        retention_policy_digest        = $first.retention_policy_digest
+        ci_timeouts                    = $first.ci_timeouts
+        ci_timeouts_digest             = $first.ci_timeouts_digest
+        ci_twin_run_equal              = $first.ci_twin_run_equal
+        schema_field_count             = $first.schema_field_count
+        upload_model                   = $first.upload_model
+        gate_reads_artifact            = $first.gate_reads_artifact
+        u3_drain_before_measure        = $first.u3_drain_before_measure
+        fetch_retry_bound_s            = $first.fetch_retry_bound_s
+        sdk_own_license                = $first.sdk_own_license
     }
     targets    = [ordered]@{}
 }
