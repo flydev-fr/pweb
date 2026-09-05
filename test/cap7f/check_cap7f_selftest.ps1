@@ -205,6 +205,34 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Set-Location $repoRoot
+# THE FIXTURE MUST BE COMPLETE, OR THERE IS NOTHING TO SELF-TEST.
+#
+# Every leg below perturbs ONE field of a COMPLETE four-target evidence set and
+# requires the aggregator to refuse. On a run where a platform leg went red or
+# was cancelled, the downloaded set is short - and the first leg then died with
+# `Remove-Item ... because it does not exist`, which is an unhelpful sentence in
+# front of a much more useful one: the aggregator's own typed refusal naming
+# WHICH leg is missing and whether it was a gate or an upload.
+#
+# So an incomplete set is announced and skipped rather than thrown on. This does
+# not weaken the gate: the self-test exists to prove the refusals work BEFORE a
+# PASS is allowed, and a run with a missing target cannot produce a PASS - the
+# real aggregation, which runs next, refuses it by name. Measured on hosted run
+# 33996400291, where two legs were cancelled and this file reported a deletion
+# error instead of letting the aggregate speak.
+$missingEv = @()
+foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $p = Join-Path $EvidenceRoot (Join-Path $t 'evidence.json')
+    if (-not (Test-Path -LiteralPath $p)) { $missingEv += $t }
+}
+if ($missingEv.Count -gt 0) {
+    Write-Host ("[CAP-7F] selftest SKIPPED - the evidence set is incomplete (" +
+        "no evidence.json for: $($missingEv -join ', ')). The negative legs " +
+        'perturb a COMPLETE four-target set; with one absent there is no PASS ' +
+        'for them to gate, and the aggregation that follows refuses by name.')
+    exit 0
+}
+
 $evSrc = (Resolve-Path $EvidenceRoot).Path
 $invSrc = (Resolve-Path $MacosInventoryRoot).Path
 $agg = 'test/cap7f/check_cap7f_aggregate.ps1'
