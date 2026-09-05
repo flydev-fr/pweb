@@ -11,10 +11,22 @@ that were kept in step by copying. CAP-11A replaced it with **one sequence** -
 
 Ratified artifacts cite the legacy file by line number and **stay as written**:
 a closed shard records what it measured, and rewriting its citations would be
-rewriting its record. To resolve one, find the line in the *Legacy lines* column
-below - `test/cap11a/ci-legacy-inventory.tsv` carries the same numbers - and read
-across to the new location. The legacy file itself remains readable at any commit
-up to and including the twin-run commit.
+rewriting its record.
+
+**Resolve by STEP NAME, not by line number.** A line number was only ever true
+of the file at the commit that cited it - `ci.yml` grew by ~160 KB across CAP-8
+to CAP-10, so `ci.yml:630` means different things in a CAP-7M0 artifact and in a
+CAP-10D2 one. The step NAME is stable, and it is what this table is keyed on. So:
+
+1. `git show <the citing commit>:.github/workflows/ci.yml` - the file is intact at
+   every commit up to and including the twin-run commit, and every commit before
+   it. Read the cited line there.
+2. Scroll up to that line's `- name:` - that is the step it belongs to.
+3. Find that name in the table below and read across to the new location.
+
+The *Legacy lines* column carries the line numbers as of the twin-run commit, so a
+citation made against that commit resolves directly;
+`test/cap11a/ci-legacy-inventory.tsv` carries the same numbers in machine form.
 
 ## The one ratified restructuring
 
