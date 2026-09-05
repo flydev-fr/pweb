@@ -203,7 +203,9 @@ function Test-Cause {
             Set-Content -LiteralPath (Join-Path $dir 'touched.txt') -Value 'x'
         }
         if ($Script -eq 'true') {
-            $cc = Join-Path $dir 'Default\Code Cache\js'
+            # SEGMENT BY SEGMENT: one string with backslashes is a single
+            # directory NAME on POSIX, not three directories.
+            $cc = Join-Path (Join-Path (Join-Path $dir 'Default') 'Code Cache') 'js'
             New-Item -ItemType Directory -Force $cc | Out-Null
             Set-Content -LiteralPath (Join-Path $cc 'compiled.bin') -Value 'x'
         }

@@ -69,4 +69,55 @@ $new = @'
 Edit-File '.github/actions/guard-no-floating-upstream-ref-in-fetch-build-path/action.yml' `
     $old $new 'the floating-upstream-ref guard sweeps the workflow tree'
 
+# --- 2. the CAP-4 dual-mode GUI smoke -------------------------------------
+# MEASURED DURING THIS SHARD, on the twin run's own control leg: hosted run
+# 33996400159 failed here with `FAIL: page/runtime verdict was not successful
+# (state=0; 0=no report received)` on `assetsapp[folder]`, and `assetsapp[zip]`
+# - the same binary, the same runner, ten seconds later - passed. That is the
+# B1-10/B2-16/D1-15 non-report on a FOURTH driver, which the three ledgered
+# sightings had not reached. The brief named the CAP-5 and CAP-6 smokes because
+# those were the sightings on record; the evidence says this one belongs too,
+# and instrumenting three of four would have left the next person meeting it
+# with the same silence.
+$old4 = @'
+        Copy-Item build/webview-dist/webview.dll build/cap4/example/
+        $env:PWEB_SMOKE_AUTOCLOSE_MS = '8000'
+'@
+$new4 = @'
+        Copy-Item build/webview-dist/webview.dll build/cap4/example/
+        $env:PWEB_SMOKE_AUTOCLOSE_MS = '8000'
+        # CAP-11A: the non-report observer, wrapped so it can never fail this
+        # gate. See test/cap11a/smokeobserve.ps1 for the rule and its limits.
+        $obsLoaded = $false
+        try { . test/cap11a/smokeobserve.ps1; $obsLoaded = $true }
+        catch { Write-Host "[cap11a] observer could not be loaded: $($_.Exception.Message)" }
+'@
+Edit-File '.github/actions/cap-4-dual-mode-runtime-best-effort-local-gate-authoritative/action.yml' `
+    $old4 $new4 'the CAP-4 dual-mode smoke loads the non-report observer'
+
+$old4b = @'
+          $out = & build/cap4/example/assetsapp.exe $mode $target 2>&1 | Out-String
+          $code = $LASTEXITCODE
+'@
+$new4b = @'
+          $obs = $null
+          if ($obsLoaded) {
+            try {
+              $obs = Start-PWebSmokeObserver -ProcessName 'assetsapp' `
+                -OutFile "build/cap4/smoke-observations-$mode.txt" `
+                -UserDataDir (Join-Path $env:APPDATA 'assetsapp.exe')
+            } catch { Write-Host "[cap11a] observer could not start: $($_.Exception.Message)" }
+          }
+          $out = & build/cap4/example/assetsapp.exe $mode $target 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          try {
+            if ($obs) {
+              Stop-PWebSmokeObserver -State $obs -Output $out -ExitCode $code `
+                -AutocloseMs 8000 | Out-Null
+            }
+          } catch { Write-Host "[cap11a] observer error: $($_.Exception.Message)" }
+'@
+Edit-File '.github/actions/cap-4-dual-mode-runtime-best-effort-local-gate-authoritative/action.yml' `
+    $old4b $new4b 'the CAP-4 dual-mode smoke types a non-report cause'
+
 Write-Host '[amend] done'

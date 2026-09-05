@@ -127,7 +127,12 @@ function Stop-PWebSmokeObserver {
                 $profileTouched = if ($after.Count -gt 0) { 'true' } else { 'false' }
                 # Code Cache/js is written when the engine COMPILED JavaScript.
                 # Its presence is the one direct signal that script ran at all.
-                $js = @($after | Where-Object { $_.FullName -match '(?i)Code Cache\\js' })
+                # EITHER SEPARATOR. The observer itself only ever runs on
+                # Windows, but the seeded cases that prove this rule run on all
+                # four legs, and a Windows-only path expression made them fail
+                # on the three POSIX ones for a reason with nothing to do with
+                # the rule they exercise - measured under WSL before a push.
+                $js = @($after | Where-Object { $_.FullName -match '(?i)Code Cache[\\/]js' })
                 $scriptCacheTouched = if ($js.Count -gt 0) { 'true' } else { 'false' }
             } catch { $profileTouched = 'observer_error'; $scriptCacheTouched = 'observer_error' }
         } else {

@@ -37,7 +37,11 @@ $typed = @([regex]::Matches($obs, "\`$cause = '([a-z_]+)'") | ForEach-Object { $
 foreach ($t in $typed) { if ($CAUSES -notcontains $t) { Violation "the observer types an unratified cause '$t'" } }
 Write-Host "[cap11a] FL1 the observer types $($typed.Count) of the 4 ratified causes"
 
-foreach ($d in @('test/cap6/run_cap6_smoke.ps1', 'test/cap5/run_cap5_smokes.ps1')) {
+# THREE DRIVERS, not two. The CAP-4 dual-mode smoke joined the list on evidence
+# rather than on the brief's enumeration: it produced the non-report during this
+# shard's own twin run.
+foreach ($d in @('test/cap6/run_cap6_smoke.ps1', 'test/cap5/run_cap5_smokes.ps1',
+                 '.github/actions/cap-4-dual-mode-runtime-best-effort-local-gate-authoritative/action.yml')) {
     $t = Read-Norm $d
     if ($t -notmatch 'smokeobserve\.ps1') { Violation "$d does not load the observer" }
     if ($t -notmatch 'Start-PWebSmokeObserver') { Violation "$d never starts the observer" }
@@ -53,7 +57,9 @@ foreach ($d in @('test/cap6/run_cap6_smoke.ps1', 'test/cap5/run_cap5_smokes.ps1'
 $nonreportRow = 'not_applicable'
 $smokeObsFiles = @(@('build/cap6/smoke-observations.txt',
                      'build/cap5/smoke-observations-react.txt',
-                     'build/cap5/smoke-observations-pas2js.txt') |
+                     'build/cap5/smoke-observations-pas2js.txt',
+                     'build/cap4/smoke-observations-folder.txt',
+                     'build/cap4/smoke-observations-zip.txt') |
     Where-Object { Test-Path -LiteralPath $_ })
 if ($smokeObsFiles.Count -gt 0) {
     $causes = @()
