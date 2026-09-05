@@ -43,22 +43,37 @@ $PINNED_ACTIONS = @(
     'actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57',
     'ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756'
 )
-$CALLER = '.github/workflows/ci-matrix.yml'
+# TWO STATES, BOTH LEGAL, AND THE GATE READS WHICH ONE IT IS IN.
+#   twin  - the new caller sits beside the legacy monolith on one commit, which
+#           is the migration proof: both structures run, and the aggregate's
+#           compared fields are required byte-identical between the two runs.
+#   final - the monolith is gone and the caller has taken its name.
+# Keying on `ci-matrix.yml` rather than on `ci.yml` is what makes the removal
+# commit a pure file move: nothing here has to be edited for the state to flip,
+# and `ci_legacy_present` tells the evidence which state a run was in.
 $LEG = '.github/workflows/platform-leg.yml'
+$MATRIX_CALLER = '.github/workflows/ci-matrix.yml'
+if (Test-Path -LiteralPath $MATRIX_CALLER) {
+    $CALLER = $MATRIX_CALLER
+    $LEGACY = '.github/workflows/ci.yml'
+} else {
+    $CALLER = '.github/workflows/ci.yml'
+    $LEGACY = ''
+}
 
 function Read-Norm([string]$Path) {
     return ([System.IO.File]::ReadAllText($Path) -replace "`r`n", "`n")
 }
 
-# THE LEGACY MONOLITH IS EXCLUDED FROM THE BOUNDS, and only it. During the twin
-# run BOTH structures are present on one commit on purpose - that is the
-# migration proof - and holding the file being replaced to the bound its
-# replacement exists to meet would make the proof unrunnable. `ci_legacy_present`
-# is recorded in the evidence so "the exclusion is still doing something" is a
-# measurement rather than an assumption; on the final HEAD it reads false.
-$LEGACY = '.github/workflows/ci.yml'
+# THE LEGACY MONOLITH IS EXCLUDED FROM THE BOUNDS, and only it, and only while
+# it exists. During the twin run BOTH structures are present on one commit on
+# purpose - that is the migration proof - and holding the file being replaced to
+# the bound its replacement exists to meet would make the proof unrunnable. On
+# the final HEAD there is nothing to exclude and every file under `.github/` is
+# measured, which `ci_legacy_present = false` records.
 $files = @(Get-ChildItem -Path .github -Recurse -File |
-    Where-Object { $_.FullName.Substring($repoRoot.Length + 1).Replace([char]92, [char]47) -ne $LEGACY } |
+    Where-Object { (-not $LEGACY) -or
+        ($_.FullName.Substring($repoRoot.Length + 1).Replace([char]92, [char]47) -ne $LEGACY) } |
     Sort-Object FullName)
 if ($files.Count -lt 100) { Violation "only $($files.Count) files under .github/ -- the structure is not in place" }
 
@@ -82,8 +97,17 @@ Write-Host "[cap11a] $($files.Count) files under .github/, largest $maxSeen byte
 foreach ($p in @($CALLER, $LEG)) {
     if (-not (Test-Path -LiteralPath $p)) { Violation "missing $p" }
 }
-$legacyPresent = Test-Path -LiteralPath $LEGACY
-Write-Host "[cap11a] legacy ci.yml present: $legacyPresent (expected during the twin run only)"
+$legacyPresent = ([bool]$LEGACY) -and (Test-Path -LiteralPath $LEGACY)
+Write-Host "[cap11a] caller: $CALLER"
+Write-Host "[cap11a] legacy monolith present: $legacyPresent (true only during the twin run)"
+if ($legacyPresent) {
+    # While both structures exist the legacy file must be BYTE-UNTOUCHED, or the
+    # twin run compares the new structure against something this shard edited.
+    $legacyLines = ((Read-Norm $LEGACY) -split "`n").Count
+    if ($legacyLines -ne 5825) {
+        Violation "the legacy monolith is $legacyLines lines, not the 5,825 the twin run compares against"
+    }
+}
 
 # --- 3. concurrency, permissions, triggers on the caller --------------------
 $callerText = Read-Norm $CALLER
