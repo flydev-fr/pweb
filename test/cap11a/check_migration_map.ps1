@@ -62,6 +62,7 @@ foreach ($p in @('test/cap11a/ci-legacy-inventory.tsv', 'test/cap11a/ci-migratio
 $inv = @(Get-Content -LiteralPath 'test/cap11a/ci-legacy-inventory.tsv' | Select-Object -Skip 1 |
     Where-Object { $_.Trim() } | ForEach-Object {
         $c = $_ -split "`t"
+        if ($c.Count -lt 11) { Violation "malformed inventory row: $_"; return }
         [pscustomobject]@{ Job = $c[0]; Ordinal = [int]$c[1]; Name = $c[2]; Shell = $c[3]
                            If = $c[4]; ContinueOnError = $c[5]; Timeout = $c[6]
                            Kind = $c[7]; BodySha = $c[8]; StripSha = $c[9]; Line = $c[10] }
@@ -69,6 +70,7 @@ $inv = @(Get-Content -LiteralPath 'test/cap11a/ci-legacy-inventory.tsv' | Select
 $map = @(Get-Content -LiteralPath 'test/cap11a/ci-migration-map.tsv' | Select-Object -Skip 1 |
     Where-Object { $_.Trim() } | ForEach-Object {
         $c = $_ -split "`t"
+        if ($c.Count -lt 5) { Violation "malformed migration row: $_"; return }
         [pscustomobject]@{ Job = $c[0]; Name = $c[1]; Line = $c[2]; Disposition = $c[3]; Location = $c[4] }
     })
 Write-Host "[cap11a] legacy inventory: $($inv.Count) steps; migration map: $($map.Count) rows"
@@ -95,7 +97,9 @@ $seq = @{}
 for ($k = 0; $k -lt $stepStarts.Count; $k++) {
     $start = $stepStarts[$k][0]
     $end = if ($k + 1 -lt $stepStarts.Count) { $stepStarts[$k + 1][0] } else { $legLines.Count }
-    $body = @($legLines[($start + 1)..($end - 1)])
+    # a step with a name line and no body would reverse the range and hash two
+    # unrelated lines as its body
+    $body = if ($end -gt $start + 1) { @($legLines[($start + 1)..($end - 1)]) } else { @() }
     while ($body.Count -gt 0 -and $body[-1].Trim() -eq '') { $body = $body[0..($body.Count - 2)] }
     $seq[$stepStarts[$k][1]] = [pscustomobject]@{
         Index = $k + 1
@@ -161,8 +165,9 @@ Write-Host "[cap11a] $($AMEND.Count) declared post-migration amendment(s)"
 $amended = 0
 $checked = 0
 foreach ($m in @($map | Where-Object { $_.Disposition -eq 'action' -or $_.Disposition -eq 'inline' })) {
-    $s = @($inv | Where-Object { $_.Job -eq $m.Job -and $_.Name -ceq $m.Name })[0]
-    if (-not $s) { continue }
+    $sArr = @($inv | Where-Object { $_.Job -eq $m.Job -and $_.Name -ceq $m.Name })
+    if ($sArr.Count -eq 0) { continue }
+    $s = $sArr[0]
     $want = $s.StripSha
     $isAmended = $AMEND.ContainsKey("$($m.Job)|$($m.Name)")
     if ($isAmended) { $want = $AMEND["$($m.Job)|$($m.Name)"]; $amended++ }
@@ -215,6 +220,27 @@ if ($uploadRows.Count -ne 103) { Violation "the map folds $($uploadRows.Count) u
 if ($uploadNames.Count -ne 61) { Violation "the map folds $($uploadNames.Count) distinct upload steps, not the 61 the migration recorded" }
 foreach ($c in $spec.PSObject.Properties.Name) {
     if (@($spec.$c).Count -eq 0) { Violation "collection class '$c' collects nothing" }
+}
+# EVERY LEGACY UPLOAD PATH, held to the union. The header has always claimed
+# this; until now it checked only that the classes were non-empty, which is a
+# different and much weaker sentence. `legacy-upload-paths.tsv` is the record
+# the migration made of what each upload declared.
+$lupPath = 'test/cap11a/legacy-upload-paths.tsv'
+if (-not (Test-Path -LiteralPath $lupPath)) {
+    Violation "missing $lupPath -- the legacy upload paths cannot be checked"
+} else {
+    $lup = @(Get-Content -LiteralPath $lupPath | Select-Object -Skip 1 |
+        Where-Object { $_.Trim() } | ForEach-Object { , ($_ -split "`t") })
+    $lost = New-Object System.Collections.Generic.List[string]
+    foreach ($r in $lup) {
+        if ($r.Count -lt 4) { Violation "malformed upload-path row: $($r -join '|')"; continue }
+        if (-not $allPaths.Contains($r[3])) { $lost.Add("$($r[1]) :: $($r[3])") }
+    }
+    if ($lost.Count -gt 0) {
+        Violation ("$($lost.Count) legacy upload path(s) are collected by nothing, e.g. '$($lost[0])'")
+    } else {
+        Write-Host "[cap11a] all $($lup.Count) legacy upload paths survive in the collection union"
+    }
 }
 
 # --- 5. the migration document names every legacy step ----------------------

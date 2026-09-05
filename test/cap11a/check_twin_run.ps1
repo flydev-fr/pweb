@@ -76,15 +76,25 @@ function Get-Matrix([string]$RunId, [string]$Label) {
     if ($LASTEXITCODE -ne 0) { throw "could not download the platform matrix of run $RunId ($Label)" }
     $f = Join-Path $dir 'platform-matrix.json'
     if (-not (Test-Path -LiteralPath $f)) {
-        $f = @(Get-ChildItem -Path $dir -Recurse -File -Filter 'platform-matrix.json')[0].FullName
+        $cand = @(Get-ChildItem -Path $dir -Recurse -File -Filter 'platform-matrix.json')
+        if ($cand.Count -eq 0) { throw "run $RunId ($Label) uploaded no platform-matrix.json" }
+        $f = $cand[0].FullName
     }
-    if (-not $f) { throw "run $RunId ($Label) uploaded no platform-matrix.json" }
     Write-Host "[cap11a] $Label matrix: $f"
     return (Get-Content -Raw -LiteralPath $f | ConvertFrom-Json)
 }
 
 $old = Get-Matrix $OldRunId 'old'
 $new = Get-Matrix $NewRunId 'new'
+# a matrix from a run that predates one of these blocks would throw a
+# property-not-found under StrictMode instead of a named refusal
+foreach ($pair in @(@('old', $old), @('new', $new))) {
+    foreach ($k in 'github_sha', 'agreement', 'targets') {
+        if (-not $pair[1].PSObject.Properties[$k]) {
+            throw "the $($pair[0]) matrix carries no '$k'; it is not a comparable platform matrix"
+        }
+    }
+}
 
 # --- 1. the same commit, or nothing below means anything --------------------
 if ("$($old.github_sha)" -cne "$($new.github_sha)") {
@@ -101,7 +111,15 @@ function ConvertTo-Flat([object]$Obj, [string]$Prefix = '') {
         if ($null -ne $p.Value -and $p.Value -is [System.Management.Automation.PSCustomObject]) {
             foreach ($e in (ConvertTo-Flat $p.Value $k).GetEnumerator()) { $out[$e.Key] = $e.Value }
         } elseif ($null -ne $p.Value -and $p.Value -is [System.Array]) {
-            $out[$k] = ($p.Value -join '|')
+            # ELEMENTS ARE SERIALISED, not stringified. An array of objects
+            # joined with `-join` renders every element as its type name, so two
+            # different arrays would compare equal and a real difference between
+            # the old and new matrices would be invisible to the proof.
+            $out[$k] = (@($p.Value | ForEach-Object {
+                if ($null -ne $_ -and $_ -is [System.Management.Automation.PSCustomObject]) {
+                    ($_ | ConvertTo-Json -Compress -Depth 6)
+                } else { "$_" }
+            }) -join '|')
         } else {
             $out[$k] = "$($p.Value)"
         }
@@ -162,10 +180,16 @@ $record = [ordered]@{
     observations_differing = @($observed)
     violations         = @($failures)
 }
+# THE RECORD IS ONLY COMMITTED WHEN THE PROOF HOLDS. A `twin-run.json` saying
+# `equal: false` in the source tree would be a proof-shaped file that proves the
+# opposite; the failing comparison belongs in the log and in the build tree.
 $json = ($record | ConvertTo-Json -Depth 6)
-[System.IO.File]::WriteAllText((Join-Path $repoRoot 'test/cap11a/twin-run.json'),
-    ($json -replace "`r`n", "`n") + "`n", (New-Object System.Text.UTF8Encoding($false)))
-Write-Host "[cap11a] wrote test/cap11a/twin-run.json (equal=$equal)"
+$dest = if ($equal) { Join-Path $repoRoot 'test/cap11a/twin-run.json' }
+        else { Join-Path $repoRoot 'build/cap11a/twin-run-FAILED.json' }
+New-Item -ItemType Directory -Force (Split-Path -Parent $dest) | Out-Null
+[System.IO.File]::WriteAllText($dest, ($json -replace "`r`n", "`n") + "`n",
+    (New-Object System.Text.UTF8Encoding($false)))
+Write-Host "[cap11a] wrote $dest (equal=$equal)"
 
 if (-not $equal) {
     Write-Host ''

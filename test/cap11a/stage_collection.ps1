@@ -53,6 +53,7 @@ foreach ($cls in $spec.PSObject.Properties.Name) {
     $bytes = 0L
     $files = 0
     $missing = New-Object System.Collections.Generic.List[string]
+    $failedCopies = New-Object System.Collections.Generic.List[string]
     foreach ($p in @($spec.$cls)) {
         $rel = $p.TrimEnd('/', '\')
         # A declared path is a FILE, a DIRECTORY or a GLOB, and the three resolve
@@ -85,9 +86,19 @@ foreach ($cls in $spec.PSObject.Properties.Name) {
             $out = Join-Path $dest $r
             $dir = Split-Path -Parent $out
             if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Force $dir | Out-Null }
-            [System.IO.File]::Copy($full, $out, $true)
-            $bytes += $f.Length
-            $files++
+            # A LOCKED FILE OR AN OVER-LENGTH DESTINATION RECORDS ITSELF AND
+            # MOVES ON. The staging step is the first half of the collection
+            # block, whose whole claim is that it cannot cost a leg its verdict;
+            # a throw here would do precisely that, and for the same MAX_PATH
+            # class CAP-10E just closed - the destination carries a ~30
+            # character prefix over an already deep build path.
+            try {
+                [System.IO.File]::Copy($full, $out, $true)
+                $bytes += $f.Length
+                $files++
+            } catch {
+                $failedCopies.Add("$r :: $($_.Exception.Message)")
+            }
         }
     }
     $totalFiles += $files
@@ -96,9 +107,11 @@ foreach ($cls in $spec.PSObject.Properties.Name) {
         bytes        = $bytes
         paths        = @($spec.$cls).Count
         paths_absent = $missing.Count
+        copy_failed  = $failedCopies.Count
     }
-    Write-Host ("[cap11a] staged {0,-12} files={1,-5} bytes={2,-12} absent_paths={3}" -f
-        $cls, $files, $bytes, $missing.Count)
+    foreach ($fc in ($failedCopies | Select-Object -First 5)) { Write-Host "  copy failed: $fc" }
+    Write-Host ("[cap11a] staged {0,-12} files={1,-5} bytes={2,-12} absent_paths={3} copy_failed={4}" -f
+        $cls, $files, $bytes, $missing.Count, $failedCopies.Count)
 }
 
 New-Item -ItemType Directory -Force (Join-Path $repoRoot 'build/cap11a') | Out-Null

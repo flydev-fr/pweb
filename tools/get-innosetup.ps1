@@ -124,7 +124,7 @@ try {
         # a TRANSPORT fault may be answered, and it refuses a digest mismatch on
         # the first attempt without ever retrying it.
         . (Join-Path $PSScriptRoot 'pwebfetch.ps1')
-        Invoke-PWebFetch -Name 'innosetup' -Url $Lock['url'] -OutFile $Installer `
+        Invoke-PWebFetch -Name 'innosetup' -Url @($Lock['url']) -OutFile $Installer `
             -Sha256 $Lock['sha256'] -Shape 'MZ' -Attempt (New-PWebWebRequestAttempt)
     }
     else {

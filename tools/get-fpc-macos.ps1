@@ -206,26 +206,16 @@ if (-not $Reused) {
         $Text = [Text.Encoding]::ASCII.GetString($Head, 0, $Read)
         return ($Text -notmatch '(?i)<!doctype html|<html')
     }
+    # Three attempts TOTAL, rotating through both mirrors - see the Windows
+    # twin for the arithmetic. The HTML-interstitial check is the helper's
+    # validator, unchanged in what it rejects and typed as transport, so it
+    # retries and falls back exactly as it did.
     $Urls = @($Lock['macos-url'], $Lock['macos-url-fallback']) |
         Where-Object { $_ }
-    $Fetched = $false
-    foreach ($Url in $Urls) {
-        Write-Host "fetching $Url"
-        try {
-            Invoke-PWebFetch -Name 'lazarus-macos' -Url $Url -OutFile $Dmg `
-                -Sha256 $Lock['macos-sha256'] -Validate $NotHtml `
-                -Attempt (New-PWebCurlAttempt)
-            $Fetched = $true
-            break
-        } catch {
-            if ($_.Exception.Message -match 'ratify a new pin deliberately') { throw }
-            Write-Host "fetch from ${Url} failed: $($_.Exception.Message)"
-        }
-    }
-    if (-not $Fetched) {
-        throw ('fpc disk image could not be fetched from any pinned url: ' +
-            ($Urls -join ', '))
-    }
+    Write-Host ("fetching " + ($Urls -join ' | '))
+    Invoke-PWebFetch -Name 'lazarus-macos' -Url $Urls -OutFile $Dmg `
+        -Sha256 $Lock['macos-sha256'] -Validate $NotHtml `
+        -Attempt (New-PWebCurlAttempt)
 }
 
 $Size = (Get-Item -LiteralPath $Dmg).Length

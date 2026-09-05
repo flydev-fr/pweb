@@ -2,7 +2,7 @@
 title: 'CAP-11A — the CI matrix: one step sequence, non-blocking evidence, three flakes instrumented'
 type: 'refactor'
 created: '2026-09-05'
-status: 'in-progress'
+status: 'in-review'
 baseline_commit: 'ed1cb716bc912879ab686828a7b0f2018b875795'
 review_loop_iteration: 0
 context:

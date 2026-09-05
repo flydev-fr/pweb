@@ -155,23 +155,18 @@ if (-not $Reused) {
     # digest disagrees is upstream drift, refused on the spot, never retried and
     # never fallen back from.
     . (Join-Path $PSScriptRoot 'pwebfetch.ps1')
+    # THE ATTEMPT COUNT IS A TOTAL ACROSS BOTH MIRRORS: three attempts rotating
+    # url, fallback, url - nine minutes - rather than three per url, which would
+    # have been eighteen inside a twenty-minute step and left no room for the
+    # install that follows. The MZ shape check moved into the helper unchanged
+    # in what it rejects, and drift still refuses on the spot without trying the
+    # fallback: a mirror serving different bytes is not a network problem.
     $Urls = @($Lock['windows-url'], $Lock['windows-url-fallback']) |
         Where-Object { $_ }
-    $Fetched = $false
-    foreach ($Url in $Urls) {
-        Write-Host "fetching $Url"
-        try {
-            Invoke-PWebFetch -Name 'lazarus-windows' -Url $Url -OutFile $Installer `
-                -Sha256 $Lock['windows-sha256'] -Size $Lock['windows-size'] `
-                -Shape 'MZ' -Attempt (New-PWebCurlAttempt)
-            $Fetched = $true
-            break
-        } catch {
-            if ($_.Exception.Message -match 'ratify a new pin deliberately') { throw }
-            Write-Host "fetch from ${Url} failed: $($_.Exception.Message)"
-        }
-    }
-    if (-not $Fetched) { throw 'could not fetch the pinned Lazarus installer' }
+    Write-Host ("fetching " + ($Urls -join ' | '))
+    Invoke-PWebFetch -Name 'lazarus-windows' -Url $Urls -OutFile $Installer `
+        -Sha256 $Lock['windows-sha256'] -Size $Lock['windows-size'] `
+        -Shape 'MZ' -Attempt (New-PWebCurlAttempt)
 }
 
 $Size = (Get-Item -LiteralPath $Installer).Length

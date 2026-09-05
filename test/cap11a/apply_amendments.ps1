@@ -2,9 +2,11 @@
 #
 # The migration is byte-faithful by construction, which is exactly the problem
 # for a body that POINTED AT the file being replaced: preserving it verbatim
-# would preserve a broken reference. Two such bodies exist, they are declared in
-# `test/cap11a/post-migration-amendments.tsv` with the digest each is allowed to
-# have, and they are applied HERE so that
+# would preserve a broken reference. ONE such body exists - the Windows
+# floating-upstream-ref guard, which named `ci.yml` in its own file list; the
+# Linux and macOS guards never did. It is declared in
+# `test/cap11a/post-migration-amendments.tsv` with the digest it is allowed to
+# have, and it is applied HERE so that
 # `pwsh test/cap11a/migrate_ci.ps1` reproduces the whole new structure in one
 # command - amendments included - and a reviewer can diff the result.
 #
@@ -17,7 +19,12 @@ Set-Location $repoRoot
 
 function Edit-File([string]$Path, [string]$Old, [string]$New, [string]$Note) {
     if (-not (Test-Path -LiteralPath $Path)) { throw "missing amendment target: $Path" }
-    $raw = [System.IO.File]::ReadAllText($Path)
+    # NORMALISED ON BOTH SIDES. This script and its target can be checked out
+    # with different line endings - `.gitattributes` says nothing about `.yml` -
+    # and a CRLF target would make every `Contains` here answer false.
+    $raw = [System.IO.File]::ReadAllText($Path) -replace "`r`n", "`n"
+    $Old = $Old -replace "`r`n", "`n"
+    $New = $New -replace "`r`n", "`n"
     if ($raw.Contains($New)) { Write-Host "[amend] already applied: $Note"; return }
     if (-not $raw.Contains($Old)) { throw "amendment target text not found in ${Path}: $Note" }
     $raw = $raw.Replace($Old, $New)

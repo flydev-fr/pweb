@@ -111,16 +111,42 @@ if (Test-Path -LiteralPath 'build/cap6b4/u3-drain.txt') {
 # ===========================================================================
 # FL3 - the pinned-installer fetch stalls (C3-15)
 # ===========================================================================
-$FETCHERS = @('tools/get-fpc-windows.ps1', 'tools/get-fpc-macos.ps1',
-              'tools/get-innosetup.ps1', 'tools/get-webview2-runtime.ps1',
-              'tools/get-pas2js.ps1')
-foreach ($f in $FETCHERS) {
-    $t = Read-Norm $f
-    if ($t -notmatch 'pwebfetch\.ps1') { Violation "$f does not route its transfer through the bounded helper" }
-    if ($t -notmatch 'Invoke-PWebFetch') { Violation "$f never calls Invoke-PWebFetch" }
-    # the pins themselves must still be read from the lock, never inlined
-    if ($t -match "Sha256 '[0-9a-f]{64}'") { Violation "$f inlines a digest instead of reading the lock" }
+# THE SET IS SWEPT, NOT LISTED, and the sweep is over NAMES rather than over
+# transports - because the whole point of the refactor is that a converted
+# fetcher no longer contains a transport to find. A hand-written list is a list
+# that goes stale: `tools/get-mormot.ps1` sat outside one for this entire shard
+# while the gate cheerfully reported five of five converted.
+#
+# THE RULE: every `tools/get-*.ps1` either routes an HTTP transfer through the
+# bounded helper, or performs no HTTP transfer at all. `get-webview.ps1` is the
+# second kind - it fetches by git at a pinned SHA, which the floating-ref guard
+# covers - and it is refused the moment it grows one.
+$HTTP = 'Invoke-WebRequest|Start-BitsTransfer|System\.Net\.WebClient|curl(\.exe)? -'
+$FETCHERS = @()
+$plain = @()
+foreach ($f in @(Get-ChildItem -Path tools -Filter 'get-*.ps1' -File | Sort-Object Name)) {
+    $rel = 'tools/' + $f.Name
+    $t = Read-Norm $rel
+    # comment lines never count: several scripts explain a transport they no
+    # longer perform
+    $code = (($t -split "`n") | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
+    $usesHelper = ($code -match 'Invoke-PWebFetch')
+    $usesHttp = ($code -match $HTTP)
+    if ($usesHelper) {
+        $FETCHERS += $rel
+        if ($code -notmatch 'pwebfetch\.ps1') { Violation "$rel calls the helper without loading it" }
+        if ($code -match "Sha256 '[0-9a-f]{64}'") { Violation "$rel inlines a digest instead of reading the lock" }
+    } elseif ($usesHttp) {
+        Violation "$rel performs an HTTP transfer outside the bounded helper"
+    } else {
+        $plain += $rel
+    }
 }
+if ($FETCHERS.Count -ne 6) {
+    Violation ("the sweep found $($FETCHERS.Count) helper-routed fetchers under tools/, not the six ratified: " +
+        ($FETCHERS -join ', '))
+}
+Write-Host "[cap11a] FL3 $($FETCHERS.Count) helper-routed fetcher(s); $($plain.Count) with no HTTP transfer [$($plain -join ', ')]"
 $helper = Read-Norm 'tools/pwebfetch.ps1'
 if ($helper -notmatch '\$PWEB_FETCH_ATTEMPTS = 3') { Violation 'the ratified attempt count moved' }
 if ($helper -notmatch '\$PWEB_FETCH_BOUND_SECONDS = 180') { Violation 'the ratified per-attempt bound moved' }

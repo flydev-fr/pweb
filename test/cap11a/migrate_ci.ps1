@@ -296,13 +296,32 @@ function Get-Applicability([string[]]$Targets) {
 # 4. emit the composite actions and collect the sequence entries
 # ---------------------------------------------------------------------------
 $actionsRoot = Join-Path $OutRoot '.github/actions'
-if (Test-Path -LiteralPath $actionsRoot) { Remove-Item -Recurse -Force $actionsRoot }
+# THE TARGET IS VALIDATED BEFORE THE DELETE, because `-OutRoot` is a parameter
+# and this is a recursive force-remove. The repository's standing rule: a
+# generated script never carries an unguarded `rm -rf` whose target came from
+# outside it.
+if (Test-Path -LiteralPath $actionsRoot) {
+    $resolved = (Resolve-Path -LiteralPath $actionsRoot).Path
+    $allowed = (Join-Path $repoRoot '.github')
+    if (-not $resolved.StartsWith($allowed, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "refusing to delete '$resolved': it is outside '$allowed'"
+    }
+    Remove-Item -Recurse -Force $resolved
+}
 
 $seq = New-Object System.Collections.Generic.List[object]
 $map = New-Object System.Collections.Generic.List[string]
 $map.Add("legacy_job`tlegacy_name`tlegacy_line`tdisposition`tnew_location")
 $applic = New-Object System.Collections.Generic.List[string]
-$applic.Add("ordinal`tname`tapplies_to")
+# THE FOURTH COLUMN IS WHY THE GATE IS NOT WRONG ABOUT ITS OWN COLLECTION
+# BLOCK. `applies_to` says which TARGETS a step is written for; it cannot say
+# whether a step that is written for all four actually RUNS. A retry attempt
+# guarded on `steps.<previous>.outcome == 'failure'` is skipped on every leg of
+# a healthy run, and demanding that its observed set EQUAL its declared set
+# would turn every green run red. So each row also records whether the step is
+# `unconditional` - it runs on every target it applies to - or `conditional`,
+# where the observed set need only be a SUBSET of the declared one.
+$applic.Add("ordinal`tname`tapplies_to`tconditionality")
 
 $uploadSteps = New-Object System.Collections.Generic.List[object]
 $ordinal = 0
@@ -326,8 +345,27 @@ foreach ($name in $merged) {
     $timeout = $null
     if ($timeouts.Count -gt 0) {
         $timeout = ($timeouts | ForEach-Object { [int]$_ } | Measure-Object -Minimum).Minimum
+        # A step whose legs disagreed about its budget now runs everywhere at
+        # the TIGHTEST one - never the loosest, because a migration may not
+        # lengthen a bound. That is a real change to what one leg is allowed,
+        # so it is announced rather than absorbed.
+        $distinct = @($timeouts | Sort-Object -Unique)
+        if ($distinct.Count -gt 1) {
+            Write-Host ("[migrate] TIGHTENED: '$name' had budgets [" + ($distinct -join ', ') +
+                "] across its legs; the sequence gives it $timeout")
+        }
     }
 
+    # THE SAME REFUSAL THE INLINE PATH ALREADY HAS. `if:` and
+    # `continue-on-error:` are read from the first target that declares the
+    # step; if two legs disagreed about either, taking one and discarding the
+    # other would silently change what runs on a leg.
+    foreach ($k in 'If', 'ContinueOnError') {
+        $vals = @($targets | ForEach-Object { "$($m[$_].$k)" } | Sort-Object -Unique)
+        if ($vals.Count -gt 1) {
+            throw ("step '$name' declares different ${k}: [" + ($vals -join ' | ') + ']')
+        }
+    }
     $entry = [pscustomobject]@{
         Ordinal   = $ordinal
         Name      = $name
@@ -431,37 +469,54 @@ function Get-ArtifactName([object]$Step) {
     throw "upload step '$($Step.Name)' declares no artifact name"
 }
 function Get-ArtifactPaths([object]$Step) {
-    $out = @(); $inPath = $false
+    $out = @(); $inPath = $false; $seenKey = $false
     foreach ($l in $Step.NormBody) {
-        if ($l -match '^\s*path:\s*\|\s*$') { $inPath = $true; continue }
+        if ($l -match '^\s*path:\s*\|\s*$') { $inPath = $true; $seenKey = $true; continue }
+        # the single-line form: `path: build/foo`. No upload step uses it today
+        # (all 103 use the block form, measured), and a future one that did
+        # would otherwise contribute NOTHING to the collection and be missed by
+        # nobody.
+        if (-not $inPath -and $l -match '^\s*path:\s*(\S.*)$') {
+            $out += $Matches[1].Trim(); $seenKey = $true; continue
+        }
         if ($inPath) {
             if ($l.Trim() -eq '') { continue }
             if ($l -notmatch '^\s{2,}') { break }
             $out += $l.Trim()
         }
     }
+    if (-not $seenKey) { throw "upload step '$($Step.Name)' declares no path" }
+    if ($out.Count -eq 0) { throw "upload step '$($Step.Name)' declares an empty path set" }
     return $out
 }
 $classPaths = [ordered]@{ evidence = @(); release = @(); dist = @(); records = @(); diagnostics = @() }
+# EVERY LEGACY UPLOAD PATH, recorded per step. The union alone cannot answer
+# "did anything stop being collected"; this can, and `check_migration_map.ps1`
+# holds the union to it forever after the legacy file is gone.
+$uploadPaths = New-Object System.Collections.Generic.List[string]
+$uploadPaths.Add("legacy_job`tlegacy_step`tclass`tpath")
 $classIfNoFiles = @{ evidence = 'error'; release = 'error'; dist = 'warn'; records = 'warn'; diagnostics = 'ignore' }
 foreach ($s in $uploadSteps) {
     $an = Get-ArtifactName $s
     $cls = 'records'
-    if ($s.If -eq 'failure()') { $cls = 'diagnostics' }
+    if ($s.If -match 'failure\(\)') { $cls = 'diagnostics' }
     else {
         foreach ($k in $CLASS_OF.Keys) { if ($an.StartsWith($k)) { $cls = $CLASS_OF[$k]; break } }
     }
-    $classPaths[$cls] += Get-ArtifactPaths $s
+    $stepPaths = Get-ArtifactPaths $s
+    $classPaths[$cls] += $stepPaths
+    foreach ($sp in $stepPaths) { $uploadPaths.Add(($s.Job, $s.Name, $cls, $sp) -join "`t") }
     $map.Add(($s.Job, $s.Name, $s.Line, "collection:$cls", "leg-$cls-`${target}") -join "`t")
 }
 foreach ($k in @($classPaths.Keys)) {
     $classPaths[$k] = @($classPaths[$k] | Sort-Object -Unique)
 }
 Write-Host ('[migrate] collection classes: ' + (($classPaths.Keys | ForEach-Object { "$_=$($classPaths[$_].Count) paths" }) -join ' '))
-$classPaths | ConvertTo-Json -Depth 4 |
-    Set-Content -NoNewline -Encoding utf8 (Join-Path $OutRoot 'test/cap11a/collection-paths.json')
+Write-TextLf (Join-Path $OutRoot 'test/cap11a/collection-paths.json') `
+    (($classPaths | ConvertTo-Json -Depth 4) + "`n")
 
 Write-TextLf (Join-Path $OutRoot 'test/cap11a/ci-migration-map.tsv') (($map -join "`n") + "`n")
+Write-TextLf (Join-Path $OutRoot 'test/cap11a/legacy-upload-paths.tsv') (($uploadPaths -join "`n") + "`n")
 
 # ---------------------------------------------------------------------------
 # 6. the sequence file
@@ -538,7 +593,9 @@ $CAP11A_GATES = @(
     @{ Name = 'CAP-11A bounded fetch retry - seeded transport, digest and exhaustion cases'
        Script = 'test/cap11a/check_pwebfetch.ps1'; Timeout = 5 },
     @{ Name = 'CAP-11A flake instrumentation (non-report cause, U3 drain order, fetch rows)'
-       Script = 'test/cap11a/check_flake_instrumentation.ps1'; Timeout = 5 }
+       Script = 'test/cap11a/check_flake_instrumentation.ps1'; Timeout = 5 },
+    @{ Name = 'CAP-11A seeded cases - the sequence gate and the non-report cause rule'
+       Script = 'test/cap11a/check_cap11a_cases.ps1'; Timeout = 10 }
 )
 $gatesEmitted = $false
 $emitted = New-Object System.Collections.Generic.List[object]
@@ -546,7 +603,7 @@ $emitted = New-Object System.Collections.Generic.List[object]
 foreach ($e in $seq) {
     if (-not $gatesEmitted -and $e.Name.StartsWith('CAP-7F emit the')) {
         foreach ($g in $CAP11A_GATES) {
-            $emitted.Add(@{ Name = $g.Name; Applies = ($PLATFORMS -join ',') })
+            $emitted.Add(@{ Name = $g.Name; Applies = ($PLATFORMS -join ','); Cond = 'unconditional' })
             $w.Add("      - name: $($g.Name)")
             $w.Add("        timeout-minutes: $($g.Timeout)")
             $w.Add('        shell: pwsh')
@@ -557,7 +614,10 @@ foreach ($e in $seq) {
         }
         $gatesEmitted = $true
     }
-    $emitted.Add(@{ Name = $e.Name; Applies = ($e.Targets -join ',') })
+    # a migrated step's own `if:` is `always()` where it has one at all, so it
+    # runs whenever its target applies; anything else would be conditional
+    $emitted.Add(@{ Name = $e.Name; Applies = ($e.Targets -join ',')
+                    Cond = if ($e.If -and $e.If -ne 'always()') { 'conditional' } else { 'unconditional' } })
     if ($e.Inline -and $e.Lead.Count -gt 0) {
         foreach ($l in (Add-Indent (Remove-CommonIndent $e.Lead) 6)) { $w.Add($l) }
     }
@@ -565,7 +625,13 @@ foreach ($e in $seq) {
     $conds = @()
     if ($e.If) { $conds += $e.If }
     if ($e.Applies) { $conds += $e.Applies }
-    if ($conds.Count -gt 0) { $w.Add("        if: `${{ $($conds -join ' && ') }}") }
+    # EACH CONJUNCT PARENTHESISED. `a && b || c` binds as `(a && b) || c`, so a
+    # step with its own `if:` and a two-target applicability would silently
+    # ignore the first for the second target.
+    if ($conds.Count -eq 1) { $w.Add("        if: `${{ $($conds[0]) }}") }
+    elseif ($conds.Count -gt 1) {
+        $w.Add("        if: `${{ " + (($conds | ForEach-Object { "($_)" }) -join ' && ') + ' }}')
+    }
     if ($e.Timeout) { $w.Add("        timeout-minutes: $($e.Timeout)") }
     if ($e.ContinueOnError) { $w.Add("        continue-on-error: $($e.ContinueOnError)") }
     if ($e.Inline) {
@@ -594,9 +660,10 @@ $w.Add('      # one before it failed, and none of them can fail the leg. The typ
 $w.Add('      # step then writes what actually happened, so "leg green, evidence not')
 $w.Add('      # uploaded" is a state the aggregate can name instead of a leg that')
 $w.Add('      # merely lost thirty steps.')
-$emitted.Add(@{ Name = 'CAP-11A stage the collection and measure it'; Applies = ($PLATFORMS -join ',') })
+$emitted.Add(@{ Name = 'CAP-11A stage the collection and measure it'; Applies = ($PLATFORMS -join ','); Cond = 'unconditional' })
 $w.Add('      - name: CAP-11A stage the collection and measure it')
 $w.Add('        if: always()')
+$w.Add('        continue-on-error: true')
 $w.Add('        timeout-minutes: 10')
 $w.Add('        shell: pwsh')
 $w.Add('        run: |')
@@ -610,7 +677,10 @@ foreach ($cls in @('evidence', 'records', 'release', 'dist', 'diagnostics')) {
         $id = "collect_${cls}_$a"
         $cond = if ($cls -eq 'diagnostics') { 'failure()' } else { 'always()' }
         if ($a -gt 1) { $cond = "always() && steps.collect_${cls}_$($a - 1).outcome == 'failure'" }
-        if ($cls -eq 'release') { $cond = "$cond && (inputs.target == 'macos-x64' || inputs.target == 'macos-arm64')" }
+        # PARENTHESISED. `a && b || c` binds as `(a && b) || c`, which happens
+        # to evaluate correctly here and reads as a bug; the release class is
+        # the only condition in the file that needs the grouping.
+        if ($cls -eq 'release') { $cond = "($cond) && (inputs.target == 'macos-x64' || inputs.target == 'macos-arm64')" }
         $w.Add("      - name: CAP-11A collect the leg $cls (attempt $a of $n)")
         $w.Add("        id: $id")
         $w.Add("        if: `${{ $cond }}")
@@ -625,16 +695,23 @@ foreach ($cls in @('evidence', 'records', 'release', 'dist', 'diagnostics')) {
         $w.Add("          path: build/cap11a/collect/$cls")
         $w.Add('')
         $applies = if ($cls -eq 'release') { 'macos-x64,macos-arm64' } else { ($PLATFORMS -join ',') }
-        $emitted.Add(@{ Name = "CAP-11A collect the leg $cls (attempt $a of $n)"; Applies = $applies })
+        # attempt 1 of a non-diagnostics class always runs; every later attempt
+        # runs only when the one before it failed, and the diagnostics class
+        # only when the leg did
+        $cond = if ($a -gt 1 -or $cls -eq 'diagnostics') { 'conditional' } else { 'unconditional' }
+        $emitted.Add(@{ Name = "CAP-11A collect the leg $cls (attempt $a of $n)"; Applies = $applies; Cond = $cond })
     }
 }
-$w.Add('      # NEVER fails the leg: a leg that passed its gates and could not reach the')
+$w.Add('      # NEVER fails the leg - and neither can the staging step above it.')
+$w.Add('      # `continue-on-error` on BOTH is the difference between a typed')
+$w.Add('      # infrastructure state and a green leg turned red by a locked file: a')
 $w.Add('      # artifact service is green with `evidence_uploaded=false`, and the')
 $w.Add('      # aggregate refuses while NAMING it infrastructure. A leg that failed a')
 $w.Add('      # gate is red for that gate, which is a different sentence.')
-$emitted.Add(@{ Name = 'CAP-11A type the collection outcome'; Applies = ($PLATFORMS -join ',') })
+$emitted.Add(@{ Name = 'CAP-11A type the collection outcome'; Applies = ($PLATFORMS -join ','); Cond = 'unconditional' })
 $w.Add('      - name: CAP-11A type the collection outcome')
 $w.Add('        if: always()')
+$w.Add('        continue-on-error: true')
 $w.Add('        timeout-minutes: 5')
 $w.Add('        shell: pwsh')
 $w.Add('        env:')
@@ -655,7 +732,7 @@ if ($dupes.Count -gt 0) {
     throw ("duplicate step name(s) in the sequence: " + (($dupes | ForEach-Object { $_.Name }) -join '; '))
 }
 $n2 = 0
-foreach ($e in $emitted) { $n2++; $applic.Add(($n2, $e.Name, $e.Applies) -join "`t") }
+foreach ($e in $emitted) { $n2++; $applic.Add(($n2, $e.Name, $e.Applies, $e.Cond) -join "`t") }
 Write-TextLf (Join-Path $OutRoot 'test/cap11a/step-applicability.tsv') (($applic -join "`n") + "`n")
 Write-Host "[migrate] wrote ci-migration-map.tsv ($($map.Count - 1) rows) and step-applicability.tsv ($($applic.Count - 1) rows)"
 
@@ -669,9 +746,13 @@ $d.Add('')
 $d.Add('`.github/workflows/ci.yml` was one file of 271,637 bytes and 5,824 lines')
 $d.Add('carrying six jobs, and the four platform jobs declared 155, 92, 99 and 99 steps')
 $d.Add('that were kept in step by copying. CAP-11A replaced it with **one sequence** -')
-$d.Add('`.github/workflows/platform-leg.yml`, called four times from')
-$d.Add('`.github/workflows/ci.yml` - and **one composite action per step** under')
-$d.Add('`.github/actions/`. This table says where each legacy step went.')
+$d.Add('`.github/workflows/platform-leg.yml`, called four times from the caller -')
+$d.Add('and **one composite action per step** under `.github/actions/`. This table')
+$d.Add('says where each legacy step went.')
+$d.Add('')
+$d.Add('The caller is `ci-matrix.yml` on the twin-run commit, where both')
+$d.Add('structures exist on purpose, and `ci.yml` from the removal commit onward,')
+$d.Add('where it takes the name the file it replaced used to have.')
 $d.Add('')
 $d.Add('## How to resolve a `ci.yml:<line>` citation')
 $d.Add('')
@@ -704,6 +785,14 @@ $d.Add('`33955241980` cost the macos-x64 leg about thirty later steps and two ca
 $d.Add('verdicts. Their declared paths are unioned per class into the collection block at')
 $d.Add('the end of the leg, and `test/cap11a/collection-paths.json` is that union.')
 $d.Add('')
+$d.Add('**One consequence is stated rather than absorbed.** A legacy upload')
+$d.Add('declared its own `if-no-files-found`, and several records-class steps')
+$d.Add('declared `error`. The collection block has one setting per CLASS, and a')
+$d.Add('class is a union across four targets - so `error` there would fail a leg')
+$d.Add('for a file only one platform produces. The records class is therefore')
+$d.Add('`warn`. The class whose absence forfeits a verdict, `evidence`, keeps')
+$d.Add('`error`, and the aggregator refuses a missing target regardless.')
+$d.Add('')
 $d.Add('| legacy artifact | class | now inside |')
 $d.Add('|---|---|---|')
 $seenArt = @{}
@@ -734,11 +823,11 @@ foreach ($name in $merged) {
 $d.Add('')
 $d.Add('## The two consumer jobs')
 $d.Add('')
-$d.Add('`macos-release-inventory` and `cap7-aggregate` moved from `ci.yml` into')
-$d.Add('`.github/workflows/ci.yml` (the caller) unchanged in what they check. Both now')
-$d.Add('read the per-leg collection artifacts rather than the per-shard ones, and the')
-$d.Add('aggregate gained `test/cap11a/check_ci_sequence.ps1`, which measures the premise')
-$d.Add('the whole comparison rests on: that the four legs ran the same step sequence.')
+$d.Add('`macos-release-inventory` and `cap7-aggregate` moved from the legacy file')
+$d.Add('into the caller, unchanged in what they check. Both now read the per-leg')
+$d.Add('collection artifacts rather than the per-shard ones, and the aggregate')
+$d.Add('gained `test/cap11a/check_ci_sequence.ps1`, which measures the premise the')
+$d.Add('whole comparison rests on: that the four legs ran the same step sequence.')
 Write-TextLf (Join-Path $OutRoot 'docs/ci-migration.md') (($d -join "`n") + "`n")
 Write-Host "[migrate] wrote docs/ci-migration.md ($($d.Count) lines)"
 

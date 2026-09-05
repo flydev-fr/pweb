@@ -22,19 +22,23 @@ $env:PWEB_SMOKE_AUTOCLOSE_MS = '8000'
 # WHICH of three things happened. The observer watches from outside the process
 # and types a cause afterwards; the run below is byte-unchanged, and an observer
 # that fails records `observer_error` instead of touching this gate's verdict.
-. (Join-Path $PSScriptRoot '..\cap11a\smokeobserve.ps1')
-$observer = Start-PWebSmokeObserver -ProcessName 'releaseapp' `
-    -OutFile 'build/cap6/smoke-observations.txt' `
-    -UserDataDir (Join-Path $env:APPDATA 'releaseapp.exe')
+$observer = $null
+try {
+    . (Join-Path $PSScriptRoot '..\cap11a\smokeobserve.ps1')
+    $observer = Start-PWebSmokeObserver -ProcessName 'releaseapp' `
+        -OutFile 'build/cap6/smoke-observations.txt' `
+        -UserDataDir (Join-Path $env:APPDATA 'releaseapp.exe')
+} catch { Write-Host "[cap11a] observer could not start: $($_.Exception.Message)" }
 Push-Location ([System.IO.Path]::GetTempPath())  # unrelated CWD
 try {
     $out = & $exe 2>&1 | Out-String
     $code = $LASTEXITCODE
 } finally { Pop-Location }
-$observed = $null
 try {
-    $observed = Stop-PWebSmokeObserver -State $observer -Output $out -ExitCode $code `
-        -AutocloseMs 8000
+    if ($observer) {
+        Stop-PWebSmokeObserver -State $observer -Output $out -ExitCode $code `
+            -AutocloseMs 8000 | Out-Null
+    }
 } catch { Write-Host "[cap11a] observer error: $($_.Exception.Message)" }
 Write-Host $out
 $out | Out-File -Encoding utf8 build/cap6/smoke-release.log

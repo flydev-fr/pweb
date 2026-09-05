@@ -34,7 +34,9 @@ function Start-PWebSmokeObserver {
         [Parameter(Mandatory = $true)][string]$ProcessName,   # e.g. 'releaseapp'
         [Parameter(Mandatory = $true)][string]$OutFile,
         [string]$UserDataDir = '',                            # WebView2 profile, if known
-        [int]$PollMs = 250
+        [int]$PollMs = 250,
+        # bounded by the caller's own step budget rather than by a constant
+        [int]$DeadlineSeconds = 600
     )
     $dir = Split-Path -Parent $OutFile
     if ($dir -and -not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Force $dir | Out-Null }
@@ -52,7 +54,6 @@ function Start-PWebSmokeObserver {
     try {
         $state.Job = Start-Job -ScriptBlock {
             param($ProcName, $Out, $Poll, $Base, $Deadline)
-            $rows = New-Object System.Collections.Generic.List[string]
             $t0 = [DateTime]::UtcNow
             $seenHost = $false
             while ([DateTime]::UtcNow -lt $Deadline) {
@@ -67,12 +68,16 @@ function Start-PWebSmokeObserver {
                     }
                 } catch { $host_n = -1 }
                 try { $wv2 = @(Get-Process -Name 'msedgewebview2' -ErrorAction SilentlyContinue).Count } catch { $wv2 = -1 }
-                $rows.Add("t=$ms host=$host_n wv2=$wv2 wv2_delta=$($wv2 - $Base) title=`"$title`"")
+                # STREAMED, not accumulated. `Stop-PWebSmokeObserver` waits five
+                # seconds and then stops the job; a list returned only as the
+                # last statement would be discarded whole, and `samples=0` types
+                # every cause `undetermined` - the instrumentation reporting
+                # nothing about the flake it was built for.
+                Write-Output "t=$ms host=$host_n wv2=$wv2 wv2_delta=$($wv2 - $Base) title=`"$title`""
                 if ($seenHost -and $host_n -eq 0) { break }
                 Start-Sleep -Milliseconds $Poll
             }
-            $rows
-        } -ArgumentList $ProcessName, $OutFile, $PollMs, $baseline, ([DateTime]::UtcNow.AddMinutes(10))
+        } -ArgumentList $ProcessName, $OutFile, $PollMs, $baseline, ([DateTime]::UtcNow.AddSeconds($DeadlineSeconds))
     } catch {
         $state.Error = $_.Exception.Message
     }
@@ -84,10 +89,18 @@ function Stop-PWebSmokeObserver {
         [Parameter(Mandatory = $true)][object]$State,
         [string]$Output = '',
         [int]$ExitCode = 0,
-        [int]$AutocloseMs = 0
+        [int]$AutocloseMs = 0,
+        # A TESTABILITY SEAM, and the reason it is here rather than in a test
+        # double: the cause rule below is the thing a seeded case must exercise,
+        # and it reads the samples. Supplying them directly lets
+        # `check_cap11a_cases.ps1` drive every branch through THIS code rather
+        # than through a copy of it - the difference between testing the rule
+        # and testing a paraphrase of the rule.
+        [string[]]$Samples = $null
     )
     $rows = @()
-    if ($State.Job) {
+    if ($null -ne $Samples) { $rows = @($Samples) }
+    elseif ($State.Job) {
         try {
             Wait-Job -Job $State.Job -Timeout 5 | Out-Null
             Stop-Job -Job $State.Job -ErrorAction SilentlyContinue

@@ -528,22 +528,32 @@ try {
         }
         if ($null -ne $r) {
             foreach ($d in $r.Diagnostics) { $lines.Add("drain row=$Row $d") }
-            $remaining = @($r.Remaining | ForEach-Object {
+            $remaining = @(@($r.Remaining) | ForEach-Object {
                 $rid = 0; $rimg = ''
                 try { $rid = [int]$_.ProcessId } catch { $rid = 0 }
                 try { $rimg = [string]$_.ExecutablePath } catch { $rimg = '' }
                 "pid=$rid image=$rimg"
             })
-            if ($r.Remaining.Count -gt 0) { $outcome = 'still_holding' }
+            if (@($r.Remaining).Count -gt 0) { $outcome = 'still_holding' }
             $lines.Add(("drain row=$Row sweeps=$($r.Sweeps) graceful=$($r.GracefulExit) " +
                 "terminated=$($r.Killed.Count) killed_pids=[$($r.Killed -join ',')] " +
                 "remaining=$($r.Remaining.Count) [$($remaining -join '; ')] outcome=$outcome"))
         }
         foreach ($l in $lines) { Write-Host $l }
         Add-Content -LiteralPath $DrainReport -Value $lines
+        # IT REPORTS; IT DOES NOT REFUSE. D1-16 asked for one thing - "have U3
+        # report the drain it observed before it measures the directory" - and
+        # refusing here would do something else: it would let an instrumentation
+        # added by THIS shard turn a CAP-6b4 row that used to pass into one that
+        # fails, which is exactly the rule CAP-10E applied when it moved its own
+        # E4 leg ("a gate added by one shard may not raise the failure rate of a
+        # gate belonging to another"). The drain has already killed what it
+        # could; if something still holds the tree, the uninstaller runs and the
+        # existing residue measure decides - now with a row above it saying what
+        # was holding what.
         if ($outcome -eq 'still_holding') {
-            throw ("${Row}: processes still hold $InstallDir after the drain; " +
-                'the uninstaller was NOT run - what it would test is not uninstall cleanup')
+            Write-Host ("##[warning]${Row}: processes still hold $InstallDir after the drain; " +
+                'the uninstall proceeds and the residue measure decides')
         }
     }
 

@@ -77,7 +77,14 @@ foreach ($cls in $CLASSES) {
         $cls, $attempts, $MAX_ATTEMPTS, $files, $bytes, $outcome)
 }
 
-$status = if ($uploaded) { 'ok' } elseif ($anyInfrastructure) { 'infrastructure' } else { 'ok' }
+# THREE STATES, because two were not enough. `infrastructure` means the
+# EVIDENCE never arrived, which is what forfeits a verdict; `partial` means some
+# other class did not, which costs a human a download and nobody a gate; `ok`
+# means everything landed. Collapsing the middle one into `ok` would have let a
+# lost SDK archive go unnamed anywhere.
+$status = if (-not $uploaded) { 'infrastructure' }
+          elseif ($anyInfrastructure) { 'partial' }
+          else { 'ok' }
 $out = [ordered]@{
     schema            = 1
     target            = $Target

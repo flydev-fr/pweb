@@ -3,9 +3,13 @@
 `.github/workflows/ci.yml` was one file of 271,637 bytes and 5,824 lines
 carrying six jobs, and the four platform jobs declared 155, 92, 99 and 99 steps
 that were kept in step by copying. CAP-11A replaced it with **one sequence** -
-`.github/workflows/platform-leg.yml`, called four times from
-`.github/workflows/ci.yml` - and **one composite action per step** under
-`.github/actions/`. This table says where each legacy step went.
+`.github/workflows/platform-leg.yml`, called four times from the caller -
+and **one composite action per step** under `.github/actions/`. This table
+says where each legacy step went.
+
+The caller is `ci-matrix.yml` on the twin-run commit, where both
+structures exist on purpose, and `ci.yml` from the removal commit onward,
+where it takes the name the file it replaced used to have.
 
 ## How to resolve a `ci.yml:<line>` citation
 
@@ -37,6 +41,14 @@ do not enter the sequence: an upload between two gates is how hosted run
 `33955241980` cost the macos-x64 leg about thirty later steps and two capability
 verdicts. Their declared paths are unioned per class into the collection block at
 the end of the leg, and `test/cap11a/collection-paths.json` is that union.
+
+**One consequence is stated rather than absorbed.** A legacy upload
+declared its own `if-no-files-found`, and several records-class steps
+declared `error`. The collection block has one setting per CLASS, and a
+class is a union across four targets - so `error` there would fail a leg
+for a file only one platform produces. The records class is therefore
+`warn`. The class whose absence forfeits a verdict, `evidence`, keeps
+`error`, and the aggregator refuses a missing target regardless.
 
 | legacy artifact | class | now inside |
 |---|---|---|
@@ -387,8 +399,8 @@ the end of the leg, and `test/cap11a/collection-paths.json` is that union.
 
 ## The two consumer jobs
 
-`macos-release-inventory` and `cap7-aggregate` moved from `ci.yml` into
-`.github/workflows/ci.yml` (the caller) unchanged in what they check. Both now
-read the per-leg collection artifacts rather than the per-shard ones, and the
-aggregate gained `test/cap11a/check_ci_sequence.ps1`, which measures the premise
-the whole comparison rests on: that the four legs ran the same step sequence.
+`macos-release-inventory` and `cap7-aggregate` moved from the legacy file
+into the caller, unchanged in what they check. Both now read the per-leg
+collection artifacts rather than the per-shard ones, and the aggregate
+gained `test/cap11a/check_ci_sequence.ps1`, which measures the premise the
+whole comparison rests on: that the four legs ran the same step sequence.

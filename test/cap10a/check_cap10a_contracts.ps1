@@ -125,10 +125,22 @@ $nodeMin = Read-PascalConst $toolchain 'PWEB_CLI_NODE_MIN'
 # composite action of whichever step installs Node, so the search is over the
 # tree. An empty enumeration is a violation for the reason every guard in this
 # repository states: a search that found nothing must fail, not pass.
-$nodePinFiles = @(Get-ChildItem -Path '.github' -Recurse -File -Include '*.yml' |
-    ForEach-Object { $_.FullName })
-if ($nodePinFiles.Count -lt 1) {
-    Violation 'no workflow or action files found under .github/'
+# BOTH SPELLINGS, and a floor far below the real count so a half-checked-out
+# tree refuses instead of passing on an empty search.
+$nodePinFiles = @(Get-ChildItem -Path '.github' -Recurse -File |
+    Where-Object { $_.Extension -in @('.yml', '.yaml') } | ForEach-Object { $_.FullName })
+if ($nodePinFiles.Count -lt 50) {
+    Violation "only $($nodePinFiles.Count) workflow/action files found under .github/"
+}
+# AND THE PIN MUST SIT WHERE NODE IS INSTALLED. The legacy assertion read one
+# file, which made that true by construction; a tree-wide search would other-
+# wise be satisfied by a `node-version:` in any unrelated file.
+$setupNodeFiles = @($nodePinFiles | Where-Object {
+    ([System.IO.File]::ReadAllText($_)) -match 'actions/setup-node@' })
+$pinnedBesideSetup = @($setupNodeFiles | Where-Object {
+    ([System.IO.File]::ReadAllText($_)) -match '(?m)^\s*node-version:\s*[0-9]+\.[0-9]+\.[0-9]+\s*$' })
+if ($pinnedBesideSetup.Count -lt 1) {
+    Violation 'no node-version pin sits in a file that installs Node'
 }
 $nodePins = @(Select-String -Path $nodePinFiles `
     -Pattern '^\s*node-version:\s*([0-9]+\.[0-9]+\.[0-9]+)\s*$')

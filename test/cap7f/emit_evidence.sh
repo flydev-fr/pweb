@@ -1841,8 +1841,11 @@ fetch_retry_max_attempts="$(cap11a_json build/cap11a/flakes.json fetch_retry_max
 fetch_retry_bound_s="$(cap11a_json build/cap11a/flakes.json fetch_retry_bound_s)"
 # THE SEQUENCE DIGEST IS OVER THE SOURCE - four targets must agree they were
 # given the same list; that they EXECUTED it is the aggregate's own gate.
-ci_sequence_digest="$(tail -n +2 test/cap11a/step-applicability.tsv |
-    awk -F'	' 'NF>1 {print $2}' > "${work}/ci-sequence.txt"; file_sha "${work}/ci-sequence.txt")"
+[ -s test/cap11a/step-applicability.tsv ] ||
+    die 'test/cap11a/step-applicability.tsv is missing or empty; the sequence digest would be a digest of nothing'
+tail -n +2 test/cap11a/step-applicability.tsv | awk -F'	' 'NF>1 {print $2}' > "${work}/ci-sequence.txt"
+[ -s "${work}/ci-sequence.txt" ] || die 'the step-applicability table yielded no step names'
+ci_sequence_digest="$(file_sha "${work}/ci-sequence.txt")"
 # The twin-run record exists only once the migration has been PROVEN equal; on
 # the twin commit itself it does not, and `pending` is the honest word for it.
 ci_twin_run_equal='pending'

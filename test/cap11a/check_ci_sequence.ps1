@@ -26,10 +26,21 @@
 # aggregator, and the run's step outcomes are the one channel it cannot take
 # away. `build/cap11a/sequence.json` is what the aggregator then reads to tell
 # "leg green, evidence not uploaded" from "leg red".
+# THREE MODES, and the split is this shard's own rule applied to itself.
+# Reading the run's step record is a GitHub API call, and a gate that throws on
+# an API hiccup would forfeit the whole CAP-7F aggregation for an infrastructure
+# fault - which is precisely the pattern ledger D2-13 was written against. So:
+#   Read  - fetch and write build/cap11a/sequence.json; never fails. Runs BEFORE
+#           the aggregate, which needs the record to type an absent artifact.
+#   Gate  - read that record and refuse on divergence. Runs AFTER the aggregate,
+#           so a real divergence still turns the job red while an unreachable
+#           API costs nobody a verdict.
+#   Full  - both, for the seeded cases and for a local run.
 param(
     [Parameter(Mandatory = $true)][string]$Repository,
     [Parameter(Mandatory = $true)][string]$RunId,
-    [string]$JobsJson = ''
+    [string]$JobsJson = '',
+    [ValidateSet('Full', 'Read', 'Gate')][string]$Mode = 'Full'
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -41,13 +52,66 @@ $TARGETS = @('windows', 'linux', 'macos-x64', 'macos-arm64')
 $failures = New-Object System.Collections.Generic.List[string]
 function Fail([string]$m) { $script:failures.Add($m); Write-Host "SEQUENCE FAIL: $m" }
 
+# --- GATE: the verdict on what the Read pass already measured ---------------
+# It does no API call and no analysis of its own; the whole point of the split
+# is that this half cannot be stopped by an unreachable network.
+if ($Mode -eq 'Gate') {
+    $rec = 'build/cap11a/sequence.json'
+    if (-not (Test-Path -LiteralPath $rec)) {
+        Write-Host 'SEQUENCE FAIL: no run step record was produced; the premise is unmeasured'
+        exit 1
+    }
+    $r = Get-Content -Raw -LiteralPath $rec | ConvertFrom-Json
+    if ($r.PSObject.Properties['api_error'] -and $r.api_error) {
+        Write-Host 'SEQUENCE FAIL: the run step record could not be read from the API; the premise is unmeasured'
+        exit 1
+    }
+    $f = @($r.failures)
+    if ($f.Count -gt 0) {
+        foreach ($x in $f) { Write-Host "SEQUENCE FAIL: $x" }
+        Write-Host ''
+        Write-Host "CAP-11A SEQUENCE FAILED ($($f.Count) disagreement(s))"
+        exit 1
+    }
+    Write-Host "CAP11A_SEQUENCE_PASS steps=$($r.step_count) digest=$($r.ci_sequence_digest)"
+    exit 0
+}
+
 # --- the run's jobs ---------------------------------------------------------
 if ($JobsJson) {
     if (-not (Test-Path -LiteralPath $JobsJson)) { throw "missing -JobsJson file: $JobsJson" }
     $payload = Get-Content -Raw -LiteralPath $JobsJson | ConvertFrom-Json
 } else {
-    $raw = & gh api "repos/$Repository/actions/runs/$RunId/jobs?per_page=100" --paginate 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "gh api failed reading the run's jobs: $raw" }
+    # stderr stays OUT of $raw: a `gh` warning folded into the payload would
+    # break the parse for a reason that has nothing to do with the run.
+    # THREE BOUNDED TRIES, because this is a network call standing in front of a
+    # verdict and the shard's own rule is that infrastructure must not forfeit
+    # one.
+    $errFile = [System.IO.Path]::GetTempFileName()
+    $raw = $null
+    try {
+        for ($try = 1; $try -le 3; $try++) {
+            $raw = & gh api "repos/$Repository/actions/runs/$RunId/jobs?per_page=100" --paginate 2>$errFile
+            if ($LASTEXITCODE -eq 0) { break }
+            Write-Host "[cap11a] gh api attempt $try/3 failed: $(Get-Content -Raw -LiteralPath $errFile)"
+            $raw = $null
+            if ($try -lt 3) { Start-Sleep -Seconds (5 * $try) }
+        }
+    } finally { Remove-Item -Force -ErrorAction SilentlyContinue $errFile }
+    if ($null -eq $raw) {
+        New-Item -ItemType Directory -Force build/cap11a | Out-Null
+        $rec = [ordered]@{ schema = 1; run_id = $RunId; repository = $Repository
+                           api_error = $true; collection = [ordered]@{}; failures = @() }
+        [System.IO.File]::WriteAllText((Join-Path $repoRoot 'build/cap11a/sequence.json'),
+            (($rec | ConvertTo-Json -Depth 8) -replace "`r`n", "`n") + "`n",
+            (New-Object System.Text.UTF8Encoding($false)))
+        if ($Mode -eq 'Read') {
+            # infrastructure, and it says so. The Gate pass refuses later.
+            Write-Host '##[warning]CAP-11A: the run step record could not be read; the sequence is unmeasured'
+            exit 0
+        }
+        throw "gh api failed reading the run's jobs after three attempts"
+    }
     # --paginate concatenates one JSON document per page
     $docs = @(($raw -join "`n") -split '(?<=\})\s*(?=\{"total_count")' | Where-Object { $_.Trim() })
     $jobs = @()
@@ -70,7 +134,10 @@ function Get-LegJob([string]$Target) {
     if ($hit.Count -eq 1) { return $hit[0] }
     if ($hit.Count -eq 0) { return $null }
     # a re-run inside the same run yields several attempts; take the last
-    return @($hit | Sort-Object { [int]$_.id })[-1]
+    # [long], not [int]: this repository's own job ids are already past
+    # Int32 (101358272728 on run 33983841968), and the cast would throw on
+    # exactly the re-run case this branch exists for.
+    return @($hit | Sort-Object { [long]$_.id })[-1]
 }
 
 # --- extract the authored sequences ----------------------------------------
@@ -103,7 +170,17 @@ foreach ($t in $TARGETS) {
         $t, $j.id, $j.conclusion, $legs[$t].Steps.Count)
 }
 if ($failures.Count -gt 0) {
+    # THE RECORD IS STILL WRITTEN. The aggregate reads it to type an absent
+    # artifact, and "one leg never started" is exactly a case it needs to type.
+    New-Item -ItemType Directory -Force build/cap11a | Out-Null
+    $rec = [ordered]@{ schema = 1; run_id = $RunId; repository = $Repository
+                       ci_sequence_digest = ''; step_count = 0; steps = @()
+                       collection = [ordered]@{}; failures = @($failures) }
+    [System.IO.File]::WriteAllText((Join-Path $repoRoot 'build/cap11a/sequence.json'),
+        (($rec | ConvertTo-Json -Depth 8) -replace "`r`n", "`n") + "`n",
+        (New-Object System.Text.UTF8Encoding($false)))
     Write-Host 'SEQUENCE REFUSED: a target has no job; nothing below can be measured'
+    if ($Mode -eq 'Read') { exit 0 }
     exit 1
 }
 
@@ -142,12 +219,14 @@ if ($failures.Count -eq 0) {
 $tsv = Join-Path $PSScriptRoot 'step-applicability.tsv'
 if (-not (Test-Path -LiteralPath $tsv)) { throw "missing $tsv -- the declared per-step platform applicability" }
 $declared = [ordered]@{}
+$conditional = [ordered]@{}
 $rows = @(Get-Content -LiteralPath $tsv | Select-Object -Skip 1)
 foreach ($r in $rows) {
     if (-not $r.Trim()) { continue }
     $p = $r -split "`t"
-    if ($p.Count -lt 3) { continue }
+    if ($p.Count -lt 4) { Fail "malformed applicability row: $r"; continue }
     $declared[$p[1]] = @($p[2] -split ',')
+    $conditional[$p[1]] = ($p[3] -eq 'conditional')
 }
 Write-Host "[cap11a] declared applicability for $($declared.Count) steps"
 
@@ -155,7 +234,7 @@ $observed = [ordered]@{}
 foreach ($t in $TARGETS) {
     foreach ($s in $legs[$t].Steps) {
         if (-not $observed.Contains($s.Name)) { $observed[$s.Name] = New-Object System.Collections.Generic.List[string] }
-        if ($s.Conclusion -ne 'skipped') { $observed[$s.Name].Add($t) }
+        if ($s.Conclusion -notin @('skipped', 'cancelled')) { $observed[$s.Name].Add($t) }
     }
 }
 # A leg that went RED stops early, so every step after the failure reports
@@ -165,8 +244,16 @@ foreach ($t in $TARGETS) {
 # The test cannot be "did the last step run": the collection block is
 # `if: always()`, so its steps run on a red leg too and the last step's
 # conclusion says nothing about whether the gates in front of it did.
+# CANCELLED counts too: a leg that hit its job backstop reports `cancelled`,
+# not `failure`, and its later steps never ran for a reason that has nothing to
+# do with applicability.
 $complete = @($TARGETS | Where-Object {
-    @($legs[$_].Steps | Where-Object { $_.Conclusion -eq 'failure' }).Count -eq 0 })
+    @($legs[$_].Steps | Where-Object { $_.Conclusion -in @('failure', 'cancelled') }).Count -eq 0 })
+if ($complete.Count -eq 0) {
+    # Every comparison below would reduce to '' against '' and pass while
+    # measuring nothing. A gate that cannot measure says so.
+    Fail 'no leg ran to completion; applicability is unmeasurable on this run'
+}
 
 Write-Host "[cap11a] legs held to the declared applicability: [$($complete -join ',')]"
 
@@ -179,13 +266,26 @@ foreach ($n in $observed.Keys) {
     $got = @($TARGETS | Where-Object { $observed[$n] -contains $_ })
     $expC = @($exp | Where-Object { $complete -contains $_ })
     $gotC = @($got | Where-Object { $complete -contains $_ })
-    if (($expC -join ',') -cne ($gotC -join ',')) {
+    if ($conditional[$n]) {
+        # A CONDITIONAL step runs only when its own predicate is true - a retry
+        # attempt after a failed one, a diagnostics upload after a red leg - so
+        # on a healthy run it is skipped everywhere. What must hold is that it
+        # never runs on a target it was not written for; demanding equality here
+        # would turn every green run red, which is the one thing a gate over
+        # green runs must not do.
+        $extra = @($gotC | Where-Object { $expC -notcontains $_ })
+        if ($extra.Count -gt 0) {
+            Fail "conditional step '$n' ran on [$($extra -join ',')], which it does not apply to"
+        }
+    } elseif (($expC -join ',') -cne ($gotC -join ',')) {
         Fail "step '$n' applicability: declared [$($expC -join ',')] observed [$($gotC -join ',')]"
     }
 }
 foreach ($n in $declared.Keys) {
     if (-not $observed.Contains($n)) { Fail "declared step '$n' is absent from every leg's run" }
 }
+Write-Host ("[cap11a] applicability: $(@($conditional.Values | Where-Object { $_ }).Count) conditional " +
+    "of $($declared.Count) steps")
 
 # --- 3. NO STEP DISAPPEARED OR REORDERED, measured from the run -------------
 # The source-level proof is `check_migration_map.ps1`; this is the same claim
@@ -214,7 +314,7 @@ foreach ($t in $TARGETS) {
         Write-Host "[cap11a] $t did not run to completion; its legacy order is not checked"
         continue
     }
-    $ran = @($legs[$t].Steps | Where-Object { $_.Conclusion -ne 'skipped' } | ForEach-Object { $_.Name })
+    $ran = @($legs[$t].Steps | Where-Object { $_.Conclusion -notin @('skipped', 'cancelled') } | ForEach-Object { $_.Name })
     $i = 0
     $missing = New-Object System.Collections.Generic.List[string]
     foreach ($n in $legacy[$t]) {
@@ -289,6 +389,12 @@ if ($env:GITHUB_STEP_SUMMARY) {
     ($l -join "`n") | Out-File -Append $env:GITHUB_STEP_SUMMARY
 }
 
+if ($Mode -eq 'Read') {
+    # the record is written; the refusal belongs to the Gate pass, which runs
+    # after the aggregation it must not be able to forfeit
+    Write-Host "CAP11A_SEQUENCE_READ steps=$($ref.Count) failures=$($failures.Count)"
+    exit 0
+}
 if ($failures.Count -gt 0) {
     Write-Host ''
     Write-Host "CAP-11A SEQUENCE FAILED ($($failures.Count) disagreement(s))"

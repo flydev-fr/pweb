@@ -237,8 +237,19 @@ function Copy-Wv2Payload {
         # are untouched - and the helper refuses a digest mismatch on the first
         # attempt rather than retrying it.
         . (Join-Path $PSScriptRoot 'pwebfetch.ps1')
-        Invoke-PWebFetch -Name "wv2-$($Art.name)" -Url $Art.url -OutFile $OutFile `
-            -Sha256 $Art.sha256 -Attempt (New-PWebWebRequestAttempt)
+        # A SHAPE, derived from the artifact's own filename. Without one, an
+        # HTML interstitial from the Evergreen endpoint - the exact flake class
+        # this instruments - arrives intact, fails the digest and is typed
+        # DRIFT: refused on the first attempt and never retried, which is the
+        # opposite of what a transport fault deserves.
+        $shape = switch -Wildcard ($Art.filename) {
+            '*.exe' { 'MZ' }
+            '*.cab' { 'MSCF' }
+            '*.zip' { 'PK' }
+            default { '' }
+        }
+        Invoke-PWebFetch -Name "wv2-$($Art.name)" -Url @($Art.url) -OutFile $OutFile `
+            -Sha256 $Art.sha256 -Shape $shape -Attempt (New-PWebWebRequestAttempt)
     }
     elseif ($AllowLocalSource) {
         if (-not (Test-Path -LiteralPath $Art.url)) {

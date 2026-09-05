@@ -224,18 +224,18 @@ jobs:
           # `build/cap7f/selftest/ev/*/evidence.json`. Comparing a fixture to
           # three real targets is the kind of quiet wrongness that would read as
           # a real disagreement.
+          # EVERYTHING the evidence class carries, not a hand-listed subset.
+          # The legacy job downloaded the whole `cap7f-evidence-<target>`
+          # artifact straight into `ev/<target>/`, and the aggregator reads more
+          # than three names from it - `manifest-pas2js.txt` on linux among them.
+          # A list here would be a fourth place the evidence schema lives.
           for t in windows linux macos-x64 macos-arm64; do
             mkdir -p "ev/${t}"
-            for f in evidence.json host-args.json manifest-react.txt; do
-              exact="evraw/leg-evidence-${t}/build/cap7f/${f}"
-              if [ -f "${exact}" ]; then
-                cp "${exact}" "ev/${t}/${f}"
-              else
-                src="$(find "evraw/leg-evidence-${t}" -type f -path '*/build/cap7f/'"${f}" 2>/dev/null | head -n 1 || true)"
-                if [ -n "${src:-}" ]; then cp "${src}" "ev/${t}/${f}"; fi
-              fi
-            done
-            echo "ev/${t}: $(ls -1 "ev/${t}" | wc -l) file(s)"
+            src="evraw/leg-evidence-${t}/build/cap7f"
+            if [ -d "${src}" ]; then
+              find "${src}" -maxdepth 1 -type f -exec cp {} "ev/${t}/" \;
+            fi
+            echo "ev/${t}: $(ls -1 "ev/${t}" 2>/dev/null | wc -l) file(s)"
           done
           for side in x64 arm64; do
             mkdir -p "inv/${side}"
@@ -252,21 +252,24 @@ jobs:
             done
           done
 
-      # THE PREMISE, MEASURED. Reads this run's own jobs from the API and
-      # requires the four legs' step-name sequences to be identical AND each
-      # step's observed run-set to equal its declared applicability. The second
-      # half is what stops the gate being vacuous: name equality is by
-      # construction now, but an `if:` that silently stopped matching would let a
-      # Windows gate skip everywhere and nothing else would notice.
-      - name: CAP-11A the four legs ran the same sequence (from the run itself)
+      # THE PREMISE, MEASURED - IN TWO HALVES, and the split is this shard's own
+      # rule applied to itself. READING the run's step record is a GitHub API
+      # call; a gate that threw on an API hiccup would forfeit the whole CAP-7F
+      # aggregation for an infrastructure fault, which is exactly the pattern
+      # ledger D2-13 was written against. So the read is non-blocking and runs
+      # FIRST (the aggregate needs the record to type an absent artifact), and
+      # the VERDICT runs last, where a real divergence still turns the job red
+      # and an unreachable API costs nobody a verdict.
+      - name: CAP-11A read this run's own step record
+        if: always()
+        continue-on-error: true
         shell: pwsh
         timeout-minutes: 5
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          pwsh -NoProfile -File test/cap11a/check_ci_sequence.ps1 `
+          pwsh -NoProfile -File test/cap11a/check_ci_sequence.ps1 -Mode Read `
             -Repository '${{ github.repository }}' -RunId '${{ github.run_id }}'
-          if ($LASTEXITCODE -ne 0) { throw 'CAP-11A sequence equality FAILED' }
 
       - name: CAP-7F divergence sweep over the production surface (checkout only)
         shell: pwsh
@@ -290,6 +293,17 @@ jobs:
         run: |
           pwsh -NoProfile -File test/cap7f/check_cap7f_aggregate.ps1 -EvidenceRoot ev -MacosInventoryRoot inv
           if ($LASTEXITCODE -ne 0) { throw 'CAP-7F aggregation FAILED' }
+
+      # THE VERDICT HALF: no API call, no analysis of its own - just the
+      # refusal on what the read pass measured. It runs AFTER the aggregation so
+      # that a divergence is still red and an unreachable API is not.
+      - name: CAP-11A the four legs ran the same sequence (from the run itself)
+        shell: pwsh
+        timeout-minutes: 2
+        run: |
+          pwsh -NoProfile -File test/cap11a/check_ci_sequence.ps1 -Mode Gate `
+            -Repository '${{ github.repository }}' -RunId '${{ github.run_id }}'
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-11A sequence equality FAILED' }
 
       # ERROR, not ignore: the matrix IS this job's deliverable - a green
       # aggregate that uploaded no matrix is the shape of a proof nobody

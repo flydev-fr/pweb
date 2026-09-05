@@ -153,7 +153,7 @@ Write-Host "fetching $($Lock[$UrlKey])"
 # on the first attempt and never retried, because a changed upstream is a human
 # decision and not something a retry may smooth over.
 . (Join-Path $PSScriptRoot 'pwebfetch.ps1')
-Invoke-PWebFetch -Name 'pas2js' -Url $Lock[$UrlKey] -OutFile $Zip `
+Invoke-PWebFetch -Name 'pas2js' -Url @($Lock[$UrlKey]) -OutFile $Zip `
     -Sha256 $Lock[$ShaKey] -Shape 'PK' -Attempt (New-PWebWebRequestAttempt)
 
 $Actual = (Get-FileHash -Algorithm SHA256 -Path $Zip).Hash.ToLowerInvariant()

@@ -100,7 +100,14 @@ else {
     if (Test-Path $StaticDir) { Remove-Item -Recurse -Force $StaticDir }
     $Tgz = Join-Path $DepsDir 'mormot2static.tgz'
     Write-Host "downloading statics archive $StaticsUrl"
-    Invoke-WebRequest -Uri $StaticsUrl -OutFile $Tgz
+    # CAP-11A: the LAST raw transfer under tools/, and the one on the weakest
+    # budget - `Fetch pinned mORMot2` runs on all four targets and declares no
+    # `timeout-minutes` at all, so a stall here was bounded only by the job
+    # ceiling. Same helper, same rules: three bounded attempts with a row each,
+    # sha256 after every attempt, and a mismatch refused on the spot.
+    . (Join-Path $PSScriptRoot 'pwebfetch.ps1')
+    Invoke-PWebFetch -Name 'mormot2-statics' -Url @($StaticsUrl) -OutFile $Tgz `
+        -Sha256 $StaticsSha -Attempt (New-PWebWebRequestAttempt)
     $Got = (Get-FileHash -Algorithm SHA256 $Tgz).Hash.ToLowerInvariant()
     if ($Got -ne $StaticsSha) {
         Remove-Item -Force $Tgz

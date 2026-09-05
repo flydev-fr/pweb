@@ -1,196 +1,197 @@
-ordinal	name	applies_to
-1	Checkout (full history for freeze diff against baseline)	windows
-2	Checkout	linux,macos-x64,macos-arm64
-3	Guard - no floating upstream ref in the Linux build/gate path	linux
-4	Install the ratified WebKitGTK stack and FPC (distro packages)	linux
-5	Assert the toolchain and the ratified engine family	linux
-6	Guard - no floating upstream ref in the macOS build/gate path	macos-x64,macos-arm64
-7	CAP-7M0 record the runner (M19)	macos-x64,macos-arm64
-8	Fetch pinned webview/webview (exact SHA, checksum verified)	windows,linux,macos-x64,macos-arm64
-9	CAP-4W - exact Windows patch apply, restore and reapply	windows
-10	Fetch pinned mORMot2 (exact SHA + sha256-pinned statics)	windows,linux,macos-x64,macos-arm64
-11	Guard - no floating upstream ref in fetch/build path	windows
-12	Install FPC (pinned Lazarus 3.4 installer, sha256-verified)	windows
-13	Assert FPC 3.2.2	windows
-14	MSVC environment	windows
-15	CAP-3U - FPC 3.2.2 Win64 CallMethod unwind and Currency ABI	windows
-16	Build webview.dll from pinned source (cmake + MSVC)	windows
-17	CAP-4W - public DLL ABI remains exactly 17 exports	windows
-18	CAP-4W - headless loader boundary and compile resource probe	windows
-19	CAP-4W - custom-scheme runtime (best effort, local gate authoritative)	windows
-20	Compile binding units (FPC, ObjFPC mode)	windows
-21	Compile CAP-2 units (scheduler proven webview-free)	windows
-22	Compile CAP-4 asset units (stores webview-free, handler rpc-free)	windows
-23	CAP-4 zero-HTTP asset-serving source proof	windows
-24	Signature pin (compile-only gate over all 17 prototypes)	windows
-25	ABI probe - Pascal side (committed binding)	windows
-26	ABI probe - C side (pinned headers, MSVC)	windows
-27	ABI probe - compare (any diff is a blocker)	windows
-28	PWeb test suite (mormot.core.test)	windows
-29	Binding surface + freeze-isolation sweeps	windows
-30	Freeze sweep - RTL-only compile of isolation-critical intf units	windows
-31	Freeze sweep - frozen contracts byte-identical to Phase-0 baseline	windows
-32	Freeze sweep - the renamed src/lib patch key, and only that name	windows
-33	Freeze sweep - raw ABI layer equals the ratified platform block (CAP-1 baseline)	windows
-34	CAP-3 freeze sweep - Phase-0/1/2 implementation boundaries	windows
-35	Compile smoke example and stage its DLL	windows
-36	Smoke run (best effort - authoritative gate is local)	windows
-37	Compile JS-binding example (CAP-2) and stage its DLL	windows
-38	JS-binding example run (best effort - authoritative gate is local)	windows
-39	Stage CAP-3 runtime DLL	windows
-40	mORMot RPC example run (best effort - authoritative gate is local)	windows
-41	CAP-4 build app.zip from frontend fixture	windows
-42	CAP-4 dual-mode runtime (best effort, local gate authoritative)	windows
-43	CAP-5 fetch pinned pas2js (sha256-verified)	windows
-44	CAP-5 setup pinned Node	windows
-45	CAP-5 TypeScript SDK typecheck + tests + wire capture	windows
-46	CAP-5 Pas2JS SDK compile + semantic tests + wire capture	windows
-47	CAP-5 cross-SDK captured-wire parity	windows
-48	CAP-5 protocol constant cross-check (native vs both SDKs)	windows
-49	CAP-5 React frontend build (pinned lockfile, offline bundle)	windows
-50	CAP-5 Pas2JS frontend build (pinned toolchain)	windows
-51	CAP-5 zero-network sweep over SDKs and frontends	windows
-52	CAP-5 host examples compile (re-applied CAP-3U window)	windows
-53	CAP-5 runtime smokes - React and Pas2JS over pweb://app	windows
-54	CAP-6 compile bundler + release host (CAP-3U window)	windows
-55	CAP-6 headless gates - bundle, determinism, release layout, refusals	windows
-56	CAP-6 zero-network sweep over bundle/release sources	windows
-57	CAP-6 release runtime smoke - app.pwb over pweb://app	windows
-58	CAP-6b0 isolation compile - runtime detector unit	windows
-59	CAP-6b0 minimum cross-check (Pascal constant vs CAP-4W patch)	windows
-60	CAP-6b0 host WebView2 detection smoke (diagnostic evidence only)	windows
-61	CAP-6b0 lock validator and fixture matrix (zero network)	windows
-62	CAP-6b1 isolation compile - provisioning unit + setup helper	windows
-63	CAP-6b1 innosetup.lock fixture matrix (zero network)	windows
-64	CAP-6b1 contract cross-checks (markers + helper prefixes)	windows
-65	CAP-6b1 fetch pinned Inno Setup 6 (sha256-verified, silent, bounded)	windows
-66	CAP-6b1 build the normal-profile setup from the pinned locks (payload-listing proof)	windows
-67	CAP-6b1 setup gates - skip path, layout, installed smoke, uninstall	windows
-68	CAP-6b2 fetch pinned Evergreen Standalone (sha256+authenticode, bounded, never executed)	windows
-69	CAP-6b2 build the offline-profile setup from the pinned locks (payload-listing proof)	windows
-70	CAP-6b2 offline setup gates - streamed V-legs, isolated-dir skip path, layout, smoke, uninstall	windows
-71	CAP-6b3 fetch pinned Fixed Version Runtime (sha256+authenticode, bounded, never executed)	windows
-72	CAP-6b3 build the fixed-profile setup from the pinned locks (expand + manifest + payload proof)	windows
-73	CAP-6b3 Fixed Runtime process-drain tests (path scoping, churn, no global kill)	windows
-74	CAP-6b3 fixed setup gates - install, ACL by SID, manifest, observed identity, no-fallback, uninstall, abort probe	windows
-75	CAP-6b4 contract cross-checks (marker, basenames, runtime subdir, fixed [Files] order, sweeps, prior-gate aggregation)	windows
-76	CAP-6b4 build switch probes (offline abort probe + consolidated facts)	windows
-77	CAP-6b4 release index from the three built profiles	windows
-78	CAP-6b4 profile isolation (per-profile ISCC listings, size envelopes, release index)	windows
-79	CAP-6b4 profile matrix - I1-I3, S1-S6, F1-F4, U1-U3 over the three real setups	windows
-80	CAP-10E E4 fixed-runtime profile at a non-ASCII install directory	windows
-81	CAP-7F host-argument gate on the release triple (closes D1 on Windows)	windows
-82	CAP-8B real-window navigation matrix (WebView2)	windows
-83	CAP-8C multi-principal integration harness (WebView2)	windows
-84	CAP-7L build libwebview.so from pinned source (cmake + gcc)	linux
-85	CAP-7L deps/webview carries no Linux patch	linux
-86	CAP-7L public ABI remains exactly 17 exports (nm -D)	linux
-87	CAP-7L paired ABI probes + hand-declared symbol presence gate	linux
-88	CAP-7L setup pinned Node	linux
-89	CAP-7L TypeScript SDK build + tests	linux
-90	CAP-7L React frontend build (pinned lockfile, offline bundle)	linux
-91	CAP-7L fetch pinned pas2js (sha256-verified) and build its frontend	linux
-92	CAP-7L compile every unit, probe and example for Linux	linux
-93	CAP-7L headless gates - suite, POSIX store confinement, packaging	linux
-94	CAP-7L GUI matrix (L4-L22) under Xvfb	linux
-95	CAP-7L release layout - React and Pas2JS to 42 from an isolated dir	linux
-96	CAP-7L zero-transport proof (L20)	linux
-97	CAP-7F host-argument gate on the release layout (closes D1 on Linux)	linux
-98	CAP-8B real-window navigation matrix (WebKitGTK) under Xvfb	linux
-99	CAP-8C multi-principal integration harness (WebKitGTK) under Xvfb	linux
-100	CAP-7M0 cache the pinned FPC disk image	macos-x64,macos-arm64
-101	CAP-7M0 install pinned FPC and select the pinned Xcode	macos-x64,macos-arm64
-102	CAP-7M0 deps/webview carries no macOS patch	macos-x64,macos-arm64
-103	CAP-7M0 build libwebview.dylib from pinned source (M1/M3/M16)	macos-x64,macos-arm64
-104	CAP-7M0 public ABI remains exactly 17 exports (M2)	macos-x64,macos-arm64
-105	CAP-7M0 paired ABI probes + Mach-O presence and dlopen gates (M4/M5)	macos-x64,macos-arm64
-106	CAP-7M1 compile the production Cocoa bridge (one object)	macos-x64,macos-arm64
-107	CAP-7M0 compile the binding, mORMot core and the probe (M17)	macos-x64,macos-arm64
-108	CAP-7M1 headless gates (suite + folder confinement)	macos-x64,macos-arm64
-109	CAP-7M0 feasibility probes (M6-M15)	macos-x64,macos-arm64
-110	CAP-7M1 production runtime gates (real WKWebView, folder + zip)	macos-x64,macos-arm64
-111	CAP-7M2 setup pinned Node	macos-x64,macos-arm64
-112	CAP-7M2 TypeScript SDK build + tests	macos-x64,macos-arm64
-113	CAP-7M2 React frontend build (pinned lockfile, offline bundle)	macos-x64,macos-arm64
-114	CAP-7M2 fetch pinned pas2js (sha256 + native arch) and build its frontend	macos-x64
-115	CAP-7M2 fetch pinned pas2js (sha256 + native compile) and build its frontend	macos-arm64
-116	CAP-7M2 compile the release host and bundler	macos-x64,macos-arm64
-117	CAP-7M2 release .app gates - assembly, refusals, direct + LaunchServices to 42	macos-x64,macos-arm64
-118	CAP-7M0 bundle layout measured from an unrelated CWD (M18)	macos-x64,macos-arm64
-119	CAP-7M0 zero-transport proof (M20)	macos-x64,macos-arm64
-120	CAP-8B real-window navigation matrix (WKWebView)	macos-x64,macos-arm64
-121	CAP-8C multi-principal integration harness (WKWebView)	macos-x64,macos-arm64
-122	CAP-9A QuickJS invocation foundation harness	windows,linux,macos-x64,macos-arm64
-123	CAP-9B1 QuickJS package and module-loader harness	windows,linux,macos-x64,macos-arm64
-124	CAP-9B2 QuickJS plugin lifecycle and reload harness	windows,linux,macos-x64,macos-arm64
-125	CAP-9C1 QuickJS release package and trusted loader harness	windows,linux,macos-x64,macos-arm64
-126	CAP-9C2 plugin-enabled acceptance frontend build	windows,linux,macos-x64,macos-arm64
-127	CAP-9C2 plugin-enabled release layout and real-GUI acceptance	windows,linux,macos-x64,macos-arm64
-128	CAP-10B0 build the scaffold engine, the pack and the suite	windows,linux,macos-x64,macos-arm64
-129	CAP-10B1 build the public pack, the CLI and the SDK root	windows,linux,macos-x64,macos-arm64
-130	CAP-10A build the suite and the probe fixture	windows,linux,macos-x64,macos-arm64
-131	CAP-10A contract cross-checks (pins, no shell, no network)	windows,linux,macos-x64,macos-arm64
-132	CAP-10A development-trust gate	windows,linux,macos-x64,macos-arm64
-133	CAP-10A CLI gates + evidence	windows,linux,macos-x64,macos-arm64
-134	CAP-10B0 contract cross-checks (create linked, offline, limits)	windows,linux,macos-x64,macos-arm64
-135	CAP-10B0 scaffold gates + evidence	windows,linux,macos-x64,macos-arm64
-136	CAP-10B1 contract cross-checks (one UI, exact pins, no exec)	windows,linux,macos-x64,macos-arm64
-137	CAP-10B1 create gates + evidence	windows,linux,macos-x64,macos-arm64
-138	CAP-10B1 private build proof and real GUI run	windows,linux,macos-x64,macos-arm64
-139	CAP-10B2 build the react-only CLI that proves template_unknown	windows,linux,macos-x64,macos-arm64
-140	CAP-10B2 contract cross-checks (two UIs, one native app, no npm)	windows,linux,macos-x64,macos-arm64
-141	CAP-10B2 pas2js create gates + evidence	windows,linux,macos-x64,macos-arm64
-142	CAP-10B2 private build proof and real GUI run	windows,linux,macos-x64,macos-arm64
-143	CAP-10C0 build the supervision suite and the fixture child	windows,linux,macos-x64,macos-arm64
-144	CAP-10C0 contract cross-checks (bounds, no shell at the link, no name-kill, env, shutdown order)	windows,linux,macos-x64,macos-arm64
-145	CAP-10C0 supervision suite + pweb run gates + evidence	windows,linux,macos-x64,macos-arm64
-146	CAP-10C1 complete the SDK root and build the pipeline driver	windows,linux,macos-x64,macos-arm64
-147	CAP-10C1 contract cross-checks (bounds, library names, linkage, no conditional, no env read)	windows,linux,macos-x64,macos-arm64
-148	CAP-10C1 lifecycle pipeline gates + app.pwb parity + evidence	windows,linux,macos-x64,macos-arm64
-149	CAP-10C2 build the development suite, the driver and both host binaries	windows,linux,macos-x64,macos-arm64
-150	CAP-10C2 contract cross-checks (bounds, linkage, dev-free release, CSP, no transport)	windows,linux,macos-x64,macos-arm64
-151	CAP-10C2 development-loop gates (DEV1-DEV14, T1-T5) + evidence	windows,linux,macos-x64,macos-arm64
-152	CAP-10C3 build the pas2js development suite, the driver and both host binaries	windows,linux,macos-x64,macos-arm64
-153	CAP-10C3 contract cross-checks (bounds, detector linkage, no watch API, pas2js CSP + dev-free release)	windows,linux,macos-x64,macos-arm64
-154	CAP-10C3 the CAP-10C ledger disposition (CL2, CL3)	windows,linux,macos-x64,macos-arm64
-155	CAP-10C3 pas2js development-loop gates (PD1-PD15, RD1, T1-T5, CL1-CL3) + evidence	windows,linux,macos-x64,macos-arm64
-156	CAP-10D0 build the public-build suite and its driver	windows,linux,macos-x64,macos-arm64
-157	CAP-10D0 contract cross-checks (one execution path, ten stages, five commands, gate quoting)	windows,linux,macos-x64,macos-arm64
-158	CAP-10D0 public-build gates (B1-B12, L1-L3, R1-R2) + evidence	windows,linux,macos-x64,macos-arm64
-159	CAP-10D1 contract cross-checks (pins vs locks, five engine callers, the anti-fork twins, no signing, no network)	windows,linux,macos-x64,macos-arm64
-160	CAP-10D1 stage the packaging kit and build the suite and driver	windows,linux,macos-x64,macos-arm64
-161	CAP-10D1 packaging gates + evidence	windows,linux,macos-x64,macos-arm64
-162	CAP-10D0 L2b - the CAP-10 chain at a repository path with a space	windows
-163	CAP-10D2 contract cross-checks (no network, no env root, the licence table, the tool rule)	windows,linux,macos-x64,macos-arm64
-164	CAP-10D2 the phase-wide CAP-10 ledger disposition (CL1-CL4)	windows,linux,macos-x64,macos-arm64
-165	CAP-10D2 stage the licence set and build the packager and suite	windows,linux,macos-x64,macos-arm64
-166	CAP-10D2 SDK distribution gates (PK1-PK4, IN1-IN4, CM1-CM6, CL1-CL4) + evidence	windows,linux,macos-x64,macos-arm64
-167	CAP-10E image-path source gate (zero ParamStr(0), zero ProgramFilePath, one reader)	windows,linux,macos-x64,macos-arm64
-168	CAP-10E kernel image path - non-ASCII release host, junction, long path (E1/E2/E6/E7/E9)	windows
-169	CAP-11A structure gate (sizes, retention, timeouts, concurrency, no artifact read)	windows,linux,macos-x64,macos-arm64
-170	CAP-11A migration map - every legacy step accounted for	windows,linux,macos-x64,macos-arm64
-171	CAP-7F evidence schema agreement (both emitters and the aggregator)	windows,linux,macos-x64,macos-arm64
-172	CAP-11A bounded fetch retry - seeded transport, digest and exhaustion cases	windows,linux,macos-x64,macos-arm64
-173	CAP-11A flake instrumentation (non-report cause, U3 drain order, fetch rows)	windows,linux,macos-x64,macos-arm64
-174	CAP-7F emit the Windows evidence artifact	windows
-175	CAP-10E kernel image path - non-ASCII release host and the symlink rule (E1/E2/E5/E9)	linux
-176	CAP-7F emit the Linux evidence artifact	linux
-177	CAP-10E kernel image path - non-ASCII (NFD) release host and the symlink rule (E1/E2/E5/E9)	macos-x64,macos-arm64
-178	CAP-7F emit the macOS x64 evidence artifact	macos-x64
-179	CAP-7F emit the macOS arm64 evidence artifact	macos-arm64
-180	CAP-7M0 per-arch headline facts to the run summary	macos-x64,macos-arm64
-181	CAP-11A stage the collection and measure it	windows,linux,macos-x64,macos-arm64
-182	CAP-11A collect the leg evidence (attempt 1 of 3)	windows,linux,macos-x64,macos-arm64
-183	CAP-11A collect the leg evidence (attempt 2 of 3)	windows,linux,macos-x64,macos-arm64
-184	CAP-11A collect the leg evidence (attempt 3 of 3)	windows,linux,macos-x64,macos-arm64
-185	CAP-11A collect the leg records (attempt 1 of 3)	windows,linux,macos-x64,macos-arm64
-186	CAP-11A collect the leg records (attempt 2 of 3)	windows,linux,macos-x64,macos-arm64
-187	CAP-11A collect the leg records (attempt 3 of 3)	windows,linux,macos-x64,macos-arm64
-188	CAP-11A collect the leg release (attempt 1 of 3)	macos-x64,macos-arm64
-189	CAP-11A collect the leg release (attempt 2 of 3)	macos-x64,macos-arm64
-190	CAP-11A collect the leg release (attempt 3 of 3)	macos-x64,macos-arm64
-191	CAP-11A collect the leg dist (attempt 1 of 3)	windows,linux,macos-x64,macos-arm64
-192	CAP-11A collect the leg dist (attempt 2 of 3)	windows,linux,macos-x64,macos-arm64
-193	CAP-11A collect the leg dist (attempt 3 of 3)	windows,linux,macos-x64,macos-arm64
-194	CAP-11A collect the leg diagnostics (attempt 1 of 1)	windows,linux,macos-x64,macos-arm64
-195	CAP-11A type the collection outcome	windows,linux,macos-x64,macos-arm64
+ordinal	name	applies_to	conditionality
+1	Checkout (full history for freeze diff against baseline)	windows	unconditional
+2	Checkout	linux,macos-x64,macos-arm64	unconditional
+3	Guard - no floating upstream ref in the Linux build/gate path	linux	unconditional
+4	Install the ratified WebKitGTK stack and FPC (distro packages)	linux	unconditional
+5	Assert the toolchain and the ratified engine family	linux	unconditional
+6	Guard - no floating upstream ref in the macOS build/gate path	macos-x64,macos-arm64	unconditional
+7	CAP-7M0 record the runner (M19)	macos-x64,macos-arm64	unconditional
+8	Fetch pinned webview/webview (exact SHA, checksum verified)	windows,linux,macos-x64,macos-arm64	unconditional
+9	CAP-4W - exact Windows patch apply, restore and reapply	windows	unconditional
+10	Fetch pinned mORMot2 (exact SHA + sha256-pinned statics)	windows,linux,macos-x64,macos-arm64	unconditional
+11	Guard - no floating upstream ref in fetch/build path	windows	unconditional
+12	Install FPC (pinned Lazarus 3.4 installer, sha256-verified)	windows	unconditional
+13	Assert FPC 3.2.2	windows	unconditional
+14	MSVC environment	windows	unconditional
+15	CAP-3U - FPC 3.2.2 Win64 CallMethod unwind and Currency ABI	windows	unconditional
+16	Build webview.dll from pinned source (cmake + MSVC)	windows	unconditional
+17	CAP-4W - public DLL ABI remains exactly 17 exports	windows	unconditional
+18	CAP-4W - headless loader boundary and compile resource probe	windows	unconditional
+19	CAP-4W - custom-scheme runtime (best effort, local gate authoritative)	windows	unconditional
+20	Compile binding units (FPC, ObjFPC mode)	windows	unconditional
+21	Compile CAP-2 units (scheduler proven webview-free)	windows	unconditional
+22	Compile CAP-4 asset units (stores webview-free, handler rpc-free)	windows	unconditional
+23	CAP-4 zero-HTTP asset-serving source proof	windows	unconditional
+24	Signature pin (compile-only gate over all 17 prototypes)	windows	unconditional
+25	ABI probe - Pascal side (committed binding)	windows	unconditional
+26	ABI probe - C side (pinned headers, MSVC)	windows	unconditional
+27	ABI probe - compare (any diff is a blocker)	windows	unconditional
+28	PWeb test suite (mormot.core.test)	windows	unconditional
+29	Binding surface + freeze-isolation sweeps	windows	unconditional
+30	Freeze sweep - RTL-only compile of isolation-critical intf units	windows	unconditional
+31	Freeze sweep - frozen contracts byte-identical to Phase-0 baseline	windows	unconditional
+32	Freeze sweep - the renamed src/lib patch key, and only that name	windows	unconditional
+33	Freeze sweep - raw ABI layer equals the ratified platform block (CAP-1 baseline)	windows	unconditional
+34	CAP-3 freeze sweep - Phase-0/1/2 implementation boundaries	windows	unconditional
+35	Compile smoke example and stage its DLL	windows	unconditional
+36	Smoke run (best effort - authoritative gate is local)	windows	unconditional
+37	Compile JS-binding example (CAP-2) and stage its DLL	windows	unconditional
+38	JS-binding example run (best effort - authoritative gate is local)	windows	unconditional
+39	Stage CAP-3 runtime DLL	windows	unconditional
+40	mORMot RPC example run (best effort - authoritative gate is local)	windows	unconditional
+41	CAP-4 build app.zip from frontend fixture	windows	unconditional
+42	CAP-4 dual-mode runtime (best effort, local gate authoritative)	windows	unconditional
+43	CAP-5 fetch pinned pas2js (sha256-verified)	windows	unconditional
+44	CAP-5 setup pinned Node	windows	unconditional
+45	CAP-5 TypeScript SDK typecheck + tests + wire capture	windows	unconditional
+46	CAP-5 Pas2JS SDK compile + semantic tests + wire capture	windows	unconditional
+47	CAP-5 cross-SDK captured-wire parity	windows	unconditional
+48	CAP-5 protocol constant cross-check (native vs both SDKs)	windows	unconditional
+49	CAP-5 React frontend build (pinned lockfile, offline bundle)	windows	unconditional
+50	CAP-5 Pas2JS frontend build (pinned toolchain)	windows	unconditional
+51	CAP-5 zero-network sweep over SDKs and frontends	windows	unconditional
+52	CAP-5 host examples compile (re-applied CAP-3U window)	windows	unconditional
+53	CAP-5 runtime smokes - React and Pas2JS over pweb://app	windows	unconditional
+54	CAP-6 compile bundler + release host (CAP-3U window)	windows	unconditional
+55	CAP-6 headless gates - bundle, determinism, release layout, refusals	windows	unconditional
+56	CAP-6 zero-network sweep over bundle/release sources	windows	unconditional
+57	CAP-6 release runtime smoke - app.pwb over pweb://app	windows	unconditional
+58	CAP-6b0 isolation compile - runtime detector unit	windows	unconditional
+59	CAP-6b0 minimum cross-check (Pascal constant vs CAP-4W patch)	windows	unconditional
+60	CAP-6b0 host WebView2 detection smoke (diagnostic evidence only)	windows	unconditional
+61	CAP-6b0 lock validator and fixture matrix (zero network)	windows	unconditional
+62	CAP-6b1 isolation compile - provisioning unit + setup helper	windows	unconditional
+63	CAP-6b1 innosetup.lock fixture matrix (zero network)	windows	unconditional
+64	CAP-6b1 contract cross-checks (markers + helper prefixes)	windows	unconditional
+65	CAP-6b1 fetch pinned Inno Setup 6 (sha256-verified, silent, bounded)	windows	unconditional
+66	CAP-6b1 build the normal-profile setup from the pinned locks (payload-listing proof)	windows	unconditional
+67	CAP-6b1 setup gates - skip path, layout, installed smoke, uninstall	windows	unconditional
+68	CAP-6b2 fetch pinned Evergreen Standalone (sha256+authenticode, bounded, never executed)	windows	unconditional
+69	CAP-6b2 build the offline-profile setup from the pinned locks (payload-listing proof)	windows	unconditional
+70	CAP-6b2 offline setup gates - streamed V-legs, isolated-dir skip path, layout, smoke, uninstall	windows	unconditional
+71	CAP-6b3 fetch pinned Fixed Version Runtime (sha256+authenticode, bounded, never executed)	windows	unconditional
+72	CAP-6b3 build the fixed-profile setup from the pinned locks (expand + manifest + payload proof)	windows	unconditional
+73	CAP-6b3 Fixed Runtime process-drain tests (path scoping, churn, no global kill)	windows	unconditional
+74	CAP-6b3 fixed setup gates - install, ACL by SID, manifest, observed identity, no-fallback, uninstall, abort probe	windows	unconditional
+75	CAP-6b4 contract cross-checks (marker, basenames, runtime subdir, fixed [Files] order, sweeps, prior-gate aggregation)	windows	unconditional
+76	CAP-6b4 build switch probes (offline abort probe + consolidated facts)	windows	unconditional
+77	CAP-6b4 release index from the three built profiles	windows	unconditional
+78	CAP-6b4 profile isolation (per-profile ISCC listings, size envelopes, release index)	windows	unconditional
+79	CAP-6b4 profile matrix - I1-I3, S1-S6, F1-F4, U1-U3 over the three real setups	windows	unconditional
+80	CAP-10E E4 fixed-runtime profile at a non-ASCII install directory	windows	unconditional
+81	CAP-7F host-argument gate on the release triple (closes D1 on Windows)	windows	unconditional
+82	CAP-8B real-window navigation matrix (WebView2)	windows	unconditional
+83	CAP-8C multi-principal integration harness (WebView2)	windows	unconditional
+84	CAP-7L build libwebview.so from pinned source (cmake + gcc)	linux	unconditional
+85	CAP-7L deps/webview carries no Linux patch	linux	unconditional
+86	CAP-7L public ABI remains exactly 17 exports (nm -D)	linux	unconditional
+87	CAP-7L paired ABI probes + hand-declared symbol presence gate	linux	unconditional
+88	CAP-7L setup pinned Node	linux	unconditional
+89	CAP-7L TypeScript SDK build + tests	linux	unconditional
+90	CAP-7L React frontend build (pinned lockfile, offline bundle)	linux	unconditional
+91	CAP-7L fetch pinned pas2js (sha256-verified) and build its frontend	linux	unconditional
+92	CAP-7L compile every unit, probe and example for Linux	linux	unconditional
+93	CAP-7L headless gates - suite, POSIX store confinement, packaging	linux	unconditional
+94	CAP-7L GUI matrix (L4-L22) under Xvfb	linux	unconditional
+95	CAP-7L release layout - React and Pas2JS to 42 from an isolated dir	linux	unconditional
+96	CAP-7L zero-transport proof (L20)	linux	unconditional
+97	CAP-7F host-argument gate on the release layout (closes D1 on Linux)	linux	unconditional
+98	CAP-8B real-window navigation matrix (WebKitGTK) under Xvfb	linux	unconditional
+99	CAP-8C multi-principal integration harness (WebKitGTK) under Xvfb	linux	unconditional
+100	CAP-7M0 cache the pinned FPC disk image	macos-x64,macos-arm64	unconditional
+101	CAP-7M0 install pinned FPC and select the pinned Xcode	macos-x64,macos-arm64	unconditional
+102	CAP-7M0 deps/webview carries no macOS patch	macos-x64,macos-arm64	unconditional
+103	CAP-7M0 build libwebview.dylib from pinned source (M1/M3/M16)	macos-x64,macos-arm64	unconditional
+104	CAP-7M0 public ABI remains exactly 17 exports (M2)	macos-x64,macos-arm64	unconditional
+105	CAP-7M0 paired ABI probes + Mach-O presence and dlopen gates (M4/M5)	macos-x64,macos-arm64	unconditional
+106	CAP-7M1 compile the production Cocoa bridge (one object)	macos-x64,macos-arm64	unconditional
+107	CAP-7M0 compile the binding, mORMot core and the probe (M17)	macos-x64,macos-arm64	unconditional
+108	CAP-7M1 headless gates (suite + folder confinement)	macos-x64,macos-arm64	unconditional
+109	CAP-7M0 feasibility probes (M6-M15)	macos-x64,macos-arm64	unconditional
+110	CAP-7M1 production runtime gates (real WKWebView, folder + zip)	macos-x64,macos-arm64	unconditional
+111	CAP-7M2 setup pinned Node	macos-x64,macos-arm64	unconditional
+112	CAP-7M2 TypeScript SDK build + tests	macos-x64,macos-arm64	unconditional
+113	CAP-7M2 React frontend build (pinned lockfile, offline bundle)	macos-x64,macos-arm64	unconditional
+114	CAP-7M2 fetch pinned pas2js (sha256 + native arch) and build its frontend	macos-x64	unconditional
+115	CAP-7M2 fetch pinned pas2js (sha256 + native compile) and build its frontend	macos-arm64	unconditional
+116	CAP-7M2 compile the release host and bundler	macos-x64,macos-arm64	unconditional
+117	CAP-7M2 release .app gates - assembly, refusals, direct + LaunchServices to 42	macos-x64,macos-arm64	unconditional
+118	CAP-7M0 bundle layout measured from an unrelated CWD (M18)	macos-x64,macos-arm64	unconditional
+119	CAP-7M0 zero-transport proof (M20)	macos-x64,macos-arm64	unconditional
+120	CAP-8B real-window navigation matrix (WKWebView)	macos-x64,macos-arm64	unconditional
+121	CAP-8C multi-principal integration harness (WKWebView)	macos-x64,macos-arm64	unconditional
+122	CAP-9A QuickJS invocation foundation harness	windows,linux,macos-x64,macos-arm64	unconditional
+123	CAP-9B1 QuickJS package and module-loader harness	windows,linux,macos-x64,macos-arm64	unconditional
+124	CAP-9B2 QuickJS plugin lifecycle and reload harness	windows,linux,macos-x64,macos-arm64	unconditional
+125	CAP-9C1 QuickJS release package and trusted loader harness	windows,linux,macos-x64,macos-arm64	unconditional
+126	CAP-9C2 plugin-enabled acceptance frontend build	windows,linux,macos-x64,macos-arm64	unconditional
+127	CAP-9C2 plugin-enabled release layout and real-GUI acceptance	windows,linux,macos-x64,macos-arm64	unconditional
+128	CAP-10B0 build the scaffold engine, the pack and the suite	windows,linux,macos-x64,macos-arm64	unconditional
+129	CAP-10B1 build the public pack, the CLI and the SDK root	windows,linux,macos-x64,macos-arm64	unconditional
+130	CAP-10A build the suite and the probe fixture	windows,linux,macos-x64,macos-arm64	unconditional
+131	CAP-10A contract cross-checks (pins, no shell, no network)	windows,linux,macos-x64,macos-arm64	unconditional
+132	CAP-10A development-trust gate	windows,linux,macos-x64,macos-arm64	unconditional
+133	CAP-10A CLI gates + evidence	windows,linux,macos-x64,macos-arm64	unconditional
+134	CAP-10B0 contract cross-checks (create linked, offline, limits)	windows,linux,macos-x64,macos-arm64	unconditional
+135	CAP-10B0 scaffold gates + evidence	windows,linux,macos-x64,macos-arm64	unconditional
+136	CAP-10B1 contract cross-checks (one UI, exact pins, no exec)	windows,linux,macos-x64,macos-arm64	unconditional
+137	CAP-10B1 create gates + evidence	windows,linux,macos-x64,macos-arm64	unconditional
+138	CAP-10B1 private build proof and real GUI run	windows,linux,macos-x64,macos-arm64	unconditional
+139	CAP-10B2 build the react-only CLI that proves template_unknown	windows,linux,macos-x64,macos-arm64	unconditional
+140	CAP-10B2 contract cross-checks (two UIs, one native app, no npm)	windows,linux,macos-x64,macos-arm64	unconditional
+141	CAP-10B2 pas2js create gates + evidence	windows,linux,macos-x64,macos-arm64	unconditional
+142	CAP-10B2 private build proof and real GUI run	windows,linux,macos-x64,macos-arm64	unconditional
+143	CAP-10C0 build the supervision suite and the fixture child	windows,linux,macos-x64,macos-arm64	unconditional
+144	CAP-10C0 contract cross-checks (bounds, no shell at the link, no name-kill, env, shutdown order)	windows,linux,macos-x64,macos-arm64	unconditional
+145	CAP-10C0 supervision suite + pweb run gates + evidence	windows,linux,macos-x64,macos-arm64	unconditional
+146	CAP-10C1 complete the SDK root and build the pipeline driver	windows,linux,macos-x64,macos-arm64	unconditional
+147	CAP-10C1 contract cross-checks (bounds, library names, linkage, no conditional, no env read)	windows,linux,macos-x64,macos-arm64	unconditional
+148	CAP-10C1 lifecycle pipeline gates + app.pwb parity + evidence	windows,linux,macos-x64,macos-arm64	unconditional
+149	CAP-10C2 build the development suite, the driver and both host binaries	windows,linux,macos-x64,macos-arm64	unconditional
+150	CAP-10C2 contract cross-checks (bounds, linkage, dev-free release, CSP, no transport)	windows,linux,macos-x64,macos-arm64	unconditional
+151	CAP-10C2 development-loop gates (DEV1-DEV14, T1-T5) + evidence	windows,linux,macos-x64,macos-arm64	unconditional
+152	CAP-10C3 build the pas2js development suite, the driver and both host binaries	windows,linux,macos-x64,macos-arm64	unconditional
+153	CAP-10C3 contract cross-checks (bounds, detector linkage, no watch API, pas2js CSP + dev-free release)	windows,linux,macos-x64,macos-arm64	unconditional
+154	CAP-10C3 the CAP-10C ledger disposition (CL2, CL3)	windows,linux,macos-x64,macos-arm64	unconditional
+155	CAP-10C3 pas2js development-loop gates (PD1-PD15, RD1, T1-T5, CL1-CL3) + evidence	windows,linux,macos-x64,macos-arm64	unconditional
+156	CAP-10D0 build the public-build suite and its driver	windows,linux,macos-x64,macos-arm64	unconditional
+157	CAP-10D0 contract cross-checks (one execution path, ten stages, five commands, gate quoting)	windows,linux,macos-x64,macos-arm64	unconditional
+158	CAP-10D0 public-build gates (B1-B12, L1-L3, R1-R2) + evidence	windows,linux,macos-x64,macos-arm64	unconditional
+159	CAP-10D1 contract cross-checks (pins vs locks, five engine callers, the anti-fork twins, no signing, no network)	windows,linux,macos-x64,macos-arm64	unconditional
+160	CAP-10D1 stage the packaging kit and build the suite and driver	windows,linux,macos-x64,macos-arm64	unconditional
+161	CAP-10D1 packaging gates + evidence	windows,linux,macos-x64,macos-arm64	unconditional
+162	CAP-10D0 L2b - the CAP-10 chain at a repository path with a space	windows	unconditional
+163	CAP-10D2 contract cross-checks (no network, no env root, the licence table, the tool rule)	windows,linux,macos-x64,macos-arm64	unconditional
+164	CAP-10D2 the phase-wide CAP-10 ledger disposition (CL1-CL4)	windows,linux,macos-x64,macos-arm64	unconditional
+165	CAP-10D2 stage the licence set and build the packager and suite	windows,linux,macos-x64,macos-arm64	unconditional
+166	CAP-10D2 SDK distribution gates (PK1-PK4, IN1-IN4, CM1-CM6, CL1-CL4) + evidence	windows,linux,macos-x64,macos-arm64	unconditional
+167	CAP-10E image-path source gate (zero ParamStr(0), zero ProgramFilePath, one reader)	windows,linux,macos-x64,macos-arm64	unconditional
+168	CAP-10E kernel image path - non-ASCII release host, junction, long path (E1/E2/E6/E7/E9)	windows	unconditional
+169	CAP-11A structure gate (sizes, retention, timeouts, concurrency, no artifact read)	windows,linux,macos-x64,macos-arm64	unconditional
+170	CAP-11A migration map - every legacy step accounted for	windows,linux,macos-x64,macos-arm64	unconditional
+171	CAP-7F evidence schema agreement (both emitters and the aggregator)	windows,linux,macos-x64,macos-arm64	unconditional
+172	CAP-11A bounded fetch retry - seeded transport, digest and exhaustion cases	windows,linux,macos-x64,macos-arm64	unconditional
+173	CAP-11A flake instrumentation (non-report cause, U3 drain order, fetch rows)	windows,linux,macos-x64,macos-arm64	unconditional
+174	CAP-11A seeded cases - the sequence gate and the non-report cause rule	windows,linux,macos-x64,macos-arm64	unconditional
+175	CAP-7F emit the Windows evidence artifact	windows	unconditional
+176	CAP-10E kernel image path - non-ASCII release host and the symlink rule (E1/E2/E5/E9)	linux	unconditional
+177	CAP-7F emit the Linux evidence artifact	linux	unconditional
+178	CAP-10E kernel image path - non-ASCII (NFD) release host and the symlink rule (E1/E2/E5/E9)	macos-x64,macos-arm64	unconditional
+179	CAP-7F emit the macOS x64 evidence artifact	macos-x64	unconditional
+180	CAP-7F emit the macOS arm64 evidence artifact	macos-arm64	unconditional
+181	CAP-7M0 per-arch headline facts to the run summary	macos-x64,macos-arm64	unconditional
+182	CAP-11A stage the collection and measure it	windows,linux,macos-x64,macos-arm64	unconditional
+183	CAP-11A collect the leg evidence (attempt 1 of 3)	windows,linux,macos-x64,macos-arm64	unconditional
+184	CAP-11A collect the leg evidence (attempt 2 of 3)	windows,linux,macos-x64,macos-arm64	conditional
+185	CAP-11A collect the leg evidence (attempt 3 of 3)	windows,linux,macos-x64,macos-arm64	conditional
+186	CAP-11A collect the leg records (attempt 1 of 3)	windows,linux,macos-x64,macos-arm64	unconditional
+187	CAP-11A collect the leg records (attempt 2 of 3)	windows,linux,macos-x64,macos-arm64	conditional
+188	CAP-11A collect the leg records (attempt 3 of 3)	windows,linux,macos-x64,macos-arm64	conditional
+189	CAP-11A collect the leg release (attempt 1 of 3)	macos-x64,macos-arm64	unconditional
+190	CAP-11A collect the leg release (attempt 2 of 3)	macos-x64,macos-arm64	conditional
+191	CAP-11A collect the leg release (attempt 3 of 3)	macos-x64,macos-arm64	conditional
+192	CAP-11A collect the leg dist (attempt 1 of 3)	windows,linux,macos-x64,macos-arm64	unconditional
+193	CAP-11A collect the leg dist (attempt 2 of 3)	windows,linux,macos-x64,macos-arm64	conditional
+194	CAP-11A collect the leg dist (attempt 3 of 3)	windows,linux,macos-x64,macos-arm64	conditional
+195	CAP-11A collect the leg diagnostics (attempt 1 of 1)	windows,linux,macos-x64,macos-arm64	conditional
+196	CAP-11A type the collection outcome	windows,linux,macos-x64,macos-arm64	unconditional

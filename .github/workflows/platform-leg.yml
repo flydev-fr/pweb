@@ -906,6 +906,13 @@ jobs:
           pwsh -NoProfile -File test/cap11a/check_flake_instrumentation.ps1
           if ($LASTEXITCODE -ne 0) { throw 'CAP-11A flake instrumentation (non-report cause, U3 drain order, fetch rows) FAILED' }
 
+      - name: CAP-11A seeded cases - the sequence gate and the non-report cause rule
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap11a/check_cap11a_cases.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-11A seeded cases - the sequence gate and the non-report cause rule FAILED' }
+
       - name: CAP-7F emit the Windows evidence artifact
         if: ${{ inputs.target == 'windows' }}
         timeout-minutes: 10
@@ -937,7 +944,7 @@ jobs:
         uses: ./.github/actions/cap-7f-emit-the-macos-arm64-evidence-artifact
 
       - name: CAP-7M0 per-arch headline facts to the run summary
-        if: ${{ always() && inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        if: ${{ (always()) && (inputs.target == 'macos-x64' || inputs.target == 'macos-arm64') }}
         uses: ./.github/actions/cap-7m0-per-arch-headline-facts-to-the-run-summary
 
       # ===================== CAP-11A COLLECTION BLOCK =====================
@@ -949,6 +956,7 @@ jobs:
       # merely lost thirty steps.
       - name: CAP-11A stage the collection and measure it
         if: always()
+        continue-on-error: true
         timeout-minutes: 10
         shell: pwsh
         run: |
@@ -1035,7 +1043,7 @@ jobs:
 
       - name: CAP-11A collect the leg release (attempt 1 of 3)
         id: collect_release_1
-        if: ${{ always() && (inputs.target == 'macos-x64' || inputs.target == 'macos-arm64') }}
+        if: ${{ (always()) && (inputs.target == 'macos-x64' || inputs.target == 'macos-arm64') }}
         continue-on-error: true
         timeout-minutes: 15
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -1048,7 +1056,7 @@ jobs:
 
       - name: CAP-11A collect the leg release (attempt 2 of 3)
         id: collect_release_2
-        if: ${{ always() && steps.collect_release_1.outcome == 'failure' && (inputs.target == 'macos-x64' || inputs.target == 'macos-arm64') }}
+        if: ${{ (always() && steps.collect_release_1.outcome == 'failure') && (inputs.target == 'macos-x64' || inputs.target == 'macos-arm64') }}
         continue-on-error: true
         timeout-minutes: 15
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -1061,7 +1069,7 @@ jobs:
 
       - name: CAP-11A collect the leg release (attempt 3 of 3)
         id: collect_release_3
-        if: ${{ always() && steps.collect_release_2.outcome == 'failure' && (inputs.target == 'macos-x64' || inputs.target == 'macos-arm64') }}
+        if: ${{ (always() && steps.collect_release_2.outcome == 'failure') && (inputs.target == 'macos-x64' || inputs.target == 'macos-arm64') }}
         continue-on-error: true
         timeout-minutes: 15
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -1124,12 +1132,15 @@ jobs:
           overwrite: true
           path: build/cap11a/collect/diagnostics
 
-      # NEVER fails the leg: a leg that passed its gates and could not reach the
+      # NEVER fails the leg - and neither can the staging step above it.
+      # `continue-on-error` on BOTH is the difference between a typed
+      # infrastructure state and a green leg turned red by a locked file: a
       # artifact service is green with `evidence_uploaded=false`, and the
       # aggregate refuses while NAMING it infrastructure. A leg that failed a
       # gate is red for that gate, which is a different sentence.
       - name: CAP-11A type the collection outcome
         if: always()
+        continue-on-error: true
         timeout-minutes: 5
         shell: pwsh
         env:

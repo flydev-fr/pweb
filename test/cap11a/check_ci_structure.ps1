@@ -79,7 +79,18 @@ if ($files.Count -lt 100) { Violation "only $($files.Count) files under .github/
 
 # --- 1. size and line bounds ------------------------------------------------
 $maxSeen = 0; $maxSeenFile = ''
+$TEXT_EXT = @('.yml', '.yaml', '.md', '.txt', '.json', '.tsv', '.ps1', '.sh')
 foreach ($f in $files) {
+    # A NON-TEXT FILE IS MEASURED AS BYTES. `ReadAllText` would decode it
+    # lossily and report a size that is neither its real one nor a stable one.
+    if ($TEXT_EXT -notcontains $f.Extension.ToLowerInvariant()) {
+        $rawBytes = [System.IO.File]::ReadAllBytes($f.FullName).Length
+        if ($rawBytes -gt $MAX_BYTES) {
+            Violation ("$($f.FullName.Substring($repoRoot.Length + 1)) is $rawBytes bytes, over the ratified $MAX_BYTES")
+        }
+        if ($rawBytes -gt $maxSeen) { $maxSeen = $rawBytes; $maxSeenFile = $f.FullName.Substring($repoRoot.Length + 1) }
+        continue
+    }
     $text = Read-Norm $f.FullName
     $bytes = [System.Text.Encoding]::UTF8.GetByteCount($text)
     $lines = ($text -split "`n").Count
@@ -103,9 +114,11 @@ Write-Host "[cap11a] legacy monolith present: $legacyPresent (true only during t
 if ($legacyPresent) {
     # While both structures exist the legacy file must be BYTE-UNTOUCHED, or the
     # twin run compares the new structure against something this shard edited.
-    $legacyLines = ((Read-Norm $LEGACY) -split "`n").Count
-    if ($legacyLines -ne 5825) {
-        Violation "the legacy monolith is $legacyLines lines, not the 5,825 the twin run compares against"
+    # 5,824 LINES: the split yields one extra element for the trailing newline,
+    # which is why the raw count and the number everyone quotes differ by one.
+    $legacyLines = (((Read-Norm $LEGACY) -split "`n").Count - 1)
+    if ($legacyLines -ne 5824) {
+        Violation "the legacy monolith is $legacyLines lines, not the 5,824 the twin run compares against"
     }
 }
 
@@ -168,7 +181,11 @@ foreach ($p in @($CALLER, $LEG)) {
 }
 
 # --- 6. only the six pinned actions, and every `uses:` is pinned by SHA -----
-$allYml = @(Get-ChildItem -Path .github -Recurse -File -Filter *.yml)
+# `.yaml` TOO. GitHub accepts both spellings, and a filter that saw only one
+# would let a workflow escape the SHA-pin allowlist while still being
+# size-bounded by the sweep above, which enumerates every file.
+$allYml = @(Get-ChildItem -Path .github -Recurse -File |
+    Where-Object { $_.Extension -in @('.yml', '.yaml') })
 foreach ($f in $allYml) {
     foreach ($l in (Read-Norm $f.FullName) -split "`n") {
         if ($l -notmatch '^\s*uses:\s*(\S+)') { continue }
@@ -185,12 +202,19 @@ foreach ($f in $allYml) {
 # action carrying either parses, runs, and does nothing with it - which is how a
 # per-step budget or a best-effort smoke would quietly become something else.
 # They belong on the sequence step, and this refuses them anywhere else.
-foreach ($f in @(Get-ChildItem -Path .github/actions -Recurse -File -Filter action.yml -ErrorAction SilentlyContinue)) {
+foreach ($f in @(Get-ChildItem -Path .github/actions -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Extension -in @('.yml', '.yaml') })) {
     $rel = $f.FullName.Substring($repoRoot.Length + 1)
-    foreach ($l in (Read-Norm $f.FullName) -split "`n") {
+    $body = Read-Norm $f.FullName
+    foreach ($l in $body -split "`n") {
         if ($l -match '^\s+(timeout-minutes|continue-on-error):') {
             Violation "$rel carries '$($Matches[1])' inside a composite action, where GitHub ignores it"
         }
+    }
+    # AN UPLOAD INSIDE AN ACTION would escape both the retention gate and the
+    # collection-block-is-last gate, which only read the two workflow files.
+    if ($body -match 'upload-artifact') {
+        Violation "$rel uploads an artifact from inside a composite action, outside the collection block"
     }
 }
 
@@ -221,6 +245,53 @@ $firstCollect = -1
 for ($k = 0; $k -lt $stepIdx.Count; $k++) {
     if ($stepIdx[$k][1] -like 'CAP-11A stage the collection*') { $firstCollect = $k; break }
 }
+# A DUPLICATE STEP NAME would make the extracted sequence ambiguous and the
+# applicability comparison land on the wrong row.
+$dupNames = @($stepIdx | Group-Object { $_[1] } | Where-Object { $_.Count -gt 1 })
+foreach ($d in $dupNames) { Violation "$LEG declares the step name '$($d.Name)' $($d.Count) times" }
+
+# THE DECLARED APPLICABILITY MUST MATCH THE `if:` ACTUALLY WRITTEN. Editing one
+# without regenerating the other is otherwise undetectable until a full hosted
+# run reaches the aggregate - two hours and four legs later.
+$applicPath = 'test/cap11a/step-applicability.tsv'
+if (-not (Test-Path -LiteralPath $applicPath)) { Violation "missing $applicPath" }
+else {
+    $declRows = @(Get-Content -LiteralPath $applicPath | Select-Object -Skip 1 |
+        Where-Object { $_.Trim() } | ForEach-Object { , ($_ -split "`t") })
+    $seqNames = @($stepIdx | ForEach-Object { $_[1] })
+    if ($declRows.Count -ne $seqNames.Count) {
+        Violation "the applicability table has $($declRows.Count) rows for $($seqNames.Count) sequence steps"
+    } else {
+        for ($k = 0; $k -lt $seqNames.Count; $k++) {
+            if ($declRows[$k][1] -cne $seqNames[$k]) {
+                Violation ("applicability row $($k + 1) names '$($declRows[$k][1])' where the sequence has " +
+                    "'$($seqNames[$k])'")
+                break
+            }
+            $start = $stepIdx[$k][0]
+            $end = if ($k + 1 -lt $stepIdx.Count) { $stepIdx[$k + 1][0] } else { $legLines.Count }
+            $body = ($legLines[$start..($end - 1)] -join "`n")
+            foreach ($t in @('windows', 'linux', 'macos-x64', 'macos-arm64')) {
+                $declared = (@($declRows[$k][2] -split ',') -contains $t)
+                # the sequence says a step does NOT apply to a target when its
+                # `if:` names the others and not this one
+                $hasIf = ($body -match '(?m)^\s+if:')
+                if (-not $hasIf) { continue }
+                $mentions = ($body -match [regex]::Escape("inputs.target == '$t'"))
+                $excludes = ($body -match [regex]::Escape("inputs.target != '$t'"))
+                $applies = if ($excludes) { $false }
+                           elseif ($body -match "inputs\.target == '") { $mentions }
+                           else { $true }
+                if ($applies -ne $declared) {
+                    Violation ("step '$($seqNames[$k])': the sequence " +
+                        "$(if ($applies) { 'runs' } else { 'skips' }) on $t, the table says " +
+                        "$(if ($declared) { 'applies' } else { 'does not apply' })")
+                }
+            }
+        }
+    }
+}
+
 if ($firstCollect -lt 0) { Violation "$LEG has no collection block" }
 else {
     for ($k = 0; $k -lt $stepIdx.Count; $k++) {
