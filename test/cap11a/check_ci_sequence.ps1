@@ -187,7 +187,52 @@ foreach ($n in $declared.Keys) {
     if (-not $observed.Contains($n)) { Fail "declared step '$n' is absent from every leg's run" }
 }
 
-# --- 3. what the collection block did, per leg ------------------------------
+# --- 3. NO STEP DISAPPEARED OR REORDERED, measured from the run -------------
+# The source-level proof is `check_migration_map.ps1`; this is the same claim
+# read off the machine that ran it. For each leg, the legacy job's non-upload
+# step names must appear IN ORDER as a subsequence of the steps that actually
+# RAN on that leg. Insertions are expected - the CAP-11A gates and the
+# collection block are new - and a subsequence test allows exactly those while
+# refusing a removal or a swap.
+$legacy = @{}
+$invPath = Join-Path $PSScriptRoot 'ci-legacy-inventory.tsv'
+if (Test-Path -LiteralPath $invPath) {
+    foreach ($r in @(Get-Content -LiteralPath $invPath | Select-Object -Skip 1)) {
+        if (-not $r.Trim()) { continue }
+        $c = $r -split "`t"
+        if ($c.Count -lt 11) { continue }
+        if ($c[7] -eq 'upload') { continue }   # the one ratified restructuring
+        if (-not $legacy.ContainsKey($c[0])) { $legacy[$c[0]] = New-Object System.Collections.Generic.List[string] }
+        $legacy[$c[0]].Add($c[2])
+    }
+} else {
+    Fail "missing $invPath -- the legacy order cannot be checked"
+}
+foreach ($t in $TARGETS) {
+    if (-not $legacy.ContainsKey($t)) { continue }
+    if ($complete -notcontains $t) {
+        Write-Host "[cap11a] $t did not run to completion; its legacy order is not checked"
+        continue
+    }
+    $ran = @($legs[$t].Steps | Where-Object { $_.Conclusion -ne 'skipped' } | ForEach-Object { $_.Name })
+    $i = 0
+    $missing = New-Object System.Collections.Generic.List[string]
+    foreach ($n in $legacy[$t]) {
+        $found = $false
+        while ($i -lt $ran.Count) {
+            if ($ran[$i] -ceq $n) { $found = $true; $i++; break }
+            $i++
+        }
+        if (-not $found) { $missing.Add($n) }
+    }
+    if ($missing.Count -gt 0) {
+        Fail ("$t lost or reordered $($missing.Count) legacy step(s), first: '$($missing[0])'")
+    } else {
+        Write-Host "[cap11a] $t runs all $($legacy[$t].Count) of its legacy steps, in order"
+    }
+}
+
+# --- 4. what the collection block did, per leg ------------------------------
 # The one channel an upload failure cannot take away.
 $collection = [ordered]@{}
 foreach ($t in $TARGETS) {
