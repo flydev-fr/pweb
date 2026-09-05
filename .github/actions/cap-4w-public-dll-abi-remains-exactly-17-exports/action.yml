@@ -1,0 +1,8 @@
+name: 'CAP-4W - public DLL ABI remains exactly 17 exports'
+description: 'CAP-11A: the body of the "CAP-4W - public DLL ABI remains exactly 17 exports" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: pwsh -NoProfile -File test/cap4w/check_webview_exports.ps1

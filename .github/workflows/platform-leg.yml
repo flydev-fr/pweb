@@ -1,0 +1,1150 @@
+# CAP-11A: THE ONE STEP SEQUENCE.
+#
+# Every platform leg runs THIS list, in this order. A step that cannot run on a
+# target carries an `if:` and appears in the run as `skipped` - never absent -
+# so the four legs extract to four IDENTICAL step-name sequences, which is the
+# premise `test/cap7f/check_cap7f_aggregate.ps1` exists to check and which
+# `test/cap11a/check_ci_sequence.ps1` measures from the run itself.
+#
+# Step BODIES live in `.github/actions/<slug>/action.yml`, one per step, because
+# `timeout-minutes` is unsupported on a composite-action step but supported on a
+# workflow step that `uses:` one - grouping several steps per action would have
+# deleted the per-step budgets that catch a hang while still letting the
+# collection block below run.
+#
+# NOTHING IS UPLOADED UNTIL EVERY GATE HAS RUN. The collection block is the last
+# thing on the leg, every one of its steps is `if: always()`, and its failure is
+# typed as infrastructure and forfeits no verdict (ledger: "NO GATE MAY DEPEND ON
+# AN UPLOAD HAVING SUCCEEDED", measured on hosted run 33955241980).
+
+name: platform leg
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: 'windows | linux | macos-x64 | macos-arm64'
+        type: string
+        required: true
+      runner:
+        description: 'the runs-on label for this target'
+        type: string
+        required: true
+      timeout_minutes:
+        description: 'job backstop; the per-step budgets are the protection'
+        type: number
+        required: true
+      expect_arch:
+        description: 'CAP7M_EXPECT_ARCH, asserted by the macOS gates'
+        type: string
+        required: false
+      runner_label:
+        description: 'CAP7M_RUNNER_LABEL, asserted by the macOS gates'
+        type: string
+        required: false
+      long_retention:
+        description: 'keep the distribution artifacts 90 days instead of 14'
+        type: boolean
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  leg:
+    name: ${{ inputs.target }}
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    env:
+      PWEB_CI_TARGET: ${{ inputs.target }}
+      CAP7M_EXPECT_ARCH: ${{ inputs.expect_arch }}
+      CAP7M_RUNNER_LABEL: ${{ inputs.runner_label }}
+    steps:
+      - name: Checkout (full history for freeze diff against baseline)
+        if: ${{ inputs.target == 'windows' }}
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout
+        if: ${{ inputs.target != 'windows' }}
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Guard - no floating upstream ref in the Linux build/gate path
+        if: ${{ inputs.target == 'linux' }}
+        uses: ./.github/actions/guard-no-floating-upstream-ref-in-the-linux-build-gate-path
+
+      - name: Install the ratified WebKitGTK stack and FPC (distro packages)
+        if: ${{ inputs.target == 'linux' }}
+        timeout-minutes: 15
+        uses: ./.github/actions/install-the-ratified-webkitgtk-stack-and-fpc-distro-packages
+
+      - name: Assert the toolchain and the ratified engine family
+        if: ${{ inputs.target == 'linux' }}
+        uses: ./.github/actions/assert-the-toolchain-and-the-ratified-engine-family
+
+      - name: Guard - no floating upstream ref in the macOS build/gate path
+        if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        uses: ./.github/actions/guard-no-floating-upstream-ref-in-the-macos-build-gate-path
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-7M0 record the runner (M19)
+        if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        uses: ./.github/actions/cap-7m0-record-the-runner-m19
+        with:
+          target: ${{ inputs.target }}
+
+      - name: Fetch pinned webview/webview (exact SHA, checksum verified)
+        uses: ./.github/actions/fetch-pinned-webview-webview-exact-sha-checksum-verified
+
+      - name: CAP-4W - exact Windows patch apply, restore and reapply
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-4w-exact-windows-patch-apply-restore-and-reapply
+
+      - name: Fetch pinned mORMot2 (exact SHA + sha256-pinned statics)
+        uses: ./.github/actions/fetch-pinned-mormot2-exact-sha-sha256-pinned-statics
+
+      - name: Guard - no floating upstream ref in fetch/build path
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/guard-no-floating-upstream-ref-in-fetch-build-path
+
+      - name: Install FPC (pinned Lazarus 3.4 installer, sha256-verified)
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 20
+        uses: ./.github/actions/install-fpc-pinned-lazarus-3-4-installer-sha256-verified
+
+      - name: Assert FPC 3.2.2
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/assert-fpc-3-2-2
+
+      - name: MSVC environment
+        if: ${{ inputs.target == 'windows' }}
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+
+      - name: CAP-3U - FPC 3.2.2 Win64 CallMethod unwind and Currency ABI
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-3u-fpc-3-2-2-win64-callmethod-unwind-and-currency-abi
+
+      - name: Build webview.dll from pinned source (cmake + MSVC)
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/build-webview-dll-from-pinned-source-cmake-msvc
+
+      - name: CAP-4W - public DLL ABI remains exactly 17 exports
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-4w-public-dll-abi-remains-exactly-17-exports
+
+      - name: CAP-4W - headless loader boundary and compile resource probe
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-4w-headless-loader-boundary-and-compile-resource-probe
+
+      - name: CAP-4W - custom-scheme runtime (best effort, local gate authoritative)
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 5
+        uses: ./.github/actions/cap-4w-custom-scheme-runtime-best-effort-local-gate-authoritative
+
+      - name: Compile binding units (FPC, ObjFPC mode)
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/compile-binding-units-fpc-objfpc-mode
+
+      - name: Compile CAP-2 units (scheduler proven webview-free)
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/compile-cap-2-units-scheduler-proven-webview-free
+
+      - name: Compile CAP-4 asset units (stores webview-free, handler rpc-free)
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/compile-cap-4-asset-units-stores-webview-free-handler-rpc-free
+
+      - name: CAP-4 zero-HTTP asset-serving source proof
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-4-zero-http-asset-serving-source-proof
+
+      - name: Signature pin (compile-only gate over all 17 prototypes)
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/signature-pin-compile-only-gate-over-all-17-prototypes
+
+      - name: ABI probe - Pascal side (committed binding)
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/abi-probe-pascal-side-committed-binding
+
+      - name: ABI probe - C side (pinned headers, MSVC)
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/abi-probe-c-side-pinned-headers-msvc
+
+      - name: ABI probe - compare (any diff is a blocker)
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/abi-probe-compare-any-diff-is-a-blocker
+
+      - name: PWeb test suite (mormot.core.test)
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/pweb-test-suite-mormot-core-test
+
+      - name: Binding surface + freeze-isolation sweeps
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/binding-surface-freeze-isolation-sweeps
+
+      - name: Freeze sweep - RTL-only compile of isolation-critical intf units
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/freeze-sweep-rtl-only-compile-of-isolation-critical-intf-units
+
+      - name: Freeze sweep - frozen contracts byte-identical to Phase-0 baseline
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/freeze-sweep-frozen-contracts-byte-identical-to-phase-0-baseline
+
+      - name: Freeze sweep - the renamed src/lib patch key, and only that name
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/freeze-sweep-the-renamed-src-lib-patch-key-and-only-that-name
+
+      - name: Freeze sweep - raw ABI layer equals the ratified platform block (CAP-1 baseline)
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/freeze-sweep-raw-abi-layer-equals-the-ratified-platform-block-cap-1
+
+      - name: CAP-3 freeze sweep - Phase-0/1/2 implementation boundaries
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-3-freeze-sweep-phase-0-1-2-implementation-boundaries
+
+      - name: Compile smoke example and stage its DLL
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/compile-smoke-example-and-stage-its-dll
+
+      - name: Smoke run (best effort - authoritative gate is local)
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 5
+        continue-on-error: true
+        uses: ./.github/actions/smoke-run-best-effort-authoritative-gate-is-local
+
+      - name: Compile JS-binding example (CAP-2) and stage its DLL
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/compile-js-binding-example-cap-2-and-stage-its-dll
+
+      - name: JS-binding example run (best effort - authoritative gate is local)
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 5
+        continue-on-error: true
+        uses: ./.github/actions/js-binding-example-run-best-effort-authoritative-gate-is-local
+
+      - name: Stage CAP-3 runtime DLL
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/stage-cap-3-runtime-dll
+
+      - name: mORMot RPC example run (best effort - authoritative gate is local)
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 5
+        continue-on-error: true
+        uses: ./.github/actions/mormot-rpc-example-run-best-effort-authoritative-gate-is-local
+
+      - name: CAP-4 build app.zip from frontend fixture
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-4-build-app-zip-from-frontend-fixture
+
+      - name: CAP-4 dual-mode runtime (best effort, local gate authoritative)
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 8
+        uses: ./.github/actions/cap-4-dual-mode-runtime-best-effort-local-gate-authoritative
+
+      - name: CAP-5 fetch pinned pas2js (sha256-verified)
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-5-fetch-pinned-pas2js-sha256-verified
+
+      - name: CAP-5 setup pinned Node
+        if: ${{ inputs.target == 'windows' }}
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.11.1
+
+      - name: CAP-5 TypeScript SDK typecheck + tests + wire capture
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-5-typescript-sdk-typecheck-tests-wire-capture
+
+      - name: CAP-5 Pas2JS SDK compile + semantic tests + wire capture
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-5-pas2js-sdk-compile-semantic-tests-wire-capture
+
+      - name: CAP-5 cross-SDK captured-wire parity
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-5-cross-sdk-captured-wire-parity
+
+      - name: CAP-5 protocol constant cross-check (native vs both SDKs)
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-5-protocol-constant-cross-check-native-vs-both-sdks
+
+      - name: CAP-5 React frontend build (pinned lockfile, offline bundle)
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-5-react-frontend-build-pinned-lockfile-offline-bundle
+
+      - name: CAP-5 Pas2JS frontend build (pinned toolchain)
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-5-pas2js-frontend-build-pinned-toolchain
+
+      - name: CAP-5 zero-network sweep over SDKs and frontends
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-5-zero-network-sweep-over-sdks-and-frontends
+
+      - name: CAP-5 host examples compile (re-applied CAP-3U window)
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-5-host-examples-compile-re-applied-cap-3u-window
+
+      - name: CAP-5 runtime smokes - React and Pas2JS over pweb://app
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 10
+        uses: ./.github/actions/cap-5-runtime-smokes-react-and-pas2js-over-pweb-app
+
+      - name: CAP-6 compile bundler + release host (CAP-3U window)
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-6-compile-bundler-release-host-cap-3u-window
+
+      - name: CAP-6 headless gates - bundle, determinism, release layout, refusals
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 10
+        uses: ./.github/actions/cap-6-headless-gates-bundle-determinism-release-layout-refusals
+
+      - name: CAP-6 zero-network sweep over bundle/release sources
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-6-zero-network-sweep-over-bundle-release-sources
+
+      - name: CAP-6 release runtime smoke - app.pwb over pweb://app
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 10
+        uses: ./.github/actions/cap-6-release-runtime-smoke-app-pwb-over-pweb-app
+
+      - name: CAP-6b0 isolation compile - runtime detector unit
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-6b0-isolation-compile-runtime-detector-unit
+
+      - name: CAP-6b0 minimum cross-check (Pascal constant vs CAP-4W patch)
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-6b0-minimum-cross-check-pascal-constant-vs-cap-4w-patch
+
+      - name: CAP-6b0 host WebView2 detection smoke (diagnostic evidence only)
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 5
+        uses: ./.github/actions/cap-6b0-host-webview2-detection-smoke-diagnostic-evidence-only
+
+      - name: CAP-6b0 lock validator and fixture matrix (zero network)
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-6b0-lock-validator-and-fixture-matrix-zero-network
+
+      - name: CAP-6b1 isolation compile - provisioning unit + setup helper
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-6b1-isolation-compile-provisioning-unit-setup-helper
+
+      - name: CAP-6b1 innosetup.lock fixture matrix (zero network)
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-6b1-innosetup-lock-fixture-matrix-zero-network
+
+      - name: CAP-6b1 contract cross-checks (markers + helper prefixes)
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-6b1-contract-cross-checks-markers-helper-prefixes
+
+      - name: CAP-6b1 fetch pinned Inno Setup 6 (sha256-verified, silent, bounded)
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 10
+        uses: ./.github/actions/cap-6b1-fetch-pinned-inno-setup-6-sha256-verified-silent-bounded
+
+      - name: CAP-6b1 build the normal-profile setup from the pinned locks (payload-listing proof)
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 15
+        uses: ./.github/actions/cap-6b1-build-the-normal-profile-setup-from-the-pinned-locks-payload
+
+      - name: CAP-6b1 setup gates - skip path, layout, installed smoke, uninstall
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 15
+        uses: ./.github/actions/cap-6b1-setup-gates-skip-path-layout-installed-smoke-uninstall
+
+      - name: CAP-6b2 fetch pinned Evergreen Standalone (sha256+authenticode, bounded, never executed)
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 10
+        uses: ./.github/actions/cap-6b2-fetch-pinned-evergreen-standalone-sha256-authenticode-bounded
+
+      - name: CAP-6b2 build the offline-profile setup from the pinned locks (payload-listing proof)
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 15
+        uses: ./.github/actions/cap-6b2-build-the-offline-profile-setup-from-the-pinned-locks-payload
+
+      - name: CAP-6b2 offline setup gates - streamed V-legs, isolated-dir skip path, layout, smoke, uninstall
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 15
+        uses: ./.github/actions/cap-6b2-offline-setup-gates-streamed-v-legs-isolated-dir-skip-path
+
+      - name: CAP-6b3 fetch pinned Fixed Version Runtime (sha256+authenticode, bounded, never executed)
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 20
+        uses: ./.github/actions/cap-6b3-fetch-pinned-fixed-version-runtime-sha256-authenticode-bounded
+
+      - name: CAP-6b3 build the fixed-profile setup from the pinned locks (expand + manifest + payload proof)
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 45
+        uses: ./.github/actions/cap-6b3-build-the-fixed-profile-setup-from-the-pinned-locks-expand
+
+      - name: CAP-6b3 Fixed Runtime process-drain tests (path scoping, churn, no global kill)
+        if: ${{ inputs.target == 'windows' }}
+        uses: ./.github/actions/cap-6b3-fixed-runtime-process-drain-tests-path-scoping-churn-no-global
+
+      - name: CAP-6b3 fixed setup gates - install, ACL by SID, manifest, observed identity, no-fallback, uninstall, abort probe
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 75
+        uses: ./.github/actions/cap-6b3-fixed-setup-gates-install-acl-by-sid-manifest-observed-identity
+
+      - name: CAP-6b4 contract cross-checks (marker, basenames, runtime subdir, fixed [Files] order, sweeps, prior-gate aggregation)
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 3
+        uses: ./.github/actions/cap-6b4-contract-cross-checks-marker-basenames-runtime-subdir-fixed
+
+      - name: CAP-6b4 build switch probes (offline abort probe + consolidated facts)
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 8
+        uses: ./.github/actions/cap-6b4-build-switch-probes-offline-abort-probe-consolidated-facts
+
+      - name: CAP-6b4 release index from the three built profiles
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 3
+        uses: ./.github/actions/cap-6b4-release-index-from-the-three-built-profiles
+
+      - name: CAP-6b4 profile isolation (per-profile ISCC listings, size envelopes, release index)
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 4
+        uses: ./.github/actions/cap-6b4-profile-isolation-per-profile-iscc-listings-size-envelopes
+
+      - name: CAP-6b4 profile matrix - I1-I3, S1-S6, F1-F4, U1-U3 over the three real setups
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 115
+        uses: ./.github/actions/cap-6b4-profile-matrix-i1-i3-s1-s6-f1-f4-u1-u3-over-the-three-real
+
+      - name: CAP-10E E4 fixed-runtime profile at a non-ASCII install directory
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 75
+        uses: ./.github/actions/cap-10e-e4-fixed-runtime-profile-at-a-non-ascii-install-directory
+
+      - name: CAP-7F host-argument gate on the release triple (closes D1 on Windows)
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 10
+        uses: ./.github/actions/cap-7f-host-argument-gate-on-the-release-triple-closes-d1-on-windows
+
+      - name: CAP-8B real-window navigation matrix (WebView2)
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 15
+        uses: ./.github/actions/cap-8b-real-window-navigation-matrix-webview2
+
+      - name: CAP-8C multi-principal integration harness (WebView2)
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 20
+        uses: ./.github/actions/cap-8c-multi-principal-integration-harness-webview2
+
+      - name: CAP-7L build libwebview.so from pinned source (cmake + gcc)
+        if: ${{ inputs.target == 'linux' }}
+        timeout-minutes: 15
+        uses: ./.github/actions/cap-7l-build-libwebview-so-from-pinned-source-cmake-gcc
+
+      - name: CAP-7L deps/webview carries no Linux patch
+        if: ${{ inputs.target == 'linux' }}
+        uses: ./.github/actions/cap-7l-deps-webview-carries-no-linux-patch
+
+      - name: CAP-7L public ABI remains exactly 17 exports (nm -D)
+        if: ${{ inputs.target == 'linux' }}
+        uses: ./.github/actions/cap-7l-public-abi-remains-exactly-17-exports-nm-d
+
+      - name: CAP-7L paired ABI probes + hand-declared symbol presence gate
+        if: ${{ inputs.target == 'linux' }}
+        timeout-minutes: 10
+        uses: ./.github/actions/cap-7l-paired-abi-probes-hand-declared-symbol-presence-gate
+
+      - name: CAP-7L setup pinned Node
+        if: ${{ inputs.target == 'linux' }}
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.11.1
+
+      - name: CAP-7L TypeScript SDK build + tests
+        if: ${{ inputs.target == 'linux' }}
+        timeout-minutes: 10
+        uses: ./.github/actions/cap-7l-typescript-sdk-build-tests
+
+      - name: CAP-7L React frontend build (pinned lockfile, offline bundle)
+        if: ${{ inputs.target == 'linux' }}
+        timeout-minutes: 10
+        uses: ./.github/actions/cap-7l-react-frontend-build-pinned-lockfile-offline-bundle
+
+      - name: CAP-7L fetch pinned pas2js (sha256-verified) and build its frontend
+        if: ${{ inputs.target == 'linux' }}
+        timeout-minutes: 10
+        uses: ./.github/actions/cap-7l-fetch-pinned-pas2js-sha256-verified-and-build-its-frontend
+
+      - name: CAP-7L compile every unit, probe and example for Linux
+        if: ${{ inputs.target == 'linux' }}
+        timeout-minutes: 20
+        uses: ./.github/actions/cap-7l-compile-every-unit-probe-and-example-for-linux
+
+      - name: CAP-7L headless gates - suite, POSIX store confinement, packaging
+        if: ${{ inputs.target == 'linux' }}
+        timeout-minutes: 15
+        uses: ./.github/actions/cap-7l-headless-gates-suite-posix-store-confinement-packaging
+
+      - name: CAP-7L GUI matrix (L4-L22) under Xvfb
+        if: ${{ inputs.target == 'linux' }}
+        timeout-minutes: 20
+        uses: ./.github/actions/cap-7l-gui-matrix-l4-l22-under-xvfb
+
+      - name: CAP-7L release layout - React and Pas2JS to 42 from an isolated dir
+        if: ${{ inputs.target == 'linux' }}
+        timeout-minutes: 15
+        uses: ./.github/actions/cap-7l-release-layout-react-and-pas2js-to-42-from-an-isolated-dir
+
+      - name: CAP-7L zero-transport proof (L20)
+        if: ${{ inputs.target == 'linux' }}
+        timeout-minutes: 10
+        uses: ./.github/actions/cap-7l-zero-transport-proof-l20
+
+      - name: CAP-7F host-argument gate on the release layout (closes D1 on Linux)
+        if: ${{ inputs.target == 'linux' }}
+        timeout-minutes: 10
+        uses: ./.github/actions/cap-7f-host-argument-gate-on-the-release-layout-closes-d1-on-linux
+
+      - name: CAP-8B real-window navigation matrix (WebKitGTK) under Xvfb
+        if: ${{ inputs.target == 'linux' }}
+        timeout-minutes: 20
+        uses: ./.github/actions/cap-8b-real-window-navigation-matrix-webkitgtk-under-xvfb
+
+      - name: CAP-8C multi-principal integration harness (WebKitGTK) under Xvfb
+        if: ${{ inputs.target == 'linux' }}
+        timeout-minutes: 20
+        uses: ./.github/actions/cap-8c-multi-principal-integration-harness-webkitgtk-under-xvfb
+
+      # The pinned FPC disk image is ~262 MiB and both macOS jobs fetch the
+      # same bytes on every push. It is keyed on fpc.lock, so a re-pin
+      # invalidates it automatically, and get-fpc-macos.ps1 re-verifies the
+      # sha256 AND the md5 of whatever it finds before using it - a poisoned
+      # or truncated cache entry fails the same way a bad download does.
+      - name: CAP-7M0 cache the pinned FPC disk image
+        if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: build/cap7m/toolchain/fpc-macos.dmg
+          key: cap7m-fpc-dmg-${{ hashFiles('fpc.lock') }}
+
+      - name: CAP-7M0 install pinned FPC and select the pinned Xcode
+        if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        timeout-minutes: 25
+        uses: ./.github/actions/cap-7m0-install-pinned-fpc-and-select-the-pinned-xcode
+
+      - name: CAP-7M0 deps/webview carries no macOS patch
+        if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        uses: ./.github/actions/cap-7m0-deps-webview-carries-no-macos-patch
+
+      - name: CAP-7M0 build libwebview.dylib from pinned source (M1/M3/M16)
+        if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        timeout-minutes: 20
+        uses: ./.github/actions/cap-7m0-build-libwebview-dylib-from-pinned-source-m1-m3-m16
+
+      - name: CAP-7M0 public ABI remains exactly 17 exports (M2)
+        if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        uses: ./.github/actions/cap-7m0-public-abi-remains-exactly-17-exports-m2
+
+      - name: CAP-7M0 paired ABI probes + Mach-O presence and dlopen gates (M4/M5)
+        if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        timeout-minutes: 15
+        uses: ./.github/actions/cap-7m0-paired-abi-probes-mach-o-presence-and-dlopen-gates-m4-m5
+
+      - name: CAP-7M1 compile the production Cocoa bridge (one object)
+        if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        timeout-minutes: 10
+        uses: ./.github/actions/cap-7m1-compile-the-production-cocoa-bridge-one-object
+
+      - name: CAP-7M0 compile the binding, mORMot core and the probe (M17)
+        if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        timeout-minutes: 20
+        uses: ./.github/actions/cap-7m0-compile-the-binding-mormot-core-and-the-probe-m17
+
+      - name: CAP-7M1 headless gates (suite + folder confinement)
+        if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        timeout-minutes: 20
+        uses: ./.github/actions/cap-7m1-headless-gates-suite-folder-confinement
+
+      - name: CAP-7M0 feasibility probes (M6-M15)
+        if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        timeout-minutes: 25
+        uses: ./.github/actions/cap-7m0-feasibility-probes-m6-m15
+
+      - name: CAP-7M1 production runtime gates (real WKWebView, folder + zip)
+        if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        timeout-minutes: 30
+        uses: ./.github/actions/cap-7m1-production-runtime-gates-real-wkwebview-folder-zip
+
+      # ------------------- CAP-7M2: release .app products -------------------
+      # The frontends are built HERE, on this runner, from the same pinned
+      # toolchains the Windows and Linux jobs use: Node 24.11.1 for the
+      # TypeScript SDK and the React dist, Pas2JS 3.0.1 for the Pascal dist.
+      # On this leg the pinned darwin x86_64 pas2js binary runs natively; the
+      # arm64 sibling compiles the SAME pinned logical version from the
+      # pinned FPC-repo revision because no aarch64 artifact exists upstream
+      # and Rosetta is banned.
+      - name: CAP-7M2 setup pinned Node
+        if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.11.1
+
+      - name: CAP-7M2 TypeScript SDK build + tests
+        if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        timeout-minutes: 10
+        uses: ./.github/actions/cap-7m2-typescript-sdk-build-tests
+
+      - name: CAP-7M2 React frontend build (pinned lockfile, offline bundle)
+        if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        timeout-minutes: 10
+        uses: ./.github/actions/cap-7m2-react-frontend-build-pinned-lockfile-offline-bundle
+
+      - name: CAP-7M2 fetch pinned pas2js (sha256 + native arch) and build its frontend
+        if: ${{ inputs.target == 'macos-x64' }}
+        timeout-minutes: 15
+        uses: ./.github/actions/cap-7m2-fetch-pinned-pas2js-sha256-native-arch-and-build-its-frontend
+
+      - name: CAP-7M2 fetch pinned pas2js (sha256 + native compile) and build its frontend
+        if: ${{ inputs.target == 'macos-arm64' }}
+        timeout-minutes: 20
+        uses: ./.github/actions/cap-7m2-fetch-pinned-pas2js-sha256-native-compile-and-build-its-frontend
+
+      - name: CAP-7M2 compile the release host and bundler
+        if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        timeout-minutes: 15
+        uses: ./.github/actions/cap-7m2-compile-the-release-host-and-bundler
+
+      - name: CAP-7M2 release .app gates - assembly, refusals, direct + LaunchServices to 42
+        if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        timeout-minutes: 30
+        uses: ./.github/actions/cap-7m2-release-app-gates-assembly-refusals-direct-launchservices-to-42
+
+      - name: CAP-7M0 bundle layout measured from an unrelated CWD (M18)
+        if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        timeout-minutes: 15
+        uses: ./.github/actions/cap-7m0-bundle-layout-measured-from-an-unrelated-cwd-m18
+
+      - name: CAP-7M0 zero-transport proof (M20)
+        if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        timeout-minutes: 15
+        uses: ./.github/actions/cap-7m0-zero-transport-proof-m20
+
+      - name: CAP-8B real-window navigation matrix (WKWebView)
+        if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        timeout-minutes: 20
+        uses: ./.github/actions/cap-8b-real-window-navigation-matrix-wkwebview
+
+      - name: CAP-8C multi-principal integration harness (WKWebView)
+        if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        timeout-minutes: 20
+        uses: ./.github/actions/cap-8c-multi-principal-integration-harness-wkwebview
+
+      - name: CAP-9A QuickJS invocation foundation harness
+        timeout-minutes: 20
+        uses: ./.github/actions/cap-9a-quickjs-invocation-foundation-harness
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-9B1 QuickJS package and module-loader harness
+        timeout-minutes: 20
+        uses: ./.github/actions/cap-9b1-quickjs-package-and-module-loader-harness
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-9B2 QuickJS plugin lifecycle and reload harness
+        timeout-minutes: 30
+        uses: ./.github/actions/cap-9b2-quickjs-plugin-lifecycle-and-reload-harness
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-9C1 QuickJS release package and trusted loader harness
+        timeout-minutes: 30
+        uses: ./.github/actions/cap-9c1-quickjs-release-package-and-trusted-loader-harness
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-9C2 plugin-enabled acceptance frontend build
+        timeout-minutes: 10
+        uses: ./.github/actions/cap-9c2-plugin-enabled-acceptance-frontend-build
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-9C2 plugin-enabled release layout and real-GUI acceptance
+        timeout-minutes: 40
+        uses: ./.github/actions/cap-9c2-plugin-enabled-release-layout-and-real-gui-acceptance
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10B0 build the scaffold engine, the pack and the suite
+        timeout-minutes: 15
+        uses: ./.github/actions/cap-10b0-build-the-scaffold-engine-the-pack-and-the-suite
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10B1 build the public pack, the CLI and the SDK root
+        timeout-minutes: 15
+        uses: ./.github/actions/cap-10b1-build-the-public-pack-the-cli-and-the-sdk-root
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10A build the suite and the probe fixture
+        timeout-minutes: 15
+        uses: ./.github/actions/cap-10a-build-the-suite-and-the-probe-fixture
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10A contract cross-checks (pins, no shell, no network)
+        uses: ./.github/actions/cap-10a-contract-cross-checks-pins-no-shell-no-network
+
+      - name: CAP-10A development-trust gate
+        uses: ./.github/actions/cap-10a-development-trust-gate
+
+      - name: CAP-10A CLI gates + evidence
+        timeout-minutes: 15
+        uses: ./.github/actions/cap-10a-cli-gates-evidence
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10B0 contract cross-checks (create linked, offline, limits)
+        uses: ./.github/actions/cap-10b0-contract-cross-checks-create-linked-offline-limits
+
+      - name: CAP-10B0 scaffold gates + evidence
+        timeout-minutes: 15
+        uses: ./.github/actions/cap-10b0-scaffold-gates-evidence
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10B1 contract cross-checks (one UI, exact pins, no exec)
+        uses: ./.github/actions/cap-10b1-contract-cross-checks-one-ui-exact-pins-no-exec
+
+      - name: CAP-10B1 create gates + evidence
+        timeout-minutes: 15
+        uses: ./.github/actions/cap-10b1-create-gates-evidence
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10B1 private build proof and real GUI run
+        timeout-minutes: 30
+        uses: ./.github/actions/cap-10b1-private-build-proof-and-real-gui-run
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10B2 build the react-only CLI that proves template_unknown
+        timeout-minutes: 15
+        uses: ./.github/actions/cap-10b2-build-the-react-only-cli-that-proves-template-unknown
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10B2 contract cross-checks (two UIs, one native app, no npm)
+        uses: ./.github/actions/cap-10b2-contract-cross-checks-two-uis-one-native-app-no-npm
+
+      - name: CAP-10B2 pas2js create gates + evidence
+        timeout-minutes: 15
+        uses: ./.github/actions/cap-10b2-pas2js-create-gates-evidence
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10B2 private build proof and real GUI run
+        timeout-minutes: 30
+        uses: ./.github/actions/cap-10b2-private-build-proof-and-real-gui-run
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10C0 build the supervision suite and the fixture child
+        timeout-minutes: 15
+        uses: ./.github/actions/cap-10c0-build-the-supervision-suite-and-the-fixture-child
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10C0 contract cross-checks (bounds, no shell at the link, no name-kill, env, shutdown order)
+        uses: ./.github/actions/cap-10c0-contract-cross-checks-bounds-no-shell-at-the-link-no-name-kill
+
+      - name: CAP-10C0 supervision suite + pweb run gates + evidence
+        timeout-minutes: 30
+        uses: ./.github/actions/cap-10c0-supervision-suite-pweb-run-gates-evidence
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10C1 complete the SDK root and build the pipeline driver
+        timeout-minutes: 20
+        uses: ./.github/actions/cap-10c1-complete-the-sdk-root-and-build-the-pipeline-driver
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10C1 contract cross-checks (bounds, library names, linkage, no conditional, no env read)
+        uses: ./.github/actions/cap-10c1-contract-cross-checks-bounds-library-names-linkage-no
+
+      - name: CAP-10C1 lifecycle pipeline gates + app.pwb parity + evidence
+        timeout-minutes: 45
+        uses: ./.github/actions/cap-10c1-lifecycle-pipeline-gates-app-pwb-parity-evidence
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10C2 build the development suite, the driver and both host binaries
+        timeout-minutes: 25
+        uses: ./.github/actions/cap-10c2-build-the-development-suite-the-driver-and-both-host-binaries
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10C2 contract cross-checks (bounds, linkage, dev-free release, CSP, no transport)
+        uses: ./.github/actions/cap-10c2-contract-cross-checks-bounds-linkage-dev-free-release-csp-no
+
+      - name: CAP-10C2 development-loop gates (DEV1-DEV14, T1-T5) + evidence
+        timeout-minutes: 70
+        uses: ./.github/actions/cap-10c2-development-loop-gates-dev1-dev14-t1-t5-evidence
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10C3 build the pas2js development suite, the driver and both host binaries
+        timeout-minutes: 25
+        uses: ./.github/actions/cap-10c3-build-the-pas2js-development-suite-the-driver-and-both-host
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10C3 contract cross-checks (bounds, detector linkage, no watch API, pas2js CSP + dev-free release)
+        uses: ./.github/actions/cap-10c3-contract-cross-checks-bounds-detector-linkage-no-watch-api
+
+      - name: CAP-10C3 the CAP-10C ledger disposition (CL2, CL3)
+        uses: ./.github/actions/cap-10c3-the-cap-10c-ledger-disposition-cl2-cl3
+
+      - name: CAP-10C3 pas2js development-loop gates (PD1-PD15, RD1, T1-T5, CL1-CL3) + evidence
+        timeout-minutes: 70
+        uses: ./.github/actions/cap-10c3-pas2js-development-loop-gates-pd1-pd15-rd1-t1-t5-cl1-cl3
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10D0 build the public-build suite and its driver
+        timeout-minutes: 20
+        uses: ./.github/actions/cap-10d0-build-the-public-build-suite-and-its-driver
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10D0 contract cross-checks (one execution path, ten stages, five commands, gate quoting)
+        uses: ./.github/actions/cap-10d0-contract-cross-checks-one-execution-path-ten-stages-five
+
+      - name: CAP-10D0 public-build gates (B1-B12, L1-L3, R1-R2) + evidence
+        timeout-minutes: 120
+        uses: ./.github/actions/cap-10d0-public-build-gates-b1-b12-l1-l3-r1-r2-evidence
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10D1 contract cross-checks (pins vs locks, five engine callers, the anti-fork twins, no signing, no network)
+        uses: ./.github/actions/cap-10d1-contract-cross-checks-pins-vs-locks-five-engine-callers-the
+
+      - name: CAP-10D1 stage the packaging kit and build the suite and driver
+        timeout-minutes: 20
+        uses: ./.github/actions/cap-10d1-stage-the-packaging-kit-and-build-the-suite-and-driver
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10D1 packaging gates + evidence
+        timeout-minutes: 150
+        uses: ./.github/actions/cap-10d1-packaging-gates-evidence
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10D0 L2b - the CAP-10 chain at a repository path with a space
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 120
+        uses: ./.github/actions/cap-10d0-l2b-the-cap-10-chain-at-a-repository-path-with-a-space
+
+      - name: CAP-10D2 contract cross-checks (no network, no env root, the licence table, the tool rule)
+        uses: ./.github/actions/cap-10d2-contract-cross-checks-no-network-no-env-root-the-licence-table
+
+      - name: CAP-10D2 the phase-wide CAP-10 ledger disposition (CL1-CL4)
+        uses: ./.github/actions/cap-10d2-the-phase-wide-cap-10-ledger-disposition-cl1-cl4
+
+      - name: CAP-10D2 stage the licence set and build the packager and suite
+        timeout-minutes: 20
+        uses: ./.github/actions/cap-10d2-stage-the-licence-set-and-build-the-packager-and-suite
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10D2 SDK distribution gates (PK1-PK4, IN1-IN4, CM1-CM6, CL1-CL4) + evidence
+        timeout-minutes: 180
+        uses: ./.github/actions/cap-10d2-sdk-distribution-gates-pk1-pk4-in1-in4-cm1-cm6-cl1-cl4-evidence
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10E image-path source gate (zero ParamStr(0), zero ProgramFilePath, one reader)
+        timeout-minutes: 10
+        uses: ./.github/actions/cap-10e-image-path-source-gate-zero-paramstr-0-zero-programfilepath-one
+        with:
+          target: ${{ inputs.target }}
+
+      - name: CAP-10E kernel image path - non-ASCII release host, junction, long path (E1/E2/E6/E7/E9)
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 45
+        uses: ./.github/actions/cap-10e-kernel-image-path-non-ascii-release-host-junction-long-path-e1
+
+      - name: CAP-11A structure gate (sizes, retention, timeouts, concurrency, no artifact read)
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap11a/check_ci_structure.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-11A structure gate (sizes, retention, timeouts, concurrency, no artifact read) FAILED' }
+
+      - name: CAP-11A migration map - every legacy step accounted for
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap11a/check_migration_map.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-11A migration map - every legacy step accounted for FAILED' }
+
+      - name: CAP-7F evidence schema agreement (both emitters and the aggregator)
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap7f/check_schema_agreement.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-7F evidence schema agreement (both emitters and the aggregator) FAILED' }
+
+      - name: CAP-11A bounded fetch retry - seeded transport, digest and exhaustion cases
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap11a/check_pwebfetch.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-11A bounded fetch retry - seeded transport, digest and exhaustion cases FAILED' }
+
+      - name: CAP-11A flake instrumentation (non-report cause, U3 drain order, fetch rows)
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap11a/check_flake_instrumentation.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-11A flake instrumentation (non-report cause, U3 drain order, fetch rows) FAILED' }
+
+      - name: CAP-7F emit the Windows evidence artifact
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 10
+        uses: ./.github/actions/cap-7f-emit-the-windows-evidence-artifact
+
+      - name: CAP-10E kernel image path - non-ASCII release host and the symlink rule (E1/E2/E5/E9)
+        if: ${{ inputs.target == 'linux' }}
+        timeout-minutes: 30
+        uses: ./.github/actions/cap-10e-kernel-image-path-non-ascii-release-host-and-the-symlink-rule
+
+      - name: CAP-7F emit the Linux evidence artifact
+        if: ${{ inputs.target == 'linux' }}
+        timeout-minutes: 10
+        uses: ./.github/actions/cap-7f-emit-the-linux-evidence-artifact
+
+      - name: CAP-10E kernel image path - non-ASCII (NFD) release host and the symlink rule (E1/E2/E5/E9)
+        if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        timeout-minutes: 30
+        uses: ./.github/actions/cap-10e-kernel-image-path-non-ascii-nfd-release-host-and-the-symlink
+
+      - name: CAP-7F emit the macOS x64 evidence artifact
+        if: ${{ inputs.target == 'macos-x64' }}
+        timeout-minutes: 10
+        uses: ./.github/actions/cap-7f-emit-the-macos-x64-evidence-artifact
+
+      - name: CAP-7F emit the macOS arm64 evidence artifact
+        if: ${{ inputs.target == 'macos-arm64' }}
+        timeout-minutes: 10
+        uses: ./.github/actions/cap-7f-emit-the-macos-arm64-evidence-artifact
+
+      - name: CAP-7M0 per-arch headline facts to the run summary
+        if: ${{ always() && inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+        uses: ./.github/actions/cap-7m0-per-arch-headline-facts-to-the-run-summary
+
+      # ===================== CAP-11A COLLECTION BLOCK =====================
+      # The ONLY uploads on this leg, and they come after EVERY gate. Each
+      # class is attempted at most three times; an attempt runs only when the
+      # one before it failed, and none of them can fail the leg. The typing
+      # step then writes what actually happened, so "leg green, evidence not
+      # uploaded" is a state the aggregate can name instead of a leg that
+      # merely lost thirty steps.
+      - name: CAP-11A stage the collection and measure it
+        if: always()
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap11a/stage_collection.ps1 -Target "${{ inputs.target }}"
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-11A collection staging FAILED' }
+
+      - name: CAP-11A collect the leg evidence (attempt 1 of 3)
+        id: collect_evidence_1
+        if: ${{ always() }}
+        continue-on-error: true
+        timeout-minutes: 15
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leg-evidence-${{ inputs.target }}
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: true
+          path: build/cap11a/collect/evidence
+
+      - name: CAP-11A collect the leg evidence (attempt 2 of 3)
+        id: collect_evidence_2
+        if: ${{ always() && steps.collect_evidence_1.outcome == 'failure' }}
+        continue-on-error: true
+        timeout-minutes: 15
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leg-evidence-${{ inputs.target }}
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: true
+          path: build/cap11a/collect/evidence
+
+      - name: CAP-11A collect the leg evidence (attempt 3 of 3)
+        id: collect_evidence_3
+        if: ${{ always() && steps.collect_evidence_2.outcome == 'failure' }}
+        continue-on-error: true
+        timeout-minutes: 15
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leg-evidence-${{ inputs.target }}
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: true
+          path: build/cap11a/collect/evidence
+
+      - name: CAP-11A collect the leg records (attempt 1 of 3)
+        id: collect_records_1
+        if: ${{ always() }}
+        continue-on-error: true
+        timeout-minutes: 15
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leg-records-${{ inputs.target }}
+          if-no-files-found: warn
+          retention-days: 90
+          overwrite: true
+          path: build/cap11a/collect/records
+
+      - name: CAP-11A collect the leg records (attempt 2 of 3)
+        id: collect_records_2
+        if: ${{ always() && steps.collect_records_1.outcome == 'failure' }}
+        continue-on-error: true
+        timeout-minutes: 15
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leg-records-${{ inputs.target }}
+          if-no-files-found: warn
+          retention-days: 90
+          overwrite: true
+          path: build/cap11a/collect/records
+
+      - name: CAP-11A collect the leg records (attempt 3 of 3)
+        id: collect_records_3
+        if: ${{ always() && steps.collect_records_2.outcome == 'failure' }}
+        continue-on-error: true
+        timeout-minutes: 15
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leg-records-${{ inputs.target }}
+          if-no-files-found: warn
+          retention-days: 90
+          overwrite: true
+          path: build/cap11a/collect/records
+
+      - name: CAP-11A collect the leg release (attempt 1 of 3)
+        id: collect_release_1
+        if: ${{ always() && (inputs.target == 'macos-x64' || inputs.target == 'macos-arm64') }}
+        continue-on-error: true
+        timeout-minutes: 15
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leg-release-${{ inputs.target }}
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: true
+          path: build/cap11a/collect/release
+
+      - name: CAP-11A collect the leg release (attempt 2 of 3)
+        id: collect_release_2
+        if: ${{ always() && steps.collect_release_1.outcome == 'failure' && (inputs.target == 'macos-x64' || inputs.target == 'macos-arm64') }}
+        continue-on-error: true
+        timeout-minutes: 15
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leg-release-${{ inputs.target }}
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: true
+          path: build/cap11a/collect/release
+
+      - name: CAP-11A collect the leg release (attempt 3 of 3)
+        id: collect_release_3
+        if: ${{ always() && steps.collect_release_2.outcome == 'failure' && (inputs.target == 'macos-x64' || inputs.target == 'macos-arm64') }}
+        continue-on-error: true
+        timeout-minutes: 15
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leg-release-${{ inputs.target }}
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: true
+          path: build/cap11a/collect/release
+
+      - name: CAP-11A collect the leg dist (attempt 1 of 3)
+        id: collect_dist_1
+        if: ${{ always() }}
+        continue-on-error: true
+        timeout-minutes: 15
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leg-dist-${{ inputs.target }}
+          if-no-files-found: warn
+          retention-days: ${{ inputs.long_retention && 90 || 14 }}
+          overwrite: true
+          path: build/cap11a/collect/dist
+
+      - name: CAP-11A collect the leg dist (attempt 2 of 3)
+        id: collect_dist_2
+        if: ${{ always() && steps.collect_dist_1.outcome == 'failure' }}
+        continue-on-error: true
+        timeout-minutes: 15
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leg-dist-${{ inputs.target }}
+          if-no-files-found: warn
+          retention-days: ${{ inputs.long_retention && 90 || 14 }}
+          overwrite: true
+          path: build/cap11a/collect/dist
+
+      - name: CAP-11A collect the leg dist (attempt 3 of 3)
+        id: collect_dist_3
+        if: ${{ always() && steps.collect_dist_2.outcome == 'failure' }}
+        continue-on-error: true
+        timeout-minutes: 15
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leg-dist-${{ inputs.target }}
+          if-no-files-found: warn
+          retention-days: ${{ inputs.long_retention && 90 || 14 }}
+          overwrite: true
+          path: build/cap11a/collect/dist
+
+      - name: CAP-11A collect the leg diagnostics (attempt 1 of 1)
+        id: collect_diagnostics_1
+        if: ${{ failure() }}
+        continue-on-error: true
+        timeout-minutes: 15
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leg-diagnostics-${{ inputs.target }}
+          if-no-files-found: ignore
+          retention-days: 7
+          overwrite: true
+          path: build/cap11a/collect/diagnostics
+
+      # NEVER fails the leg: a leg that passed its gates and could not reach the
+      # artifact service is green with `evidence_uploaded=false`, and the
+      # aggregate refuses while NAMING it infrastructure. A leg that failed a
+      # gate is red for that gate, which is a different sentence.
+      - name: CAP-11A type the collection outcome
+        if: always()
+        timeout-minutes: 5
+        shell: pwsh
+        env:
+          PWEB_UP_evidence_1: ${{ steps.collect_evidence_1.outcome }}
+          PWEB_UP_evidence_2: ${{ steps.collect_evidence_2.outcome }}
+          PWEB_UP_evidence_3: ${{ steps.collect_evidence_3.outcome }}
+          PWEB_UP_records_1: ${{ steps.collect_records_1.outcome }}
+          PWEB_UP_records_2: ${{ steps.collect_records_2.outcome }}
+          PWEB_UP_records_3: ${{ steps.collect_records_3.outcome }}
+          PWEB_UP_release_1: ${{ steps.collect_release_1.outcome }}
+          PWEB_UP_release_2: ${{ steps.collect_release_2.outcome }}
+          PWEB_UP_release_3: ${{ steps.collect_release_3.outcome }}
+          PWEB_UP_dist_1: ${{ steps.collect_dist_1.outcome }}
+          PWEB_UP_dist_2: ${{ steps.collect_dist_2.outcome }}
+          PWEB_UP_dist_3: ${{ steps.collect_dist_3.outcome }}
+        run: |
+          pwsh -NoProfile -File test/cap11a/type_collection.ps1 -Target "${{ inputs.target }}"
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-11A collection typing FAILED' }

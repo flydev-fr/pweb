@@ -1,0 +1,14 @@
+# THE ACCEPTANCE CRITERION IN THE FLESH: a real WKWebView, the
+# production adapter, folder AND zip stores over one corpus, the frozen
+# scheduler/binding/mORMot path to 42, both shutdown shapes, and the
+# whole thing again from `/` with every DYLD_* hint stripped. No mocked
+# WebKit, no browser substitute, no SKIP path.
+
+name: 'CAP-7M1 production runtime gates (real WKWebView, folder + zip)'
+description: 'CAP-11A: the body of the "CAP-7M1 production runtime gates (real WKWebView, folder + zip)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: macos-x64, macos-arm64
+      shell: bash
+      run: test/cap7m/run_cap7m_runtime.sh 3

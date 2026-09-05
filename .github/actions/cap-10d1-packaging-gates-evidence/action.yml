@@ -1,0 +1,23 @@
+name: 'CAP-10D1 packaging gates + evidence'
+description: 'CAP-11A: the body of the "CAP-10D1 packaging gates + evidence" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: windows, macos-x64, macos-arm64
+      if: ${{ inputs.target != 'linux' }}
+      shell: bash
+      run: |
+        pwsh -NoProfile -File test/cap10d1/run_cap10d1_gates.ps1 2>&1 |
+          tee build/cap10d1-gates.log
+        test "${PIPESTATUS[0]}" -eq 0
+    - name: linux
+      if: ${{ inputs.target == 'linux' }}
+      shell: bash
+      run: |
+        xvfb-run -a pwsh -NoProfile -File test/cap10d1/run_cap10d1_gates.ps1 2>&1 |
+          tee build/cap10d1-gates.log
+        test "${PIPESTATUS[0]}" -eq 0

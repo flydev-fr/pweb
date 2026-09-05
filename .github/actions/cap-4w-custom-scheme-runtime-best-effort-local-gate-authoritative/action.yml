@@ -1,0 +1,27 @@
+name: 'CAP-4W - custom-scheme runtime (best effort, local gate authoritative)'
+description: 'CAP-11A: the body of the "CAP-4W - custom-scheme runtime (best effort, local gate authoritative)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        $out = & pwsh -NoProfile -File test/cap4w/check_cap4w.ps1 `
+          -Cycles 3 2>&1 | Out-String
+        $code = $LASTEXITCODE
+        Write-Host $out
+        if (($code -eq 0) -and
+            ($out -match 'CAP4W_RENDERED_PASS cycles=3')) {
+          $verdict = 'PASS - pweb://app HTML/JS rendered for three clean cycles'
+        }
+        elseif (($out -match 'CAP4W_FAIL cycle=1 operation=webview_create') -and
+                ($out -notmatch 'CAP4W_CYCLE_PASS')) {
+          $verdict = "SKIP - no usable WebView2 runtime/desktop session (exit $code)"
+        }
+        else {
+          $verdict = "FAIL - exit $code or missing rendered marker"
+        }
+        "### CAP-4W custom-scheme runtime (conditional hosted gate)`n$verdict" |
+          Out-File -Append $env:GITHUB_STEP_SUMMARY
+        Write-Host "CAP-4W hosted verdict: $verdict"
+        if ($verdict.StartsWith('FAIL')) { exit 1 }

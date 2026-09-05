@@ -1,0 +1,23 @@
+name: 'CAP-10C2 development-loop gates (DEV1-DEV14, T1-T5) + evidence'
+description: 'CAP-11A: the body of the "CAP-10C2 development-loop gates (DEV1-DEV14, T1-T5) + evidence" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: windows, macos-x64, macos-arm64
+      if: ${{ inputs.target != 'linux' }}
+      shell: bash
+      run: |
+        pwsh -NoProfile -File test/cap10c2/run_cap10c2_gates.ps1 2>&1 |
+          tee build/cap10c2-gates.log
+        test "${PIPESTATUS[0]}" -eq 0
+    - name: linux
+      if: ${{ inputs.target == 'linux' }}
+      shell: bash
+      run: |
+        xvfb-run -a pwsh -NoProfile -File test/cap10c2/run_cap10c2_gates.ps1 2>&1 |
+          tee build/cap10c2-gates.log
+        test "${PIPESTATUS[0]}" -eq 0

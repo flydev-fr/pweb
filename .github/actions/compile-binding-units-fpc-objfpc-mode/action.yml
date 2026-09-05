@@ -1,0 +1,15 @@
+name: 'Compile binding units (FPC, ObjFPC mode)'
+description: 'CAP-11A: the body of the "Compile binding units (FPC, ObjFPC mode)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force build/fpc | Out-Null
+        fpc -MObjFPC -Sh -B -FUbuild/fpc -Fusrc/lib src/lib/pweb.lib.webview.pas
+        if ($LASTEXITCODE -ne 0) { throw 'core unit failed' }
+        fpc -MObjFPC -Sh -FUbuild/fpc -Fusrc/lib src/lib/pweb.lib.webview.types.pas
+        if ($LASTEXITCODE -ne 0) { throw 'types unit failed' }
+        fpc -MObjFPC -Sh -FUbuild/fpc -Fusrc/lib src/lib/pweb.lib.webview.errors.pas
+        if ($LASTEXITCODE -ne 0) { throw 'errors unit failed' }

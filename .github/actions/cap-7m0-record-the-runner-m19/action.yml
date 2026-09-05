@@ -1,0 +1,60 @@
+# M19: the runner is identified BEFORE any gate is accepted, so a
+# measurement can never be attributed to the wrong machine after the
+# fact. The arch assertion is here as well as inside every gate
+# because a mislabelled runner must fail the job, not a probe.
+
+name: 'CAP-7M0 record the runner (M19)'
+description: 'CAP-11A: the body of the "CAP-7M0 record the runner (M19)" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: macos-x64
+      if: ${{ inputs.target == 'macos-x64' }}
+      shell: bash
+      run: |
+        echo "runner label: macos-15-intel"
+        echo "uname -m:     $(uname -m)"
+        sw_vers
+        echo "xcode (image default, NOT what the gates use):"
+        xcodebuild -version || true
+        echo "available Xcode installs:"
+        ls -1 /Applications | grep -i '^Xcode' || true
+        [ "$(uname -m)" = "${CAP7M_EXPECT_ARCH}" ] ||
+          { echo "runner is $(uname -m), expected ${CAP7M_EXPECT_ARCH}"; exit 1; }
+        # THE ANTI-ROSETTA GATE BELONGS HERE, on the x64 leg. A translated
+        # process reports x86_64 from `uname -m` perfectly honestly, so it
+        # is THIS job - not the arm64 one - that an Apple Silicon runner
+        # under Rosetta would silently satisfy, and a translated run is
+        # never authoritative x64 evidence. On the arm64 leg the same check
+        # is unreachable by construction: nothing translated ever reports
+        # arm64, so `uname -m` = arm64 already settles it there.
+        if [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)" = "1" ]; then
+          echo 'this job is running under Rosetta'; exit 1
+        fi
+        if [ "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" = "1" ]; then
+          echo 'this runner is Apple Silicon but reports x86_64 -- translated shell'
+          exit 1
+        fi
+        echo 'arch: native x86_64, not translated'
+    - name: macos-arm64
+      if: ${{ inputs.target == 'macos-arm64' }}
+      shell: bash
+      run: |
+        echo "runner label: macos-15"
+        echo "uname -m:     $(uname -m)"
+        sw_vers
+        echo "xcode (image default, NOT what the gates use):"
+        xcodebuild -version || true
+        echo "available Xcode installs:"
+        ls -1 /Applications | grep -i '^Xcode' || true
+        [ "$(uname -m)" = "${CAP7M_EXPECT_ARCH}" ] ||
+          { echo "runner is $(uname -m), expected ${CAP7M_EXPECT_ARCH}"; exit 1; }
+        # No proc_translated check here, deliberately: nothing running under
+        # Rosetta ever reports arm64, so the assertion above already
+        # excludes translation on this leg. The check that matters lives in
+        # the x64 job, which is the one a translated process could pass.
+        echo 'arch: native arm64 (translation cannot report arm64)'

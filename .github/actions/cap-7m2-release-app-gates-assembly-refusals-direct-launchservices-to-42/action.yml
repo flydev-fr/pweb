@@ -1,0 +1,8 @@
+name: 'CAP-7M2 release .app gates - assembly, refusals, direct + LaunchServices to 42'
+description: 'CAP-11A: the body of the "CAP-7M2 release .app gates - assembly, refusals, direct + LaunchServices to 42" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: macos-x64, macos-arm64
+      shell: bash
+      run: test/cap7m/run_cap7m_release.sh

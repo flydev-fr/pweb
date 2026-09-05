@@ -1,0 +1,8 @@
+name: 'CAP-6b0 host WebView2 detection smoke (diagnostic evidence only)'
+description: 'CAP-11A: the body of the "CAP-6b0 host WebView2 detection smoke (diagnostic evidence only)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: pwsh -NoProfile -File test/cap6b/run_wv2probe.ps1

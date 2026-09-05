@@ -425,6 +425,35 @@ $required = @(
     'long_path_outcome', 'fixed_profile_nonascii_dir',
     'paramstr0_path_sites', 'programfilepath_sites', 'image_reader_count',
     'image_reader_files',
+    # CAP-11A: the CI structure itself, its upload model and the three
+    # instrumented flakes.
+    #
+    # COMPARED (in $equalityFields below): ci_sequence_digest,
+    # ci_file_max_bytes, ci_file_bound_bytes, ci_legacy_present,
+    # retention_policy_digest, ci_timeouts, ci_timeouts_digest,
+    # ci_twin_run_equal, schema_field_count - every one of them a fact about
+    # files four targets read identically, so a disagreement means one leg is
+    # running a different repository than its neighbours.
+    #
+    # PER-TARGET, required present and compared on none:
+    #   flake_nonreport_cause_row,  the GUI smokes whose non-report this
+    #   flake_nonreport_causes      instruments are Windows-only; the other
+    #                               three legs report not_applicable, and a
+    #                               target that stopped emitting the row would
+    #                               otherwise go unnoticed
+    #   u3_drain_rows               CAP-6b4 runs on Windows only
+    #   fetch_retry_rows            each family fetches a different set of
+    #                               pinned artifacts, so the COUNT is per-target
+    #                               while the BOUNDS are pinned
+    'ci_sequence_digest', 'ci_file_max_bytes', 'ci_file_bound_bytes',
+    'ci_legacy_present', 'retention_policy_digest', 'ci_timeouts',
+    'ci_timeouts_digest', 'upload_model', 'upload_max_attempts',
+    'gate_reads_artifact', 'ci_migration_bodies_compared',
+    'ci_migration_uploads_folded', 'ci_twin_run_equal', 'schema_field_count',
+    'flake_nonreport_cause_row', 'flake_nonreport_causes',
+    'u3_drain_before_measure', 'u3_drain_rows',
+    'fetch_retry_rows', 'fetch_retry_max_attempts', 'fetch_retry_bound_s',
+    'sdk_own_license',
     'github_sha', 'github_run_id', 'waivers'
 )
 # absolute pins: equality across targets is not enough - four targets that
@@ -907,6 +936,27 @@ $absolutePins = @{
     programfilepath_sites              = '0'
     image_reader_count                 = '1'
     image_reader_files                 = 'src/security/pweb.imagepath.pas'
+    # CAP-11A: the facts four targets could agree on and still be wrong about.
+    # Evidence is collected in ONE final step per leg with a bounded retry, no
+    # gate reads an artifact, the CAP-6b4 U3 drain is reported before the
+    # directory is measured, and a pinned-artifact fetch gets three attempts of
+    # 180 seconds each - three numbers that a well-meaning edit could relax
+    # without any equality check noticing, because all four legs would relax
+    # together.
+    upload_model                       = 'final_step_bounded_retry'
+    upload_max_attempts                = '3'
+    gate_reads_artifact                = '0'
+    u3_drain_before_measure            = 'true'
+    fetch_retry_max_attempts           = '3'
+    fetch_retry_bound_s                = '180'
+    # The migration's own arithmetic: 445 legacy steps, of which 342 carry a
+    # body this repository still compares against its pre-migration digest and
+    # 103 were the interleaved uploads folded into the collection block.
+    ci_migration_bodies_compared       = '342'
+    ci_migration_uploads_folded        = '103'
+    # PWeb declares no licence of its own (ledger D2-8, owner: the human). The
+    # pin is what stops this shard - or a later one - from quietly choosing one.
+    sdk_own_license                    = 'undeclared'
 }
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
 $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
@@ -1334,7 +1384,19 @@ $equalityFields = @(
     # MEASURED: they were pasted into this list once, and four green targets
     # produced 124 disagreements that were all the aggregate asking Linux to
     # have installed a Windows setup.
-    'd0_build_digest'
+    'd0_build_digest',
+    # CAP-11A: facts about the FILES four targets read, not about the machines
+    # they read them on. The sequence digest is over the one step list they were
+    # all given; the size, retention and timeout digests are over the same
+    # workflow tree; the schema field count is over the two emitters and the
+    # aggregator; `ci_legacy_present` says whether the file being replaced is
+    # still in the tree, which is true on the twin-run commit and false after
+    # the removal commit - and must be the SAME answer on four legs either way.
+    # `ci_twin_run_equal` reads a committed record, so four targets that
+    # disagreed about it would be reading different repositories.
+    'ci_sequence_digest', 'ci_file_max_bytes', 'ci_file_bound_bytes',
+    'ci_legacy_present', 'retention_policy_digest', 'ci_timeouts',
+    'ci_timeouts_digest', 'ci_twin_run_equal', 'schema_field_count'
 )
 # the CAP-9C2 semantic gate names, carried in ONE place across the two
 # emitters and this aggregator (see test/cap7f/emit_evidence.ps1)
@@ -1356,12 +1418,51 @@ $CAP9C2_GATE_FIELDS = @(
 # targets that additionally carry a pas2js logical inventory
 $pas2jsTargets = @('linux-x86_64', 'macos-x86_64', 'macos-arm64')
 
+# --- CAP-11A: WHY a target's evidence is missing, when it is ----------------
+# An absent artifact used to be one sentence: "the target is absent". It is two
+# situations with two different owners, and on hosted run 33955241980 the wrong
+# one was assumed. There, macos-x64's gates were GREEN up to an
+# `actions/upload-artifact` timeout against GitHub's own service, and about
+# thirty later steps were skipped - so the aggregate had no evidence for a
+# target that had not failed anything.
+#
+# `build/cap11a/sequence.json` is written by `check_ci_sequence.ps1` from the
+# RUN's own step record, which is the one channel an upload failure cannot take
+# away. When it is present, an absent artifact is typed:
+#   infrastructure  every gate on the leg passed; the evidence never uploaded
+#   gate_failure    a gate on the leg failed, and the aggregate names which
+# The aggregate REFUSES either way - four targets cannot be compared when one is
+# missing - but it says which, so nobody has to read a log to find out.
+$legStatus = @{}
+$seqFile = 'build/cap11a/sequence.json'
+if (Test-Path -LiteralPath $seqFile) {
+    try {
+        $seq = Get-Content -Raw -LiteralPath $seqFile | ConvertFrom-Json
+        foreach ($p in $seq.collection.PSObject.Properties) { $legStatus[$p.Name] = $p.Value }
+    } catch {
+        Write-Host "WARNING: $seqFile is unreadable ($_); an absent artifact cannot be typed"
+    }
+}
+function Get-AbsenceCause([string]$Dir) {
+    if (-not $legStatus.ContainsKey($Dir)) { return 'UNTYPED (no run step record was available)' }
+    $s = $legStatus[$Dir]
+    if ("$($s.status)" -eq 'infrastructure') {
+        return ('INFRASTRUCTURE, NOT A GATE: every gate on this leg passed and the ' +
+            'evidence upload failed after its bounded retry. The leg is green; its ' +
+            'evidence was not collected.')
+    }
+    if ("$($s.status)" -eq 'gate_failure') {
+        return ("LEG RED: the leg failed at [$(@($s.gates_failed) -join '; ')]")
+    }
+    return "UNEXPECTED: the run record types this leg '$($s.status)' yet its evidence is absent"
+}
+
 # --- load + per-target validation -------------------------------------------
 $evidence = [ordered]@{}
 foreach ($dir in $targets.Keys) {
     $file = Join-Path $EvidenceRoot (Join-Path $dir 'evidence.json')
     if (-not (Test-Path $file)) {
-        $failures.Add("TARGET ARTIFACT ABSENT: $($targets[$dir]) (expected $file)")
+        $failures.Add("TARGET ARTIFACT ABSENT: $($targets[$dir]) (expected $file) -- $(Get-AbsenceCause $dir)")
         continue
     }
     try {

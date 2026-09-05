@@ -1,0 +1,18 @@
+name: 'CAP-5 Pas2JS SDK compile + semantic tests + wire capture'
+description: 'CAP-11A: the body of the "CAP-5 Pas2JS SDK compile + semantic tests + wire capture" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        & deps/pas2js/bin/pas2js.exe -Tnodejs -Jc -O1 `
+          '-Fusdk/pas2js' sdk/pas2js/test/pwebsdktests.pas
+        if ($LASTEXITCODE -ne 0) { throw 'Pas2JS SDK harness compile failed' }
+        $out = & node sdk/pas2js/test/pwebsdktests.js 2>&1 | Out-String
+        $code = $LASTEXITCODE
+        Write-Host $out
+        $out | Out-File -Encoding utf8 build/cap5/p2j-capture.log
+        if (($code -ne 0) -or ($out -notmatch 'PWEBSDK: (\d+)/\1 PASS')) {
+          throw 'Pas2JS SDK semantic suite FAILED'
+        }

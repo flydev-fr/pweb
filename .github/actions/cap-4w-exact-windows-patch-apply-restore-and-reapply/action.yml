@@ -1,0 +1,38 @@
+name: 'CAP-4W - exact Windows patch apply, restore and reapply'
+description: 'CAP-11A: the body of the "CAP-4W - exact Windows patch apply, restore and reapply" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File tools/patch-cap4w-webview.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-4W first patch apply failed' }
+        pwsh -NoProfile -File tools/patch-cap4w-webview.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-4W idempotent apply failed' }
+        pwsh -NoProfile -File tools/patch-cap4w-webview.ps1 -Restore
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-4W restore failed' }
+        if (git -C deps/webview status --porcelain) {
+          throw 'CAP-4W restore left dependency changes'
+        }
+        pwsh -NoProfile -File tools/patch-cap4w-webview.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-4W final patch apply failed' }
+        $sentinel = 'deps/webview/cap4w-unknown-state-ci.tmp'
+        try {
+          New-Item -ItemType File -Path $sentinel -ErrorAction Stop | Out-Null
+          $unknown = & pwsh -NoProfile -File `
+            tools/patch-cap4w-webview.ps1 2>&1 | Out-String
+          $unknownCode = $LASTEXITCODE
+          Write-Host $unknown
+          if (($unknownCode -eq 0) -or
+              ($unknown -notmatch 'dependency has unknown changes')) {
+            throw 'CAP-4W patcher did not reject unknown dependency state'
+          }
+        }
+        finally {
+          if (Test-Path -LiteralPath $sentinel) {
+            Remove-Item -LiteralPath $sentinel -Force
+          }
+        }
+        pwsh -NoProfile -File tools/patch-cap4w-webview.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-4W exact state lost after rejection test' }

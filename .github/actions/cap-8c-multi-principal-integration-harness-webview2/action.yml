@@ -1,0 +1,26 @@
+# ---------- CAP-8C: the multi-principal integration harness ----------
+# The production gate that replaced the Checkpoint-1 topology probe. It
+# drives the UNCHANGED runtime with three real principals under ONE
+# shared policy: a headless NATIVE leg over three registered sources
+# (main, login, plugin) writes the canonical build/cap8c/
+# security-corpus.txt (the cross-target digest source), then a GUI leg
+# of two simultaneously live real WebView2 windows proves the same
+# policy differentiates two real privileged principals under the full
+# CAP-8B guard, with the content-swap and the injected-opener evidence.
+# It writes multiprincipal-windows-x86_64.json, which the CAP-7F emitter
+# reads into security_corpus (must-PASS, the aggregator refuses a SKIP).
+# It runs BEFORE the emitter so its verdict is this job's, and mirrors
+# the nav-matrix's conditional-SKIP policy: only an absent WebView2/
+# desktop session records SKIP (the native leg still runs).
+
+name: 'CAP-8C multi-principal integration harness (WebView2)'
+description: 'CAP-11A: the body of the "CAP-8C multi-principal integration harness (WebView2)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap8c/run_multiprincipal.ps1 2>&1 |
+          Tee-Object -FilePath build/cap8c-multiprincipal.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-8C multiprincipal gate FAILED' }

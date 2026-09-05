@@ -1,0 +1,15 @@
+# ------------------------- CAP-6 gates -------------------------
+# Everything below is additive; no earlier step is altered. The
+# CAP-6 headless test cases (pweb.test.bundle) already ran inside
+# the PWeb test suite step above - the suite registers them via
+# test/core/pwebtests.pas. The React dist consumed here was built
+# by the CAP-5 React frontend build step.
+
+name: 'CAP-6 compile bundler + release host (CAP-3U window)'
+description: 'CAP-11A: the body of the "CAP-6 compile bundler + release host (CAP-3U window)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: pwsh -NoProfile -File test/cap6/build_cap6.ps1

@@ -1,0 +1,31 @@
+# The executable was compiled while CAP-3U was prepared. As with the
+# earlier GUI examples, CI records an absent desktop/runtime as SKIP;
+# the visible local run is the authoritative smoke gate.
+
+name: 'mORMot RPC example run (best effort - authoritative gate is local)'
+description: 'CAP-11A: the body of the "mORMot RPC example run (best effort - authoritative gate is local)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        $env:PWEB_WEBVIEW_DLL = (Resolve-Path build/webview-dist/webview.dll).Path
+        $env:PWEB_SMOKE_AUTOCLOSE_MS = '8000'
+        $out = & build/cap3/example/mormotrpc.exe 2>&1 | Out-String
+        $code = $LASTEXITCODE
+        Write-Host $out
+        if (($code -eq 0) -and
+            ($out -match 'CalculatorService\.Add -> 42 on scheduler worker PASS')) {
+          $verdict = 'PASS - JS -> scheduler -> in-process mORMot -> JS returned 42 on a worker'
+        }
+        elseif ($out -match 'webview_create \(returned nil') {
+          $verdict = "SKIP - no usable WebView2 runtime/desktop session on this runner (exit $code)"
+        }
+        else {
+          $verdict = "FAIL - exit $code or missing CAP-3 PASS marker (see log)"
+        }
+        "### mORMot RPC example run (non-gating)`n$verdict" |
+          Out-File -Append $env:GITHUB_STEP_SUMMARY
+        Write-Host "mormotrpc verdict: $verdict"
+        if ($verdict.StartsWith('FAIL')) { exit 1 }

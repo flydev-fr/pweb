@@ -1,0 +1,8 @@
+name: 'Fetch pinned webview/webview (exact SHA, checksum verified)'
+description: 'CAP-11A: the body of the "Fetch pinned webview/webview (exact SHA, checksum verified)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows, linux, macos-x64, macos-arm64
+      shell: pwsh
+      run: pwsh -NoProfile -File tools/get-webview.ps1

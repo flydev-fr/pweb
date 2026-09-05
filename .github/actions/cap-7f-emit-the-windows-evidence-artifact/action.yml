@@ -1,0 +1,11 @@
+name: 'CAP-7F emit the Windows evidence artifact'
+description: 'CAP-11A: the body of the "CAP-7F emit the Windows evidence artifact" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap7f/emit_evidence.ps1 2>&1 |
+          Tee-Object -FilePath build/cap7f-evidence.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-7F evidence emission FAILED' }

@@ -1,0 +1,446 @@
+job	ordinal	name	shell	if	continue_on_error	timeout	kind	body_sha256_16	body_stripped_sha256_16	legacy_line
+windows	1	Checkout (full history for freeze diff against baseline)					uses	576df55e48a88376	576df55e48a88376	100
+windows	2	Fetch pinned webview/webview (exact SHA, checksum verified)	pwsh				run	3e49e6269fbde324	3e49e6269fbde324	105
+windows	3	CAP-4W - exact Windows patch apply, restore and reapply	pwsh				run	21be448a5f7e5d12	21be448a5f7e5d12	109
+windows	4	Fetch pinned mORMot2 (exact SHA + sha256-pinned statics)	pwsh				run	834b6acd49ab1666	834b6acd49ab1666	143
+windows	5	Guard - no floating upstream ref in fetch/build path	pwsh				run	a30dd2be53b24cf6	a30dd2be53b24cf6	147
+windows	6	Install FPC (pinned Lazarus 3.4 installer, sha256-verified)	pwsh			20	run	9c76a2598bb401b5	da02c73da6aa4078	197
+windows	7	Assert FPC 3.2.2	pwsh				run	1beae2ed70011d86	1beae2ed70011d86	210
+windows	8	MSVC environment					uses	c7ce7bfa45e7a150	c7ce7bfa45e7a150	217
+windows	9	CAP-3U - FPC 3.2.2 Win64 CallMethod unwind and Currency ABI	pwsh				run	1a812c0341382b80	1a812c0341382b80	220
+windows	10	Build webview.dll from pinned source (cmake + MSVC)	pwsh				run	5d6c1e46e96895d3	5d6c1e46e96895d3	431
+windows	11	CAP-4W - public DLL ABI remains exactly 17 exports	pwsh				run	85be144bd2a7e6f5	85be144bd2a7e6f5	435
+windows	12	CAP-4W - headless loader boundary and compile resource probe	pwsh				run	047acfcdb5ef9a39	047acfcdb5ef9a39	439
+windows	13	CAP-4W - custom-scheme runtime (best effort, local gate authoritative)	pwsh			5	run	42f16fe0e4cebee1	333c34127c847359	443
+windows	14	Compile binding units (FPC, ObjFPC mode)	pwsh				run	a96f7a678b559385	a96f7a678b559385	467
+windows	15	Compile CAP-2 units (scheduler proven webview-free)	pwsh				run	34b205ec6669ed3c	34b205ec6669ed3c	482
+windows	16	Compile CAP-4 asset units (stores webview-free, handler rpc-free)	pwsh				run	794982ca0eda31ec	794982ca0eda31ec	514
+windows	17	CAP-4 zero-HTTP asset-serving source proof	pwsh				run	97190e6010041241	97190e6010041241	541
+windows	18	Signature pin (compile-only gate over all 17 prototypes)	pwsh				run	25bdd7b42477d147	25bdd7b42477d147	575
+windows	19	ABI probe - Pascal side (committed binding)	pwsh				run	0ca34a3236a76e24	0ca34a3236a76e24	582
+windows	20	ABI probe - C side (pinned headers, MSVC)	cmd				run	f12668dcf580cde8	f12668dcf580cde8	591
+windows	21	ABI probe - compare (any diff is a blocker)	pwsh				run	7b9bffd30e297dd6	7b9bffd30e297dd6	600
+windows	22	PWeb test suite (mormot.core.test)	pwsh				run	32cca447f293c4c2	32cca447f293c4c2	622
+windows	23	Binding surface + freeze-isolation sweeps	pwsh				run	840e2c4045c75de4	840e2c4045c75de4	655
+windows	24	Freeze sweep - RTL-only compile of isolation-critical intf units	pwsh				run	de280cc111245b44	de280cc111245b44	659
+windows	25	Freeze sweep - frozen contracts byte-identical to Phase-0 baseline	pwsh				run	15d9a13ac59732a9	15d9a13ac59732a9	670
+windows	26	Freeze sweep - the renamed src/lib patch key, and only that name	pwsh				run	6ea060f7f61bf2ef	6ea060f7f61bf2ef	707
+windows	27	Freeze sweep - raw ABI layer equals the ratified platform block (CAP-1 baseline)	pwsh				run	7b616fbc155a2216	7b616fbc155a2216	738
+windows	28	CAP-3 freeze sweep - Phase-0/1/2 implementation boundaries	pwsh				run	808939040df39c38	808939040df39c38	760
+windows	29	Compile smoke example and stage its DLL	pwsh				run	97f7ded89f13f1ed	97f7ded89f13f1ed	795
+windows	30	Smoke run (best effort - authoritative gate is local)	pwsh		true	5	run	91709236e79ed187	89f4ec4645560ae2	809
+windows	31	Compile JS-binding example (CAP-2) and stage its DLL	pwsh				run	5be15aa2ea70d3c2	5be15aa2ea70d3c2	831
+windows	32	JS-binding example run (best effort - authoritative gate is local)	pwsh		true	5	run	295abe788703534e	19f1862e30c0128b	847
+windows	33	Stage CAP-3 runtime DLL	pwsh				run	12941d8e64b96b3e	12941d8e64b96b3e	869
+windows	34	mORMot RPC example run (best effort - authoritative gate is local)	pwsh		true	5	run	29abef2790d66bd8	c289c3b17a40668d	876
+windows	35	CAP-4 build app.zip from frontend fixture	pwsh				run	363085cccc28677c	363085cccc28677c	903
+windows	36	CAP-4 dual-mode runtime (best effort, local gate authoritative)	pwsh			8	run	2fd920018d2b29ab	dc6e3e70bfb464fd	918
+windows	37	CAP-5 fetch pinned pas2js (sha256-verified)	pwsh				run	a1a8d366b8da8278	a1a8d366b8da8278	955
+windows	38	CAP-5 setup pinned Node					uses	1ead9801b2fe57d3	1ead9801b2fe57d3	959
+windows	39	CAP-5 TypeScript SDK typecheck + tests + wire capture	pwsh				run	71729e5fa5a2efa2	71729e5fa5a2efa2	964
+windows	40	CAP-5 Pas2JS SDK compile + semantic tests + wire capture	pwsh				run	75b860775c6c9bef	75b860775c6c9bef	982
+windows	41	CAP-5 cross-SDK captured-wire parity	pwsh				run	5fd12a60efe35849	5fd12a60efe35849	996
+windows	42	CAP-5 protocol constant cross-check (native vs both SDKs)	pwsh				run	7498c94ab925554a	7498c94ab925554a	1003
+windows	43	CAP-5 React frontend build (pinned lockfile, offline bundle)	pwsh				run	e6fcbb36befb1a94	e6fcbb36befb1a94	1007
+windows	44	CAP-5 Pas2JS frontend build (pinned toolchain)	pwsh				run	b39afd1e69e654c3	b39afd1e69e654c3	1025
+windows	45	CAP-5 zero-network sweep over SDKs and frontends	pwsh				run	b5fc5575a4ca7d45	b5fc5575a4ca7d45	1040
+windows	46	CAP-5 host examples compile (re-applied CAP-3U window)	pwsh				run	ec12b803edcbb1a0	ec12b803edcbb1a0	1044
+windows	47	CAP-5 runtime smokes - React and Pas2JS over pweb://app	pwsh			10	run	d943d3139d04727c	b2030e797e25d2b5	1048
+windows	48	CAP-5 diagnostics on failure		failure()			upload	1bd4faf32073af7f	79b0e3322b3c1654	1053
+windows	49	CAP-6 compile bundler + release host (CAP-3U window)	pwsh				run	8ea5fdacb2e5d1a9	8ea5fdacb2e5d1a9	1073
+windows	50	CAP-6 headless gates - bundle, determinism, release layout, refusals	pwsh			10	run	0d9addb01f49a8ca	1d75cf3f3bf9afeb	1077
+windows	51	CAP-6 zero-network sweep over bundle/release sources	pwsh				run	518b72b6beed2258	518b72b6beed2258	1085
+windows	52	CAP-6 release runtime smoke - app.pwb over pweb://app	pwsh			10	run	eee48a34d730c712	2c05218a3d0cbf31	1089
+windows	53	CAP-6 diagnostics on failure		failure()			upload	e2a51f767532136f	9dd80551c04d38c9	1094
+windows	54	CAP-6b0 isolation compile - runtime detector unit	pwsh				run	27f1e8d3c862050a	27f1e8d3c862050a	1124
+windows	55	CAP-6b0 minimum cross-check (Pascal constant vs CAP-4W patch)	pwsh				run	1efe850204c69c72	1efe850204c69c72	1137
+windows	56	CAP-6b0 host WebView2 detection smoke (diagnostic evidence only)	pwsh			5	run	8575d482830929ae	914c05457b7dcf93	1141
+windows	57	CAP-6b0 lock validator and fixture matrix (zero network)	pwsh				run	682b4f87d8dfa8f6	682b4f87d8dfa8f6	1146
+windows	58	CAP-6b0 diagnostics on failure		failure()			upload	ff4a9390fe788a0a	277d6e8cb94a756a	1154
+windows	59	CAP-6b1 isolation compile - provisioning unit + setup helper	pwsh				run	2c938d38ab9bea6f	2c938d38ab9bea6f	1180
+windows	60	CAP-6b1 innosetup.lock fixture matrix (zero network)	pwsh				run	c5cbfea723e1b0df	c5cbfea723e1b0df	1200
+windows	61	CAP-6b1 contract cross-checks (markers + helper prefixes)	pwsh				run	4850ab1755e1cf58	4850ab1755e1cf58	1204
+windows	62	CAP-6b1 fetch pinned Inno Setup 6 (sha256-verified, silent, bounded)	pwsh			10	run	17b284a67da8cb80	52edc038df45f7ae	1212
+windows	63	CAP-6b1 build the normal-profile setup from the pinned locks (payload-listing proof)	pwsh			15	run	660f0cbc02411fa0	8feeb195281a679e	1217
+windows	64	CAP-6b1 setup gates - skip path, layout, installed smoke, uninstall	pwsh			15	run	bc0c33f169d4b44e	f2d06eb067acf2bd	1225
+windows	65	CAP-6b1 diagnostics on failure		failure()			upload	d3758b5f8ed7ca72	9ead9f9e761ca8cf	1233
+windows	66	CAP-6b2 fetch pinned Evergreen Standalone (sha256+authenticode, bounded, never executed)	pwsh			10	run	f318729e180ed27d	a18101353804f545	1277
+windows	67	CAP-6b2 build the offline-profile setup from the pinned locks (payload-listing proof)	pwsh			15	run	25b88b5b019e2891	c1b59e823962909f	1287
+windows	68	CAP-6b2 offline setup gates - streamed V-legs, isolated-dir skip path, layout, smoke, uninstall	pwsh			15	run	5296454897d13550	247fbe29442c5a39	1295
+windows	69	CAP-6b2 diagnostics on failure		failure()			upload	5cd4eaa6b2932cc1	149beb8b05c3141f	1308
+windows	70	CAP-6b3 fetch pinned Fixed Version Runtime (sha256+authenticode, bounded, never executed)	pwsh			20	run	ea1d7a6c0f08b35e	e7bee4528b683908	1348
+windows	71	CAP-6b3 build the fixed-profile setup from the pinned locks (expand + manifest + payload proof)	pwsh			45	run	6f7cfe4d44dd9727	9aa009041b13bca6	1361
+windows	72	CAP-6b3 Fixed Runtime process-drain tests (path scoping, churn, no global kill)	pwsh				run	3de8a84ef243028e	3de8a84ef243028e	1375
+windows	73	CAP-6b3 fixed setup gates - install, ACL by SID, manifest, observed identity, no-fallback, uninstall, abort probe	pwsh			75	run	577c4c00510e1545	9809db9dba66c322	1386
+windows	74	CAP-6b3 diagnostics on failure		failure()			upload	f573cf1d0ab5f606	88e85ce0482ed110	1398
+windows	75	CAP-6b4 contract cross-checks (marker, basenames, runtime subdir, fixed [Files] order, sweeps, prior-gate aggregation)	pwsh			3	run	55770efa3fc8b0ae	a14f0b5c7213c82c	1435
+windows	76	CAP-6b4 build switch probes (offline abort probe + consolidated facts)	pwsh			8	run	0d2f1f7229e11a6c	b000185d19381d53	1446
+windows	77	CAP-6b4 release index from the three built profiles	pwsh			3	run	47b6e21aa39dd8df	a0226ec342835e5d	1457
+windows	78	CAP-6b4 profile isolation (per-profile ISCC listings, size envelopes, release index)	pwsh			4	run	63ea9445971b2c8e	ec1fe10b105fb771	1465
+windows	79	CAP-6b4 profile matrix - I1-I3, S1-S6, F1-F4, U1-U3 over the three real setups	pwsh			115	run	0ef9ccdd616a9955	00e32ccfe16c6e3d	1481
+windows	80	CAP-10E E4 fixed-runtime profile at a non-ASCII install directory	pwsh			75	run	7539a420c58a3639	afa7c5ab10da1ec7	1509
+windows	81	CAP-7F host-argument gate on the release triple (closes D1 on Windows)	pwsh			10	run	7536a03992033ead	26d00383a00705c4	1529
+windows	82	CAP-8B real-window navigation matrix (WebView2)	pwsh			15	run	321c91d705553248	7399f8c25f7ab595	1551
+windows	83	CAP-8B upload the Windows nav-matrix record					upload	cc2f031c4e6232fc	cc2f031c4e6232fc	1559
+windows	84	CAP-8C multi-principal integration harness (WebView2)	pwsh			20	run	dae757ba99613422	afe6eb2e59c04e45	1583
+windows	85	CAP-8C upload the Windows multiprincipal record					upload	76445cfe66e1d6da	76445cfe66e1d6da	1591
+windows	86	CAP-9A QuickJS invocation foundation harness	pwsh			20	run	fec1233991b2c06e	958adf0c6ce7995b	1612
+windows	87	CAP-9A upload the Windows quickjs record					upload	bd70a0b40adff5f9	bd70a0b40adff5f9	1620
+windows	88	CAP-9B1 QuickJS package and module-loader harness	pwsh			20	run	31c33839aad82243	a7760b8397302fbd	1644
+windows	89	CAP-9B1 upload the Windows package record					upload	7af4d8dac8eacd4b	7af4d8dac8eacd4b	1652
+windows	90	CAP-9B2 QuickJS plugin lifecycle and reload harness	pwsh			30	run	41a868b8c9b05767	84eb32bb37b78eb8	1676
+windows	91	CAP-9B2 upload the Windows lifecycle record					upload	3615e21d29d6b4fa	3615e21d29d6b4fa	1684
+windows	92	CAP-9C1 QuickJS release package and trusted loader harness	pwsh			30	run	074ce51168611afe	6f280f5add214808	1707
+windows	93	CAP-9C1 upload the Windows release record and payload					upload	1f81558fe0290ed8	1f81558fe0290ed8	1715
+windows	94	CAP-9C2 plugin-enabled acceptance frontend build	pwsh				run	3d18e52a0382a614	3d18e52a0382a614	1735
+windows	95	CAP-9C2 plugin-enabled release layout and real-GUI acceptance	pwsh			40	run	3dabe9ad3302f68b	5337dda02844a36a	1765
+windows	96	CAP-9C2 upload the Windows plugin-enabled record and layout		always()			upload	04c6d4efe6958aa3	2187f5b6002caf1b	1773
+windows	97	CAP-10B0 build the scaffold engine, the pack and the suite	pwsh			15	run	0372c40008c40221	506a764bda4c7702	1810
+windows	98	CAP-10B1 build the public pack, the CLI and the SDK root	pwsh			15	run	dfdef9e47c845f7c	bd94b18b5c32ee31	1817
+windows	99	CAP-10A build the suite and the probe fixture	pwsh			15	run	e292b97c993f8d76	33c1e7128198f420	1824
+windows	100	CAP-10A contract cross-checks (pins, no shell, no network)	pwsh				run	a91a0557b0fd44fe	a91a0557b0fd44fe	1831
+windows	101	CAP-10A development-trust gate	pwsh				run	222fc7d4cd9ccb16	222fc7d4cd9ccb16	1837
+windows	102	CAP-10A CLI gates + evidence	pwsh			15	run	5579977b4de52740	8c11437cd9f8c3b0	1843
+windows	103	CAP-10A upload the CLI corpus					upload	ac82efe75223d1c6	ac82efe75223d1c6	1851
+windows	104	CAP-10B0 contract cross-checks (create linked, offline, limits)	pwsh				run	5068d1d7ffa9257a	5068d1d7ffa9257a	1880
+windows	105	CAP-10B0 scaffold gates + evidence	pwsh			15	run	5f1021e277a7c625	78156527ea765c2c	1886
+windows	106	CAP-10B0 upload the scaffold corpus					upload	eff6b920e4b989aa	eff6b920e4b989aa	1894
+windows	107	CAP-10B1 contract cross-checks (one UI, exact pins, no exec)	pwsh				run	b1da54a22858730c	b1da54a22858730c	1923
+windows	108	CAP-10B1 create gates + evidence	pwsh			15	run	1090aa41e44233e1	a52b862254364fde	1929
+windows	109	CAP-10B1 private build proof and real GUI run	pwsh			30	run	b8ba239c867f4c5e	1b5b247e17f07fd9	1937
+windows	110	CAP-10B1 upload the create corpus		always()			upload	fbdb963aa2a4dde3	bf8d14a5a6dcc5d4	1945
+windows	111	CAP-10B2 build the react-only CLI that proves template_unknown	pwsh			15	run	2dd35e8502bebdbb	3271e3e0764d8b74	1977
+windows	112	CAP-10B2 contract cross-checks (two UIs, one native app, no npm)	pwsh				run	ce32b03d79439211	ce32b03d79439211	1984
+windows	113	CAP-10B2 pas2js create gates + evidence	pwsh			15	run	c0b2eb35ecc7dc69	e94e7eed5e95a09c	1990
+windows	114	CAP-10B2 private build proof and real GUI run	pwsh			30	run	16ab239dfda25824	a5afe9cba8245c8c	1998
+windows	115	CAP-10B2 upload the pas2js corpus		always()			upload	e54edfe21dcd80f1	ff7f5e08cb0812c7	2006
+windows	116	CAP-10C0 build the supervision suite and the fixture child	pwsh			15	run	15eaa748f0f4de7f	438634af87bbb670	2022
+windows	117	CAP-10C0 contract cross-checks (bounds, no shell at the link, no name-kill, env, shutdown order)	pwsh				run	6a644a109a57b39c	6a644a109a57b39c	2029
+windows	118	CAP-10C0 supervision suite + pweb run gates + evidence	bash			30	run	e964ebda7846daa7	1d9bfeadcd25ca00	2035
+windows	119	CAP-10C0 upload the supervision corpus		always()			upload	5fffacb24c6849fc	e92ac4d7ac775d2f	2043
+windows	120	CAP-10C1 complete the SDK root and build the pipeline driver	pwsh			20	run	95fef873b36e0f6c	76b1a10dba276950	2060
+windows	121	CAP-10C1 contract cross-checks (bounds, library names, linkage, no conditional, no env read)	pwsh				run	8f3c129caa9ac4a8	8f3c129caa9ac4a8	2067
+windows	122	CAP-10C1 lifecycle pipeline gates + app.pwb parity + evidence	bash			45	run	6fad1b4a24d99e14	3215eaeb4b14f6c9	2073
+windows	123	CAP-10C1 upload the pipeline corpus		always()			upload	1fcaded7a6f2d08f	a0b6899437219b42	2081
+windows	124	CAP-10C2 build the development suite, the driver and both host binaries	pwsh			25	run	a97920c2a743d99f	192222278cf22e6e	2099
+windows	125	CAP-10C2 contract cross-checks (bounds, linkage, dev-free release, CSP, no transport)	pwsh				run	844c3c9085279802	844c3c9085279802	2105
+windows	126	CAP-10C2 development-loop gates (DEV1-DEV14, T1-T5) + evidence	bash			70	run	ed487e86de8468ac	647b595c2b47852b	2111
+windows	127	CAP-10C2 upload the development corpus		always()			upload	90b2814fd9427c5d	55fd51d6f5f898d9	2119
+windows	128	CAP-10C3 build the pas2js development suite, the driver and both host binaries	pwsh			25	run	4b7b44d31c66a6bb	f30d007b71548a31	2143
+windows	129	CAP-10C3 contract cross-checks (bounds, detector linkage, no watch API, pas2js CSP + dev-free release)	pwsh				run	59118a75e004b017	59118a75e004b017	2149
+windows	130	CAP-10C3 the CAP-10C ledger disposition (CL2, CL3)	pwsh				run	b58421a7ea7f6d7d	b58421a7ea7f6d7d	2154
+windows	131	CAP-10C3 pas2js development-loop gates (PD1-PD15, RD1, T1-T5, CL1-CL3) + evidence	bash			70	run	7f00eaf6cda07451	42fe2da3688bd75b	2160
+windows	132	CAP-10C3 upload the pas2js development corpus		always()			upload	41e55e98a3ced867	af23167bf92127b6	2168
+windows	133	CAP-10D0 build the public-build suite and its driver	pwsh			20	run	0d0d4fb72cba51af	c384f2b470771f8b	2192
+windows	134	CAP-10D0 contract cross-checks (one execution path, ten stages, five commands, gate quoting)	pwsh				run	377433f650c33269	377433f650c33269	2198
+windows	135	CAP-10D0 public-build gates (B1-B12, L1-L3, R1-R2) + evidence	bash			120	run	5566cb4928782e90	5af58dc261004da4	2204
+windows	136	CAP-10D0 upload the public-build corpus		always()			upload	c8640a743710a5d8	4f4a76d0f7669533	2212
+windows	137	CAP-10D1 contract cross-checks (pins vs locks, five engine callers, the anti-fork twins, no signing, no network)	pwsh				run	d3cad5c1ba736fc3	d3cad5c1ba736fc3	2243
+windows	138	CAP-10D1 stage the packaging kit and build the suite and driver	pwsh			20	run	310c067d82d22b4a	867758ef061154b7	2248
+windows	139	CAP-10D1 packaging gates + evidence	bash			150	run	8f8045e2a837253a	84d75ee0c0fe5f2f	2252
+windows	140	CAP-10D1 upload the packaging corpus		always()			upload	0b40cc06dea98661	4b28f31626b87f73	2260
+windows	141	CAP-10D0 L2b - the CAP-10 chain at a repository path with a space	pwsh			120	run	cd6cc1da14a17a64	3643d05b4576fd6b	2315
+windows	142	CAP-10D2 contract cross-checks (no network, no env root, the licence table, the tool rule)	pwsh				run	479d1f9f4a8484c0	479d1f9f4a8484c0	2411
+windows	143	CAP-10D2 the phase-wide CAP-10 ledger disposition (CL1-CL4)	pwsh				run	960c37d26a2fe2d6	960c37d26a2fe2d6	2416
+windows	144	CAP-10D2 stage the licence set and build the packager and suite	pwsh			20	run	54ca7b78b9aa3bbf	19de5b61928fbb3c	2421
+windows	145	CAP-10D2 SDK distribution gates (PK1-PK4, IN1-IN4, CM1-CM6, CL1-CL4) + evidence	bash			180	run	3b71a02139dd969e	39a92de007195b16	2425
+windows	146	CAP-10D2 upload the SDK distribution corpus		always()			upload	990639b3c0699d83	a19fa4c9550190d6	2433
+windows	147	CAP-10D2 upload the SDK archive and its manifest		always()			upload	f1ea193a1d4e48fc	0eeae5db177e0440	2450
+windows	148	CAP-10E image-path source gate (zero ParamStr(0), zero ProgramFilePath, one reader)	pwsh			10	run	256cfe81ff167227	12bf4f0177b53de9	2465
+windows	149	CAP-10E kernel image path - non-ASCII release host, junction, long path (E1/E2/E6/E7/E9)	pwsh			45	run	d881412a72079dec	fc18cd2880356541	2473
+windows	150	CAP-10E upload the Windows image-path record		always()			upload	c2455a40cd03d045	166913e5011ceb12	2481
+windows	151	CAP-7F emit the Windows evidence artifact	pwsh			10	run	204a996ba70d880b	854fb5dda619bdcb	2497
+windows	152	CAP-7F upload the Windows evidence					upload	29b4bd5d3e838a4d	29b4bd5d3e838a4d	2507
+windows	153	CAP-7F diagnostics on failure		failure()			upload	f60c1972d3013639	f9ffcc5c79fec78b	2518
+windows	154	CAP-6b4 diagnostics on failure		failure()			upload	67f7264cd5c49c0d	2673787c1d812f3b	2542
+windows	155	Upload diagnostics on failure		failure()			upload	2ad513fdfda8859f	2ad513fdfda8859f	2560
+linux	1	Checkout					uses	c68e8834c98fa848	c68e8834c98fa848	2606
+linux	2	Guard - no floating upstream ref in the Linux build/gate path	bash				run	4b5d0613a4cf8fc7	4b5d0613a4cf8fc7	2609
+linux	3	Install the ratified WebKitGTK stack and FPC (distro packages)	bash			15	run	be95cb47e2e88ada	690761c46ac88d27	2660
+linux	4	Assert the toolchain and the ratified engine family	bash				run	ced20f59a33473fc	ced20f59a33473fc	2677
+linux	5	Fetch pinned webview/webview (exact SHA, checksum verified)	pwsh				run	3e49e6269fbde324	3e49e6269fbde324	2705
+linux	6	Fetch pinned mORMot2 (exact SHA + sha256-pinned statics)	pwsh				run	834b6acd49ab1666	834b6acd49ab1666	2709
+linux	7	CAP-7L build libwebview.so from pinned source (cmake + gcc)	bash			15	run	457d832551a487e0	867423d48f8f5f56	2713
+linux	8	CAP-7L deps/webview carries no Linux patch	bash				run	6f71f78c9f4471cb	6f71f78c9f4471cb	2722
+linux	9	CAP-7L public ABI remains exactly 17 exports (nm -D)	bash				run	3b010349d9ff2e04	3b010349d9ff2e04	2733
+linux	10	CAP-7L paired ABI probes + hand-declared symbol presence gate	bash			10	run	b64874488321ff6e	c00446e2be474d2e	2737
+linux	11	CAP-7L setup pinned Node					uses	1ead9801b2fe57d3	1ead9801b2fe57d3	2742
+linux	12	CAP-7L TypeScript SDK build + tests	bash			10	run	67e276e21044fb58	967f43e391d66346	2755
+linux	13	CAP-7L React frontend build (pinned lockfile, offline bundle)	bash			10	run	e6be19141f0d44c4	a0f12e18cc6bff5b	2770
+linux	14	CAP-7L fetch pinned pas2js (sha256-verified) and build its frontend	pwsh			10	run	b172fbe9d9c64ec7	3ff5e47fb71444fc	2790
+linux	15	CAP-7L compile every unit, probe and example for Linux	bash			20	run	2a920af1b8a86e16	2ba3d41fe253bdf8	2803
+linux	16	CAP-7L headless gates - suite, POSIX store confinement, packaging	bash			15	run	02e452a7a2ccfda3	bf05a3712394ac35	2808
+linux	17	CAP-7L GUI matrix (L4-L22) under Xvfb	bash			20	run	20f7b7140c6b46fd	0b66736ab8d57cf7	2815
+linux	18	CAP-7L release layout - React and Pas2JS to 42 from an isolated dir	bash			15	run	0348bbcf84725b9f	8727e78545f0079d	2820
+linux	19	CAP-7L zero-transport proof (L20)	bash			10	run	507b2ef65122e0e6	eb5e589315447645	2825
+linux	20	CAP-7F host-argument gate on the release layout (closes D1 on Linux)	bash			10	run	601a8f17280d3944	53a40935d5e5552c	2837
+linux	21	CAP-8B real-window navigation matrix (WebKitGTK) under Xvfb	bash			20	run	5bcbda3b04abe5cf	8832166f22f2c848	2851
+linux	22	CAP-8B upload the Linux nav-matrix record					upload	41b43756154b24b4	41b43756154b24b4	2856
+linux	23	CAP-8C multi-principal integration harness (WebKitGTK) under Xvfb	bash			20	run	be3c0c3d28117662	03db2f66912d6f6d	2877
+linux	24	CAP-8C upload the Linux multiprincipal record					upload	1c12db6fb38953ea	1c12db6fb38953ea	2882
+linux	25	CAP-9A QuickJS invocation foundation harness	bash			20	run	5ee2c5128b19cd4f	b3db865828c99f9e	2899
+linux	26	CAP-9A upload the Linux quickjs record					upload	597dcb5e449a9555	597dcb5e449a9555	2904
+linux	27	CAP-9B1 QuickJS package and module-loader harness	bash			20	run	2d0e2aebdd8818c2	50319590b8ea7a49	2923
+linux	28	CAP-9B1 upload the Linux package record					upload	317c426a32bc286c	317c426a32bc286c	2928
+linux	29	CAP-9B2 QuickJS plugin lifecycle and reload harness	bash			30	run	09f4febdf8fa9ba8	a629c72f3658ad8d	2946
+linux	30	CAP-9B2 upload the Linux lifecycle record					upload	26615a10e6c49368	26615a10e6c49368	2951
+linux	31	CAP-9C1 QuickJS release package and trusted loader harness	bash			30	run	86d529bace92108a	ee9891419489bbda	2969
+linux	32	CAP-9C1 upload the Linux release record and payload					upload	1df983ac8f864afd	1df983ac8f864afd	2974
+linux	33	CAP-9C2 plugin-enabled acceptance frontend build	bash			10	run	335eef549823187e	0b21b770518bf128	2990
+linux	34	CAP-9C2 plugin-enabled release layout and real-GUI acceptance	bash			40	run	602b728598eadba7	d0fe4ffd111a39ee	3006
+linux	35	CAP-9C2 upload the Linux plugin-enabled record and layout		always()			upload	4523ea99277fcb90	b942cb66837e8ab2	3011
+linux	36	CAP-10B0 build the scaffold engine, the pack and the suite	bash			15	run	1c0c27749bdf553e	eb5482164b19fce3	3039
+linux	37	CAP-10B1 build the public pack, the CLI and the SDK root	bash			15	run	99f909c354532178	df8190c9cc8687f5	3044
+linux	38	CAP-10A build the suite and the probe fixture	bash			15	run	63e4c9df98d2a66b	64c0841e42a55778	3049
+linux	39	CAP-10A contract cross-checks (pins, no shell, no network)	pwsh				run	a91a0557b0fd44fe	a91a0557b0fd44fe	3054
+linux	40	CAP-10A development-trust gate	pwsh				run	222fc7d4cd9ccb16	222fc7d4cd9ccb16	3060
+linux	41	CAP-10A CLI gates + evidence	pwsh			15	run	aa192513b3dd9505	1723780dcef35006	3066
+linux	42	CAP-10A upload the CLI corpus					upload	171b26e458319eb3	171b26e458319eb3	3073
+linux	43	CAP-10B0 contract cross-checks (create linked, offline, limits)	pwsh				run	5068d1d7ffa9257a	5068d1d7ffa9257a	3091
+linux	44	CAP-10B0 scaffold gates + evidence	pwsh			15	run	9899dab4d9856b15	35be769c58fe0414	3097
+linux	45	CAP-10B0 upload the scaffold corpus					upload	e254f8d1f8f60739	e254f8d1f8f60739	3104
+linux	46	CAP-10B1 contract cross-checks (one UI, exact pins, no exec)	pwsh				run	b1da54a22858730c	b1da54a22858730c	3121
+linux	47	CAP-10B1 create gates + evidence	pwsh			15	run	be6e45d027be7354	e6cab1f719f92ff4	3127
+linux	48	CAP-10B1 private build proof and real GUI run	bash			30	run	f063516ee72d6c58	a96202f01b3384d4	3134
+linux	49	CAP-10B1 upload the create corpus		always()			upload	1f97353f69c7481e	4770d089fb608ddf	3139
+linux	50	CAP-10B2 build the react-only CLI that proves template_unknown	bash			15	run	77603f9917ed912f	48536653019064a3	3157
+linux	51	CAP-10B2 contract cross-checks (two UIs, one native app, no npm)	pwsh				run	ce32b03d79439211	ce32b03d79439211	3162
+linux	52	CAP-10B2 pas2js create gates + evidence	pwsh			15	run	948550daf8f909f7	c0a602f83322523c	3168
+linux	53	CAP-10B2 private build proof and real GUI run	bash			30	run	df7858d0d18ba6b6	d05b2bb96b88113f	3175
+linux	54	CAP-10B2 upload the pas2js corpus		always()			upload	b29d102d321c7dc7	a5168a184c07446e	3180
+linux	55	CAP-10C0 build the supervision suite and the fixture child	bash			15	run	d6323299a1ef7eb3	e68d4946354312ec	3194
+linux	56	CAP-10C0 contract cross-checks (bounds, no shell at the link, no name-kill, env, shutdown order)	pwsh				run	6a644a109a57b39c	6a644a109a57b39c	3199
+linux	57	CAP-10C0 supervision suite + pweb run gates + evidence	bash			30	run	525af603506e0f46	2b92bc9c8f23ea04	3205
+linux	58	CAP-10C0 upload the supervision corpus		always()			upload	a5b8d6611becd76f	35e692c055e3cf90	3213
+linux	59	CAP-10C1 complete the SDK root and build the pipeline driver	bash			20	run	914809680cc79a87	810eae9a8be714f1	3230
+linux	60	CAP-10C1 contract cross-checks (bounds, library names, linkage, no conditional, no env read)	pwsh				run	8f3c129caa9ac4a8	8f3c129caa9ac4a8	3235
+linux	61	CAP-10C1 lifecycle pipeline gates + app.pwb parity + evidence	bash			45	run	240f8a232c1c24aa	cb59706e666f8c37	3241
+linux	62	CAP-10C1 upload the pipeline corpus		always()			upload	09709645b18e469d	f823b81efd96b4de	3249
+linux	63	CAP-10C2 build the development suite, the driver and both host binaries	bash			25	run	763ae137716951f2	25fd7e91d0f07c35	3267
+linux	64	CAP-10C2 contract cross-checks (bounds, linkage, dev-free release, CSP, no transport)	pwsh				run	844c3c9085279802	844c3c9085279802	3271
+linux	65	CAP-10C2 development-loop gates (DEV1-DEV14, T1-T5) + evidence	bash			70	run	b73c33175b51af4a	3ac4a74362d33cd7	3277
+linux	66	CAP-10C2 upload the development corpus		always()			upload	89771cb5b6c5768f	8193a2873c0b1e89	3285
+linux	67	CAP-10C3 build the pas2js development suite, the driver and both host binaries	bash			25	run	0bb423275f76f0c1	4d8a28d0b6a898ea	3309
+linux	68	CAP-10C3 contract cross-checks (bounds, detector linkage, no watch API, pas2js CSP + dev-free release)	pwsh				run	59118a75e004b017	59118a75e004b017	3313
+linux	69	CAP-10C3 the CAP-10C ledger disposition (CL2, CL3)	pwsh				run	b58421a7ea7f6d7d	b58421a7ea7f6d7d	3318
+linux	70	CAP-10C3 pas2js development-loop gates (PD1-PD15, RD1, T1-T5, CL1-CL3) + evidence	bash			70	run	f7eddcebf5a6e39c	27da3e7d9993abf1	3324
+linux	71	CAP-10C3 upload the pas2js development corpus		always()			upload	7ecf1dc507cbf022	2f82e2c6e99b9ff0	3332
+linux	72	CAP-10D0 build the public-build suite and its driver	bash			20	run	fae35a687c78a273	95706108f6090c17	3356
+linux	73	CAP-10D0 contract cross-checks (one execution path, ten stages, five commands, gate quoting)	pwsh				run	377433f650c33269	377433f650c33269	3360
+linux	74	CAP-10D0 public-build gates (B1-B12, L1-L3, R1-R2) + evidence	bash			120	run	9f502a88f2cda095	ad7f81dd0446f78c	3366
+linux	75	CAP-10D0 upload the public-build corpus		always()			upload	e439a885d434725f	a93f32f8956c61a8	3374
+linux	76	CAP-10D1 contract cross-checks (pins vs locks, five engine callers, the anti-fork twins, no signing, no network)	pwsh				run	d3cad5c1ba736fc3	d3cad5c1ba736fc3	3405
+linux	77	CAP-10D1 stage the packaging kit and build the suite and driver	bash			20	run	9fca51f778283045	0f2522d64ccd52d9	3410
+linux	78	CAP-10D1 packaging gates + evidence	bash			150	run	d1928ac350a2f50b	9ad3cce89dbe952c	3414
+linux	79	CAP-10D1 upload the packaging corpus		always()			upload	d0baa9e3f1e34bfe	1a0d43b265e67109	3422
+linux	80	CAP-10D2 contract cross-checks (no network, no env root, the licence table, the tool rule)	pwsh				run	479d1f9f4a8484c0	479d1f9f4a8484c0	3451
+linux	81	CAP-10D2 the phase-wide CAP-10 ledger disposition (CL1-CL4)	pwsh				run	960c37d26a2fe2d6	960c37d26a2fe2d6	3456
+linux	82	CAP-10D2 stage the licence set and build the packager and suite	bash			20	run	d43f29386c28e106	a960e38536572bf3	3461
+linux	83	CAP-10D2 SDK distribution gates (PK1-PK4, IN1-IN4, CM1-CM6, CL1-CL4) + evidence	bash			180	run	eafa875edc00d392	bcafe9c21701be3d	3465
+linux	84	CAP-10D2 upload the SDK distribution corpus		always()			upload	2064a922e890de79	85166c658bafcad1	3473
+linux	85	CAP-10D2 upload the SDK archive and its manifest		always()			upload	9fbc562f8bed18c4	a6dc0f4ead11be7f	3490
+linux	86	CAP-10E image-path source gate (zero ParamStr(0), zero ProgramFilePath, one reader)	bash			10	run	05dbb46fb9f45c45	c0f714d96bf4cded	3507
+linux	87	CAP-10E kernel image path - non-ASCII release host and the symlink rule (E1/E2/E5/E9)	bash			30	run	3a89bd005576e958	74e57b0892e447c5	3512
+linux	88	CAP-10E upload the Linux image-path record		always()			upload	2a08699c7c282b00	7663ee41b1212ed9	3520
+linux	89	CAP-7F emit the Linux evidence artifact	bash			10	run	06aeb7c0a582f1af	ff51a879c4bb51b7	3534
+linux	90	CAP-7F upload the Linux evidence					upload	c887f20ca4221ebb	c887f20ca4221ebb	3539
+linux	91	CAP-7F diagnostics on failure		failure()			upload	abf7e8b2ce19eddd	20fb60b4e0bb8423	3551
+linux	92	CAP-7L diagnostics on failure		failure()			upload	d14dde5c563835b3	d14dde5c563835b3	3566
+macos-x64	1	Checkout					uses	c68e8834c98fa848	c68e8834c98fa848	3640
+macos-x64	2	Guard - no floating upstream ref in the macOS build/gate path	bash				run	f5d2cce53cd22909	f5d2cce53cd22909	3643
+macos-x64	3	CAP-7M0 record the runner (M19)	bash				run	f2875561f90e2758	f2875561f90e2758	3691
+macos-x64	4	Fetch pinned webview/webview (exact SHA, checksum verified)	pwsh				run	3e49e6269fbde324	3e49e6269fbde324	3724
+macos-x64	5	Fetch pinned mORMot2 (exact SHA + sha256-pinned statics)	pwsh				run	834b6acd49ab1666	834b6acd49ab1666	3728
+macos-x64	6	CAP-7M0 cache the pinned FPC disk image					uses	140fd35db7f75544	140fd35db7f75544	3737
+macos-x64	7	CAP-7M0 install pinned FPC and select the pinned Xcode	pwsh			25	run	cb8839a9aba67774	36f32e38a86bf0c3	3743
+macos-x64	8	CAP-7M0 deps/webview carries no macOS patch	bash				run	b271a650b9dd9fe5	b271a650b9dd9fe5	3752
+macos-x64	9	CAP-7M0 build libwebview.dylib from pinned source (M1/M3/M16)	bash			20	run	e3002b2ff12f633e	79133572ccee2a4b	3763
+macos-x64	10	CAP-7M0 public ABI remains exactly 17 exports (M2)	bash				run	e8f491a46d6834aa	e8f491a46d6834aa	3772
+macos-x64	11	CAP-7M0 paired ABI probes + Mach-O presence and dlopen gates (M4/M5)	bash			15	run	32ab12af024e7c8a	d6e5dc252a61f9c1	3776
+macos-x64	12	CAP-7M1 compile the production Cocoa bridge (one object)	bash			10	run	81534cda309553a8	892591d0ce2cb3da	3786
+macos-x64	13	CAP-7M0 compile the binding, mORMot core and the probe (M17)	bash			20	run	ec7600e8749c9a4b	0defe690a788386b	3791
+macos-x64	14	CAP-7M1 headless gates (suite + folder confinement)	bash			20	run	fc7144201f8fe9e1	a8329daed24b3af3	3802
+macos-x64	15	CAP-7M0 feasibility probes (M6-M15)	bash			25	run	7aaff5259a968166	9f2fd7959ba619f1	3811
+macos-x64	16	CAP-7M1 production runtime gates (real WKWebView, folder + zip)	bash			30	run	7140d698fb5ba6bf	a2b4796f19cc3fd4	3822
+macos-x64	17	CAP-7M2 setup pinned Node					uses	1ead9801b2fe57d3	1ead9801b2fe57d3	3835
+macos-x64	18	CAP-7M2 TypeScript SDK build + tests	bash			10	run	67e276e21044fb58	967f43e391d66346	3840
+macos-x64	19	CAP-7M2 React frontend build (pinned lockfile, offline bundle)	bash			10	run	e6be19141f0d44c4	a0f12e18cc6bff5b	3855
+macos-x64	20	CAP-7M2 fetch pinned pas2js (sha256 + native arch) and build its frontend	pwsh			15	run	e819722afdaaa3dd	3ff5e47fb71444fc	3871
+macos-x64	21	CAP-7M2 compile the release host and bundler	bash			15	run	ced753f73b81bbd0	75c1d157f8e4ea49	3884
+macos-x64	22	CAP-7M2 release .app gates - assembly, refusals, direct + LaunchServices to 42	bash			30	run	7d09917055f01af6	c526d9b802d3347e	3889
+macos-x64	23	CAP-7M2 release manifests and inventories					upload	1bed056b4582dc6c	1bed056b4582dc6c	3897
+macos-x64	24	CAP-7M0 bundle layout measured from an unrelated CWD (M18)	bash			15	run	7d9aee12cd751503	7e91e26e0779de04	3909
+macos-x64	25	CAP-7M0 zero-transport proof (M20)	bash			15	run	d235a6146c83c0dd	da076081013bf330	3914
+macos-x64	26	CAP-8B real-window navigation matrix (WKWebView)	bash			20	run	b24bd66ebe832e27	d6554968c88f7b3f	3927
+macos-x64	27	CAP-8B upload the macOS x64 nav-matrix record					upload	6cc887418b592ced	6cc887418b592ced	3932
+macos-x64	28	CAP-8C multi-principal integration harness (WKWebView)	bash			20	run	69ae3dbdf66aaba1	05dc09cd6c258236	3952
+macos-x64	29	CAP-8C upload the macOS x64 multiprincipal record					upload	8eda77b2db530f7f	8eda77b2db530f7f	3957
+macos-x64	30	CAP-9A QuickJS invocation foundation harness	bash			20	run	5ee2c5128b19cd4f	b3db865828c99f9e	3977
+macos-x64	31	CAP-9A upload the macOS x64 quickjs record					upload	8f5cd7424e7cc2fa	8f5cd7424e7cc2fa	3982
+macos-x64	32	CAP-9B1 QuickJS package and module-loader harness	bash			20	run	2d0e2aebdd8818c2	50319590b8ea7a49	4002
+macos-x64	33	CAP-9B1 upload the macOS x64 package record					upload	216bc26a205dfe0a	216bc26a205dfe0a	4007
+macos-x64	34	CAP-9B2 QuickJS plugin lifecycle and reload harness	bash			30	run	09f4febdf8fa9ba8	a629c72f3658ad8d	4024
+macos-x64	35	CAP-9B2 upload the macOS x64 lifecycle record					upload	add584698d777866	add584698d777866	4029
+macos-x64	36	CAP-9C1 QuickJS release package and trusted loader harness	bash			30	run	86d529bace92108a	ee9891419489bbda	4042
+macos-x64	37	CAP-9C1 upload the macOS x64 release record and payload					upload	10309aa9f0ba5cfe	10309aa9f0ba5cfe	4047
+macos-x64	38	CAP-9C2 plugin-enabled acceptance frontend build	bash			10	run	335eef549823187e	0b21b770518bf128	4061
+macos-x64	39	CAP-9C2 plugin-enabled release layout and real-GUI acceptance	bash			40	run	35f929d1f2d4d4a1	c3b9a75341ab3b68	4077
+macos-x64	40	CAP-9C2 upload the macOS x64 plugin-enabled record and layout		always()			upload	0c4ed4bcfd7390e9	462db0333f2aed89	4082
+macos-x64	41	CAP-10B0 build the scaffold engine, the pack and the suite	bash			15	run	1c0c27749bdf553e	eb5482164b19fce3	4111
+macos-x64	42	CAP-10B1 build the public pack, the CLI and the SDK root	bash			15	run	99f909c354532178	df8190c9cc8687f5	4116
+macos-x64	43	CAP-10A build the suite and the probe fixture	bash			15	run	63e4c9df98d2a66b	64c0841e42a55778	4121
+macos-x64	44	CAP-10A contract cross-checks (pins, no shell, no network)	pwsh				run	a91a0557b0fd44fe	a91a0557b0fd44fe	4126
+macos-x64	45	CAP-10A development-trust gate	pwsh				run	222fc7d4cd9ccb16	222fc7d4cd9ccb16	4132
+macos-x64	46	CAP-10A CLI gates + evidence	pwsh			15	run	aa192513b3dd9505	1723780dcef35006	4138
+macos-x64	47	CAP-10A upload the CLI corpus					upload	99a32c9ad3b782ae	99a32c9ad3b782ae	4145
+macos-x64	48	CAP-10B0 contract cross-checks (create linked, offline, limits)	pwsh				run	5068d1d7ffa9257a	5068d1d7ffa9257a	4161
+macos-x64	49	CAP-10B0 scaffold gates + evidence	pwsh			15	run	9899dab4d9856b15	35be769c58fe0414	4167
+macos-x64	50	CAP-10B0 upload the scaffold corpus					upload	459860b596053a24	459860b596053a24	4174
+macos-x64	51	CAP-10B1 contract cross-checks (one UI, exact pins, no exec)	pwsh				run	b1da54a22858730c	b1da54a22858730c	4192
+macos-x64	52	CAP-10B1 create gates + evidence	pwsh			15	run	be6e45d027be7354	e6cab1f719f92ff4	4198
+macos-x64	53	CAP-10B1 private build proof and real GUI run	bash			30	run	fe9c230212f152a3	c647ba7a31305957	4205
+macos-x64	54	CAP-10B1 upload the create corpus		always()			upload	253f86e4c204b5c0	8dcb83ab26847e58	4210
+macos-x64	55	CAP-10B2 build the react-only CLI that proves template_unknown	bash			15	run	77603f9917ed912f	48536653019064a3	4229
+macos-x64	56	CAP-10B2 contract cross-checks (two UIs, one native app, no npm)	pwsh				run	ce32b03d79439211	ce32b03d79439211	4234
+macos-x64	57	CAP-10B2 pas2js create gates + evidence	pwsh			15	run	948550daf8f909f7	c0a602f83322523c	4240
+macos-x64	58	CAP-10B2 private build proof and real GUI run	bash			30	run	3d2c3532f8e85897	6dd2fefff025904c	4247
+macos-x64	59	CAP-10B2 upload the pas2js corpus		always()			upload	84f62f3591b30194	0f790f02be734723	4252
+macos-x64	60	CAP-10C0 build the supervision suite and the fixture child	bash			15	run	d6323299a1ef7eb3	e68d4946354312ec	4266
+macos-x64	61	CAP-10C0 contract cross-checks (bounds, no shell at the link, no name-kill, env, shutdown order)	pwsh				run	6a644a109a57b39c	6a644a109a57b39c	4271
+macos-x64	62	CAP-10C0 supervision suite + pweb run gates + evidence	bash			30	run	e964ebda7846daa7	1d9bfeadcd25ca00	4277
+macos-x64	63	CAP-10C0 upload the supervision corpus		always()			upload	12621fbf03f6916f	481b5c2069148e02	4285
+macos-x64	64	CAP-10C1 complete the SDK root and build the pipeline driver	bash			20	run	914809680cc79a87	810eae9a8be714f1	4302
+macos-x64	65	CAP-10C1 contract cross-checks (bounds, library names, linkage, no conditional, no env read)	pwsh				run	8f3c129caa9ac4a8	8f3c129caa9ac4a8	4307
+macos-x64	66	CAP-10C1 lifecycle pipeline gates + app.pwb parity + evidence	bash			45	run	6fad1b4a24d99e14	3215eaeb4b14f6c9	4313
+macos-x64	67	CAP-10C1 upload the pipeline corpus		always()			upload	788b288cd6882d0e	8c7312649861a3cd	4321
+macos-x64	68	CAP-10C2 build the development suite, the driver and both host binaries	bash			25	run	763ae137716951f2	25fd7e91d0f07c35	4339
+macos-x64	69	CAP-10C2 contract cross-checks (bounds, linkage, dev-free release, CSP, no transport)	pwsh				run	844c3c9085279802	844c3c9085279802	4343
+macos-x64	70	CAP-10C2 development-loop gates (DEV1-DEV14, T1-T5) + evidence	bash			70	run	ed487e86de8468ac	647b595c2b47852b	4349
+macos-x64	71	CAP-10C2 upload the development corpus		always()			upload	7c32d48fb3a72356	6ef2af5ec1c4ce82	4357
+macos-x64	72	CAP-10C3 build the pas2js development suite, the driver and both host binaries	bash			25	run	0bb423275f76f0c1	4d8a28d0b6a898ea	4381
+macos-x64	73	CAP-10C3 contract cross-checks (bounds, detector linkage, no watch API, pas2js CSP + dev-free release)	pwsh				run	59118a75e004b017	59118a75e004b017	4385
+macos-x64	74	CAP-10C3 the CAP-10C ledger disposition (CL2, CL3)	pwsh				run	b58421a7ea7f6d7d	b58421a7ea7f6d7d	4390
+macos-x64	75	CAP-10C3 pas2js development-loop gates (PD1-PD15, RD1, T1-T5, CL1-CL3) + evidence	bash			70	run	7f00eaf6cda07451	42fe2da3688bd75b	4396
+macos-x64	76	CAP-10C3 upload the pas2js development corpus		always()			upload	ad49b6c9767e001b	55f36304fb603551	4404
+macos-x64	77	CAP-10D0 build the public-build suite and its driver	bash			20	run	fae35a687c78a273	95706108f6090c17	4428
+macos-x64	78	CAP-10D0 contract cross-checks (one execution path, ten stages, five commands, gate quoting)	pwsh				run	377433f650c33269	377433f650c33269	4432
+macos-x64	79	CAP-10D0 public-build gates (B1-B12, L1-L3, R1-R2) + evidence	bash			120	run	5566cb4928782e90	5af58dc261004da4	4438
+macos-x64	80	CAP-10D0 upload the public-build corpus		always()			upload	8d4f735fd45d579b	ade762b2a5154d99	4446
+macos-x64	81	CAP-10D1 contract cross-checks (pins vs locks, five engine callers, the anti-fork twins, no signing, no network)	pwsh				run	d3cad5c1ba736fc3	d3cad5c1ba736fc3	4477
+macos-x64	82	CAP-10D1 stage the packaging kit and build the suite and driver	bash			20	run	9fca51f778283045	0f2522d64ccd52d9	4482
+macos-x64	83	CAP-10D1 packaging gates + evidence	bash			150	run	8f8045e2a837253a	84d75ee0c0fe5f2f	4486
+macos-x64	84	CAP-10D1 upload the packaging corpus		always()			upload	1ab1db1020ed3991	9f12ebcf314933fe	4494
+macos-x64	85	CAP-10D2 contract cross-checks (no network, no env root, the licence table, the tool rule)	pwsh				run	479d1f9f4a8484c0	479d1f9f4a8484c0	4523
+macos-x64	86	CAP-10D2 the phase-wide CAP-10 ledger disposition (CL1-CL4)	pwsh				run	960c37d26a2fe2d6	960c37d26a2fe2d6	4528
+macos-x64	87	CAP-10D2 stage the licence set and build the packager and suite	bash			20	run	d43f29386c28e106	a960e38536572bf3	4533
+macos-x64	88	CAP-10D2 SDK distribution gates (PK1-PK4, IN1-IN4, CM1-CM6, CL1-CL4) + evidence	bash			180	run	3b71a02139dd969e	39a92de007195b16	4537
+macos-x64	89	CAP-10D2 upload the SDK distribution corpus		always()			upload	dc959debde739f4b	269002b78bce48f0	4545
+macos-x64	90	CAP-10D2 upload the SDK archive and its manifest		always()			upload	669a6c9b705078c1	c3497189a5757395	4562
+macos-x64	91	CAP-10E image-path source gate (zero ParamStr(0), zero ProgramFilePath, one reader)	bash			10	run	05dbb46fb9f45c45	c0f714d96bf4cded	4577
+macos-x64	92	CAP-10E kernel image path - non-ASCII (NFD) release host and the symlink rule (E1/E2/E5/E9)	bash			30	run	82acb8eea543418c	48df3dd4819f3557	4582
+macos-x64	93	CAP-10E upload the macOS x64 image-path record		always()			upload	74da614f77e2e90d	591abdcdd4a2601e	4589
+macos-x64	94	CAP-7F emit the macOS x64 evidence artifact	bash			10	run	06aeb7c0a582f1af	ff51a879c4bb51b7	4603
+macos-x64	95	CAP-7F upload the macOS x64 evidence					upload	81e256ad22834dfb	81e256ad22834dfb	4608
+macos-x64	96	CAP-7F diagnostics on failure		failure()			upload	e989a076c3967c6c	38da46bdb80bec28	4617
+macos-x64	97	CAP-7M0 per-arch headline facts to the run summary	bash	always()			run	9a0710d3dfb67d5d	031cee460766a0d0	4632
+macos-x64	98	CAP-7M0 measurements (always uploaded - the shard's whole output)		always()			upload	68c3488a8da97927	4f143e8ee24e0aa2	4641
+macos-x64	99	CAP-7M0 diagnostics on failure (permissive by design)		failure()			upload	c0d4ba3ee250c6c1	c0d4ba3ee250c6c1	4651
+macos-arm64	1	Checkout					uses	c68e8834c98fa848	c68e8834c98fa848	4689
+macos-arm64	2	Guard - no floating upstream ref in the macOS build/gate path	bash				run	f5a579d662f55c59	f5a579d662f55c59	4692
+macos-arm64	3	CAP-7M0 record the runner (M19)	bash				run	1e3764a88dc896c1	1e3764a88dc896c1	4731
+macos-arm64	4	Fetch pinned webview/webview (exact SHA, checksum verified)	pwsh				run	3e49e6269fbde324	3e49e6269fbde324	4749
+macos-arm64	5	Fetch pinned mORMot2 (exact SHA + sha256-pinned statics)	pwsh				run	834b6acd49ab1666	834b6acd49ab1666	4753
+macos-arm64	6	CAP-7M0 cache the pinned FPC disk image					uses	140fd35db7f75544	140fd35db7f75544	4762
+macos-arm64	7	CAP-7M0 install pinned FPC and select the pinned Xcode	pwsh			25	run	cb8839a9aba67774	36f32e38a86bf0c3	4768
+macos-arm64	8	CAP-7M0 deps/webview carries no macOS patch	bash				run	b271a650b9dd9fe5	b271a650b9dd9fe5	4773
+macos-arm64	9	CAP-7M0 build libwebview.dylib from pinned source (M1/M3/M16)	bash			20	run	e3002b2ff12f633e	79133572ccee2a4b	4784
+macos-arm64	10	CAP-7M0 public ABI remains exactly 17 exports (M2)	bash				run	e8f491a46d6834aa	e8f491a46d6834aa	4793
+macos-arm64	11	CAP-7M0 paired ABI probes + Mach-O presence and dlopen gates (M4/M5)	bash			15	run	32ab12af024e7c8a	d6e5dc252a61f9c1	4797
+macos-arm64	12	CAP-7M1 compile the production Cocoa bridge (one object)	bash			10	run	81534cda309553a8	892591d0ce2cb3da	4807
+macos-arm64	13	CAP-7M0 compile the binding, mORMot core and the probe (M17)	bash			20	run	ec7600e8749c9a4b	0defe690a788386b	4812
+macos-arm64	14	CAP-7M1 headless gates (suite + folder confinement)	bash			20	run	fc7144201f8fe9e1	a8329daed24b3af3	4823
+macos-arm64	15	CAP-7M0 feasibility probes (M6-M15)	bash			25	run	7aaff5259a968166	9f2fd7959ba619f1	4830
+macos-arm64	16	CAP-7M1 production runtime gates (real WKWebView, folder + zip)	bash			30	run	7140d698fb5ba6bf	a2b4796f19cc3fd4	4841
+macos-arm64	17	CAP-7M2 setup pinned Node					uses	1ead9801b2fe57d3	1ead9801b2fe57d3	4852
+macos-arm64	18	CAP-7M2 TypeScript SDK build + tests	bash			10	run	67e276e21044fb58	967f43e391d66346	4857
+macos-arm64	19	CAP-7M2 React frontend build (pinned lockfile, offline bundle)	bash			10	run	e6be19141f0d44c4	a0f12e18cc6bff5b	4872
+macos-arm64	20	CAP-7M2 fetch pinned pas2js (sha256 + native compile) and build its frontend	pwsh			20	run	a427e8a7e47f4ea7	c3bb59e68ce111f9	4888
+macos-arm64	21	CAP-7M2 compile the release host and bundler	bash			15	run	ced753f73b81bbd0	75c1d157f8e4ea49	4901
+macos-arm64	22	CAP-7M2 release .app gates - assembly, refusals, direct + LaunchServices to 42	bash			30	run	7d09917055f01af6	c526d9b802d3347e	4906
+macos-arm64	23	CAP-7M2 release manifests and inventories					upload	68c8551de17845f9	68c8551de17845f9	4911
+macos-arm64	24	CAP-7M0 bundle layout measured from an unrelated CWD (M18)	bash			15	run	7d9aee12cd751503	7e91e26e0779de04	4923
+macos-arm64	25	CAP-7M0 zero-transport proof (M20)	bash			15	run	d235a6146c83c0dd	da076081013bf330	4928
+macos-arm64	26	CAP-8B real-window navigation matrix (WKWebView)	bash			20	run	b24bd66ebe832e27	d6554968c88f7b3f	4938
+macos-arm64	27	CAP-8B upload the macOS arm64 nav-matrix record					upload	c82dc1283f7554ee	c82dc1283f7554ee	4943
+macos-arm64	28	CAP-8C multi-principal integration harness (WKWebView)	bash			20	run	69ae3dbdf66aaba1	05dc09cd6c258236	4960
+macos-arm64	29	CAP-8C upload the macOS arm64 multiprincipal record					upload	723af9c701eeaaec	723af9c701eeaaec	4965
+macos-arm64	30	CAP-9A QuickJS invocation foundation harness	bash			20	run	5ee2c5128b19cd4f	b3db865828c99f9e	4982
+macos-arm64	31	CAP-9A upload the macOS arm64 quickjs record					upload	7b2cd67df34be4de	7b2cd67df34be4de	4987
+macos-arm64	32	CAP-9B1 QuickJS package and module-loader harness	bash			20	run	2d0e2aebdd8818c2	50319590b8ea7a49	5005
+macos-arm64	33	CAP-9B1 upload the macOS arm64 package record					upload	2083d5c7f50bc9fa	2083d5c7f50bc9fa	5010
+macos-arm64	34	CAP-9B2 QuickJS plugin lifecycle and reload harness	bash			30	run	09f4febdf8fa9ba8	a629c72f3658ad8d	5025
+macos-arm64	35	CAP-9B2 upload the macOS arm64 lifecycle record					upload	8fcd9b3217ad0798	8fcd9b3217ad0798	5030
+macos-arm64	36	CAP-9C1 QuickJS release package and trusted loader harness	bash			30	run	86d529bace92108a	ee9891419489bbda	5043
+macos-arm64	37	CAP-9C1 upload the macOS arm64 release record and payload					upload	470820c61718b167	470820c61718b167	5048
+macos-arm64	38	CAP-9C2 plugin-enabled acceptance frontend build	bash			10	run	335eef549823187e	0b21b770518bf128	5062
+macos-arm64	39	CAP-9C2 plugin-enabled release layout and real-GUI acceptance	bash			40	run	35f929d1f2d4d4a1	c3b9a75341ab3b68	5078
+macos-arm64	40	CAP-9C2 upload the macOS arm64 plugin-enabled record and layout		always()			upload	2be632717ee05605	36e47adc48da9183	5083
+macos-arm64	41	CAP-10B0 build the scaffold engine, the pack and the suite	bash			15	run	1c0c27749bdf553e	eb5482164b19fce3	5108
+macos-arm64	42	CAP-10B1 build the public pack, the CLI and the SDK root	bash			15	run	99f909c354532178	df8190c9cc8687f5	5113
+macos-arm64	43	CAP-10A build the suite and the probe fixture	bash			15	run	63e4c9df98d2a66b	64c0841e42a55778	5118
+macos-arm64	44	CAP-10A contract cross-checks (pins, no shell, no network)	pwsh				run	a91a0557b0fd44fe	a91a0557b0fd44fe	5123
+macos-arm64	45	CAP-10A development-trust gate	pwsh				run	222fc7d4cd9ccb16	222fc7d4cd9ccb16	5129
+macos-arm64	46	CAP-10A CLI gates + evidence	pwsh			15	run	aa192513b3dd9505	1723780dcef35006	5135
+macos-arm64	47	CAP-10A upload the CLI corpus					upload	9daf617dbccbb07d	9daf617dbccbb07d	5142
+macos-arm64	48	CAP-10B0 contract cross-checks (create linked, offline, limits)	pwsh				run	5068d1d7ffa9257a	5068d1d7ffa9257a	5158
+macos-arm64	49	CAP-10B0 scaffold gates + evidence	pwsh			15	run	9899dab4d9856b15	35be769c58fe0414	5164
+macos-arm64	50	CAP-10B0 upload the scaffold corpus					upload	6531c140a104b8d5	6531c140a104b8d5	5171
+macos-arm64	51	CAP-10B1 contract cross-checks (one UI, exact pins, no exec)	pwsh				run	b1da54a22858730c	b1da54a22858730c	5188
+macos-arm64	52	CAP-10B1 create gates + evidence	pwsh			15	run	be6e45d027be7354	e6cab1f719f92ff4	5194
+macos-arm64	53	CAP-10B1 private build proof and real GUI run	bash			30	run	fe9c230212f152a3	c647ba7a31305957	5201
+macos-arm64	54	CAP-10B1 upload the create corpus		always()			upload	cf59afdd1ce4c7a5	415773ed1fa8f173	5206
+macos-arm64	55	CAP-10B2 build the react-only CLI that proves template_unknown	bash			15	run	77603f9917ed912f	48536653019064a3	5226
+macos-arm64	56	CAP-10B2 contract cross-checks (two UIs, one native app, no npm)	pwsh				run	ce32b03d79439211	ce32b03d79439211	5231
+macos-arm64	57	CAP-10B2 pas2js create gates + evidence	pwsh			15	run	948550daf8f909f7	c0a602f83322523c	5237
+macos-arm64	58	CAP-10B2 private build proof and real GUI run	bash			30	run	3d2c3532f8e85897	6dd2fefff025904c	5244
+macos-arm64	59	CAP-10B2 upload the pas2js corpus		always()			upload	0e43cb291c6ffe62	887965548c8ce5a5	5249
+macos-arm64	60	CAP-10C0 build the supervision suite and the fixture child	bash			15	run	d6323299a1ef7eb3	e68d4946354312ec	5263
+macos-arm64	61	CAP-10C0 contract cross-checks (bounds, no shell at the link, no name-kill, env, shutdown order)	pwsh				run	6a644a109a57b39c	6a644a109a57b39c	5268
+macos-arm64	62	CAP-10C0 supervision suite + pweb run gates + evidence	bash			30	run	e964ebda7846daa7	1d9bfeadcd25ca00	5274
+macos-arm64	63	CAP-10C0 upload the supervision corpus		always()			upload	b7a7ed78311ede3e	041b8eabee660db1	5282
+macos-arm64	64	CAP-10C1 complete the SDK root and build the pipeline driver	bash			20	run	914809680cc79a87	810eae9a8be714f1	5299
+macos-arm64	65	CAP-10C1 contract cross-checks (bounds, library names, linkage, no conditional, no env read)	pwsh				run	8f3c129caa9ac4a8	8f3c129caa9ac4a8	5304
+macos-arm64	66	CAP-10C1 lifecycle pipeline gates + app.pwb parity + evidence	bash			45	run	6fad1b4a24d99e14	3215eaeb4b14f6c9	5310
+macos-arm64	67	CAP-10C1 upload the pipeline corpus		always()			upload	c4a3e29b6970d62f	3a81e7114591d587	5318
+macos-arm64	68	CAP-10C2 build the development suite, the driver and both host binaries	bash			25	run	763ae137716951f2	25fd7e91d0f07c35	5336
+macos-arm64	69	CAP-10C2 contract cross-checks (bounds, linkage, dev-free release, CSP, no transport)	pwsh				run	844c3c9085279802	844c3c9085279802	5340
+macos-arm64	70	CAP-10C2 development-loop gates (DEV1-DEV14, T1-T5) + evidence	bash			70	run	ed487e86de8468ac	647b595c2b47852b	5346
+macos-arm64	71	CAP-10C2 upload the development corpus		always()			upload	b0c32deb70f7877a	ada0c8100683b251	5354
+macos-arm64	72	CAP-10C3 build the pas2js development suite, the driver and both host binaries	bash			25	run	0bb423275f76f0c1	4d8a28d0b6a898ea	5378
+macos-arm64	73	CAP-10C3 contract cross-checks (bounds, detector linkage, no watch API, pas2js CSP + dev-free release)	pwsh				run	59118a75e004b017	59118a75e004b017	5382
+macos-arm64	74	CAP-10C3 the CAP-10C ledger disposition (CL2, CL3)	pwsh				run	b58421a7ea7f6d7d	b58421a7ea7f6d7d	5387
+macos-arm64	75	CAP-10C3 pas2js development-loop gates (PD1-PD15, RD1, T1-T5, CL1-CL3) + evidence	bash			70	run	7f00eaf6cda07451	42fe2da3688bd75b	5393
+macos-arm64	76	CAP-10C3 upload the pas2js development corpus		always()			upload	c71724eb6da7217c	f133353e474c68d8	5401
+macos-arm64	77	CAP-10D0 build the public-build suite and its driver	bash			20	run	fae35a687c78a273	95706108f6090c17	5425
+macos-arm64	78	CAP-10D0 contract cross-checks (one execution path, ten stages, five commands, gate quoting)	pwsh				run	377433f650c33269	377433f650c33269	5429
+macos-arm64	79	CAP-10D0 public-build gates (B1-B12, L1-L3, R1-R2) + evidence	bash			120	run	5566cb4928782e90	5af58dc261004da4	5435
+macos-arm64	80	CAP-10D0 upload the public-build corpus		always()			upload	ca00941c32239d7f	4c416d0af3a5f7a5	5443
+macos-arm64	81	CAP-10D1 contract cross-checks (pins vs locks, five engine callers, the anti-fork twins, no signing, no network)	pwsh				run	d3cad5c1ba736fc3	d3cad5c1ba736fc3	5474
+macos-arm64	82	CAP-10D1 stage the packaging kit and build the suite and driver	bash			20	run	9fca51f778283045	0f2522d64ccd52d9	5479
+macos-arm64	83	CAP-10D1 packaging gates + evidence	bash			150	run	8f8045e2a837253a	84d75ee0c0fe5f2f	5483
+macos-arm64	84	CAP-10D1 upload the packaging corpus		always()			upload	ea27b93d38dc5f4b	49c6aa37b8bdfabe	5491
+macos-arm64	85	CAP-10D2 contract cross-checks (no network, no env root, the licence table, the tool rule)	pwsh				run	479d1f9f4a8484c0	479d1f9f4a8484c0	5520
+macos-arm64	86	CAP-10D2 the phase-wide CAP-10 ledger disposition (CL1-CL4)	pwsh				run	960c37d26a2fe2d6	960c37d26a2fe2d6	5525
+macos-arm64	87	CAP-10D2 stage the licence set and build the packager and suite	bash			20	run	d43f29386c28e106	a960e38536572bf3	5530
+macos-arm64	88	CAP-10D2 SDK distribution gates (PK1-PK4, IN1-IN4, CM1-CM6, CL1-CL4) + evidence	bash			180	run	3b71a02139dd969e	39a92de007195b16	5534
+macos-arm64	89	CAP-10D2 upload the SDK distribution corpus		always()			upload	cbb31cd204e24ca1	5fa43b68e9669386	5542
+macos-arm64	90	CAP-10D2 upload the SDK archive and its manifest		always()			upload	3b2ebd5a7ca79441	936919a960d95693	5559
+macos-arm64	91	CAP-10E image-path source gate (zero ParamStr(0), zero ProgramFilePath, one reader)	bash			10	run	05dbb46fb9f45c45	c0f714d96bf4cded	5572
+macos-arm64	92	CAP-10E kernel image path - non-ASCII (NFD) release host and the symlink rule (E1/E2/E5/E9)	bash			30	run	82acb8eea543418c	48df3dd4819f3557	5577
+macos-arm64	93	CAP-10E upload the macOS arm64 image-path record		always()			upload	23ef1b7af6a7264d	5f660cdbc0f78501	5584
+macos-arm64	94	CAP-7F emit the macOS arm64 evidence artifact	bash			10	run	06aeb7c0a582f1af	ff51a879c4bb51b7	5598
+macos-arm64	95	CAP-7F upload the macOS arm64 evidence					upload	8ed2aad76a6a5e2d	8ed2aad76a6a5e2d	5603
+macos-arm64	96	CAP-7F diagnostics on failure		failure()			upload	197bc3054424f232	b0c93407ab96277a	5612
+macos-arm64	97	CAP-7M0 per-arch headline facts to the run summary	bash	always()			run	9a0710d3dfb67d5d	031cee460766a0d0	5627
+macos-arm64	98	CAP-7M0 measurements (always uploaded - the shard's whole output)		always()			upload	c38732a8ac7a69eb	b6d68cae1622bbb7	5632
+macos-arm64	99	CAP-7M0 diagnostics on failure (permissive by design)		failure()			upload	3995ed7fec3550f8	3995ed7fec3550f8	5642

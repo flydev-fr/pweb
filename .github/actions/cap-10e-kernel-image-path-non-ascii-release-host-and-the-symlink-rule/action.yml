@@ -1,0 +1,11 @@
+name: 'CAP-10E kernel image path - non-ASCII release host and the symlink rule (E1/E2/E5/E9)'
+description: 'CAP-11A: the body of the "CAP-10E kernel image path - non-ASCII release host and the symlink rule (E1/E2/E5/E9)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: linux
+      shell: bash
+      run: |
+        xvfb-run -a test/cap10e/run_cap10e_gates.sh 2>&1 |
+          tee build/cap10e-gates.log
+        test "${PIPESTATUS[0]}" -eq 0

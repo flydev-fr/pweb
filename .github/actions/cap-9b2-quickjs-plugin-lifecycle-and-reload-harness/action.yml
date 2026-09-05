@@ -1,0 +1,33 @@
+# CAP-9B2: the QuickJS plugin LIFECYCLE + transactional reload harness.
+# Same headless, fixture-free-on-disk discipline as CAP-9B1: it
+# generates every package in-process and runs the L1-L40 matrix through
+# the UNCHANGED production scheduler + CAP-8A policy + real mORMot SOA
+# bridge, driving plugin HOSTS over CAP-9B1 package generations. It
+# writes build/cap9b2/quickjs-lifecycle-corpus.txt (the cross-target
+# digest source) and quickjslifecycle-windows-x86_64.json, which the
+# CAP-7F emitter reads into quickjs_lifecycle_corpus (must-PASS; never
+# SKIPs). A longer timeout than the CAP-9B1 gate by design: several
+# rows are bounded by REAL resource limits (a CPU bound fired three
+# times, plus a quarantine row that waits for a deliberately leaked
+# thread to end on its own bound).
+
+name: 'CAP-9B2 QuickJS plugin lifecycle and reload harness'
+description: 'CAP-11A: the body of the "CAP-9B2 QuickJS plugin lifecycle and reload harness" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: windows
+      if: ${{ inputs.target == 'windows' }}
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap9b2/run_quickjslifecycle.ps1 2>&1 |
+          Tee-Object -FilePath build/cap9b2-quickjslifecycle.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-9B2 quickjslifecycle gate FAILED' }
+    - name: linux, macos-x64, macos-arm64
+      if: ${{ inputs.target != 'windows' }}
+      shell: bash
+      run: test/cap9b2/run_quickjslifecycle.sh

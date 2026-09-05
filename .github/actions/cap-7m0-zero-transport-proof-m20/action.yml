@@ -1,0 +1,8 @@
+name: 'CAP-7M0 zero-transport proof (M20)'
+description: 'CAP-11A: the body of the "CAP-7M0 zero-transport proof (M20)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: macos-x64, macos-arm64
+      shell: bash
+      run: test/cap7m/check_cap7m_nonetwork.sh

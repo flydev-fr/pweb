@@ -1,0 +1,28 @@
+name: 'Assert the toolchain and the ratified engine family'
+description: 'CAP-11A: the body of the "Assert the toolchain and the ratified engine family" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: linux
+      shell: bash
+      run: |
+        v="$(fpc -iV | tr -d '[:space:]')"
+        echo "fpc version: ${v}"
+        # conventions.md: FPC 3.2.2 is the minimum; the dev host runs
+        # 3.2.3 and CAP-7L is proven on both.
+        case "${v}" in
+          3.2.2|3.2.3) ;;
+          *) echo "unsupported FPC ${v}"; exit 1 ;;
+        esac
+        os="$(fpc -iTO | tr -d '[:space:]')"
+        cpu="$(fpc -iTP | tr -d '[:space:]')"
+        echo "fpc target: ${os}/${cpu}"
+        [ "${os}" = 'linux' ] || { echo "expected linux target"; exit 1; }
+        [ "${cpu}" = 'x86_64' ] || { echo 'CAP-7L is x86_64 only'; exit 1; }
+        # the lock is the single source for the Linux baseline
+        grep -qx 'linux-webkitgtk-api = 4.1' webview.lock ||
+          { echo 'webview.lock does not pin WebKitGTK API 4.1'; exit 1; }
+        grep -qx 'linux-gtk-api = 3.0' webview.lock ||
+          { echo 'webview.lock does not pin GTK API 3.0'; exit 1; }
+        grep -qx 'linux-soname = libwebview.so.0.12' webview.lock ||
+          { echo 'webview.lock does not pin the Linux soname'; exit 1; }

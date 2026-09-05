@@ -1,0 +1,17 @@
+# CAP-4: deterministic test package built headlessly from the committed
+# frontend fixture. This is gating - no GUI involved.
+
+name: 'CAP-4 build app.zip from frontend fixture'
+description: 'CAP-11A: the body of the "CAP-4 build app.zip from frontend fixture" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        & build/cap4/example/mkappzip.exe examples/06-assets/frontend/dist `
+          build/cap4/example/app.zip
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-4 app.zip build failed' }
+        if (-not (Test-Path build/cap4/example/app.zip)) {
+          throw 'CAP-4 app.zip missing after build'
+        }

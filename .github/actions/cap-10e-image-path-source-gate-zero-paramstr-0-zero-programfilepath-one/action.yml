@@ -1,0 +1,25 @@
+# CAP-10E: the one-rule SOURCE gate, then the runtime one. The source
+# gate is checkout-only and runs on every target BY DESIGN, so
+# paramstr0_path_sites and its siblings are a COMPARED fact rather
+# than one machine's word for it.
+
+name: 'CAP-10E image-path source gate (zero ParamStr(0), zero ProgramFilePath, one reader)'
+description: 'CAP-11A: the body of the "CAP-10E image-path source gate (zero ParamStr(0), zero ProgramFilePath, one reader)" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: windows
+      if: ${{ inputs.target == 'windows' }}
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap10e/check_image_path.ps1 2>&1 |
+          Tee-Object -FilePath build/cap10e-sources.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-10E image-path source gate FAILED' }
+    - name: linux, macos-x64, macos-arm64
+      if: ${{ inputs.target != 'windows' }}
+      shell: bash
+      run: pwsh -NoProfile -File test/cap10e/check_image_path.ps1

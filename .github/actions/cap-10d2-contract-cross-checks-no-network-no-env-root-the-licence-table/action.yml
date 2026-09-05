@@ -1,0 +1,20 @@
+# ---------------------------------------------------------------------
+# CAP-10D2: the SDK distribution. One private packager, one archive per
+# target whose extracted tree IS the CAP-10C1 §2 SDK root, a canonical
+# manifest verified by `pweb doctor` and by the build's `open` stage,
+# and the clean-machine proof: extracted to a path with a space and a
+# non-ASCII character, the checkout's six framework trees renamed
+# aside, `create` + `build` + `run` -> 42 for both UIs. Nothing here
+# downloads anything.
+# ---------------------------------------------------------------------
+
+name: 'CAP-10D2 contract cross-checks (no network, no env root, the licence table, the tool rule)'
+description: 'CAP-11A: the body of the "CAP-10D2 contract cross-checks (no network, no env root, the licence table, the tool rule)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows, linux, macos-x64, macos-arm64
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap10d2/check_cap10d2_contracts.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-10D2 contract cross-checks FAILED' }

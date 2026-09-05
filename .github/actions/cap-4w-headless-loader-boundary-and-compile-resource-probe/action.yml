@@ -1,0 +1,8 @@
+name: 'CAP-4W - headless loader boundary and compile resource probe'
+description: 'CAP-11A: the body of the "CAP-4W - headless loader boundary and compile resource probe" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: pwsh -NoProfile -File test/cap4w/check_cap4w.ps1 -CompileOnly

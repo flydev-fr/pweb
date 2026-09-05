@@ -1,0 +1,127 @@
+# CAP-10D0 L2b: the CAP-10 chain, RE-RUN from a repository path that
+# carries a SPACE.
+#
+# THE DEFECT THIS CLOSES (deferred-work C0-12 (b)): every CAP-10 gate
+# used to hand `Start-Process -ArgumentList` an array pwsh joins with
+# single spaces and no quoting, so a repository under `C:\pweb work`
+# would split `--project` into two arguments. No hosted runner has a
+# space in its workspace, which is exactly why it survived four
+# shards. L2a puts a space in every `--project` on every leg of every
+# job; this is L2b, the stronger claim: the whole chain green with the
+# REPOSITORY ITSELF at a spaced path.
+#
+# IT COPIES THE PREPARED WORKSPACE rather than setting one up again.
+# Every dependency - the pinned FPC on PATH, the patched mORMot, the
+# built webview.dll, Node, the TypeScript SDK, the pinned pas2js - is
+# already here and already correct, and a second setup would be a
+# second thing to keep in step. The copy is the identical tree at a
+# different name, which is the whole of what is under test.
+#
+# SCOPE, stated rather than implied. The CAP-10A, B0, B1, B2, C0, C1
+# and D0 gate chains run there. Three things do not:
+#
+#   - the two development-loop gates (CAP-10C2, CAP-10C3), because
+#     each is a 70-minute display-bound run of a live application and
+#     running them twice would double this job;
+#   - check_cap10b0_contracts.ps1 and check_cap10b1_contracts.ps1,
+#     because both ask `git ls-files` whether the template corpus is
+#     tracked and this copy is not a git checkout - they would report
+#     a fact about git rather than about the path.
+#
+# None of the five spawns anything, or spawns only through the same
+# helper, so none of them exercises quoting this leg does not.
+# check_cap10d0_contracts.ps1 proves the helper's adoption at the
+# source on every leg of every job, and the CAP-10D0 gate proves it at
+# runtime with spaced project paths on all four targets.
+
+name: 'CAP-10D0 L2b - the CAP-10 chain at a repository path with a space'
+description: 'CAP-11A: the body of the "CAP-10D0 L2b - the CAP-10 chain at a repository path with a space" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        $spaced = Join-Path $env:RUNNER_TEMP 'pweb work'
+        if (Test-Path -LiteralPath $spaced) {
+          Remove-Item -Recurse -Force -LiteralPath $spaced
+        }
+        New-Item -ItemType Directory -Force $spaced | Out-Null
+        Write-Host "[L2b] copying the prepared workspace to: $spaced"
+        # robocopy's exit codes below 8 are success. build/ has to travel,
+        # because it carries artifacts this step must not rebuild -
+        # build/webview-dist/webview.dll above all, which is the cmake+MSVC
+        # output test/cap10c1/build_cap10c1.ps1 stages into the SDK root.
+        # Every CAP-10 build script reclaims its own subtree before it
+        # writes, so nothing stale survives into what is measured.
+        #
+        # THE EXCLUSION IS THIS REPOSITORY'S OWN .git, BY FULL PATH, and
+        # not the name. MEASURED: `/XD .git` excludes every directory of
+        # that name at any depth, which takes deps/mormot2/.git with it -
+        # and tools/patch-cap3u.ps1 needs mORMot to be a real git checkout,
+        # so the CAP-10C1 staging died with `mORMot checkout not found`.
+        # A name-based exclusion cannot say "the top-level one".
+        robocopy . $spaced /E /NFL /NDL /NJH /NJS /NP `
+          /XD (Join-Path $PWD '.git') | Out-Null
+        if ($LASTEXITCODE -ge 8) {
+          throw "[L2b] robocopy failed with $LASTEXITCODE"
+        }
+        $global:LASTEXITCODE = 0
+        if (-not $spaced.Contains(' ')) {
+          throw '[L2b] the destination carries no space -- the leg would prove nothing'
+        }
+        # the cost, recorded rather than guessed: this is the one step that
+        # doubles the workspace on disk, and a reader deciding whether to
+        # keep it should be able to see what it costs
+        $mb = [int](((Get-ChildItem -LiteralPath $spaced -Recurse -File -Force |
+          Measure-Object -Property Length -Sum).Sum) / 1MB)
+        $free = [int](((Get-PSDrive -Name (Split-Path -Qualifier $spaced).TrimEnd(':')).Free) / 1MB)
+        Write-Host "[L2b] copied $mb MB; $free MB free on that volume"
+        Push-Location -LiteralPath $spaced
+        try {
+          foreach ($step in
+              'test/cap10b0/build_cap10b0.ps1',
+              'test/cap10b1/build_cap10b1.ps1',
+              'test/cap10a/build_cap10a.ps1',
+              'test/cap10b2/build_cap10b2.ps1',
+              'test/cap10c0/build_cap10c0.ps1',
+              'test/cap10c1/build_cap10c1.ps1',
+              'test/cap10d0/build_cap10d0.ps1',
+              'test/cap10a/check_cap10a_contracts.ps1',
+              'test/cap10a/run_cap10a_gates.ps1',
+              # NOT check_cap10b0_contracts.ps1 and NOT
+              # check_cap10b1_contracts.ps1. MEASURED: both ask `git
+              # ls-files` whether the template corpus is tracked, and this
+              # copy is deliberately not a git checkout - so all 35
+              # template files read as untracked and the check reports a
+              # fact about git rather than about the path. They spawn
+              # nothing, so they exercise no quoting at all; the job's own
+              # run of them, in the real checkout, is where that claim
+              # belongs.
+              'test/cap10b0/run_cap10b0_gates.ps1',
+              'test/cap10b1/run_cap10b1_gates.ps1',
+              # the two GUI build proofs are IN the chain, not beside it:
+              # they leave build/cap10b{1,2}/{project,stage,release}, which
+              # the CAP-10C0 and CAP-10C1 gates below require by name. The
+              # build scripts above reclaim those trees, so the copies that
+              # travelled in the robocopy are gone by the time they matter
+              'test/cap10b1/prove_cap10b1.ps1',
+              'test/cap10b2/check_cap10b2_contracts.ps1',
+              'test/cap10b2/run_cap10b2_gates.ps1',
+              'test/cap10b2/prove_cap10b2.ps1',
+              'test/cap10c0/check_cap10c0_contracts.ps1',
+              'test/cap10c0/run_cap10c0_gates.ps1',
+              'test/cap10c1/check_cap10c1_contracts.ps1',
+              'test/cap10c1/run_cap10c1_gates.ps1',
+              'test/cap10d0/check_cap10d0_contracts.ps1',
+              'test/cap10d0/run_cap10d0_gates.ps1') {
+            Write-Host "[L2b] === $step"
+            pwsh -NoProfile -File $step
+            if ($LASTEXITCODE -ne 0) {
+              throw "[L2b] $step FAILED at a spaced repository path"
+            }
+          }
+        } finally {
+          Pop-Location
+        }
+        Write-Host '[L2b] the CAP-10 chain is green at a repository path carrying a space'

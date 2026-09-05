@@ -1,0 +1,8 @@
+name: 'CAP-7L zero-transport proof (L20)'
+description: 'CAP-11A: the body of the "CAP-7L zero-transport proof (L20)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: linux
+      shell: bash
+      run: xvfb-run -a test/cap7l/check_cap7l_nonetwork.sh

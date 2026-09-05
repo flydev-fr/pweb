@@ -1,0 +1,12 @@
+name: 'CAP-7M0 build libwebview.dylib from pinned source (M1/M3/M16)'
+description: 'CAP-11A: the body of the "CAP-7M0 build libwebview.dylib from pinned source (M1/M3/M16)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: macos-x64, macos-arm64
+      shell: bash
+      # No --clean: the runner checks out fresh, so the working
+      # directories do not exist yet. These gates never delete on their
+      # default path; a stale tree is a refusal, and --clean is for
+      # repeated LOCAL runs only.
+      run: tools/build-webview-dylib.sh

@@ -1,0 +1,11 @@
+name: 'CAP-6 headless gates - bundle, determinism, release layout, refusals'
+description: 'CAP-11A: the body of the "CAP-6 headless gates - bundle, determinism, release layout, refusals" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap6/run_cap6_gates.ps1 2>&1 |
+          Tee-Object -FilePath build/cap6/gates.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-6 headless gates FAILED' }

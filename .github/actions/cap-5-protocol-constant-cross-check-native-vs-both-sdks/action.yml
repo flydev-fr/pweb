@@ -1,0 +1,8 @@
+name: 'CAP-5 protocol constant cross-check (native vs both SDKs)'
+description: 'CAP-11A: the body of the "CAP-5 protocol constant cross-check (native vs both SDKs)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: pwsh -NoProfile -File test/cap5/check_cap5_protocol.ps1

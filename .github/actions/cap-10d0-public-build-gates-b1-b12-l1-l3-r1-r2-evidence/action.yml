@@ -1,0 +1,23 @@
+name: 'CAP-10D0 public-build gates (B1-B12, L1-L3, R1-R2) + evidence'
+description: 'CAP-11A: the body of the "CAP-10D0 public-build gates (B1-B12, L1-L3, R1-R2) + evidence" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: windows, macos-x64, macos-arm64
+      if: ${{ inputs.target != 'linux' }}
+      shell: bash
+      run: |
+        pwsh -NoProfile -File test/cap10d0/run_cap10d0_gates.ps1 2>&1 |
+          tee build/cap10d0-gates.log
+        test "${PIPESTATUS[0]}" -eq 0
+    - name: linux
+      if: ${{ inputs.target == 'linux' }}
+      shell: bash
+      run: |
+        xvfb-run -a pwsh -NoProfile -File test/cap10d0/run_cap10d0_gates.ps1 2>&1 |
+          tee build/cap10d0-gates.log
+        test "${PIPESTATUS[0]}" -eq 0

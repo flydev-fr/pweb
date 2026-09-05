@@ -1,0 +1,14 @@
+name: 'CAP-5 Pas2JS frontend build (pinned toolchain)'
+description: 'CAP-11A: the body of the "CAP-5 Pas2JS frontend build (pinned toolchain)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File examples/05-pas2js/frontend/build.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'pas2js frontend build failed' }
+        foreach ($f in 'examples/05-pas2js/frontend/dist/index.html',
+                       'examples/05-pas2js/frontend/dist/assets/app.js') {
+          if (-not (Test-Path $f)) { throw "pas2js frontend output missing: $f" }
+        }

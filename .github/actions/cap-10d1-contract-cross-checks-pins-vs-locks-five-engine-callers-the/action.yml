@@ -1,0 +1,19 @@
+# ---------------------------------------------------------------------
+# CAP-10D1: the distributable artifact. `pweb build --profile` turns the
+# release CAP-10D0 committed into something somebody else can install or
+# unpack, and every packaging input is a PINNED artifact verified
+# offline - this job provisioned them for the CAP-6b steps, and the
+# staging step below COPIES them into the SDK root. Nothing here
+# downloads anything.
+# ---------------------------------------------------------------------
+
+name: 'CAP-10D1 contract cross-checks (pins vs locks, five engine callers, the anti-fork twins, no signing, no network)'
+description: 'CAP-11A: the body of the "CAP-10D1 contract cross-checks (pins vs locks, five engine callers, the anti-fork twins, no signing, no network)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows, linux, macos-x64, macos-arm64
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap10d1/check_cap10d1_contracts.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-10D1 contract cross-checks FAILED' }

@@ -1,0 +1,16 @@
+name: 'Compile JS-binding example (CAP-2) and stage its DLL'
+description: 'CAP-11A: the body of the "Compile JS-binding example (CAP-2) and stage its DLL" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force build/example2 | Out-Null
+        fpc -Sh -FUbuild/fpc -Fusrc/lib -Fusrc/rpc -Fusrc/security `
+          -Fusrc/webview -Fideps/mormot2/src `
+          -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+          -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net `
+          -FEbuild/example2 examples/02-js-binding/jsbinding.pas
+        if ($LASTEXITCODE -ne 0) { throw 'JS-binding example failed to compile' }
+        Copy-Item build/webview-dist/webview.dll build/example2/

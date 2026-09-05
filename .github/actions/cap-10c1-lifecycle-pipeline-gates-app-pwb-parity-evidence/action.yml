@@ -1,0 +1,23 @@
+name: 'CAP-10C1 lifecycle pipeline gates + app.pwb parity + evidence'
+description: 'CAP-11A: the body of the "CAP-10C1 lifecycle pipeline gates + app.pwb parity + evidence" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: windows, macos-x64, macos-arm64
+      if: ${{ inputs.target != 'linux' }}
+      shell: bash
+      run: |
+        pwsh -NoProfile -File test/cap10c1/run_cap10c1_gates.ps1 2>&1 |
+          tee build/cap10c1-gates.log
+        test "${PIPESTATUS[0]}" -eq 0
+    - name: linux
+      if: ${{ inputs.target == 'linux' }}
+      shell: bash
+      run: |
+        xvfb-run -a pwsh -NoProfile -File test/cap10c1/run_cap10c1_gates.ps1 2>&1 |
+          tee build/cap10c1-gates.log
+        test "${PIPESTATUS[0]}" -eq 0

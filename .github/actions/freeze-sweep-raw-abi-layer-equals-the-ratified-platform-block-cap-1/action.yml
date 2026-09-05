@@ -1,0 +1,26 @@
+name: 'Freeze sweep - raw ABI layer equals the ratified platform block (CAP-1 baseline)'
+description: 'CAP-11A: the body of the "Freeze sweep - raw ABI layer equals the ratified platform block (CAP-1 baseline)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force build/freeze | Out-Null
+        $expected = ((Select-String -Path webview.lock `
+          -Pattern '^srclib-platform-patch-sha256\s*=').Line -split '=', 2)[1].Trim()
+        if ($expected -cnotmatch '^[0-9a-f]{64}$') {
+          throw 'webview.lock has no full lowercase srclib-platform-patch-sha256'
+        }
+        $lines = @(git --no-pager diff --no-color --no-ext-diff --full-index `
+          709bf0fee715d0cf9b8c475b4f801947fc0f4a65 -- src/lib)
+        $text = (($lines | ForEach-Object { $_ -replace "`r$", '' }) -join "`n")
+        if ($text -ne '') { $text += "`n" }
+        $patch = Join-Path (Get-Location) 'build/freeze/srclib-cap1.patch'
+        [IO.File]::WriteAllText($patch, $text, [Text.UTF8Encoding]::new($false))
+        $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $patch).Hash.ToLowerInvariant()
+        Write-Host "src/lib patch sha256: $actual"
+        if ($actual -cne $expected) {
+          Write-Host $text
+          throw 'src/lib drifted beyond the ratified platform block'
+        }

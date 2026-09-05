@@ -1,0 +1,12 @@
+name: 'Compile smoke example and stage its DLL'
+description: 'CAP-11A: the body of the "Compile smoke example and stage its DLL" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force build/example | Out-Null
+        fpc -MObjFPC -Sh -FUbuild/fpc -Fusrc/lib -FEbuild/example examples/01-hello/hello.pas
+        if ($LASTEXITCODE -ne 0) { throw 'smoke example failed to compile' }
+        Copy-Item build/webview-dist/webview.dll build/example/

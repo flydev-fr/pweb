@@ -1,0 +1,8 @@
+name: 'CAP-5 host examples compile (re-applied CAP-3U window)'
+description: 'CAP-11A: the body of the "CAP-5 host examples compile (re-applied CAP-3U window)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: pwsh -NoProfile -File test/cap5/build_cap5_hosts.ps1

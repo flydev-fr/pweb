@@ -1,0 +1,8 @@
+name: 'CAP-7L compile every unit, probe and example for Linux'
+description: 'CAP-11A: the body of the "CAP-7L compile every unit, probe and example for Linux" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: linux
+      shell: bash
+      run: test/cap7l/build_cap7l.sh

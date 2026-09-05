@@ -1,0 +1,64 @@
+# CAP-7L: src/lib is no longer expected to be EMPTY against its
+# baselines. Enabling [Platform.Linux64] in the committed chet
+# config and re-running the committed regeneration pipeline added
+# exactly three lines to the generated platform block. Both sweeps
+# below therefore keep their ORIGINAL baseline SHAs - the CAP-1 and
+# CAP-3 anchors survive untouched - and require the diff to equal
+# the RATIFIED patch, identified by the sha256 pinned in
+# webview.lock. Anything past those three lines still fails, and
+# moving a baseline is still not how src/lib changes.
+#
+# The diff text is normalised to LF with one trailing newline
+# before hashing, so the same patch hashes identically on the
+# Windows and the Linux runner, and --full-index removes the only
+# other source of variation (abbreviated blob ids scale with the
+# object count of the clone).
+# CAP-7M1: the src/lib patch key was renamed to
+# `srclib-platform-patch-sha256`. The old name began with the CAP-7L
+# capability id and named ONE platform for a patch that carries three.
+# The VALUE is byte-preserved (both baselines were re-verified to
+# produce the same hash), so this is a rename and never a
+# re-ratification. A rename with no rejection gate leaves the old name
+# working by accident: this step is that gate, and it runs BEFORE the
+# two sweeps so the failure names the cause rather than the symptom.
+#
+# The old spelling is CONCATENATED, like the floating-ref guard's
+# patterns, so this file cannot match itself and the ledgered
+# "the old name appears nowhere" property stays checkable with a plain
+# git grep.
+
+name: 'Freeze sweep - the renamed src/lib patch key, and only that name'
+description: 'CAP-11A: the body of the "Freeze sweep - the renamed src/lib patch key, and only that name" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        $old = 'cap7l-bind' + 'ing-patch-sha256'
+        $lock = Get-Content webview.lock
+        if ($lock | Select-String -Pattern $old -SimpleMatch) {
+          throw "webview.lock still carries the OLD key name $old"
+        }
+        # TREE-WIDE, not lock-only. The ledgered property is that the old
+        # name survives nowhere but the frozen _bmad-output/ artifacts, which
+        # are historical records and are deliberately left alone. A gate
+        # scoped to webview.lock would pass while a script, a workflow or a
+        # doc still read the retired key.
+        $hits = @(git grep -l -F -- $old)
+        # `git grep` exits 1 when it finds NOTHING, which is the outcome this
+        # gate wants. The Actions pwsh wrapper ends the step with
+        # `exit $LASTEXITCODE`, and Write-Host does not reset it - so without
+        # this line a completely clean tree would fail the step. Cleared
+        # deliberately, immediately, and only for this call.
+        $global:LASTEXITCODE = 0
+        $stale = $hits | Where-Object { $_ -and ($_ -notlike '_bmad-output/*') }
+        if ($stale) {
+          $stale | ForEach-Object { Write-Host "STALE KEY REFERENCE: $_" }
+          throw "the retired key name $old survives outside _bmad-output/"
+        }
+        $new = @($lock | Select-String -Pattern '^srclib-platform-patch-sha256\s*=')
+        if ($new.Count -ne 1) {
+          throw "webview.lock must carry exactly one srclib-platform-patch-sha256 line, found $($new.Count)"
+        }
+        Write-Host 'freeze key: srclib-platform-patch-sha256 present, old name absent'

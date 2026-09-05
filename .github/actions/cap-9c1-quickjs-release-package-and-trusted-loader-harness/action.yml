@@ -1,0 +1,32 @@
+# CAP-9C1: the deterministic QuickJS PRODUCTION package and its trusted
+# release loader. The gate builds the private packager, stages the
+# release payload TWICE and requires byte-identical output on this
+# toolchain, compiles the C1-C30 harness WITH the generated native
+# registry include (so "the registry compiles on every target" is
+# proven rather than asserted), stages plugins.zip beside the harness
+# executable to exercise the production executable-relative rule, and
+# runs the matrix from an unrelated working directory. It writes
+# build/cap9c1/quickjs-release-corpus.txt (the cross-target digest
+# source) and quickjsrelease-windows-x86_64.json, which the CAP-7F
+# emitter reads into quickjs_release_corpus (must-PASS; never SKIPs).
+
+name: 'CAP-9C1 QuickJS release package and trusted loader harness'
+description: 'CAP-11A: the body of the "CAP-9C1 QuickJS release package and trusted loader harness" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: windows
+      if: ${{ inputs.target == 'windows' }}
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap9c1/run_quickjsrelease.ps1 2>&1 |
+          Tee-Object -FilePath build/cap9c1-quickjsrelease.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-9C1 quickjsrelease gate FAILED' }
+    - name: linux, macos-x64, macos-arm64
+      if: ${{ inputs.target != 'windows' }}
+      shell: bash
+      run: test/cap9c1/run_quickjsrelease.sh

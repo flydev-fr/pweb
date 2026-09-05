@@ -1,0 +1,9 @@
+name: 'CAP-7M0 compile the binding, mORMot core and the probe (M17)'
+description: 'CAP-11A: the body of the "CAP-7M0 compile the binding, mORMot core and the probe (M17)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: macos-x64, macos-arm64
+      shell: bash
+      # No --clean: fresh workspace (see the dylib build step).
+      run: test/cap7m/build_cap7m.sh

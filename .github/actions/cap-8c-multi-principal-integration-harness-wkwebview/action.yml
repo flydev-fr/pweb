@@ -1,0 +1,19 @@
+# ---------- CAP-8C: the multi-principal integration harness ----------
+# The production gate that replaced the Checkpoint-1 topology probe, on
+# WKWebView, natively on THIS architecture (a result measured on one
+# arch is not evidence about the other). The headless NATIVE leg writes
+# the canonical security-corpus.txt; the GUI leg of two simultaneously
+# live WKWebView windows proves the shared policy differentiates two
+# real principals with the content-swap + injected-opener evidence,
+# under the R-C2/R-C3 lifecycle (no mid-loop destroy; terminate only the
+# run-owner at shutdown). A real Aqua session is always present, so
+# every failure gates - no SKIP. Runs BEFORE the CAP-7F emitter.
+
+name: 'CAP-8C multi-principal integration harness (WKWebView)'
+description: 'CAP-11A: the body of the "CAP-8C multi-principal integration harness (WKWebView)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: macos-x64, macos-arm64
+      shell: bash
+      run: test/cap8c/run_multiprincipal.sh

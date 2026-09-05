@@ -1,0 +1,8 @@
+name: 'Fetch pinned mORMot2 (exact SHA + sha256-pinned statics)'
+description: 'CAP-11A: the body of the "Fetch pinned mORMot2 (exact SHA + sha256-pinned statics)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows, linux, macos-x64, macos-arm64
+      shell: pwsh
+      run: pwsh -NoProfile -File tools/get-mormot.ps1

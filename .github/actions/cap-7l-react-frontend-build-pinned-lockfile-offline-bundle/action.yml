@@ -1,0 +1,19 @@
+name: 'CAP-7L React frontend build (pinned lockfile, offline bundle)'
+description: 'CAP-11A: the body of the "CAP-7L React frontend build (pinned lockfile, offline bundle)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: linux
+      shell: bash
+      run: |
+        v="$(node --version)"
+        [ "${v}" = 'v24.11.1' ] || { echo "expected node v24.11.1, got ${v}"; exit 1; }
+        cd examples/04-react/frontend
+        npm ci
+        npm run typecheck
+        npm run build
+        cd ../../..
+        for f in examples/04-react/frontend/dist/index.html \
+                 examples/04-react/frontend/dist/assets/app.js; do
+          [ -f "${f}" ] || { echo "react frontend output missing: ${f}"; exit 1; }
+        done

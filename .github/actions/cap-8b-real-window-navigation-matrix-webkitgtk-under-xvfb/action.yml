@@ -1,0 +1,18 @@
+# ---------- CAP-8B: the real-window privileged-navigation matrix ----------
+# The production gate that replaced the Checkpoint-1 audit probe, on the
+# WebKitGTK engine, under a real virtual display. It is load-bearing
+# here in a way it is not on Windows: CAP-8B MEASURED that the raw
+# __webview__ transport reaches the native binding from EVERY frame on
+# WebKitGTK, so the matrix's child tripwire (no untrusted subframe may
+# execute) and frame-src 'none' proof are what stand between a subframe
+# and the privileged bridge. No conditional SKIP - the display is real,
+# every failure gates - same policy as the CAP-7L GUI matrix.
+
+name: 'CAP-8B real-window navigation matrix (WebKitGTK) under Xvfb'
+description: 'CAP-11A: the body of the "CAP-8B real-window navigation matrix (WebKitGTK) under Xvfb" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: linux
+      shell: bash
+      run: xvfb-run -a test/cap8b/run_nav_matrix.sh

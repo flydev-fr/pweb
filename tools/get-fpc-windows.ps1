@@ -141,30 +141,35 @@ if (-not $Reused) {
     # not. The transfer is curl's; the VERIFICATION below stays here, which is
     # the half that has to be single-source. curl is preinstalled on the
     # windows-latest image.
+    # CAP-11A: THREE BOUNDED ATTEMPTS PER URL, with a row each, replacing one
+    # unbounded transfer. This step is the measured instance of the stall class
+    # (ledger C3-15): run 33799537793 died at the 20-minute STEP budget with "The
+    # action has timed out after 20 minutes" on a docs-only commit, and run
+    # 33962919229 spent 1002 seconds here where the healthy time is 52. Two URLs
+    # x three attempts x 180 s is 18 minutes, INSIDE the step budget that already
+    # existed - no ceiling anywhere got longer.
+    #
+    # The MZ shape check moves into the helper, unchanged in what it rejects, and
+    # the fallback semantics are preserved exactly: a transport fault or an
+    # interstitial moves to the next URL; a body that ARRIVED INTACT and whose
+    # digest disagrees is upstream drift, refused on the spot, never retried and
+    # never fallen back from.
+    . (Join-Path $PSScriptRoot 'pwebfetch.ps1')
     $Urls = @($Lock['windows-url'], $Lock['windows-url-fallback']) |
         Where-Object { $_ }
     $Fetched = $false
     foreach ($Url in $Urls) {
         Write-Host "fetching $Url"
-        & curl.exe --location --fail --silent --show-error `
-            --retry 3 --retry-delay 5 --retry-connrefused `
-            --output $Installer -- $Url
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "curl exited $LASTEXITCODE for $Url"
-            continue
+        try {
+            Invoke-PWebFetch -Name 'lazarus-windows' -Url $Url -OutFile $Installer `
+                -Sha256 $Lock['windows-sha256'] -Size $Lock['windows-size'] `
+                -Shape 'MZ' -Attempt (New-PWebCurlAttempt)
+            $Fetched = $true
+            break
+        } catch {
+            if ($_.Exception.Message -match 'ratify a new pin deliberately') { throw }
+            Write-Host "fetch from ${Url} failed: $($_.Exception.Message)"
         }
-        # Reject an interstitial BY SHAPE before the digest gate, so the
-        # failure names the real cause instead of a size mismatch. A Windows
-        # installer begins with the PE/MZ magic.
-        $Head = [byte[]]::new(2)
-        $Stream = [IO.File]::OpenRead($Installer)
-        try { $Read = $Stream.Read($Head, 0, 2) } finally { $Stream.Dispose() }
-        if (($Read -lt 2) -or ($Head[0] -ne 0x4D) -or ($Head[1] -ne 0x5A)) {
-            Write-Host "$Url did not serve a Windows executable (no MZ header)"
-            continue
-        }
-        $Fetched = $true
-        break
     }
     if (-not $Fetched) { throw 'could not fetch the pinned Lazarus installer' }
 }

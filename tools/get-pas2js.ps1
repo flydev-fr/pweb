@@ -148,7 +148,13 @@ $Zip = Join-Path $DepsDir 'pas2js-download.zip'
 if (Test-Path $Zip) { Remove-Item -Force $Zip }
 
 Write-Host "fetching $($Lock[$UrlKey])"
-Invoke-WebRequest -Uri $Lock[$UrlKey] -OutFile $Zip -UseBasicParsing
+# CAP-11A: three bounded attempts with a row each. The sha256 gate below is
+# unchanged and stays the single word on what is ACCEPTED; a mismatch is refused
+# on the first attempt and never retried, because a changed upstream is a human
+# decision and not something a retry may smooth over.
+. (Join-Path $PSScriptRoot 'pwebfetch.ps1')
+Invoke-PWebFetch -Name 'pas2js' -Url $Lock[$UrlKey] -OutFile $Zip `
+    -Sha256 $Lock[$ShaKey] -Shape 'PK' -Attempt (New-PWebWebRequestAttempt)
 
 $Actual = (Get-FileHash -Algorithm SHA256 -Path $Zip).Hash.ToLowerInvariant()
 if ($Actual -ne $Lock[$ShaKey]) {

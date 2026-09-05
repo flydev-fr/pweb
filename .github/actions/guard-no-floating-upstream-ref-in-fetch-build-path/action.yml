@@ -1,0 +1,60 @@
+name: 'Guard - no floating upstream ref in fetch/build path'
+description: 'CAP-11A: the body of the "Guard - no floating upstream ref in fetch/build path" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        # Any git form that could follow a moving ref is a violation in the
+        # scripts that touch upstream, and in this workflow itself.
+        # (Patterns are concatenated so they cannot literally match their
+        # own source in this file.)
+        $pat = 'git\s+(cl' + 'one|pu' + 'll|ls-rem' + 'ote)' +
+               '|refs/(he' + 'ads|ta' + 'gs)' +
+               '|fetch[^\r\n]*origin[^\r\n]*\b(mas' + 'ter|HE' + 'AD|ma' + 'in)\b' +
+               '|webview/web' + 'view@'
+        $files = @('tools/get-webview.ps1', 'tools/get-mormot.ps1',
+                   'tools/build-webview-dll.ps1',
+                   'tools/patch-cap4w-webview.ps1',
+                   'tools/get-fpc-windows.ps1',
+                   'tools/pwebfetch.ps1')
+        # CAP-11A: the guard used to name `.github/workflows/ci.yml`, which was
+        # the whole workflow. The workflow is now one caller, one reusable
+        # sequence and one composite action per step, so the guard sweeps the
+        # TREE - and a tree sweep needs its own existence precondition, because
+        # an enumeration that silently returned nothing would pass forever. The
+        # floor is deliberately far below the real count (170 files) so it
+        # refuses an empty or half-checked-out tree without becoming a second
+        # place the step count has to be maintained.
+        $ciFiles = @(Get-ChildItem -Path .github -Recurse -File -Include *.yml |
+                     ForEach-Object { $_.FullName })
+        if ($ciFiles.Count -lt 100) {
+          throw "guard: only $($ciFiles.Count) workflow/action files found under .github/"
+        }
+        $files += $ciFiles
+        $bad = @()
+        foreach ($f in $files) {
+          # EXISTENCE FIRST (CAP-7M1, closing the CAP-7M0 ledger entry).
+          # Select-String on a missing path writes an error and yields
+          # nothing, the `if` takes the false branch, and the loop concludes
+          # "clean" for a file it never read - so deleting or renaming a
+          # guarded script silently REMOVED it from the guard instead of
+          # failing it. The macOS jobs have had this precondition since
+          # CAP-7M0; it could not be taken here then without touching the
+          # byte-stability that shard's acceptance asserted.
+          if (-not (Test-Path -LiteralPath $f -PathType Leaf)) {
+            $bad += "MISSING GUARD TARGET: $f"
+            continue
+          }
+          $hit = Select-String -Path $f -Pattern $pat
+          if ($hit) { $bad += "${f}: $($hit[0].Line.Trim())" }
+        }
+        if ($bad) { $bad | ForEach-Object { Write-Host "VIOLATION: $_" }; throw 'floating upstream ref detected' }
+        foreach ($lf in 'webview.lock', 'mormot.lock') {
+          $lock = Get-Content $lf -Raw
+          if ($lock -notmatch 'commit\s*=\s*[0-9a-f]{40}') {
+            throw "$lf does not pin a full 40-char SHA"
+          }
+        }
+        Write-Host 'guard: no floating upstream ref'

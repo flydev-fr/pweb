@@ -1,0 +1,16 @@
+# ------------------------- CAP-7F closure -------------------------
+# Additive, after every existing gate: the args gate executes the
+# CAP-7M2 host arguments on Linux for the first time (deferred-work
+# D1), on the release layout run_release_layout.sh assembled above;
+# the emitter then writes the per-target evidence for cap7-aggregate.
+# No conditional SKIP here - the virtual display is real, so every
+# failure gates, same policy as the other Linux GUI gates.
+
+name: 'CAP-7F host-argument gate on the release layout (closes D1 on Linux)'
+description: 'CAP-11A: the body of the "CAP-7F host-argument gate on the release layout (closes D1 on Linux)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: linux
+      shell: bash
+      run: xvfb-run -a test/cap7f/run_host_args_gate.sh

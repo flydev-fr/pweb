@@ -1,0 +1,20 @@
+# The acceptance criterion in the flesh: the macOS path reaches
+# pweb://app through a PWeb-owned seam outside the library, so the
+# dependency tree must be pristine - the CAP-4W patch is Windows-only
+# and this job never applies it.
+
+name: 'CAP-7M0 deps/webview carries no macOS patch'
+description: 'CAP-11A: the body of the "CAP-7M0 deps/webview carries no macOS patch" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: macos-x64, macos-arm64
+      shell: bash
+      run: |
+        dirty="$(git -C deps/webview status --porcelain)"
+        if [ -n "${dirty}" ]; then
+          echo "${dirty}"
+          echo 'deps/webview was modified on the macOS path'
+          exit 1
+        fi
+        echo 'deps/webview: pristine at the pinned commit'

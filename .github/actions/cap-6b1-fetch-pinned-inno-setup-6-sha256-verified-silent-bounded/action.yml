@@ -1,0 +1,13 @@
+# build_normal_setup.ps1 re-invokes this fetch idempotently (the
+# sha-stamp cache makes the second call a no-op); the standalone
+# step exists for fail-fast attribution - a toolchain
+# provisioning failure is named here, never inside the build
+
+name: 'CAP-6b1 fetch pinned Inno Setup 6 (sha256-verified, silent, bounded)'
+description: 'CAP-11A: the body of the "CAP-6b1 fetch pinned Inno Setup 6 (sha256-verified, silent, bounded)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: pwsh -NoProfile -File tools/get-innosetup.ps1

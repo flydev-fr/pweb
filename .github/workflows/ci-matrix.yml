@@ -1,0 +1,298 @@
+# CAP-11A: the CI caller. Four targets, ONE sequence.
+#
+# This file decides WHO runs and WHAT depends on what. It deliberately contains
+# no gate: every step of a platform leg lives in `platform-leg.yml`, which is
+# called four times from the matrix below, so a shard that adds a gate adds it
+# ONCE and all four targets get it. The property
+# `test/cap7f/check_cap7f_aggregate.ps1` exists to check - that the four legs run
+# the same step sequence - is therefore true by construction here, and MEASURED
+# from the run itself by `test/cap11a/check_ci_sequence.ps1` in the aggregate.
+#
+# CONCURRENCY is workflow-level, which CAP-7M deliberately could not make it:
+# that shard scoped its two groups to the macOS jobs because "a workflow-level
+# concurrency group would also govern `windows:` and `linux:`, and those two jobs
+# are byte-untouched by this shard". CAP-11A owns the whole matrix, so the group
+# is where it belongs and the two per-job groups are gone. `cancel-in-progress`
+# is ON off the default branch - a superseded shard-branch run proves nothing and
+# bills for the privilege - and OFF on `main`, where every run is a record.
+# `github.ref_name`, not `github.ref`: the floating-upstream-ref guard sweeps
+# every workflow file for the fully-qualified branch-ref form, and it is right
+# to - that literal has no business in a repository that pins every upstream by
+# SHA. `ref_name` says the same thing without writing one.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      long_retention:
+        description: 'Keep this run''s distribution archives 90 days instead of 14 (closure runs)'
+        type: boolean
+        required: false
+        default: false
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_name != 'main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  leg:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # TIMEOUTS ARE BACKSTOPS, ratified as 2x the measured maximum of a
+          # successful run rounded up to a multiple of 15 (windows 63.6, linux
+          # 20.1, macos-x64 34.7, macos-arm64 29.5 minutes over nine sampled
+          # runs). What actually protects against a hang is the per-step budget,
+          # which lets the collection block still run; a job ceiling that fires
+          # cancels everything remaining, INCLUDING the collection, which is the
+          # opposite of what it is for. Every one of these is a REDUCTION from
+          # what the single-file workflow declared (330 / 60 / 120 / 120).
+          - target: windows
+            runner: windows-latest
+            timeout: 135
+            expect_arch: ''
+            runner_label: ''
+          - target: linux
+            runner: ubuntu-24.04
+            timeout: 45
+            expect_arch: ''
+            runner_label: ''
+          - target: macos-x64
+            runner: macos-15-intel
+            timeout: 75
+            expect_arch: x86_64
+            runner_label: macos-15-intel
+          - target: macos-arm64
+            runner: macos-15
+            timeout: 75
+            expect_arch: arm64
+            runner_label: macos-15
+    uses: ./.github/workflows/platform-leg.yml
+    with:
+      target: ${{ matrix.target }}
+      runner: ${{ matrix.runner }}
+      timeout_minutes: ${{ matrix.timeout }}
+      expect_arch: ${{ matrix.expect_arch }}
+      runner_label: ${{ matrix.runner_label }}
+      long_retention: ${{ github.event_name == 'workflow_dispatch' && inputs.long_retention || false }}
+
+  macos-release-inventory:
+    name: macos release inventory (x64 = arm64)
+    needs: [leg]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download the x64 release inventory
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: leg-release-macos-x64
+          path: invraw/x64
+
+      - name: Download the arm64 release inventory
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: leg-release-macos-arm64
+          path: invraw/arm64
+
+      # The collection preserves each file's repository-relative path, so the
+      # inventory the CAP-7M2 gates wrote to build/cap7m/release/ arrives under
+      # that same path inside the artifact. Flattening it here keeps R7 and the
+      # aggregator reading the exact layout they were ratified against.
+      - name: Flatten the release inventories to the ratified layout
+        shell: bash
+        run: |
+          set -eu
+          for side in x64 arm64; do
+            mkdir -p "inv/${side}"
+            found=0
+            for kind in manifest inventory; do
+              for fe in react pas2js; do
+                src="$(find "invraw/${side}" -type f -name "${kind}-${fe}.txt" | head -n 1)"
+                if [ -n "${src}" ]; then cp "${src}" "inv/${side}/${kind}-${fe}.txt"; found=$((found+1)); fi
+              done
+            done
+            echo "inv/${side}: ${found} of 4 files"
+          done
+
+      - name: R7 - logical inventories, plist semantics and frontend rev identical
+        shell: bash
+        run: |
+          bad=0
+          # EXISTENCE FIRST, same reasoning as every guard in this workflow:
+          # a diff against a missing file must fail the gate, not empty it.
+          for fe in react pas2js; do
+            for side in x64 arm64; do
+              for kind in manifest inventory; do
+                if [ ! -f "inv/${side}/${kind}-${fe}.txt" ]; then
+                  echo "MISSING: inv/${side}/${kind}-${fe}.txt"
+                  bad=1
+                fi
+              done
+            done
+          done
+          [ "${bad}" -eq 0 ] || { echo 'release inventory artifacts incomplete'; exit 1; }
+          for fe in react pas2js; do
+            if ! diff -u "inv/x64/manifest-${fe}.txt" "inv/arm64/manifest-${fe}.txt"; then
+              echo "DIVERGENCE: logical app.pwb inventory (${fe}) differs between architectures"
+              bad=1
+            fi
+            # The arch-stable identity keys. Empty on either side is a
+            # failure too: a key that vanished from both inventories would
+            # otherwise compare equal as '' and prove nothing.
+            for key in product bundle_id app_name version_pair frontend_rev \
+                       plist_semantic_sha256 logical_inventory_sha256; do
+              a="$(sed -n "s/^${key}=//p" "inv/x64/inventory-${fe}.txt")"
+              b="$(sed -n "s/^${key}=//p" "inv/arm64/inventory-${fe}.txt")"
+              if [ -z "${a}" ] || [ "${a}" != "${b}" ]; then
+                echo "DIVERGENCE: ${key} (${fe}): x64='${a}' arm64='${b}'"
+                bad=1
+              fi
+            done
+          done
+          [ "${bad}" -eq 0 ] || { echo 'cross-architecture release inventory FAILED'; exit 1; }
+          echo 'cross-architecture release inventory: identical logical corpus, plist semantics and frontend rev on both architectures'
+
+  # ================= CAP-7F: final cross-platform aggregation =================
+  # The closure gate of CAP-7. Consumes the four per-target evidence
+  # artifacts plus both macOS release inventories, sweeps the production
+  # surface for platform divergence (checkout only, no build), and fails on
+  # ANY semantic disagreement: absent artifact, missing field, export-set or
+  # pin or origin or RPC or logical-inventory drift, or a SKIP/WAIVED
+  # verdict standing where the matrix requires PASS. Runs on ubuntu because
+  # it only reads text artifacts - no macOS minutes, no toolchain.
+  #
+  # CAP-11A adds one thing to it and it is the measured premise: the four legs'
+  # own step sequences, read back from this run through the API.
+  cap7-aggregate:
+    name: cap7 aggregate (windows = linux = macos-x64 = macos-arm64)
+    needs: [leg, macos-release-inventory]
+    if: always() && needs.leg.result != 'cancelled'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # `continue-on-error` on the four downloads is not laxity: a leg whose
+      # gates all passed but whose evidence never reached the artifact service
+      # must reach the aggregator as a NAMED infrastructure state, not as a job
+      # that died at a download step with nothing said. The aggregator refuses
+      # either way - the difference is that it can say which.
+      - name: Download the leg evidence
+        id: evidence
+        continue-on-error: true
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          pattern: leg-evidence-*
+          path: evraw
+
+      - name: Download the release inventories
+        continue-on-error: true
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          pattern: leg-release-*
+          path: invraw
+
+      # The collection OUTCOME cannot travel inside the artifact it describes -
+      # the typing step runs after the uploads it types. It reaches the
+      # aggregator through the run's own step record instead, which is the only
+      # channel an upload failure cannot take away.
+      - name: Reshape the downloads to the ratified evidence layout
+        shell: bash
+        run: |
+          set -eu
+          for t in windows linux macos-x64 macos-arm64; do
+            mkdir -p "ev/${t}"
+            for f in evidence.json host-args.json manifest-react.txt; do
+              src="$(find "evraw/leg-evidence-${t}" -type f -name "${f}" 2>/dev/null | head -n 1 || true)"
+              if [ -n "${src:-}" ]; then cp "${src}" "ev/${t}/${f}"; fi
+            done
+            echo "ev/${t}: $(ls -1 "ev/${t}" | wc -l) file(s)"
+          done
+          for side in x64 arm64; do
+            mkdir -p "inv/${side}"
+            for kind in manifest inventory; do
+              for fe in react pas2js; do
+                src="$(find "invraw/leg-release-macos-${side}" -type f -name "${kind}-${fe}.txt" 2>/dev/null | head -n 1 || true)"
+                if [ -n "${src:-}" ]; then cp "${src}" "inv/${side}/${kind}-${fe}.txt"; fi
+              done
+            done
+          done
+
+      # THE PREMISE, MEASURED. Reads this run's own jobs from the API and
+      # requires the four legs' step-name sequences to be identical AND each
+      # step's observed run-set to equal its declared applicability. The second
+      # half is what stops the gate being vacuous: name equality is by
+      # construction now, but an `if:` that silently stopped matching would let a
+      # Windows gate skip everywhere and nothing else would notice.
+      - name: CAP-11A the four legs ran the same sequence (from the run itself)
+        shell: pwsh
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pwsh -NoProfile -File test/cap11a/check_ci_sequence.ps1 `
+            -Repository '${{ github.repository }}' -RunId '${{ github.run_id }}'
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-11A sequence equality FAILED' }
+
+      - name: CAP-7F divergence sweep over the production surface (checkout only)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap7f/check_divergence.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-7F divergence sweep FAILED' }
+
+      # the failure branches are the product: every hosted run proves, on
+      # COPIES of the freshly downloaded evidence, that the aggregator and
+      # the sweep actually refuse (absent artifact, perturbed field, SKIP
+      # promotion, off-allowlist conditional) before the real aggregation
+      # is allowed to say PASS
+      - name: CAP-7F negative self-test of the aggregator and the sweep
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap7f/check_cap7f_selftest.ps1 -EvidenceRoot ev -MacosInventoryRoot inv
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-7F negative self-test FAILED' }
+
+      - name: CAP-7F aggregate - four targets, field-by-field, or red
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap7f/check_cap7f_aggregate.ps1 -EvidenceRoot ev -MacosInventoryRoot inv
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-7F aggregation FAILED' }
+
+      # ERROR, not ignore: the matrix IS this job's deliverable - a green
+      # aggregate that uploaded no matrix is the shape of a proof nobody
+      # can quote
+      - name: CAP-7F upload the platform matrix
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap7f-platform-matrix
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: true
+          path: |
+            build/cap7f/platform-matrix.json
+            build/cap7f/divergence.txt
+            build/cap11a/sequence.json
+
+      - name: CAP-7F diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cap7f-diagnostics-aggregate
+          if-no-files-found: ignore
+          retention-days: 7
+          overwrite: true
+          path: |
+            build/cap7f/
+            build/cap11a/
+            ev/

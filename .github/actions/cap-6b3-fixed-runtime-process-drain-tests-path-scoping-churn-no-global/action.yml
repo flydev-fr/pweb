@@ -1,0 +1,17 @@
+# The teardown the uninstall gate depends on, proven on injected
+# process records BEFORE the real gate runs: the selection is scoped
+# by executable image path to this installation, a sibling directory
+# sharing the root as a string prefix is not inside it, an unreadable
+# path never matches, and no global process-name kill exists in either
+# script. Checkout-only apart from one WMI query.
+
+name: 'CAP-6b3 Fixed Runtime process-drain tests (path scoping, churn, no global kill)'
+description: 'CAP-11A: the body of the "CAP-6b3 Fixed Runtime process-drain tests (path scoping, churn, no global kill)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap6b3/check_wv2procdrain.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-6b3 drain tests FAILED' }

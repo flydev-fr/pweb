@@ -1,0 +1,10 @@
+name: 'CAP-10C3 the CAP-10C ledger disposition (CL2, CL3)'
+description: 'CAP-11A: the body of the "CAP-10C3 the CAP-10C ledger disposition (CL2, CL3)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows, linux, macos-x64, macos-arm64
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap10c3/check_cap10c_ledger.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-10C ledger disposition FAILED' }

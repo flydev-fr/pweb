@@ -230,8 +230,15 @@ function Copy-Wv2Payload {
     param($Art, [string]$OutFile)
     if (Test-Path -LiteralPath $OutFile) { Remove-Item -Force -LiteralPath $OutFile }
     if ($Art.url -match '^https://') {
-        Invoke-WebRequest -Uri $Art.url -OutFile $OutFile -UseBasicParsing `
-            -TimeoutSec 300
+        # CAP-11A: three bounded attempts with a row each. The Evergreen fetches
+        # are the second flavour of the pinned-artifact stall this repository has
+        # met (ledger C3-15, and the CAP-6b entry it points at). Nothing about
+        # what is ACCEPTED changes - the sha256 and Authenticode gates downstream
+        # are untouched - and the helper refuses a digest mismatch on the first
+        # attempt rather than retrying it.
+        . (Join-Path $PSScriptRoot 'pwebfetch.ps1')
+        Invoke-PWebFetch -Name "wv2-$($Art.name)" -Url $Art.url -OutFile $OutFile `
+            -Sha256 $Art.sha256 -Attempt (New-PWebWebRequestAttempt)
     }
     elseif ($AllowLocalSource) {
         if (-not (Test-Path -LiteralPath $Art.url)) {

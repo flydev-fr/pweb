@@ -1,0 +1,8 @@
+name: 'Build webview.dll from pinned source (cmake + MSVC)'
+description: 'CAP-11A: the body of the "Build webview.dll from pinned source (cmake + MSVC)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: pwsh -NoProfile -File tools/build-webview-dll.ps1

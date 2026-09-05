@@ -1,0 +1,20 @@
+# 115: the matrix script's OWN bounded waits - installs, abort
+# probes, uninstall EXEC calls and the post-exec polls that follow
+# them, app runs and helper probes - sum to 113.5 minutes in the
+# worst case. That arithmetic is written out, line by line, in the
+# BOUNDED-WAIT BUDGET table at the top of
+# test/cap6b4/run_profile_matrix.ps1, which is its single source;
+# this number only has to exceed it. It is a hang ceiling, not a
+# prediction: a healthy full run measures ~3 minutes.
+
+name: 'CAP-6b4 profile matrix - I1-I3, S1-S6, F1-F4, U1-U3 over the three real setups'
+description: 'CAP-11A: the body of the "CAP-6b4 profile matrix - I1-I3, S1-S6, F1-F4, U1-U3 over the three real setups" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap6b4/run_profile_matrix.ps1 2>&1 |
+          Tee-Object -FilePath build/cap6b4-matrix.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-6b4 profile matrix FAILED' }

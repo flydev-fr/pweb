@@ -1,0 +1,13 @@
+name: 'Freeze sweep - frozen contracts byte-identical to Phase-0 baseline'
+description: 'CAP-11A: the body of the "Freeze sweep - frozen contracts byte-identical to Phase-0 baseline" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        git diff --exit-code b2f04dc4c478c72b1699a954dd52e76b207e918b -- `
+          src/rpc/pweb.rpc.intf.pas `
+          src/webview/pweb.webview.intf.pas `
+          src/assets/pweb.assets.intf.pas
+        if ($LASTEXITCODE -ne 0) { throw 'frozen Phase-0 contract units were modified' }

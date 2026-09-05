@@ -1,0 +1,8 @@
+name: 'CAP-7L release layout - React and Pas2JS to 42 from an isolated dir'
+description: 'CAP-11A: the body of the "CAP-7L release layout - React and Pas2JS to 42 from an isolated dir" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: linux
+      shell: bash
+      run: xvfb-run -a test/cap7l/run_release_layout.sh

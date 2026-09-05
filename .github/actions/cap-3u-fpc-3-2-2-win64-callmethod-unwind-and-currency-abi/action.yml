@@ -1,0 +1,215 @@
+name: 'CAP-3U - FPC 3.2.2 Win64 CallMethod unwind and Currency ABI'
+description: 'CAP-11A: the body of the "CAP-3U - FPC 3.2.2 Win64 CallMethod unwind and Currency ABI" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        # FPC 3.2.2 Win64 emits no unwind metadata for mORMot's private
+        # CallMethod assembler and returns Currency in RAX, unlike its
+        # Double/TDateTime XMM0 convention. Exercise the exact pinned fix
+        # before any mORMot PPU can mask the conditional replacement.
+        $stale = @(Get-ChildItem -Path . -Recurse `
+          -Filter mormot.core.interfaces.ppu -File -ErrorAction SilentlyContinue)
+        if ($stale) {
+          throw "stale mormot.core.interfaces.ppu before CAP-3U: $($stale.FullName -join '; ')"
+        }
+        $targetOs = (fpc -iTO).Trim().ToLowerInvariant()
+        $targetCpu = (fpc -iTP).Trim().ToLowerInvariant()
+        if (($targetOs -cne 'win64') -or ($targetCpu -cne 'x86_64')) {
+          throw "CAP-3U requires FPC target Win64/x86_64, got $targetOs/$targetCpu"
+        }
+        try {
+          foreach ($attempt in 1..2) {
+            pwsh -NoProfile -File tools/patch-cap3u.ps1
+            if ($LASTEXITCODE -ne 0) {
+              throw "CAP-3U preparation attempt $attempt failed"
+            }
+          }
+
+          New-Item -ItemType Directory -Force build/cap3u/fpc,
+            build/cap3u/bin | Out-Null
+          fpc -Sh -B -Xm -dPWEB_CALLMETHOD_UNWIND_PROBE `
+            -FUbuild/cap3u/fpc -FEbuild/cap3u/bin `
+            -Fideps/mormot2/src -Fudeps/mormot2/src/core `
+            -Fudeps/mormot2/src/lib -Fudeps/mormot2/src/crypt `
+            -Fudeps/mormot2/src/net -Fudeps/mormot2/src/db `
+            -Fudeps/mormot2/src/orm -Fudeps/mormot2/src/rest `
+            -Fudeps/mormot2/src/soa `
+            -Fldeps/mormot2/static/x86_64-win64 `
+            test/cap3u/cap3u_unwind.pas 2>&1 |
+            Tee-Object build/cap3u/compile.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-3U compile failed' }
+
+          $compile = Get-Content build/cap3u/compile.log -Raw
+          if ($compile -notmatch
+              'Compiling .*deps[\\/]mormot2[\\/]src[\\/]core[\\/]mormot\.core\.interfaces\.pas') {
+            throw 'CAP-3U unit provenance did not compile repository mormot.core.interfaces'
+          }
+          $ppus = @(Get-ChildItem -Path . -Recurse `
+            -Filter mormot.core.interfaces.ppu -File)
+          $expectedPpu = (Resolve-Path `
+            build/cap3u/fpc/mormot.core.interfaces.ppu).Path
+          if (($ppus.Count -ne 1) -or ($ppus[0].FullName -cne $expectedPpu)) {
+            throw "CAP-3U unit provenance escaped dedicated -FU: $($ppus.FullName -join '; ')"
+          }
+
+          $binaryLines = @(pwsh -NoProfile -File `
+            test/cap3u/check_unwind.ps1 `
+              -ObjectPath deps/mormot2/src/core/x64callmethod.obj `
+              -ExecutablePath build/cap3u/bin/cap3u_unwind.exe `
+              -MapPath build/cap3u/bin/cap3u_unwind.map 2>&1)
+          $binaryCode = $LASTEXITCODE
+          $binaryLines | Tee-Object -FilePath build/cap3u/binary.log |
+            Write-Host
+          if ($binaryCode -ne 0) { throw 'CAP-3U final-PE unwind gate failed' }
+
+          $runtimeLines = @(& build/cap3u/bin/cap3u_unwind.exe 2>&1)
+          $runtimeCode = $LASTEXITCODE
+          $runtimeLines | Tee-Object -FilePath build/cap3u/runtime.log |
+            Write-Host
+          if (($runtimeCode -ne 0) -or
+              (($runtimeLines -join "`n") -notmatch 'CAP3U: 12/12 PASS')) {
+            throw 'CAP-3U runtime matrix failed'
+          }
+
+          # CAP-3 must compile only after CAP-3U prepared the source and in
+          # fresh output directories, so no stale mormot.core.interfaces PPU
+          # can mask the required conditional trampoline.
+          if (Test-Path build/cap3) {
+            Remove-Item -LiteralPath build/cap3 -Recurse -Force
+          }
+          New-Item -ItemType Directory -Force build/cap3/bridge-fpc,
+            build/cap3/test-fpc, build/cap3/bin,
+            build/cap3/example-fpc, build/cap3/example | Out-Null
+
+          # Production bridge layering proof: no src/lib or src/webview path.
+          fpc -MObjFPC -Sh -B -Xm -dPWEB_CALLMETHOD_UNWIND_PROBE `
+            -FUbuild/cap3/bridge-fpc -Fusrc/rpc `
+            -Fideps/mormot2/src -Fudeps/mormot2/src/core `
+            -Fudeps/mormot2/src/lib -Fudeps/mormot2/src/crypt `
+            -Fudeps/mormot2/src/net -Fudeps/mormot2/src/db `
+            -Fudeps/mormot2/src/orm -Fudeps/mormot2/src/rest `
+            -Fudeps/mormot2/src/soa `
+            -Fldeps/mormot2/static/x86_64-win64 `
+            src/rpc/pweb.rpc.mormot.pas
+          if ($LASTEXITCODE -ne 0) {
+            throw 'CAP-3 production bridge compile failed'
+          }
+
+          # Mandatory WebView-free headless gate over the real Uri() path.
+          fpc -MObjFPC -Sh -B -Xm -dPWEB_CALLMETHOD_UNWIND_PROBE `
+            -FUbuild/cap3/test-fpc -FEbuild/cap3/bin `
+            -Fusrc/rpc -Fusrc/security -Futest/rpc -Futest/security `
+            -Fideps/mormot2/src -Fudeps/mormot2/src/core `
+            -Fudeps/mormot2/src/lib -Fudeps/mormot2/src/crypt `
+            -Fudeps/mormot2/src/net -Fudeps/mormot2/src/db `
+            -Fudeps/mormot2/src/orm -Fudeps/mormot2/src/rest `
+            -Fudeps/mormot2/src/soa `
+            -Fldeps/mormot2/static/x86_64-win64 `
+            test/rpc/cap3tests.pas
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-3 headless compile failed' }
+          & build/cap3/bin/cap3tests.exe /noenter 2>&1 |
+            Tee-Object -FilePath build/cap3/bin/cap3tests.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-3 headless suite FAILED' }
+          # CAP-8A registration anchor: the I1-I10 gates run on Windows
+          # ONLY through this runner, so their absence must be a red
+          # step, never a silently smaller suite
+          $cap3Log = Get-Content build/cap3/bin/cap3tests.log -Raw
+          if ($cap3Log -notmatch 'Capability policy integration: ') {
+            throw 'the CAP-8A capability integration gates were not registered in cap3tests'
+          }
+
+          # Compile the real JS -> scheduler -> mORMot runtime proof while
+          # the same prepared trampoline is active. Its best-effort GUI run
+          # occurs after webview.dll has been built and staged below.
+          fpc -MObjFPC -Sh -B -Xm -dPWEB_CALLMETHOD_UNWIND_PROBE `
+            -FUbuild/cap3/example-fpc -FEbuild/cap3/example `
+            -Fusrc/lib -Fusrc/rpc -Fusrc/security -Fusrc/webview `
+            -Fideps/mormot2/src -Fudeps/mormot2/src/core `
+            -Fudeps/mormot2/src/lib -Fudeps/mormot2/src/crypt `
+            -Fudeps/mormot2/src/net -Fudeps/mormot2/src/db `
+            -Fudeps/mormot2/src/orm -Fudeps/mormot2/src/rest `
+            -Fudeps/mormot2/src/soa `
+            -Fldeps/mormot2/static/x86_64-win64 `
+            examples/03-mormot-rpc/mormotrpc.pas
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-3 runtime example compile failed' }
+
+          # CAP-4 dual-mode runtime example: it reuses the real CAP-3
+          # bridge, so it compiles inside the same prepared trampoline
+          # window. Its best-effort GUI runs happen after webview.dll is
+          # staged below.
+          if (Test-Path build/cap4) {
+            Remove-Item -LiteralPath build/cap4 -Recurse -Force
+          }
+          New-Item -ItemType Directory -Force build/cap4/example-fpc,
+            build/cap4/tool-fpc, build/cap4/example | Out-Null
+          fpc -MObjFPC -Sh -B -Xm -dPWEB_CALLMETHOD_UNWIND_PROBE `
+            -FUbuild/cap4/example-fpc -FEbuild/cap4/example `
+            -Fusrc/lib -Fusrc/rpc -Fusrc/security -Fusrc/webview `
+            -Fusrc/assets -Fusrc/platform/windows `
+            -Fideps/mormot2/src -Fudeps/mormot2/src/core `
+            -Fudeps/mormot2/src/lib -Fudeps/mormot2/src/crypt `
+            -Fudeps/mormot2/src/net -Fudeps/mormot2/src/db `
+            -Fudeps/mormot2/src/orm -Fudeps/mormot2/src/rest `
+            -Fudeps/mormot2/src/soa `
+            -Fldeps/mormot2/static/x86_64-win64 `
+            examples/06-assets/assetsapp.pas
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-4 runtime example compile failed' }
+          fpc -MObjFPC -Sh -B -Xm `
+            -FUbuild/cap4/tool-fpc -FEbuild/cap4/example `
+            -Fideps/mormot2/src -Fudeps/mormot2/src/core `
+            -Fudeps/mormot2/src/lib `
+            -Fldeps/mormot2/static/x86_64-win64 `
+            examples/06-assets/mkappzip.pas
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-4 mkappzip compile failed' }
+
+          # Source-level proof that CAP-3 introduced no HTTP client/server,
+          # socket, loopback listener, or localhost transport. TRestServer
+          # itself is intentionally allowed because Uri() is called directly.
+          $cap3Files = @(
+            'src/rpc/pweb.rpc.mormot.pas',
+            'test/rpc/cap3tests.pas',
+            'test/rpc/pweb.test.mormot.bridge.pas',
+            'test/rpc/pweb.test.mormot.fixture.pas',
+            'test/rpc/pweb.test.mormot.integration.pas',
+            'test/rpc/pweb.test.mormot.routing.pas',
+            'examples/03-mormot-rpc/mormotrpc.pas'
+          )
+          $networkPattern = 'TRestHttpServer|TRestClientHttp|THttpServer|' +
+            'mormot\.rest\.http|mormot\.net\.(server|client|http)|' +
+            'localhost|127\.0\.0\.1|socket'
+          $networkHits = @(Select-String -Path $cap3Files `
+            -Pattern $networkPattern -CaseSensitive:$false)
+          if ($networkHits) {
+            $networkHits | ForEach-Object {
+              Write-Host "FORBIDDEN CAP-3 NETWORK PATTERN: $($_.Path):$($_.LineNumber): $($_.Line.Trim())"
+            }
+            throw 'CAP-3 zero-network source proof failed'
+          }
+          Write-Host 'CAP-3 zero-network source proof: PASS'
+        }
+        finally {
+          $restoreFailures = @()
+          foreach ($attempt in 1..2) {
+            pwsh -NoProfile -File tools/patch-cap3u.ps1 -Restore
+            if ($LASTEXITCODE -ne 0) { $restoreFailures += $attempt }
+          }
+          if ($restoreFailures) {
+            throw "CAP-3U restore attempts failed: $($restoreFailures -join ', ')"
+          }
+        }
+        $lockedCommit = ((Select-String -Path mormot.lock `
+          -Pattern '^commit\s*=').Line -split '=', 2)[1].Trim()
+        $dependencyHead = (git -C deps/mormot2 rev-parse HEAD).Trim()
+        if (($LASTEXITCODE -ne 0) -or ($dependencyHead -cne $lockedCommit)) {
+          throw "mORMot HEAD $dependencyHead differs from lock $lockedCommit"
+        }
+        git -C deps/mormot2 diff --exit-code `
+          $dependencyHead -- `
+          src/core/mormot.core.interfaces.pas
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-3U source is not pristine after restore' }
+        if (Test-Path deps/mormot2/src/core/x64callmethod.obj) {
+          throw 'CAP-3U object survived restore'
+        }

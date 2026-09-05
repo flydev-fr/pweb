@@ -1,0 +1,14 @@
+# A REAL WKWebView on a real Aqua session. No mocked WebKit, no browser
+# substitute, no headless-DOM stand-in, no SKIP path.
+# Three cycles: one of each shutdown shape, plus a third so the M6 leak
+# bound has a baseline that is not the cache-populating first cycle.
+
+name: 'CAP-7M0 feasibility probes (M6-M15)'
+description: 'CAP-11A: the body of the "CAP-7M0 feasibility probes (M6-M15)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: macos-x64, macos-arm64
+      shell: bash
+      # No --clean: fresh workspace (see the dylib build step).
+      run: test/cap7m/run_cap7m_probes.sh 3

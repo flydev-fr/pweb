@@ -1,0 +1,8 @@
+name: 'CAP-7F emit the macOS x64 evidence artifact'
+description: 'CAP-11A: the body of the "CAP-7F emit the macOS x64 evidence artifact" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: macos-x64
+      shell: bash
+      run: test/cap7f/emit_evidence.sh

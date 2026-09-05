@@ -1,0 +1,92 @@
+name: 'Guard - no floating upstream ref in the macOS build/gate path'
+description: 'CAP-11A: the body of the "Guard - no floating upstream ref in the macOS build/gate path" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: macos-x64
+      if: ${{ inputs.target == 'macos-x64' }}
+      shell: bash
+      run: |
+        # The same invariant the Windows and Linux jobs enforce over their
+        # own scripts, extended to the ones CAP-7M0 and CAP-7M1 add.
+        # Patterns are concatenated so they cannot literally match their own
+        # source.
+        pat="git[[:space:]]+(cl""one|pu""ll|ls-rem""ote)"
+        pat="${pat}|re""fs/(he""ads|ta""gs)"
+        pat="${pat}|webview/web""view@"
+        files="tools/build-webview-dylib.sh tools/get-fpc-macos.ps1"
+        files="${files} tools/macos-buildenv.sh tools/build-macos-bridge.sh"
+        files="${files} test/cap7m/cap7m_common.sh test/cap7m/build_cap7m.sh"
+        files="${files} test/cap7m/check_abi.sh test/cap7m/check_webview_exports.sh"
+        files="${files} test/cap7m/run_cap7m_probes.sh"
+        files="${files} test/cap7m/run_cap7m_gates.sh"
+        files="${files} test/cap7m/run_cap7m_runtime.sh"
+        files="${files} test/cap7m/check_release_layout.sh"
+        files="${files} test/cap7m/check_cap7m_nonetwork.sh"
+        files="${files} test/cap7m/summarize_cap7m.sh"
+        files="${files} test/cap7m/build_cap7m_release.sh"
+        files="${files} test/cap7m/run_cap7m_release.sh"
+        bad=0
+        for f in ${files}; do
+          # EXISTENCE FIRST. grep on a missing path exits 2, the `if` takes
+          # the false branch, and the loop concludes "clean" for a file it
+          # never read - so a renamed or deleted gate would silently empty
+          # this guard instead of failing it.
+          if [ ! -f "${f}" ]; then
+            echo "MISSING GUARD TARGET: ${f}"
+            bad=1
+            continue
+          fi
+          if grep -nEi "${pat}" "${f}"; then
+            echo "VIOLATION: ${f}"
+            bad=1
+          fi
+        done
+        [ "${bad}" -eq 0 ] || { echo 'floating upstream ref detected'; exit 1; }
+        echo "guard: no floating upstream ref in the macOS path ($(echo ${files} | wc -w) files)"
+        # the lock this job introduces pins by digest, not by URL
+        grep -qE '^macos-sha256 = [0-9a-f]{64}$' fpc.lock ||
+          { echo 'fpc.lock does not pin a full sha256 for the macOS artifact'; exit 1; }
+    - name: macos-arm64
+      if: ${{ inputs.target == 'macos-arm64' }}
+      shell: bash
+      run: |
+        pat="git[[:space:]]+(cl""one|pu""ll|ls-rem""ote)"
+        pat="${pat}|re""fs/(he""ads|ta""gs)"
+        pat="${pat}|webview/web""view@"
+        files="tools/build-webview-dylib.sh tools/get-fpc-macos.ps1"
+        files="${files} tools/macos-buildenv.sh tools/build-macos-bridge.sh"
+        files="${files} test/cap7m/cap7m_common.sh test/cap7m/build_cap7m.sh"
+        files="${files} test/cap7m/check_abi.sh test/cap7m/check_webview_exports.sh"
+        files="${files} test/cap7m/run_cap7m_probes.sh"
+        files="${files} test/cap7m/run_cap7m_gates.sh"
+        files="${files} test/cap7m/run_cap7m_runtime.sh"
+        files="${files} test/cap7m/check_release_layout.sh"
+        files="${files} test/cap7m/check_cap7m_nonetwork.sh"
+        files="${files} test/cap7m/summarize_cap7m.sh"
+        files="${files} test/cap7m/build_cap7m_release.sh"
+        files="${files} test/cap7m/run_cap7m_release.sh"
+        bad=0
+        for f in ${files}; do
+          # EXISTENCE FIRST. grep on a missing path exits 2, the `if` takes
+          # the false branch, and the loop concludes "clean" for a file it
+          # never read - so a renamed or deleted gate would silently empty
+          # this guard instead of failing it.
+          if [ ! -f "${f}" ]; then
+            echo "MISSING GUARD TARGET: ${f}"
+            bad=1
+            continue
+          fi
+          if grep -nEi "${pat}" "${f}"; then
+            echo "VIOLATION: ${f}"
+            bad=1
+          fi
+        done
+        [ "${bad}" -eq 0 ] || { echo 'floating upstream ref detected'; exit 1; }
+        echo "guard: no floating upstream ref in the macOS path ($(echo ${files} | wc -w) files)"
+        grep -qE '^macos-sha256 = [0-9a-f]{64}$' fpc.lock ||
+          { echo 'fpc.lock does not pin a full sha256 for the macOS artifact'; exit 1; }

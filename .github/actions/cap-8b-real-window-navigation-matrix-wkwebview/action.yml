@@ -1,0 +1,17 @@
+# ---------- CAP-8B: the real-window privileged-navigation matrix ----------
+# The production gate that replaced the Checkpoint-1 audit probe, on
+# WKWebView, natively on THIS architecture (a result measured on one
+# arch is not evidence about the other). Like Linux and unlike Windows,
+# the raw __webview__ message handler reaches native from every frame on
+# WebKit, so the matrix's child tripwire and the native CSP are
+# load-bearing. A real Aqua session is always present, so every failure
+# gates - no SKIP.
+
+name: 'CAP-8B real-window navigation matrix (WKWebView)'
+description: 'CAP-11A: the body of the "CAP-8B real-window navigation matrix (WKWebView)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: macos-x64, macos-arm64
+      shell: bash
+      run: test/cap8b/run_nav_matrix.sh

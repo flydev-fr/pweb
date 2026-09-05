@@ -1,0 +1,44 @@
+# mormot.core.test suite: CAP-1 (error helpers + 17/17 symbol coverage)
+# plus the twenty CAP-2 invocation-pipeline cases, all headless (the
+# binding cases run against injected fake native functions - no window;
+# the DLL is staged only because the binding unit's production defaults
+# import it at load time). /noenter skips the interactive ENTER wait;
+# the suite sets a nonzero exit code on any failed assertion.
+
+name: 'PWeb test suite (mormot.core.test)'
+description: 'CAP-11A: the body of the "PWeb test suite (mormot.core.test)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        fpc -Sh -FUbuild/fpc -Fusrc/lib -Fusrc/rpc -Fusrc/security `
+          -Fusrc/webview -Fusrc/assets -Fusrc/platform/windows `
+          -Futest/core -Futest/rpc -Futest/security `
+          -Futest/assets -Futest/platform -Fideps/mormot2/src `
+          -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+          -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net `
+          -FEbuild/test test/core/pwebtests.pas
+        if ($LASTEXITCODE -ne 0) { throw 'pwebtests compile failed' }
+        Copy-Item build/webview-dist/webview.dll build/test/
+        $env:PWEB_WEBVIEW_DLL = (Resolve-Path build/webview-dist/webview.dll).Path
+        # CAP-8A/CAP-8B corpus freshness: the CAP-7F emitter later hashes
+        # these files as THIS run's policy- and navigation-decision
+        # evidence - a stale copy must never survive into the suite that
+        # is supposed to write them
+        Remove-Item -Force -ErrorAction SilentlyContinue `
+          build/cap7f/capability-policy.txt, build/cap7f/navigation-policy.txt
+        & build/test/pwebtests.exe /noenter 2>&1 |
+          Tee-Object -FilePath build/test/pwebtests.log
+        if ($LASTEXITCODE -ne 0) { throw 'pwebtests suite FAILED' }
+        # CAP-8A/CAP-8B registration anchors (the POSIX runners' rule
+        # applies on Windows too: an exit code alone cannot tell "all
+        # passed" from "never ran"); anchored to the case-header colon
+        $suiteLog = Get-Content build/test/pwebtests.log -Raw
+        if ($suiteLog -notmatch 'Capability policy: ') {
+          throw 'the CAP-8A capability policy cases were not registered in the suite'
+        }
+        if ($suiteLog -notmatch 'Navigation policy: ') {
+          throw 'the CAP-8B navigation policy cases were not registered in the suite'
+        }

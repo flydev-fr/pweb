@@ -1,0 +1,2 @@
+name	jobs	reason	new_stripped_sha256_16
+Guard - no floating upstream ref in fetch/build path	windows	the guard named `.github/workflows/ci.yml`, the file this shard replaces; it now sweeps every `.yml` under `.github/` with its own existence floor, so the split cannot silently empty it	32af2649f7f10459

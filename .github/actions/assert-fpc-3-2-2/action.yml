@@ -1,0 +1,11 @@
+name: 'Assert FPC 3.2.2'
+description: 'CAP-11A: the body of the "Assert FPC 3.2.2" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        $v = (fpc -iV).Trim()
+        Write-Host "fpc version: $v"
+        if ($v -ne '3.2.2') { throw "expected FPC 3.2.2, got $v" }

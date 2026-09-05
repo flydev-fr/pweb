@@ -1,0 +1,22 @@
+name: 'CAP-10A CLI gates + evidence'
+description: 'CAP-11A: the body of the "CAP-10A CLI gates + evidence" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: windows
+      if: ${{ inputs.target == 'windows' }}
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap10a/run_cap10a_gates.ps1 2>&1 |
+          Tee-Object -FilePath build/cap10a-gates.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-10A gates FAILED' }
+    - name: linux, macos-x64, macos-arm64
+      if: ${{ inputs.target != 'windows' }}
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap10a/run_cap10a_gates.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-10A gates FAILED' }

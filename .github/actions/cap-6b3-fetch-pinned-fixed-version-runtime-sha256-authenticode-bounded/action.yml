@@ -1,0 +1,39 @@
+# ------------------------- CAP-6b3 gates -------------------------
+# Fixed-runtime profile: a bundled WebView2 Fixed Version Runtime
+# tree deployed as ordinary application content, selected by the
+# application itself before webview_create. Everything below is
+# additive; no earlier step is altered. The extended lock fixture
+# matrix (fixed kind + three-artifact real-lock proof) already ran
+# inside the CAP-6b0 lock step above, and the fixed validation /
+# ACL / manifest / selection cases ran inside the PWeb test suite
+# step. CI acquires the LOCKED ~290 MB cabinet (sha256 +
+# Authenticode subject verified, drift fails the build and deletes
+# the download) in a dedicated bounded step, expands it, builds the
+# REAL fixed-profile setup with its full-relative-path payload proof
+# (runtime tree present, BOTH Evergreen installers absent), and
+# runs the gates end to end - install, ACL verified by SID,
+# manifest equality, observed pinned identity, the no-fallback
+# negative legs and uninstall. Nothing is ever provisioned,
+# downloaded at run time or executed from Microsoft's installers
+# here: this profile has no provisioning path at all. The
+# runtime-absent proof is the human-run clean-machine VM gate
+# (test/cap6b3/run_fixed_clean_machine_gate.ps1, never mocked).
+
+# dedicated bounded fetch for fail-fast attribution: an upstream
+# rotation of the ~290 MB cabinet is named HERE, never inside the
+# build (which then reuses the verified local bytes after
+# re-verifying them against the lock)
+
+name: 'CAP-6b3 fetch pinned Fixed Version Runtime (sha256+authenticode, bounded, never executed)'
+description: 'CAP-11A: the body of the "CAP-6b3 fetch pinned Fixed Version Runtime (sha256+authenticode, bounded, never executed)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File tools/get-webview2-runtime.ps1 `
+          -Artifact webview2-fixed-runtime-x64
+        if ($LASTEXITCODE -ne 0) {
+          throw 'locked fixed-runtime fetch-verify FAILED (upstream drift? re-ratify deliberately)'
+        }

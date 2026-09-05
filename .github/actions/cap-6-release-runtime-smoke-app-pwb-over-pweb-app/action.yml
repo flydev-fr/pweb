@@ -1,0 +1,8 @@
+name: 'CAP-6 release runtime smoke - app.pwb over pweb://app'
+description: 'CAP-11A: the body of the "CAP-6 release runtime smoke - app.pwb over pweb://app" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: pwsh -NoProfile -File test/cap6/run_cap6_smoke.ps1

@@ -1796,6 +1796,57 @@ no_listener_prov="$(json_escape "${no_listener_prov}")"
 fpc_json="$(json_escape "${fpc_version}")"
 surface_json="$(json_escape "${surface}")"
 pin_json="$(json_escape "${webview_pin}")"
+# --- CAP-11A: the records the structure, migration, schema and flake gates
+# --- wrote on this job, read with the same one-line sed idiom every other
+# --- record here is read with.
+cap11a_json() {
+    # $1 = file, $2 = key. String or number, both shapes, first match wins.
+    sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\{0,1\}\([^\",]*\)\"\{0,1\},\{0,1\}.*/\1/p" "$1" | head -n 1
+}
+for f in build/cap11a/structure.json build/cap11a/migration.json          build/cap11a/flakes.json build/cap7f/schema-agreement.json; do
+    [ -f "${f}" ] || { printf 'missing precondition: %s -- the CAP-11A gates must have run in this workspace
+' "${f}" >&2; exit 1; }
+done
+ci_file_max_bytes="$(cap11a_json build/cap11a/structure.json ci_file_max_bytes)"
+ci_file_bound_bytes="$(cap11a_json build/cap11a/structure.json ci_file_bound_bytes)"
+ci_legacy_present="$(cap11a_json build/cap11a/structure.json ci_legacy_present | tr '[:upper:]' '[:lower:]')"
+retention_policy_digest="$(cap11a_json build/cap11a/structure.json retention_policy_digest)"
+ci_timeouts="$(cap11a_json build/cap11a/structure.json ci_timeouts)"
+ci_timeouts_digest="$(cap11a_json build/cap11a/structure.json ci_timeouts_digest)"
+upload_model="$(cap11a_json build/cap11a/structure.json upload_model)"
+upload_max_attempts="$(cap11a_json build/cap11a/structure.json upload_max_attempts)"
+gate_reads_artifact="$(cap11a_json build/cap11a/structure.json gate_reads_artifact)"
+ci_migration_bodies_compared="$(cap11a_json build/cap11a/migration.json bodies_compared)"
+ci_migration_uploads_folded="$(cap11a_json build/cap11a/migration.json uploads_folded)"
+schema_field_count="$(cap11a_json build/cap7f/schema-agreement.json fields_ps1)"
+flake_nonreport_cause_row="$(cap11a_json build/cap11a/flakes.json flake_nonreport_cause_row)"
+flake_nonreport_causes="$(cap11a_json build/cap11a/flakes.json flake_nonreport_causes)"
+u3_drain_before_measure="$(cap11a_json build/cap11a/flakes.json u3_drain_before_measure)"
+u3_drain_rows="$(cap11a_json build/cap11a/flakes.json u3_drain_rows)"
+fetch_retry_rows="$(cap11a_json build/cap11a/flakes.json fetch_retry_rows)"
+fetch_retry_max_attempts="$(cap11a_json build/cap11a/flakes.json fetch_retry_max_attempts)"
+fetch_retry_bound_s="$(cap11a_json build/cap11a/flakes.json fetch_retry_bound_s)"
+# THE SEQUENCE DIGEST IS OVER THE SOURCE - four targets must agree they were
+# given the same list; that they EXECUTED it is the aggregate's own gate.
+ci_sequence_digest="$(tail -n +2 test/cap11a/step-applicability.tsv |
+    awk -F'	' 'NF>1 {print $2}' > "${work}/ci-sequence.txt"; file_sha "${work}/ci-sequence.txt")"
+# The twin-run record exists only once the migration has been PROVEN equal; on
+# the twin commit itself it does not, and `pending` is the honest word for it.
+ci_twin_run_equal='pending'
+if [ -f test/cap11a/twin-run.json ]; then
+    ci_twin_run_equal="$(cap11a_json test/cap11a/twin-run.json equal | tr '[:upper:]' '[:lower:]')"
+fi
+# PWeb's OWN licence: `undeclared` is a measurement. The repository tracks no
+# LICENSE file, so the distribution ships third-party notices only and ledger
+# D2-8 stays open with the human as its owner. This shard never chooses one.
+sdk_own_license='undeclared'
+for cand in LICENSE LICENSE.md LICENSE.txt COPYING; do
+    if git ls-files --error-unmatch "${cand}" >/dev/null 2>&1; then
+        sdk_own_license='declared'
+        break
+    fi
+done
+
 cat > "${work}/evidence.json" <<EOF
 {
   "schema": 1,
@@ -2498,6 +2549,28 @@ cat > "${work}/evidence.json" <<EOF
   "app_pwb_react_sha256": "${react_pwb_sha}",
   "logical_inventory_sha256_react": "${react_inventory_sha}",
   "logical_inventory_sha256_pas2js": "${p2j_inventory_sha}",
+  "ci_sequence_digest": "${ci_sequence_digest}",
+  "ci_file_max_bytes": "${ci_file_max_bytes}",
+  "ci_file_bound_bytes": "${ci_file_bound_bytes}",
+  "ci_legacy_present": "${ci_legacy_present}",
+  "retention_policy_digest": "${retention_policy_digest}",
+  "ci_timeouts": "${ci_timeouts}",
+  "ci_timeouts_digest": "${ci_timeouts_digest}",
+  "upload_model": "${upload_model}",
+  "upload_max_attempts": "${upload_max_attempts}",
+  "gate_reads_artifact": "${gate_reads_artifact}",
+  "ci_migration_bodies_compared": "${ci_migration_bodies_compared}",
+  "ci_migration_uploads_folded": "${ci_migration_uploads_folded}",
+  "ci_twin_run_equal": "${ci_twin_run_equal}",
+  "schema_field_count": "${schema_field_count}",
+  "flake_nonreport_cause_row": "${flake_nonreport_cause_row}",
+  "flake_nonreport_causes": "${flake_nonreport_causes}",
+  "u3_drain_before_measure": "${u3_drain_before_measure}",
+  "u3_drain_rows": "${u3_drain_rows}",
+  "fetch_retry_rows": "${fetch_retry_rows}",
+  "fetch_retry_max_attempts": "${fetch_retry_max_attempts}",
+  "fetch_retry_bound_s": "${fetch_retry_bound_s}",
+  "sdk_own_license": "${sdk_own_license}",
   "github_sha": "${github_sha}",
   "github_run_id": "${github_run_id}",
   "waivers": [${waivers}]

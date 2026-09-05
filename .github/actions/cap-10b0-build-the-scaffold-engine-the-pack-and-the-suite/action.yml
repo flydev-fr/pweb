@@ -1,0 +1,37 @@
+# ----------------------------------------------------------------
+# CAP-10A: the public pweb CLI. Build (which is also the LAYERING
+# proof - each isolation compile sees only the unit paths its layer
+# may), the two checkout-only contract gates, then the headless
+# matrices and the real executable against its own contract.
+#
+# Nothing here needs a window, a display or a network, on any
+# target, and the gate MEASURES that `pweb doctor` mutated nothing:
+# the fixture tree and every lock file are hashed before and after.
+# ----------------------------------------------------------------
+# BUILD ORDER, and the reason it changed in CAP-10B1: the `pweb`
+# executable now compiles the GENERATED template registry in with -Fi,
+# so it cannot be built before the pack that registry describes
+# exists. The pack builder comes from CAP-10B0 and the public pack
+# from CAP-10B1, so those two builds run first and CAP-10A's build
+# takes the one CLI they produced. Two `pweb` binaries that could
+# disagree is exactly what the one-runtime rule refuses.
+
+name: 'CAP-10B0 build the scaffold engine, the pack and the suite'
+description: 'CAP-11A: the body of the "CAP-10B0 build the scaffold engine, the pack and the suite" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: windows
+      if: ${{ inputs.target == 'windows' }}
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap10b0/build_cap10b0.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-10B0 build FAILED' }
+    - name: linux, macos-x64, macos-arm64
+      if: ${{ inputs.target != 'windows' }}
+      shell: bash
+      run: test/cap10b0/build_cap10b0.sh

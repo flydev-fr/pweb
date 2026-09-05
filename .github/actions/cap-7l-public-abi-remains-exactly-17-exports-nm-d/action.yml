@@ -1,0 +1,8 @@
+name: 'CAP-7L public ABI remains exactly 17 exports (nm -D)'
+description: 'CAP-11A: the body of the "CAP-7L public ABI remains exactly 17 exports (nm -D)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: linux
+      shell: bash
+      run: test/cap7l/check_webview_exports.sh

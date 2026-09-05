@@ -1,0 +1,15 @@
+# 45: the ~690 MB expansion, the CAP-3U-windowed host compile, the
+# native tree-version/manifest passes and TWO ISCC compiles over
+# the tree (the real setup plus the abort probe)
+
+name: 'CAP-6b3 build the fixed-profile setup from the pinned locks (expand + manifest + payload proof)'
+description: 'CAP-11A: the body of the "CAP-6b3 build the fixed-profile setup from the pinned locks (expand + manifest + payload proof)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap6b3/build_fixed_setup.ps1 2>&1 |
+          Tee-Object -FilePath build/cap6b3-build.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-6b3 fixed setup build FAILED' }

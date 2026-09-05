@@ -1,0 +1,29 @@
+# Same policy as the CAP-1 smoke: the authoritative RUN (window visible,
+# concurrent JS invocations resolving) is a documented human/local gate;
+# CI attempts an auto-closing run without letting an absent desktop
+# session fail the build. Non-gating per spec.
+
+name: 'JS-binding example run (best effort - authoritative gate is local)'
+description: 'CAP-11A: the body of the "JS-binding example run (best effort - authoritative gate is local)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        $env:PWEB_SMOKE_AUTOCLOSE_MS = '8000'
+        $out = & build/example2/jsbinding.exe 2>&1 | Out-String
+        $code = $LASTEXITCODE
+        Write-Host $out
+        if ($code -eq 0) {
+          $verdict = 'PASS - JS binding example ran and exited cleanly'
+        }
+        elseif ($out -match 'webview_create \(returned nil') {
+          $verdict = "SKIP - no usable WebView2 runtime/desktop session on this runner (exit $code)"
+        }
+        else {
+          $verdict = "FAIL - exit $code (see log)"
+        }
+        "### JS-binding example run (non-gating)`n$verdict" | Out-File -Append $env:GITHUB_STEP_SUMMARY
+        Write-Host "jsbinding verdict: $verdict"
+        if ($verdict.StartsWith('FAIL')) { exit 1 }

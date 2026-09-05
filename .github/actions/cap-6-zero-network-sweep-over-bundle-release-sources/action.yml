@@ -1,0 +1,8 @@
+name: 'CAP-6 zero-network sweep over bundle/release sources'
+description: 'CAP-11A: the body of the "CAP-6 zero-network sweep over bundle/release sources" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: pwsh -NoProfile -File test/cap6/check_cap6_nonetwork.ps1

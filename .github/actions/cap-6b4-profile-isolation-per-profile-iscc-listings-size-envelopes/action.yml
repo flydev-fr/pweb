@@ -1,0 +1,11 @@
+name: 'CAP-6b4 profile isolation (per-profile ISCC listings, size envelopes, release index)'
+description: 'CAP-11A: the body of the "CAP-6b4 profile isolation (per-profile ISCC listings, size envelopes, release index)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap6b4/run_profile_isolation.ps1 2>&1 |
+          Tee-Object -FilePath build/cap6b4-isolation.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-6b4 profile isolation FAILED' }

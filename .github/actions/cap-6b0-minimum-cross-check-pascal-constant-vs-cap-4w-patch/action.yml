@@ -1,0 +1,8 @@
+name: 'CAP-6b0 minimum cross-check (Pascal constant vs CAP-4W patch)'
+description: 'CAP-11A: the body of the "CAP-6b0 minimum cross-check (Pascal constant vs CAP-4W patch)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: pwsh -NoProfile -File test/cap6b/check_wv2min.ps1

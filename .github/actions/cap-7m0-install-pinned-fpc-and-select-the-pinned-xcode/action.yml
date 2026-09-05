@@ -1,0 +1,8 @@
+name: 'CAP-7M0 install pinned FPC and select the pinned Xcode'
+description: 'CAP-11A: the body of the "CAP-7M0 install pinned FPC and select the pinned Xcode" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: macos-x64, macos-arm64
+      shell: pwsh
+      run: pwsh -NoProfile -File tools/get-fpc-macos.ps1

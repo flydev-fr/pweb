@@ -1,0 +1,13 @@
+# ONE SHIPPED DYLIB, ONE LINKED OBJECT, NOTHING ELSE. The production
+# Cocoa bridge is an object file linked into each binary that hosts a
+# macOS WebView - deps/webview stays unpatched and the public export
+# surface stays at exactly 17.
+
+name: 'CAP-7M1 compile the production Cocoa bridge (one object)'
+description: 'CAP-11A: the body of the "CAP-7M1 compile the production Cocoa bridge (one object)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: macos-x64, macos-arm64
+      shell: bash
+      run: tools/build-macos-bridge.sh

@@ -1,0 +1,20 @@
+# The acceptance criterion in the flesh: the Linux port reaches
+# pweb://app through the seam upstream already exposes, so the
+# dependency tree must be pristine - no Linux patch exists, and this
+# job never applies the Windows one.
+
+name: 'CAP-7L deps/webview carries no Linux patch'
+description: 'CAP-11A: the body of the "CAP-7L deps/webview carries no Linux patch" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: linux
+      shell: bash
+      run: |
+        dirty="$(git -C deps/webview status --porcelain)"
+        if [ -n "${dirty}" ]; then
+          echo "${dirty}"
+          echo 'deps/webview was modified on the Linux path'
+          exit 1
+        fi
+        echo 'deps/webview: pristine at the pinned commit'

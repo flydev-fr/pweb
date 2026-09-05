@@ -1,0 +1,15 @@
+name: 'Freeze sweep - RTL-only compile of isolation-critical intf units'
+description: 'CAP-11A: the body of the "Freeze sweep - RTL-only compile of isolation-critical intf units" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force build/freeze | Out-Null
+        # pweb.rpc.intf.pas must compile with the bare RTL: proves no
+        # webview/platform unit crept into the scheduler contract.
+        fpc -MObjFPC -Sh -B -FUbuild/freeze src/rpc/pweb.rpc.intf.pas
+        if ($LASTEXITCODE -ne 0) { throw 'pweb.rpc.intf.pas is not RTL-only' }
+        fpc -MObjFPC -Sh -B -FUbuild/freeze src/webview/pweb.webview.intf.pas
+        if ($LASTEXITCODE -ne 0) { throw 'pweb.webview.intf.pas failed RTL-only compile' }

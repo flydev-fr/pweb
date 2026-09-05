@@ -1,0 +1,8 @@
+name: 'Stage CAP-3 runtime DLL'
+description: 'CAP-11A: the body of the "Stage CAP-3 runtime DLL" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: Copy-Item build/webview-dist/webview.dll build/cap3/example/

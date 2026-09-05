@@ -1,0 +1,31 @@
+# The real smoke RUN (window visible, marker rendered, clean exit) is a
+# documented human/local gate; this best-effort attempt runs it with
+# auto-close where the runner image has WebView2 + a desktop session.
+# Outcome is recorded in the step summary; a SKIP (no usable
+# session/runtime -> webview_create returns nil) is distinguished from
+# a genuine failure. Non-gating per spec.
+
+name: 'Smoke run (best effort - authoritative gate is local)'
+description: 'CAP-11A: the body of the "Smoke run (best effort - authoritative gate is local)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        $env:PWEB_SMOKE_AUTOCLOSE_MS = '8000'
+        $out = & build/example/hello.exe 2>&1 | Out-String
+        $code = $LASTEXITCODE
+        Write-Host $out
+        if ($code -eq 0) {
+          $verdict = 'PASS - window ran and exited cleanly'
+        }
+        elseif ($out -match 'webview_create \(returned nil') {
+          $verdict = "SKIP - no usable WebView2 runtime/desktop session on this runner (exit $code)"
+        }
+        else {
+          $verdict = "FAIL - exit $code (see log)"
+        }
+        "### Smoke run (non-gating)`n$verdict" | Out-File -Append $env:GITHUB_STEP_SUMMARY
+        Write-Host "smoke verdict: $verdict"
+        if ($verdict.StartsWith('FAIL')) { exit 1 }

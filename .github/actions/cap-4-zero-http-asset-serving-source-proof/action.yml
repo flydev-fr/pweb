@@ -1,0 +1,42 @@
+# Source-level proof that CAP-4 serves assets with no HTTP, localhost,
+# socket, or file:// transport anywhere in its units, tests, example,
+# or frontend fixture.
+
+name: 'CAP-4 zero-HTTP asset-serving source proof'
+description: 'CAP-11A: the body of the "CAP-4 zero-HTTP asset-serving source proof" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        $cap4Files = @(
+          'src/assets/pweb.assets.support.pas',
+          'src/assets/pweb.assets.folder.pas',
+          'src/assets/pweb.assets.zip.pas',
+          'src/platform/windows/pweb.platform.webview2.pas',
+          'src/platform/windows/pweb.platform.webview2.runtime.pas',
+          'src/platform/windows/pweb.platform.webview2.provision.pas',
+          'test/platform/pweb.test.webview2runtime.pas',
+          'test/platform/pweb.test.wv2provision.pas',
+          'tools/setup/pwebwv2prov.pas',
+          'test/cap6b/wv2probe.pas',
+          'test/assets/pweb.test.assets.pas',
+          'examples/06-assets/assetsapp.pas',
+          'examples/06-assets/mkappzip.pas',
+          'examples/06-assets/frontend/dist/index.html',
+          'examples/06-assets/frontend/dist/assets/app.js',
+          'examples/06-assets/frontend/dist/assets/app.css'
+        )
+        $forbidden = 'TRestHttpServer|THttpServer|mormot\.rest\.http|' +
+          'mormot\.net\.(server|client|http)|localhost|127\.0\.0\.1|' +
+          'socket|http://|file://'
+        $hits = @(Select-String -Path $cap4Files -Pattern $forbidden `
+          -CaseSensitive:$false)
+        if ($hits) {
+          $hits | ForEach-Object {
+            Write-Host "FORBIDDEN CAP-4 TRANSPORT PATTERN: $($_.Path):$($_.LineNumber): $($_.Line.Trim())"
+          }
+          throw 'CAP-4 zero-HTTP source proof failed'
+        }
+        Write-Host 'CAP-4 zero-HTTP source proof: PASS'

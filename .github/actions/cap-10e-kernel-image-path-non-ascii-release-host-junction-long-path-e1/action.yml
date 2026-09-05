@@ -1,0 +1,11 @@
+name: 'CAP-10E kernel image path - non-ASCII release host, junction, long path (E1/E2/E6/E7/E9)'
+description: 'CAP-11A: the body of the "CAP-10E kernel image path - non-ASCII release host, junction, long path (E1/E2/E6/E7/E9)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap10e/run_cap10e_gates.ps1 2>&1 |
+          Tee-Object -FilePath build/cap10e-gates.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-10E Windows gates FAILED' }

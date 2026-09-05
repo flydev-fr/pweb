@@ -2625,6 +2625,57 @@ $e.sdk_suite = 'FAIL'
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap10d2-suite-failed' 'sdk_suite'
 
+# ===========================================================================
+# CAP-11A (e11, e12): AN ABSENT ARTIFACT IS TWO SITUATIONS, AND THE AGGREGATE
+# MUST SAY WHICH.
+#
+# On hosted run 33955241980 the macos-x64 leg's gates were green and one
+# `actions/upload-artifact` call timed out against GitHub's own service, taking
+# about thirty later steps with it. The aggregate then had no evidence for a
+# target that had failed nothing, and said only that the target was absent.
+# These two legs prove it now says which of the two happened - on COPIES, with
+# a synthesised run record, and never against a real run.
+$seqReal = 'build/cap11a/sequence.json'
+$seqBackup = "$seqReal.selftest-backup"
+$hadSeq = Test-Path -LiteralPath $seqReal
+if ($hadSeq) { Copy-Item -LiteralPath $seqReal -Destination $seqBackup -Force }
+try {
+    # (e11) the leg is GREEN and its evidence never uploaded -> INFRASTRUCTURE
+    Reset-Fixture
+    Remove-Item (Join-Path $fx 'ev/macos-x64/evidence.json')
+    New-Item -ItemType Directory -Force (Split-Path -Parent $seqReal) | Out-Null
+    @{
+        schema = 1; run_id = 'selftest'; repository = 'selftest'
+        ci_sequence_digest = ''; step_count = 0; steps = @()
+        collection = @{
+            'macos-x64' = @{ job_conclusion = 'success'; gates_failed = @()
+                             evidence_uploaded = $false; status = 'infrastructure'
+                             attempts = @() }
+        }
+        failures = @()
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $seqReal
+    Invoke-AggExpectFail 'cap11a-upload-infrastructure' 'INFRASTRUCTURE, NOT A GATE'
+
+    # (e12) the leg is RED and the aggregate names the gate, not the upload
+    Reset-Fixture
+    Remove-Item (Join-Path $fx 'ev/macos-x64/evidence.json')
+    @{
+        schema = 1; run_id = 'selftest'; repository = 'selftest'
+        ci_sequence_digest = ''; step_count = 0; steps = @()
+        collection = @{
+            'macos-x64' = @{ job_conclusion = 'failure'
+                             gates_failed = @('CAP-10D2 SDK distribution gates')
+                             evidence_uploaded = $false; status = 'gate_failure'
+                             attempts = @() }
+        }
+        failures = @()
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $seqReal
+    Invoke-AggExpectFail 'cap11a-upload-gate-failure' 'LEG RED: the leg failed at'
+} finally {
+    if ($hadSeq) { Move-Item -LiteralPath $seqBackup -Destination $seqReal -Force }
+    else { Remove-Item -Force -ErrorAction SilentlyContinue $seqReal }
+}
+
 Remove-Item -Force -ErrorAction SilentlyContinue $matrix
 # a floor, so a leg that silently stops running is caught. It is deliberately
 # NOT an equality: adding a refusal branch is normal and should not require
@@ -2634,9 +2685,13 @@ Remove-Item -Force -ErrorAction SilentlyContinue $matrix
 # and that is true of the NUMBER but not of the GUARD: leaving the floor
 # where it was would have exempted exactly the four newest legs from the one
 # check that notices a leg quietly ceasing to run. The margin is unchanged.
-if ($script:AggRefusals -lt 219) {
+# CAP-11A raised the floor from 219 to 221 with the two typed-absence legs it
+# added, for the reason CAP-10E raised it from 215: leaving the floor where it
+# was would exempt exactly the newest legs from the one check that notices a leg
+# quietly ceasing to run.
+if ($script:AggRefusals -lt 221) {
     throw ("selftest: only $($script:AggRefusals) aggregator refusals fired, " +
-        'expected at least 219 -- a negative leg stopped running')
+        'expected at least 221 -- a negative leg stopped running')
 }
 if ($script:SweepRefusals -lt 2) {
     throw ("selftest: only $($script:SweepRefusals) divergence refusals fired, " +

@@ -1,0 +1,55 @@
+name: 'Guard - no floating upstream ref in the Linux build/gate path'
+description: 'CAP-11A: the body of the "Guard - no floating upstream ref in the Linux build/gate path" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: linux
+      shell: bash
+      run: |
+        # The same invariant the Windows job enforces over its own
+        # scripts, extended to the ones CAP-7L adds. Patterns are
+        # concatenated so they cannot literally match their own source.
+        pat="git[[:space:]]+(cl""one|pu""ll|ls-rem""ote)"
+        pat="${pat}|re""fs/(he""ads|ta""gs)"
+        pat="${pat}|webview/web""view@"
+        files="tools/build-webview-so.sh test/cap7l/build_cap7l.sh"
+        files="${files} test/cap7l/check_abi.sh test/cap7l/check_webview_exports.sh"
+        files="${files} test/cap7l/run_cap7l_gates.sh test/cap7l/run_gui_matrix.sh"
+        files="${files} test/cap7l/run_release_layout.sh"
+        files="${files} test/cap7l/check_cap7l_nonetwork.sh"
+        bad=0
+        for f in ${files}; do
+          # EXISTENCE FIRST (CAP-7M1, closing the CAP-7M0 ledger entry).
+          # grep on an absent path exits 2, the `if` takes the false branch,
+          # and the loop concludes "clean" for a file it never read - so
+          # deleting or renaming a guarded script silently REMOVED it from
+          # the guard instead of failing it.
+          if [ ! -f "${f}" ]; then
+            echo "MISSING GUARD TARGET: ${f}"
+            bad=1
+            continue
+          fi
+          if grep -nEi "${pat}" "${f}"; then
+            echo "VIOLATION: ${f}"
+            bad=1
+          fi
+        done
+        [ "${bad}" -eq 0 ] || { echo 'floating upstream ref detected'; exit 1; }
+        echo 'guard: no floating upstream ref in the Linux path'
+
+        # Every gate below is invoked as a program, not as `bash <file>`, so
+        # a script committed 100644 fails with 'Permission denied' before a
+        # single assertion runs - and it does so identically whether the
+        # gate would have passed or failed. A dev host never notices,
+        # because calling `bash script.sh` ignores the mode bit entirely.
+        # Assert the committed MODE, not the working-tree mode: on a
+        # Windows checkout the filesystem has no executable bit and only
+        # git's index carries the truth.
+        nonexec="$(git ls-files -s -- '*.sh' | awk '$1 != "100755" { print $4 }')"
+        if [ -n "${nonexec}" ]; then
+          echo 'shell gates committed without the executable bit:'
+          printf '  %s\n' ${nonexec}
+          echo 'fix with: git update-index --chmod=+x <file>'
+          exit 1
+        fi
+        echo "guard: all $(git ls-files -- '*.sh' | wc -l) committed shell gates are executable"

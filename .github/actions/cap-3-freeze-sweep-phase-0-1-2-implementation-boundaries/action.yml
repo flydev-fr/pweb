@@ -1,0 +1,39 @@
+name: 'CAP-3 freeze sweep - Phase-0/1/2 implementation boundaries'
+description: 'CAP-11A: the body of the "CAP-3 freeze sweep - Phase-0/1/2 implementation boundaries" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        git diff --exit-code 4653ba77ef03f0a37b0b0b0c4205ed6ecfe7e0f5 -- `
+          src/rpc/pweb.rpc.intf.pas `
+          src/webview/pweb.webview.intf.pas `
+          src/assets/pweb.assets.intf.pas `
+          src/rpc/pweb.rpc.scheduler.pas `
+          src/rpc/pweb.rpc.bridge.dummy.pas `
+          src/security/pweb.capabilities.pas `
+          src/webview/pweb.webview.binding.pas
+        if ($LASTEXITCODE -ne 0) {
+          throw 'frozen Phase-0/1/2 implementation boundary was modified'
+        }
+        # src/lib carried the same way as the CAP-1 sweep above, against
+        # this sweep's own untouched baseline
+        New-Item -ItemType Directory -Force build/freeze | Out-Null
+        $expected = ((Select-String -Path webview.lock `
+          -Pattern '^srclib-platform-patch-sha256\s*=').Line -split '=', 2)[1].Trim()
+        if ($expected -cnotmatch '^[0-9a-f]{64}$') {
+          throw 'webview.lock has no full lowercase srclib-platform-patch-sha256'
+        }
+        $lines = @(git --no-pager diff --no-color --no-ext-diff --full-index `
+          4653ba77ef03f0a37b0b0b0c4205ed6ecfe7e0f5 -- src/lib)
+        $text = (($lines | ForEach-Object { $_ -replace "`r$", '' }) -join "`n")
+        if ($text -ne '') { $text += "`n" }
+        $patch = Join-Path (Get-Location) 'build/freeze/srclib-cap3.patch'
+        [IO.File]::WriteAllText($patch, $text, [Text.UTF8Encoding]::new($false))
+        $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $patch).Hash.ToLowerInvariant()
+        Write-Host "src/lib patch sha256: $actual"
+        if ($actual -cne $expected) {
+          Write-Host $text
+          throw 'src/lib drifted beyond the ratified platform block'
+        }

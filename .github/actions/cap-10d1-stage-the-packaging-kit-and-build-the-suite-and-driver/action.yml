@@ -1,0 +1,17 @@
+name: 'CAP-10D1 stage the packaging kit and build the suite and driver'
+description: 'CAP-11A: the body of the "CAP-10D1 stage the packaging kit and build the suite and driver" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: windows
+      if: ${{ inputs.target == 'windows' }}
+      shell: pwsh
+      run: pwsh -NoProfile -File test/cap10d1/build_cap10d1.ps1
+    - name: linux, macos-x64, macos-arm64
+      if: ${{ inputs.target != 'windows' }}
+      shell: bash
+      run: test/cap10d1/build_cap10d1.sh

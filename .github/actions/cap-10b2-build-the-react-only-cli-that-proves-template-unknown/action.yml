@@ -1,0 +1,35 @@
+# ----------------------------------------------------------------
+# CAP-10B2: the public Pas2JS scaffold, and the close of CAP-10B.
+#
+# The same three layers as CAP-10B1's, plus one build: a SECOND `pweb`
+# compiled against a react-only pack, which exists so that "a pack that
+# does not describe an advertised template is an ENVIRONMENT failure"
+# is a refusal somebody watched fire rather than a mapping somebody
+# reasoned about. Nothing shipped comes from that executable.
+#
+# The build proof compiles the generated frontend with the pinned
+# Pas2JS 3.0.1 fetched by the CAP-5 step above, against the SDK root
+# CAP-10B1's build staged, into an EXTERNAL stage - so the project it
+# builds is never written to at all - then packs app.pwb with the
+# frozen bundler and drives the result to 42 in a real WebView.
+# ----------------------------------------------------------------
+
+name: 'CAP-10B2 build the react-only CLI that proves template_unknown'
+description: 'CAP-11A: the body of the "CAP-10B2 build the react-only CLI that proves template_unknown" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: windows
+      if: ${{ inputs.target == 'windows' }}
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap10b2/build_cap10b2.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-10B2 build FAILED' }
+    - name: linux, macos-x64, macos-arm64
+      if: ${{ inputs.target != 'windows' }}
+      shell: bash
+      run: test/cap10b2/build_cap10b2.sh

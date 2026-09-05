@@ -1,0 +1,22 @@
+name: 'CAP-10B2 pas2js create gates + evidence'
+description: 'CAP-11A: the body of the "CAP-10B2 pas2js create gates + evidence" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: windows
+      if: ${{ inputs.target == 'windows' }}
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap10b2/run_cap10b2_gates.ps1 2>&1 |
+          Tee-Object -FilePath build/cap10b2-gates.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-10B2 create gates FAILED' }
+    - name: linux, macos-x64, macos-arm64
+      if: ${{ inputs.target != 'windows' }}
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap10b2/run_cap10b2_gates.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-10B2 create gates FAILED' }

@@ -1,0 +1,18 @@
+name: 'CAP-7M2 TypeScript SDK build + tests'
+description: 'CAP-11A: the body of the "CAP-7M2 TypeScript SDK build + tests" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: macos-x64, macos-arm64
+      shell: bash
+      run: |
+        v="$(node --version)"
+        [ "${v}" = 'v24.11.1' ] || { echo "expected node v24.11.1, got ${v}"; exit 1; }
+        cd sdk/typescript
+        npm ci
+        npm test
+        cd ../..
+        for f in sdk/typescript/dist/src/index.js \
+                 sdk/typescript/dist/src/index.d.ts; do
+          [ -f "${f}" ] || { echo "SDK build output missing: ${f}"; exit 1; }
+        done

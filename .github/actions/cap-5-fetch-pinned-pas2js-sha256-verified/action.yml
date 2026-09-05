@@ -1,0 +1,11 @@
+# ------------------------- CAP-5 gates -------------------------
+# Everything below is additive; no earlier step is altered.
+
+name: 'CAP-5 fetch pinned pas2js (sha256-verified)'
+description: 'CAP-11A: the body of the "CAP-5 fetch pinned pas2js (sha256-verified)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: pwsh -NoProfile -File tools/get-pas2js.ps1

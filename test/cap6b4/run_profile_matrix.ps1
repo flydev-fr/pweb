@@ -480,10 +480,79 @@ try {
     }
 
     # --- uninstall, and what must be gone afterwards ------------------------
+    #
+    # CAP-11A (ledger D1-16, and the entry that diagnosed it): U3 uninstalls the
+    # ~690 MB fixed-runtime profile and then requires the install directory to be
+    # GONE. On hosted run 33870028829 nine files survived, every one a browser
+    # binary, and on run 33962919229 Inno's own uninstall log said why in words
+    # nobody had read for it - "RestartManager found an application using one of
+    # our files: Microsoft Edge WebView2", five times. The residue is a LIVE
+    # PROCESS still holding the tree, not an uninstaller that forgot a file, and
+    # D1-16 asked for exactly one thing: "have U3 report the drain it observed
+    # before it measures the directory".
+    #
+    # So the drain runs FIRST and SAYS WHAT IT SAW - pids, images, sweeps,
+    # graceful or forced - and only then does the uninstaller run and the
+    # directory get measured. A residue failure after this can no longer be
+    # confused with a process that had not finished exiting.
+    #
+    # THE CAP-6b3 RULE IS UNCHANGED, and it is the reason this is safe: the
+    # selection is by EXECUTABLE IMAGE PATH under one root that belongs to this
+    # test installation, compared on a component boundary and re-checked at kill
+    # time. The runner's unrelated Evergreen processes - which CAP-6b1, CAP-6b2
+    # and F3's no-fallback proof all depend on being present - live outside
+    # $InstallDir and are never considered. This is the CAP-6b3 helper, called;
+    # not a second implementation of it.
+    . (Join-Path $PSScriptRoot '..\cap6b3\wv2procdrain.ps1')
+    $DrainReport = Join-Path $repoRoot 'build/cap6b4/u3-drain.txt'
+    New-Item -ItemType Directory -Force (Split-Path -Parent $DrainReport) | Out-Null
+    if (Test-Path -LiteralPath $DrainReport) { Remove-Item -Force -LiteralPath $DrainReport }
+
+    function Invoke-DrainBeforeUninstall {
+        param([string]$Row)
+        $lines = New-Object System.Collections.Generic.List[string]
+        $lines.Add("drain row=$Row root=$InstallDir order=before_uninstall")
+        # ONE root, both images: the installed application and, for the fixed
+        # profile only, the browser that lives inside its own tree. An Evergreen
+        # profile's browser is the machine's and is outside this root by
+        # construction, which is why no name-based kill is needed or allowed.
+        $r = $null
+        $outcome = 'ok'
+        try {
+            $r = Invoke-PWebProcessDrain -Root $InstallDir `
+                -Names @('releaseapp.exe', 'msedgewebview2.exe') `
+                -GraceMs 8000 -TimeoutMs 90000
+        } catch {
+            $outcome = 'drain_error'
+            $lines.Add("drain row=$Row outcome=drain_error msg=$($_.Exception.Message)")
+        }
+        if ($null -ne $r) {
+            foreach ($d in $r.Diagnostics) { $lines.Add("drain row=$Row $d") }
+            $remaining = @($r.Remaining | ForEach-Object {
+                $rid = 0; $rimg = ''
+                try { $rid = [int]$_.ProcessId } catch { $rid = 0 }
+                try { $rimg = [string]$_.ExecutablePath } catch { $rimg = '' }
+                "pid=$rid image=$rimg"
+            })
+            if ($r.Remaining.Count -gt 0) { $outcome = 'still_holding' }
+            $lines.Add(("drain row=$Row sweeps=$($r.Sweeps) graceful=$($r.GracefulExit) " +
+                "terminated=$($r.Killed.Count) killed_pids=[$($r.Killed -join ',')] " +
+                "remaining=$($r.Remaining.Count) [$($remaining -join '; ')] outcome=$outcome"))
+        }
+        foreach ($l in $lines) { Write-Host $l }
+        Add-Content -LiteralPath $DrainReport -Value $lines
+        if ($outcome -eq 'still_holding') {
+            throw ("${Row}: processes still hold $InstallDir after the drain; " +
+                'the uninstaller was NOT run - what it would test is not uninstall cleanup')
+        }
+    }
+
     function Invoke-Uninstall {
         param([string]$Row, [int]$TimeoutMs)
         $unins = Join-Path $InstallDir 'unins000.exe'
         if (-not (Test-Path -LiteralPath $unins)) { throw "${Row}: uninstaller missing: $unins" }
+        # BEFORE the uninstaller, and therefore before the directory measure
+        Invoke-DrainBeforeUninstall $Row
         # the Inno uninstaller respawns a copy of itself and the original
         # process exits early: poll for the result, bounded
         $u = Invoke-Bounded $unins @('/VERYSILENT', '/SUPPRESSMSGBOXES',

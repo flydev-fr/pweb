@@ -1,0 +1,26 @@
+# ---------- CAP-8B: the real-window privileged-navigation matrix ----------
+# The production gate that replaced the Checkpoint-1 audit probe. It
+# builds test/cap8b/navmatrix.pas - the PRODUCTION asset handler +
+# navigation guard + scheduler + CAP-8A policy + external opener, the
+# opener's one seam swapped for a counting fake - and drives the whole
+# B-matrix against the malicious fixture corpus in a real WebView2
+# window: external navigations cancelled, untrusted subframes never
+# executing (the child tripwire stays 0), the native CSP enforced, the
+# capability-authorized external opens counted, and the RPC/navigation
+# race resolved. It writes build/cap8b/nav-matrix.json, which the CAP-7F
+# emitter reads into navigation_security (must-PASS, the aggregator
+# refuses a SKIP). It runs BEFORE the emitter so its verdict is this
+# job's, and mirrors the args gate's conditional-SKIP policy: only an
+# absent WebView2/desktop session records SKIP.
+
+name: 'CAP-8B real-window navigation matrix (WebView2)'
+description: 'CAP-11A: the body of the "CAP-8B real-window navigation matrix (WebView2)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap8b/run_nav_matrix.ps1 2>&1 |
+          Tee-Object -FilePath build/cap8b-nav-matrix.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-8B nav-matrix gate FAILED' }

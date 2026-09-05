@@ -1,0 +1,13 @@
+name: 'ABI probe - Pascal side (committed binding)'
+description: 'CAP-11A: the body of the "ABI probe - Pascal side (committed binding)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        fpc -Sh -FUbuild/fpc -Fusrc/lib -Fideps/mormot2/src -FEbuild/test test/core/abi_probe.pas
+        if ($LASTEXITCODE -ne 0) { throw 'pascal probe compile failed' }
+        & build/test/abi_probe.exe > build/test/abi_pascal.txt
+        if ($LASTEXITCODE -ne 0) { throw "pascal probe exited $LASTEXITCODE" }
+        Get-Content build/test/abi_pascal.txt

@@ -1,0 +1,11 @@
+name: 'Signature pin (compile-only gate over all 17 prototypes)'
+description: 'CAP-11A: the body of the "Signature pin (compile-only gate over all 17 prototypes)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force build/test | Out-Null
+        fpc -Sh -FUbuild/fpc -Fusrc/lib -Fideps/mormot2/src -FEbuild/test test/core/signature_pin.pas
+        if ($LASTEXITCODE -ne 0) { throw 'signature pin failed: binding signatures drifted' }

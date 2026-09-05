@@ -1,0 +1,34 @@
+# CAP-4 layering proofs. The stores compile with src/assets alone plus
+# the pinned mORMot core - any webview/rpc/platform dependency creeping
+# into IAssetStore implementations fails here. The Windows handler adds
+# only src/lib (raw ABI seam) on top of the stores - it must never pull
+# the rpc scheduler or the CAP-2 binding into the resource path.
+
+name: 'Compile CAP-4 asset units (stores webview-free, handler rpc-free)'
+description: 'CAP-11A: the body of the "Compile CAP-4 asset units (stores webview-free, handler rpc-free)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force build/fpc-assets | Out-Null
+        fpc -MObjFPC -Sh -B -FUbuild/fpc-assets -Fusrc/assets `
+          -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+          src/assets/pweb.assets.support.pas
+        if ($LASTEXITCODE -ne 0) { throw 'pweb.assets.support.pas failed its isolation compile' }
+        fpc -MObjFPC -Sh -FUbuild/fpc-assets -Fusrc/assets `
+          -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+          src/assets/pweb.assets.folder.pas
+        if ($LASTEXITCODE -ne 0) { throw 'pweb.assets.folder.pas failed its isolation compile' }
+        fpc -MObjFPC -Sh -FUbuild/fpc-assets -Fusrc/assets `
+          -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+          src/assets/pweb.assets.zip.pas
+        if ($LASTEXITCODE -ne 0) { throw 'pweb.assets.zip.pas failed its isolation compile' }
+        # -Fusrc/security is the CAP-8B navigation classifier only: the
+        # handler still pulls no rpc scheduler and no CAP-2 binding
+        fpc -MObjFPC -Sh -FUbuild/fpc-assets -Fusrc/assets -Fusrc/lib `
+          -Fusrc/security -Fusrc/platform/windows `
+          -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+          src/platform/windows/pweb.platform.webview2.pas
+        if ($LASTEXITCODE -ne 0) { throw 'pweb.platform.webview2.pas failed its isolation compile' }

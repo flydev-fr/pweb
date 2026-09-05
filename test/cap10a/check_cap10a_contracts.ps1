@@ -121,10 +121,19 @@ if ($macosMin -cne $macosLock) {
 # doctor requires. A floor above the pinned Node would fail every CI leg's
 # own doctor run for a reason nobody could act on.
 $nodeMin = Read-PascalConst $toolchain 'PWEB_CLI_NODE_MIN'
-$nodePins = @(Select-String -Path '.github/workflows/ci.yml' `
+# CAP-11A: the pin used to live in the one workflow file; it now lives in the
+# composite action of whichever step installs Node, so the search is over the
+# tree. An empty enumeration is a violation for the reason every guard in this
+# repository states: a search that found nothing must fail, not pass.
+$nodePinFiles = @(Get-ChildItem -Path '.github' -Recurse -File -Include '*.yml' |
+    ForEach-Object { $_.FullName })
+if ($nodePinFiles.Count -lt 1) {
+    Violation 'no workflow or action files found under .github/'
+}
+$nodePins = @(Select-String -Path $nodePinFiles `
     -Pattern '^\s*node-version:\s*([0-9]+\.[0-9]+\.[0-9]+)\s*$')
 if ($nodePins.Count -lt 1) {
-    Violation 'no pinned node-version found in .github/workflows/ci.yml'
+    Violation 'no pinned node-version found under .github/'
 } else {
     foreach ($pin in $nodePins) {
         $pinned = [version]$pin.Matches[0].Groups[1].Value

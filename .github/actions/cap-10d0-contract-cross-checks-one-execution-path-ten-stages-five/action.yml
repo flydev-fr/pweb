@@ -1,0 +1,10 @@
+name: 'CAP-10D0 contract cross-checks (one execution path, ten stages, five commands, gate quoting)'
+description: 'CAP-11A: the body of the "CAP-10D0 contract cross-checks (one execution path, ten stages, five commands, gate quoting)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows, linux, macos-x64, macos-arm64
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap10d0/check_cap10d0_contracts.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-10D0 contract cross-checks FAILED' }

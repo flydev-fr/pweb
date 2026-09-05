@@ -1,0 +1,19 @@
+name: 'CAP-10A build the suite and the probe fixture'
+description: 'CAP-11A: the body of the "CAP-10A build the suite and the probe fixture" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: windows
+      if: ${{ inputs.target == 'windows' }}
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap10a/build_cap10a.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-10A build FAILED' }
+    - name: linux, macos-x64, macos-arm64
+      if: ${{ inputs.target != 'windows' }}
+      shell: bash
+      run: test/cap10a/build_cap10a.sh

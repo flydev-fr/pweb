@@ -1,0 +1,11 @@
+# A GENUINE virtual display, and a real GTK/WebKitGTK WebView on it.
+# No mocked rendering, no headless-DOM substitute, no SKIP path.
+
+name: 'CAP-7L GUI matrix (L4-L22) under Xvfb'
+description: 'CAP-11A: the body of the "CAP-7L GUI matrix (L4-L22) under Xvfb" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: linux
+      shell: bash
+      run: xvfb-run -a test/cap7l/run_gui_matrix.sh

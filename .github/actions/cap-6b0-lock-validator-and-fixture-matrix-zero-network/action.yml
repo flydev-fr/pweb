@@ -1,0 +1,12 @@
+name: 'CAP-6b0 lock validator and fixture matrix (zero network)'
+description: 'CAP-11A: the body of the "CAP-6b0 lock validator and fixture matrix (zero network)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File tools/get-webview2-runtime.ps1 -Validate
+        if ($LASTEXITCODE -ne 0) { throw 'webview2-runtime.lock validation FAILED' }
+        pwsh -NoProfile -File test/cap6b/check_wv2lock.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-6b0 lock fixture matrix FAILED' }

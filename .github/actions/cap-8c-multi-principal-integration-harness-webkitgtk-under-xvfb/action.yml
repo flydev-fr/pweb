@@ -1,0 +1,20 @@
+# ---------- CAP-8C: the multi-principal integration harness ----------
+# The production gate that replaced the Checkpoint-1 topology probe, on
+# the WebKitGTK engine, under a real virtual display. The headless
+# NATIVE leg writes the canonical security-corpus.txt (the cross-target
+# digest source) and the GUI leg of two simultaneously live WebKitGTK
+# windows proves the shared policy differentiates two real principals
+# with the content-swap + injected-opener evidence. No conditional SKIP
+# - the display is real, every failure gates, same policy as the
+# nav-matrix. It runs BEFORE the CAP-7F emitter (which reads its
+# verdict into security_corpus and hashes the corpus into
+# security_corpus_digest).
+
+name: 'CAP-8C multi-principal integration harness (WebKitGTK) under Xvfb'
+description: 'CAP-11A: the body of the "CAP-8C multi-principal integration harness (WebKitGTK) under Xvfb" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: linux
+      shell: bash
+      run: xvfb-run -a test/cap8c/run_multiprincipal.sh

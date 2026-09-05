@@ -1,0 +1,37 @@
+# CAP-9C2: the plugin-enabled release layout and its real-GUI
+# acceptance. Reuses the payload the CAP-9C1 step above staged
+# (this shard does not re-derive the package - building it twice
+# would prove a second builder), compiles the host WITH the
+# generated registry include, assembles and asserts the EXACT
+# release layout, runs a real WebView plus two QuickJS plugins
+# concurrently while sampling listening sockets, drives the
+# whole-archive negative matrix against that same layout, and runs
+# the hostile-package harness. Writes
+# build/cap9c2/quickjs-gui-corpus.txt (the cross-target digest
+# source) and quickjsgui-windows-x86_64.json, which the CAP-7F
+# emitter reads into quickjs_gui_corpus (must-PASS; never SKIPs).
+
+name: 'CAP-9C2 plugin-enabled release layout and real-GUI acceptance'
+description: 'CAP-11A: the body of the "CAP-9C2 plugin-enabled release layout and real-GUI acceptance" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: windows
+      if: ${{ inputs.target == 'windows' }}
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap9c2/run_quickjsgui.ps1 2>&1 |
+          Tee-Object -FilePath build/cap9c2-quickjsgui.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-9C2 quickjsgui gate FAILED' }
+    - name: linux
+      if: ${{ inputs.target == 'linux' }}
+      shell: bash
+      run: xvfb-run -a test/cap9c2/run_quickjsgui.sh
+    - name: macos-x64, macos-arm64
+      if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+      shell: bash
+      run: test/cap9c2/run_quickjsgui.sh

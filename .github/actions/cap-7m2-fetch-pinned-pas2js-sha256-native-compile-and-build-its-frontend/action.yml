@@ -1,0 +1,16 @@
+name: 'CAP-7M2 fetch pinned pas2js (sha256 + native compile) and build its frontend'
+description: 'CAP-11A: the body of the "CAP-7M2 fetch pinned pas2js (sha256 + native compile) and build its frontend" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: macos-arm64
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File tools/get-pas2js.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'pinned pas2js fetch/native compile FAILED' }
+        pwsh -NoProfile -File examples/05-pas2js/frontend/build.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'pas2js frontend build FAILED' }
+        foreach ($f in 'examples/05-pas2js/frontend/dist/index.html',
+                       'examples/05-pas2js/frontend/dist/assets/app.js') {
+          if (-not (Test-Path $f)) { throw "pas2js frontend output missing: $f" }
+        }

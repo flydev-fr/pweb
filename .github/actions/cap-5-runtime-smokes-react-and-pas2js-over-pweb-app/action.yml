@@ -1,0 +1,8 @@
+name: 'CAP-5 runtime smokes - React and Pas2JS over pweb://app'
+description: 'CAP-11A: the body of the "CAP-5 runtime smokes - React and Pas2JS over pweb://app" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: pwsh -NoProfile -File test/cap5/run_cap5_smokes.ps1

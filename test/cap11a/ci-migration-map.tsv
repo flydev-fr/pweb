@@ -1,0 +1,446 @@
+legacy_job	legacy_name	legacy_line	disposition	new_location
+windows	Checkout (full history for freeze diff against baseline)	100	inline	.github/workflows/platform-leg.yml step 1
+linux	Checkout	2606	inline	.github/workflows/platform-leg.yml step 2
+macos-x64	Checkout	3640	inline	.github/workflows/platform-leg.yml step 2
+macos-arm64	Checkout	4689	inline	.github/workflows/platform-leg.yml step 2
+linux	Guard - no floating upstream ref in the Linux build/gate path	2609	action	.github/actions/guard-no-floating-upstream-ref-in-the-linux-build-gate-path/action.yml
+linux	Install the ratified WebKitGTK stack and FPC (distro packages)	2660	action	.github/actions/install-the-ratified-webkitgtk-stack-and-fpc-distro-packages/action.yml
+linux	Assert the toolchain and the ratified engine family	2677	action	.github/actions/assert-the-toolchain-and-the-ratified-engine-family/action.yml
+macos-x64	Guard - no floating upstream ref in the macOS build/gate path	3643	action	.github/actions/guard-no-floating-upstream-ref-in-the-macos-build-gate-path/action.yml
+macos-arm64	Guard - no floating upstream ref in the macOS build/gate path	4692	action	.github/actions/guard-no-floating-upstream-ref-in-the-macos-build-gate-path/action.yml
+macos-x64	CAP-7M0 record the runner (M19)	3691	action	.github/actions/cap-7m0-record-the-runner-m19/action.yml
+macos-arm64	CAP-7M0 record the runner (M19)	4731	action	.github/actions/cap-7m0-record-the-runner-m19/action.yml
+windows	Fetch pinned webview/webview (exact SHA, checksum verified)	105	action	.github/actions/fetch-pinned-webview-webview-exact-sha-checksum-verified/action.yml
+linux	Fetch pinned webview/webview (exact SHA, checksum verified)	2705	action	.github/actions/fetch-pinned-webview-webview-exact-sha-checksum-verified/action.yml
+macos-x64	Fetch pinned webview/webview (exact SHA, checksum verified)	3724	action	.github/actions/fetch-pinned-webview-webview-exact-sha-checksum-verified/action.yml
+macos-arm64	Fetch pinned webview/webview (exact SHA, checksum verified)	4749	action	.github/actions/fetch-pinned-webview-webview-exact-sha-checksum-verified/action.yml
+windows	CAP-4W - exact Windows patch apply, restore and reapply	109	action	.github/actions/cap-4w-exact-windows-patch-apply-restore-and-reapply/action.yml
+windows	Fetch pinned mORMot2 (exact SHA + sha256-pinned statics)	143	action	.github/actions/fetch-pinned-mormot2-exact-sha-sha256-pinned-statics/action.yml
+linux	Fetch pinned mORMot2 (exact SHA + sha256-pinned statics)	2709	action	.github/actions/fetch-pinned-mormot2-exact-sha-sha256-pinned-statics/action.yml
+macos-x64	Fetch pinned mORMot2 (exact SHA + sha256-pinned statics)	3728	action	.github/actions/fetch-pinned-mormot2-exact-sha-sha256-pinned-statics/action.yml
+macos-arm64	Fetch pinned mORMot2 (exact SHA + sha256-pinned statics)	4753	action	.github/actions/fetch-pinned-mormot2-exact-sha-sha256-pinned-statics/action.yml
+windows	Guard - no floating upstream ref in fetch/build path	147	action	.github/actions/guard-no-floating-upstream-ref-in-fetch-build-path/action.yml
+windows	Install FPC (pinned Lazarus 3.4 installer, sha256-verified)	197	action	.github/actions/install-fpc-pinned-lazarus-3-4-installer-sha256-verified/action.yml
+windows	Assert FPC 3.2.2	210	action	.github/actions/assert-fpc-3-2-2/action.yml
+windows	MSVC environment	217	inline	.github/workflows/platform-leg.yml step 14
+windows	CAP-3U - FPC 3.2.2 Win64 CallMethod unwind and Currency ABI	220	action	.github/actions/cap-3u-fpc-3-2-2-win64-callmethod-unwind-and-currency-abi/action.yml
+windows	Build webview.dll from pinned source (cmake + MSVC)	431	action	.github/actions/build-webview-dll-from-pinned-source-cmake-msvc/action.yml
+windows	CAP-4W - public DLL ABI remains exactly 17 exports	435	action	.github/actions/cap-4w-public-dll-abi-remains-exactly-17-exports/action.yml
+windows	CAP-4W - headless loader boundary and compile resource probe	439	action	.github/actions/cap-4w-headless-loader-boundary-and-compile-resource-probe/action.yml
+windows	CAP-4W - custom-scheme runtime (best effort, local gate authoritative)	443	action	.github/actions/cap-4w-custom-scheme-runtime-best-effort-local-gate-authoritative/action.yml
+windows	Compile binding units (FPC, ObjFPC mode)	467	action	.github/actions/compile-binding-units-fpc-objfpc-mode/action.yml
+windows	Compile CAP-2 units (scheduler proven webview-free)	482	action	.github/actions/compile-cap-2-units-scheduler-proven-webview-free/action.yml
+windows	Compile CAP-4 asset units (stores webview-free, handler rpc-free)	514	action	.github/actions/compile-cap-4-asset-units-stores-webview-free-handler-rpc-free/action.yml
+windows	CAP-4 zero-HTTP asset-serving source proof	541	action	.github/actions/cap-4-zero-http-asset-serving-source-proof/action.yml
+windows	Signature pin (compile-only gate over all 17 prototypes)	575	action	.github/actions/signature-pin-compile-only-gate-over-all-17-prototypes/action.yml
+windows	ABI probe - Pascal side (committed binding)	582	action	.github/actions/abi-probe-pascal-side-committed-binding/action.yml
+windows	ABI probe - C side (pinned headers, MSVC)	591	action	.github/actions/abi-probe-c-side-pinned-headers-msvc/action.yml
+windows	ABI probe - compare (any diff is a blocker)	600	action	.github/actions/abi-probe-compare-any-diff-is-a-blocker/action.yml
+windows	PWeb test suite (mormot.core.test)	622	action	.github/actions/pweb-test-suite-mormot-core-test/action.yml
+windows	Binding surface + freeze-isolation sweeps	655	action	.github/actions/binding-surface-freeze-isolation-sweeps/action.yml
+windows	Freeze sweep - RTL-only compile of isolation-critical intf units	659	action	.github/actions/freeze-sweep-rtl-only-compile-of-isolation-critical-intf-units/action.yml
+windows	Freeze sweep - frozen contracts byte-identical to Phase-0 baseline	670	action	.github/actions/freeze-sweep-frozen-contracts-byte-identical-to-phase-0-baseline/action.yml
+windows	Freeze sweep - the renamed src/lib patch key, and only that name	707	action	.github/actions/freeze-sweep-the-renamed-src-lib-patch-key-and-only-that-name/action.yml
+windows	Freeze sweep - raw ABI layer equals the ratified platform block (CAP-1 baseline)	738	action	.github/actions/freeze-sweep-raw-abi-layer-equals-the-ratified-platform-block-cap-1/action.yml
+windows	CAP-3 freeze sweep - Phase-0/1/2 implementation boundaries	760	action	.github/actions/cap-3-freeze-sweep-phase-0-1-2-implementation-boundaries/action.yml
+windows	Compile smoke example and stage its DLL	795	action	.github/actions/compile-smoke-example-and-stage-its-dll/action.yml
+windows	Smoke run (best effort - authoritative gate is local)	809	action	.github/actions/smoke-run-best-effort-authoritative-gate-is-local/action.yml
+windows	Compile JS-binding example (CAP-2) and stage its DLL	831	action	.github/actions/compile-js-binding-example-cap-2-and-stage-its-dll/action.yml
+windows	JS-binding example run (best effort - authoritative gate is local)	847	action	.github/actions/js-binding-example-run-best-effort-authoritative-gate-is-local/action.yml
+windows	Stage CAP-3 runtime DLL	869	action	.github/actions/stage-cap-3-runtime-dll/action.yml
+windows	mORMot RPC example run (best effort - authoritative gate is local)	876	action	.github/actions/mormot-rpc-example-run-best-effort-authoritative-gate-is-local/action.yml
+windows	CAP-4 build app.zip from frontend fixture	903	action	.github/actions/cap-4-build-app-zip-from-frontend-fixture/action.yml
+windows	CAP-4 dual-mode runtime (best effort, local gate authoritative)	918	action	.github/actions/cap-4-dual-mode-runtime-best-effort-local-gate-authoritative/action.yml
+windows	CAP-5 fetch pinned pas2js (sha256-verified)	955	action	.github/actions/cap-5-fetch-pinned-pas2js-sha256-verified/action.yml
+windows	CAP-5 setup pinned Node	959	inline	.github/workflows/platform-leg.yml step 44
+windows	CAP-5 TypeScript SDK typecheck + tests + wire capture	964	action	.github/actions/cap-5-typescript-sdk-typecheck-tests-wire-capture/action.yml
+windows	CAP-5 Pas2JS SDK compile + semantic tests + wire capture	982	action	.github/actions/cap-5-pas2js-sdk-compile-semantic-tests-wire-capture/action.yml
+windows	CAP-5 cross-SDK captured-wire parity	996	action	.github/actions/cap-5-cross-sdk-captured-wire-parity/action.yml
+windows	CAP-5 protocol constant cross-check (native vs both SDKs)	1003	action	.github/actions/cap-5-protocol-constant-cross-check-native-vs-both-sdks/action.yml
+windows	CAP-5 React frontend build (pinned lockfile, offline bundle)	1007	action	.github/actions/cap-5-react-frontend-build-pinned-lockfile-offline-bundle/action.yml
+windows	CAP-5 Pas2JS frontend build (pinned toolchain)	1025	action	.github/actions/cap-5-pas2js-frontend-build-pinned-toolchain/action.yml
+windows	CAP-5 zero-network sweep over SDKs and frontends	1040	action	.github/actions/cap-5-zero-network-sweep-over-sdks-and-frontends/action.yml
+windows	CAP-5 host examples compile (re-applied CAP-3U window)	1044	action	.github/actions/cap-5-host-examples-compile-re-applied-cap-3u-window/action.yml
+windows	CAP-5 runtime smokes - React and Pas2JS over pweb://app	1048	action	.github/actions/cap-5-runtime-smokes-react-and-pas2js-over-pweb-app/action.yml
+windows	CAP-6 compile bundler + release host (CAP-3U window)	1073	action	.github/actions/cap-6-compile-bundler-release-host-cap-3u-window/action.yml
+windows	CAP-6 headless gates - bundle, determinism, release layout, refusals	1077	action	.github/actions/cap-6-headless-gates-bundle-determinism-release-layout-refusals/action.yml
+windows	CAP-6 zero-network sweep over bundle/release sources	1085	action	.github/actions/cap-6-zero-network-sweep-over-bundle-release-sources/action.yml
+windows	CAP-6 release runtime smoke - app.pwb over pweb://app	1089	action	.github/actions/cap-6-release-runtime-smoke-app-pwb-over-pweb-app/action.yml
+windows	CAP-6b0 isolation compile - runtime detector unit	1124	action	.github/actions/cap-6b0-isolation-compile-runtime-detector-unit/action.yml
+windows	CAP-6b0 minimum cross-check (Pascal constant vs CAP-4W patch)	1137	action	.github/actions/cap-6b0-minimum-cross-check-pascal-constant-vs-cap-4w-patch/action.yml
+windows	CAP-6b0 host WebView2 detection smoke (diagnostic evidence only)	1141	action	.github/actions/cap-6b0-host-webview2-detection-smoke-diagnostic-evidence-only/action.yml
+windows	CAP-6b0 lock validator and fixture matrix (zero network)	1146	action	.github/actions/cap-6b0-lock-validator-and-fixture-matrix-zero-network/action.yml
+windows	CAP-6b1 isolation compile - provisioning unit + setup helper	1180	action	.github/actions/cap-6b1-isolation-compile-provisioning-unit-setup-helper/action.yml
+windows	CAP-6b1 innosetup.lock fixture matrix (zero network)	1200	action	.github/actions/cap-6b1-innosetup-lock-fixture-matrix-zero-network/action.yml
+windows	CAP-6b1 contract cross-checks (markers + helper prefixes)	1204	action	.github/actions/cap-6b1-contract-cross-checks-markers-helper-prefixes/action.yml
+windows	CAP-6b1 fetch pinned Inno Setup 6 (sha256-verified, silent, bounded)	1212	action	.github/actions/cap-6b1-fetch-pinned-inno-setup-6-sha256-verified-silent-bounded/action.yml
+windows	CAP-6b1 build the normal-profile setup from the pinned locks (payload-listing proof)	1217	action	.github/actions/cap-6b1-build-the-normal-profile-setup-from-the-pinned-locks-payload/action.yml
+windows	CAP-6b1 setup gates - skip path, layout, installed smoke, uninstall	1225	action	.github/actions/cap-6b1-setup-gates-skip-path-layout-installed-smoke-uninstall/action.yml
+windows	CAP-6b2 fetch pinned Evergreen Standalone (sha256+authenticode, bounded, never executed)	1277	action	.github/actions/cap-6b2-fetch-pinned-evergreen-standalone-sha256-authenticode-bounded/action.yml
+windows	CAP-6b2 build the offline-profile setup from the pinned locks (payload-listing proof)	1287	action	.github/actions/cap-6b2-build-the-offline-profile-setup-from-the-pinned-locks-payload/action.yml
+windows	CAP-6b2 offline setup gates - streamed V-legs, isolated-dir skip path, layout, smoke, uninstall	1295	action	.github/actions/cap-6b2-offline-setup-gates-streamed-v-legs-isolated-dir-skip-path/action.yml
+windows	CAP-6b3 fetch pinned Fixed Version Runtime (sha256+authenticode, bounded, never executed)	1348	action	.github/actions/cap-6b3-fetch-pinned-fixed-version-runtime-sha256-authenticode-bounded/action.yml
+windows	CAP-6b3 build the fixed-profile setup from the pinned locks (expand + manifest + payload proof)	1361	action	.github/actions/cap-6b3-build-the-fixed-profile-setup-from-the-pinned-locks-expand/action.yml
+windows	CAP-6b3 Fixed Runtime process-drain tests (path scoping, churn, no global kill)	1375	action	.github/actions/cap-6b3-fixed-runtime-process-drain-tests-path-scoping-churn-no-global/action.yml
+windows	CAP-6b3 fixed setup gates - install, ACL by SID, manifest, observed identity, no-fallback, uninstall, abort probe	1386	action	.github/actions/cap-6b3-fixed-setup-gates-install-acl-by-sid-manifest-observed-identity/action.yml
+windows	CAP-6b4 contract cross-checks (marker, basenames, runtime subdir, fixed [Files] order, sweeps, prior-gate aggregation)	1435	action	.github/actions/cap-6b4-contract-cross-checks-marker-basenames-runtime-subdir-fixed/action.yml
+windows	CAP-6b4 build switch probes (offline abort probe + consolidated facts)	1446	action	.github/actions/cap-6b4-build-switch-probes-offline-abort-probe-consolidated-facts/action.yml
+windows	CAP-6b4 release index from the three built profiles	1457	action	.github/actions/cap-6b4-release-index-from-the-three-built-profiles/action.yml
+windows	CAP-6b4 profile isolation (per-profile ISCC listings, size envelopes, release index)	1465	action	.github/actions/cap-6b4-profile-isolation-per-profile-iscc-listings-size-envelopes/action.yml
+windows	CAP-6b4 profile matrix - I1-I3, S1-S6, F1-F4, U1-U3 over the three real setups	1481	action	.github/actions/cap-6b4-profile-matrix-i1-i3-s1-s6-f1-f4-u1-u3-over-the-three-real/action.yml
+windows	CAP-10E E4 fixed-runtime profile at a non-ASCII install directory	1509	action	.github/actions/cap-10e-e4-fixed-runtime-profile-at-a-non-ascii-install-directory/action.yml
+windows	CAP-7F host-argument gate on the release triple (closes D1 on Windows)	1529	action	.github/actions/cap-7f-host-argument-gate-on-the-release-triple-closes-d1-on-windows/action.yml
+windows	CAP-8B real-window navigation matrix (WebView2)	1551	action	.github/actions/cap-8b-real-window-navigation-matrix-webview2/action.yml
+windows	CAP-8C multi-principal integration harness (WebView2)	1583	action	.github/actions/cap-8c-multi-principal-integration-harness-webview2/action.yml
+linux	CAP-7L build libwebview.so from pinned source (cmake + gcc)	2713	action	.github/actions/cap-7l-build-libwebview-so-from-pinned-source-cmake-gcc/action.yml
+linux	CAP-7L deps/webview carries no Linux patch	2722	action	.github/actions/cap-7l-deps-webview-carries-no-linux-patch/action.yml
+linux	CAP-7L public ABI remains exactly 17 exports (nm -D)	2733	action	.github/actions/cap-7l-public-abi-remains-exactly-17-exports-nm-d/action.yml
+linux	CAP-7L paired ABI probes + hand-declared symbol presence gate	2737	action	.github/actions/cap-7l-paired-abi-probes-hand-declared-symbol-presence-gate/action.yml
+linux	CAP-7L setup pinned Node	2742	inline	.github/workflows/platform-leg.yml step 88
+linux	CAP-7L TypeScript SDK build + tests	2755	action	.github/actions/cap-7l-typescript-sdk-build-tests/action.yml
+linux	CAP-7L React frontend build (pinned lockfile, offline bundle)	2770	action	.github/actions/cap-7l-react-frontend-build-pinned-lockfile-offline-bundle/action.yml
+linux	CAP-7L fetch pinned pas2js (sha256-verified) and build its frontend	2790	action	.github/actions/cap-7l-fetch-pinned-pas2js-sha256-verified-and-build-its-frontend/action.yml
+linux	CAP-7L compile every unit, probe and example for Linux	2803	action	.github/actions/cap-7l-compile-every-unit-probe-and-example-for-linux/action.yml
+linux	CAP-7L headless gates - suite, POSIX store confinement, packaging	2808	action	.github/actions/cap-7l-headless-gates-suite-posix-store-confinement-packaging/action.yml
+linux	CAP-7L GUI matrix (L4-L22) under Xvfb	2815	action	.github/actions/cap-7l-gui-matrix-l4-l22-under-xvfb/action.yml
+linux	CAP-7L release layout - React and Pas2JS to 42 from an isolated dir	2820	action	.github/actions/cap-7l-release-layout-react-and-pas2js-to-42-from-an-isolated-dir/action.yml
+linux	CAP-7L zero-transport proof (L20)	2825	action	.github/actions/cap-7l-zero-transport-proof-l20/action.yml
+linux	CAP-7F host-argument gate on the release layout (closes D1 on Linux)	2837	action	.github/actions/cap-7f-host-argument-gate-on-the-release-layout-closes-d1-on-linux/action.yml
+linux	CAP-8B real-window navigation matrix (WebKitGTK) under Xvfb	2851	action	.github/actions/cap-8b-real-window-navigation-matrix-webkitgtk-under-xvfb/action.yml
+linux	CAP-8C multi-principal integration harness (WebKitGTK) under Xvfb	2877	action	.github/actions/cap-8c-multi-principal-integration-harness-webkitgtk-under-xvfb/action.yml
+macos-x64	CAP-7M0 cache the pinned FPC disk image	3737	inline	.github/workflows/platform-leg.yml step 100
+macos-arm64	CAP-7M0 cache the pinned FPC disk image	4762	inline	.github/workflows/platform-leg.yml step 100
+macos-x64	CAP-7M0 install pinned FPC and select the pinned Xcode	3743	action	.github/actions/cap-7m0-install-pinned-fpc-and-select-the-pinned-xcode/action.yml
+macos-arm64	CAP-7M0 install pinned FPC and select the pinned Xcode	4768	action	.github/actions/cap-7m0-install-pinned-fpc-and-select-the-pinned-xcode/action.yml
+macos-x64	CAP-7M0 deps/webview carries no macOS patch	3752	action	.github/actions/cap-7m0-deps-webview-carries-no-macos-patch/action.yml
+macos-arm64	CAP-7M0 deps/webview carries no macOS patch	4773	action	.github/actions/cap-7m0-deps-webview-carries-no-macos-patch/action.yml
+macos-x64	CAP-7M0 build libwebview.dylib from pinned source (M1/M3/M16)	3763	action	.github/actions/cap-7m0-build-libwebview-dylib-from-pinned-source-m1-m3-m16/action.yml
+macos-arm64	CAP-7M0 build libwebview.dylib from pinned source (M1/M3/M16)	4784	action	.github/actions/cap-7m0-build-libwebview-dylib-from-pinned-source-m1-m3-m16/action.yml
+macos-x64	CAP-7M0 public ABI remains exactly 17 exports (M2)	3772	action	.github/actions/cap-7m0-public-abi-remains-exactly-17-exports-m2/action.yml
+macos-arm64	CAP-7M0 public ABI remains exactly 17 exports (M2)	4793	action	.github/actions/cap-7m0-public-abi-remains-exactly-17-exports-m2/action.yml
+macos-x64	CAP-7M0 paired ABI probes + Mach-O presence and dlopen gates (M4/M5)	3776	action	.github/actions/cap-7m0-paired-abi-probes-mach-o-presence-and-dlopen-gates-m4-m5/action.yml
+macos-arm64	CAP-7M0 paired ABI probes + Mach-O presence and dlopen gates (M4/M5)	4797	action	.github/actions/cap-7m0-paired-abi-probes-mach-o-presence-and-dlopen-gates-m4-m5/action.yml
+macos-x64	CAP-7M1 compile the production Cocoa bridge (one object)	3786	action	.github/actions/cap-7m1-compile-the-production-cocoa-bridge-one-object/action.yml
+macos-arm64	CAP-7M1 compile the production Cocoa bridge (one object)	4807	action	.github/actions/cap-7m1-compile-the-production-cocoa-bridge-one-object/action.yml
+macos-x64	CAP-7M0 compile the binding, mORMot core and the probe (M17)	3791	action	.github/actions/cap-7m0-compile-the-binding-mormot-core-and-the-probe-m17/action.yml
+macos-arm64	CAP-7M0 compile the binding, mORMot core and the probe (M17)	4812	action	.github/actions/cap-7m0-compile-the-binding-mormot-core-and-the-probe-m17/action.yml
+macos-x64	CAP-7M1 headless gates (suite + folder confinement)	3802	action	.github/actions/cap-7m1-headless-gates-suite-folder-confinement/action.yml
+macos-arm64	CAP-7M1 headless gates (suite + folder confinement)	4823	action	.github/actions/cap-7m1-headless-gates-suite-folder-confinement/action.yml
+macos-x64	CAP-7M0 feasibility probes (M6-M15)	3811	action	.github/actions/cap-7m0-feasibility-probes-m6-m15/action.yml
+macos-arm64	CAP-7M0 feasibility probes (M6-M15)	4830	action	.github/actions/cap-7m0-feasibility-probes-m6-m15/action.yml
+macos-x64	CAP-7M1 production runtime gates (real WKWebView, folder + zip)	3822	action	.github/actions/cap-7m1-production-runtime-gates-real-wkwebview-folder-zip/action.yml
+macos-arm64	CAP-7M1 production runtime gates (real WKWebView, folder + zip)	4841	action	.github/actions/cap-7m1-production-runtime-gates-real-wkwebview-folder-zip/action.yml
+macos-x64	CAP-7M2 setup pinned Node	3835	inline	.github/workflows/platform-leg.yml step 111
+macos-arm64	CAP-7M2 setup pinned Node	4852	inline	.github/workflows/platform-leg.yml step 111
+macos-x64	CAP-7M2 TypeScript SDK build + tests	3840	action	.github/actions/cap-7m2-typescript-sdk-build-tests/action.yml
+macos-arm64	CAP-7M2 TypeScript SDK build + tests	4857	action	.github/actions/cap-7m2-typescript-sdk-build-tests/action.yml
+macos-x64	CAP-7M2 React frontend build (pinned lockfile, offline bundle)	3855	action	.github/actions/cap-7m2-react-frontend-build-pinned-lockfile-offline-bundle/action.yml
+macos-arm64	CAP-7M2 React frontend build (pinned lockfile, offline bundle)	4872	action	.github/actions/cap-7m2-react-frontend-build-pinned-lockfile-offline-bundle/action.yml
+macos-x64	CAP-7M2 fetch pinned pas2js (sha256 + native arch) and build its frontend	3871	action	.github/actions/cap-7m2-fetch-pinned-pas2js-sha256-native-arch-and-build-its-frontend/action.yml
+macos-arm64	CAP-7M2 fetch pinned pas2js (sha256 + native compile) and build its frontend	4888	action	.github/actions/cap-7m2-fetch-pinned-pas2js-sha256-native-compile-and-build-its-frontend/action.yml
+macos-x64	CAP-7M2 compile the release host and bundler	3884	action	.github/actions/cap-7m2-compile-the-release-host-and-bundler/action.yml
+macos-arm64	CAP-7M2 compile the release host and bundler	4901	action	.github/actions/cap-7m2-compile-the-release-host-and-bundler/action.yml
+macos-x64	CAP-7M2 release .app gates - assembly, refusals, direct + LaunchServices to 42	3889	action	.github/actions/cap-7m2-release-app-gates-assembly-refusals-direct-launchservices-to-42/action.yml
+macos-arm64	CAP-7M2 release .app gates - assembly, refusals, direct + LaunchServices to 42	4906	action	.github/actions/cap-7m2-release-app-gates-assembly-refusals-direct-launchservices-to-42/action.yml
+macos-x64	CAP-7M0 bundle layout measured from an unrelated CWD (M18)	3909	action	.github/actions/cap-7m0-bundle-layout-measured-from-an-unrelated-cwd-m18/action.yml
+macos-arm64	CAP-7M0 bundle layout measured from an unrelated CWD (M18)	4923	action	.github/actions/cap-7m0-bundle-layout-measured-from-an-unrelated-cwd-m18/action.yml
+macos-x64	CAP-7M0 zero-transport proof (M20)	3914	action	.github/actions/cap-7m0-zero-transport-proof-m20/action.yml
+macos-arm64	CAP-7M0 zero-transport proof (M20)	4928	action	.github/actions/cap-7m0-zero-transport-proof-m20/action.yml
+macos-x64	CAP-8B real-window navigation matrix (WKWebView)	3927	action	.github/actions/cap-8b-real-window-navigation-matrix-wkwebview/action.yml
+macos-arm64	CAP-8B real-window navigation matrix (WKWebView)	4938	action	.github/actions/cap-8b-real-window-navigation-matrix-wkwebview/action.yml
+macos-x64	CAP-8C multi-principal integration harness (WKWebView)	3952	action	.github/actions/cap-8c-multi-principal-integration-harness-wkwebview/action.yml
+macos-arm64	CAP-8C multi-principal integration harness (WKWebView)	4960	action	.github/actions/cap-8c-multi-principal-integration-harness-wkwebview/action.yml
+windows	CAP-9A QuickJS invocation foundation harness	1612	action	.github/actions/cap-9a-quickjs-invocation-foundation-harness/action.yml
+linux	CAP-9A QuickJS invocation foundation harness	2899	action	.github/actions/cap-9a-quickjs-invocation-foundation-harness/action.yml
+macos-x64	CAP-9A QuickJS invocation foundation harness	3977	action	.github/actions/cap-9a-quickjs-invocation-foundation-harness/action.yml
+macos-arm64	CAP-9A QuickJS invocation foundation harness	4982	action	.github/actions/cap-9a-quickjs-invocation-foundation-harness/action.yml
+windows	CAP-9B1 QuickJS package and module-loader harness	1644	action	.github/actions/cap-9b1-quickjs-package-and-module-loader-harness/action.yml
+linux	CAP-9B1 QuickJS package and module-loader harness	2923	action	.github/actions/cap-9b1-quickjs-package-and-module-loader-harness/action.yml
+macos-x64	CAP-9B1 QuickJS package and module-loader harness	4002	action	.github/actions/cap-9b1-quickjs-package-and-module-loader-harness/action.yml
+macos-arm64	CAP-9B1 QuickJS package and module-loader harness	5005	action	.github/actions/cap-9b1-quickjs-package-and-module-loader-harness/action.yml
+windows	CAP-9B2 QuickJS plugin lifecycle and reload harness	1676	action	.github/actions/cap-9b2-quickjs-plugin-lifecycle-and-reload-harness/action.yml
+linux	CAP-9B2 QuickJS plugin lifecycle and reload harness	2946	action	.github/actions/cap-9b2-quickjs-plugin-lifecycle-and-reload-harness/action.yml
+macos-x64	CAP-9B2 QuickJS plugin lifecycle and reload harness	4024	action	.github/actions/cap-9b2-quickjs-plugin-lifecycle-and-reload-harness/action.yml
+macos-arm64	CAP-9B2 QuickJS plugin lifecycle and reload harness	5025	action	.github/actions/cap-9b2-quickjs-plugin-lifecycle-and-reload-harness/action.yml
+windows	CAP-9C1 QuickJS release package and trusted loader harness	1707	action	.github/actions/cap-9c1-quickjs-release-package-and-trusted-loader-harness/action.yml
+linux	CAP-9C1 QuickJS release package and trusted loader harness	2969	action	.github/actions/cap-9c1-quickjs-release-package-and-trusted-loader-harness/action.yml
+macos-x64	CAP-9C1 QuickJS release package and trusted loader harness	4042	action	.github/actions/cap-9c1-quickjs-release-package-and-trusted-loader-harness/action.yml
+macos-arm64	CAP-9C1 QuickJS release package and trusted loader harness	5043	action	.github/actions/cap-9c1-quickjs-release-package-and-trusted-loader-harness/action.yml
+windows	CAP-9C2 plugin-enabled acceptance frontend build	1735	action	.github/actions/cap-9c2-plugin-enabled-acceptance-frontend-build/action.yml
+linux	CAP-9C2 plugin-enabled acceptance frontend build	2990	action	.github/actions/cap-9c2-plugin-enabled-acceptance-frontend-build/action.yml
+macos-x64	CAP-9C2 plugin-enabled acceptance frontend build	4061	action	.github/actions/cap-9c2-plugin-enabled-acceptance-frontend-build/action.yml
+macos-arm64	CAP-9C2 plugin-enabled acceptance frontend build	5062	action	.github/actions/cap-9c2-plugin-enabled-acceptance-frontend-build/action.yml
+windows	CAP-9C2 plugin-enabled release layout and real-GUI acceptance	1765	action	.github/actions/cap-9c2-plugin-enabled-release-layout-and-real-gui-acceptance/action.yml
+linux	CAP-9C2 plugin-enabled release layout and real-GUI acceptance	3006	action	.github/actions/cap-9c2-plugin-enabled-release-layout-and-real-gui-acceptance/action.yml
+macos-x64	CAP-9C2 plugin-enabled release layout and real-GUI acceptance	4077	action	.github/actions/cap-9c2-plugin-enabled-release-layout-and-real-gui-acceptance/action.yml
+macos-arm64	CAP-9C2 plugin-enabled release layout and real-GUI acceptance	5078	action	.github/actions/cap-9c2-plugin-enabled-release-layout-and-real-gui-acceptance/action.yml
+windows	CAP-10B0 build the scaffold engine, the pack and the suite	1810	action	.github/actions/cap-10b0-build-the-scaffold-engine-the-pack-and-the-suite/action.yml
+linux	CAP-10B0 build the scaffold engine, the pack and the suite	3039	action	.github/actions/cap-10b0-build-the-scaffold-engine-the-pack-and-the-suite/action.yml
+macos-x64	CAP-10B0 build the scaffold engine, the pack and the suite	4111	action	.github/actions/cap-10b0-build-the-scaffold-engine-the-pack-and-the-suite/action.yml
+macos-arm64	CAP-10B0 build the scaffold engine, the pack and the suite	5108	action	.github/actions/cap-10b0-build-the-scaffold-engine-the-pack-and-the-suite/action.yml
+windows	CAP-10B1 build the public pack, the CLI and the SDK root	1817	action	.github/actions/cap-10b1-build-the-public-pack-the-cli-and-the-sdk-root/action.yml
+linux	CAP-10B1 build the public pack, the CLI and the SDK root	3044	action	.github/actions/cap-10b1-build-the-public-pack-the-cli-and-the-sdk-root/action.yml
+macos-x64	CAP-10B1 build the public pack, the CLI and the SDK root	4116	action	.github/actions/cap-10b1-build-the-public-pack-the-cli-and-the-sdk-root/action.yml
+macos-arm64	CAP-10B1 build the public pack, the CLI and the SDK root	5113	action	.github/actions/cap-10b1-build-the-public-pack-the-cli-and-the-sdk-root/action.yml
+windows	CAP-10A build the suite and the probe fixture	1824	action	.github/actions/cap-10a-build-the-suite-and-the-probe-fixture/action.yml
+linux	CAP-10A build the suite and the probe fixture	3049	action	.github/actions/cap-10a-build-the-suite-and-the-probe-fixture/action.yml
+macos-x64	CAP-10A build the suite and the probe fixture	4121	action	.github/actions/cap-10a-build-the-suite-and-the-probe-fixture/action.yml
+macos-arm64	CAP-10A build the suite and the probe fixture	5118	action	.github/actions/cap-10a-build-the-suite-and-the-probe-fixture/action.yml
+windows	CAP-10A contract cross-checks (pins, no shell, no network)	1831	action	.github/actions/cap-10a-contract-cross-checks-pins-no-shell-no-network/action.yml
+linux	CAP-10A contract cross-checks (pins, no shell, no network)	3054	action	.github/actions/cap-10a-contract-cross-checks-pins-no-shell-no-network/action.yml
+macos-x64	CAP-10A contract cross-checks (pins, no shell, no network)	4126	action	.github/actions/cap-10a-contract-cross-checks-pins-no-shell-no-network/action.yml
+macos-arm64	CAP-10A contract cross-checks (pins, no shell, no network)	5123	action	.github/actions/cap-10a-contract-cross-checks-pins-no-shell-no-network/action.yml
+windows	CAP-10A development-trust gate	1837	action	.github/actions/cap-10a-development-trust-gate/action.yml
+linux	CAP-10A development-trust gate	3060	action	.github/actions/cap-10a-development-trust-gate/action.yml
+macos-x64	CAP-10A development-trust gate	4132	action	.github/actions/cap-10a-development-trust-gate/action.yml
+macos-arm64	CAP-10A development-trust gate	5129	action	.github/actions/cap-10a-development-trust-gate/action.yml
+windows	CAP-10A CLI gates + evidence	1843	action	.github/actions/cap-10a-cli-gates-evidence/action.yml
+linux	CAP-10A CLI gates + evidence	3066	action	.github/actions/cap-10a-cli-gates-evidence/action.yml
+macos-x64	CAP-10A CLI gates + evidence	4138	action	.github/actions/cap-10a-cli-gates-evidence/action.yml
+macos-arm64	CAP-10A CLI gates + evidence	5135	action	.github/actions/cap-10a-cli-gates-evidence/action.yml
+windows	CAP-10B0 contract cross-checks (create linked, offline, limits)	1880	action	.github/actions/cap-10b0-contract-cross-checks-create-linked-offline-limits/action.yml
+linux	CAP-10B0 contract cross-checks (create linked, offline, limits)	3091	action	.github/actions/cap-10b0-contract-cross-checks-create-linked-offline-limits/action.yml
+macos-x64	CAP-10B0 contract cross-checks (create linked, offline, limits)	4161	action	.github/actions/cap-10b0-contract-cross-checks-create-linked-offline-limits/action.yml
+macos-arm64	CAP-10B0 contract cross-checks (create linked, offline, limits)	5158	action	.github/actions/cap-10b0-contract-cross-checks-create-linked-offline-limits/action.yml
+windows	CAP-10B0 scaffold gates + evidence	1886	action	.github/actions/cap-10b0-scaffold-gates-evidence/action.yml
+linux	CAP-10B0 scaffold gates + evidence	3097	action	.github/actions/cap-10b0-scaffold-gates-evidence/action.yml
+macos-x64	CAP-10B0 scaffold gates + evidence	4167	action	.github/actions/cap-10b0-scaffold-gates-evidence/action.yml
+macos-arm64	CAP-10B0 scaffold gates + evidence	5164	action	.github/actions/cap-10b0-scaffold-gates-evidence/action.yml
+windows	CAP-10B1 contract cross-checks (one UI, exact pins, no exec)	1923	action	.github/actions/cap-10b1-contract-cross-checks-one-ui-exact-pins-no-exec/action.yml
+linux	CAP-10B1 contract cross-checks (one UI, exact pins, no exec)	3121	action	.github/actions/cap-10b1-contract-cross-checks-one-ui-exact-pins-no-exec/action.yml
+macos-x64	CAP-10B1 contract cross-checks (one UI, exact pins, no exec)	4192	action	.github/actions/cap-10b1-contract-cross-checks-one-ui-exact-pins-no-exec/action.yml
+macos-arm64	CAP-10B1 contract cross-checks (one UI, exact pins, no exec)	5188	action	.github/actions/cap-10b1-contract-cross-checks-one-ui-exact-pins-no-exec/action.yml
+windows	CAP-10B1 create gates + evidence	1929	action	.github/actions/cap-10b1-create-gates-evidence/action.yml
+linux	CAP-10B1 create gates + evidence	3127	action	.github/actions/cap-10b1-create-gates-evidence/action.yml
+macos-x64	CAP-10B1 create gates + evidence	4198	action	.github/actions/cap-10b1-create-gates-evidence/action.yml
+macos-arm64	CAP-10B1 create gates + evidence	5194	action	.github/actions/cap-10b1-create-gates-evidence/action.yml
+windows	CAP-10B1 private build proof and real GUI run	1937	action	.github/actions/cap-10b1-private-build-proof-and-real-gui-run/action.yml
+linux	CAP-10B1 private build proof and real GUI run	3134	action	.github/actions/cap-10b1-private-build-proof-and-real-gui-run/action.yml
+macos-x64	CAP-10B1 private build proof and real GUI run	4205	action	.github/actions/cap-10b1-private-build-proof-and-real-gui-run/action.yml
+macos-arm64	CAP-10B1 private build proof and real GUI run	5201	action	.github/actions/cap-10b1-private-build-proof-and-real-gui-run/action.yml
+windows	CAP-10B2 build the react-only CLI that proves template_unknown	1977	action	.github/actions/cap-10b2-build-the-react-only-cli-that-proves-template-unknown/action.yml
+linux	CAP-10B2 build the react-only CLI that proves template_unknown	3157	action	.github/actions/cap-10b2-build-the-react-only-cli-that-proves-template-unknown/action.yml
+macos-x64	CAP-10B2 build the react-only CLI that proves template_unknown	4229	action	.github/actions/cap-10b2-build-the-react-only-cli-that-proves-template-unknown/action.yml
+macos-arm64	CAP-10B2 build the react-only CLI that proves template_unknown	5226	action	.github/actions/cap-10b2-build-the-react-only-cli-that-proves-template-unknown/action.yml
+windows	CAP-10B2 contract cross-checks (two UIs, one native app, no npm)	1984	action	.github/actions/cap-10b2-contract-cross-checks-two-uis-one-native-app-no-npm/action.yml
+linux	CAP-10B2 contract cross-checks (two UIs, one native app, no npm)	3162	action	.github/actions/cap-10b2-contract-cross-checks-two-uis-one-native-app-no-npm/action.yml
+macos-x64	CAP-10B2 contract cross-checks (two UIs, one native app, no npm)	4234	action	.github/actions/cap-10b2-contract-cross-checks-two-uis-one-native-app-no-npm/action.yml
+macos-arm64	CAP-10B2 contract cross-checks (two UIs, one native app, no npm)	5231	action	.github/actions/cap-10b2-contract-cross-checks-two-uis-one-native-app-no-npm/action.yml
+windows	CAP-10B2 pas2js create gates + evidence	1990	action	.github/actions/cap-10b2-pas2js-create-gates-evidence/action.yml
+linux	CAP-10B2 pas2js create gates + evidence	3168	action	.github/actions/cap-10b2-pas2js-create-gates-evidence/action.yml
+macos-x64	CAP-10B2 pas2js create gates + evidence	4240	action	.github/actions/cap-10b2-pas2js-create-gates-evidence/action.yml
+macos-arm64	CAP-10B2 pas2js create gates + evidence	5237	action	.github/actions/cap-10b2-pas2js-create-gates-evidence/action.yml
+windows	CAP-10B2 private build proof and real GUI run	1998	action	.github/actions/cap-10b2-private-build-proof-and-real-gui-run/action.yml
+linux	CAP-10B2 private build proof and real GUI run	3175	action	.github/actions/cap-10b2-private-build-proof-and-real-gui-run/action.yml
+macos-x64	CAP-10B2 private build proof and real GUI run	4247	action	.github/actions/cap-10b2-private-build-proof-and-real-gui-run/action.yml
+macos-arm64	CAP-10B2 private build proof and real GUI run	5244	action	.github/actions/cap-10b2-private-build-proof-and-real-gui-run/action.yml
+windows	CAP-10C0 build the supervision suite and the fixture child	2022	action	.github/actions/cap-10c0-build-the-supervision-suite-and-the-fixture-child/action.yml
+linux	CAP-10C0 build the supervision suite and the fixture child	3194	action	.github/actions/cap-10c0-build-the-supervision-suite-and-the-fixture-child/action.yml
+macos-x64	CAP-10C0 build the supervision suite and the fixture child	4266	action	.github/actions/cap-10c0-build-the-supervision-suite-and-the-fixture-child/action.yml
+macos-arm64	CAP-10C0 build the supervision suite and the fixture child	5263	action	.github/actions/cap-10c0-build-the-supervision-suite-and-the-fixture-child/action.yml
+windows	CAP-10C0 contract cross-checks (bounds, no shell at the link, no name-kill, env, shutdown order)	2029	action	.github/actions/cap-10c0-contract-cross-checks-bounds-no-shell-at-the-link-no-name-kill/action.yml
+linux	CAP-10C0 contract cross-checks (bounds, no shell at the link, no name-kill, env, shutdown order)	3199	action	.github/actions/cap-10c0-contract-cross-checks-bounds-no-shell-at-the-link-no-name-kill/action.yml
+macos-x64	CAP-10C0 contract cross-checks (bounds, no shell at the link, no name-kill, env, shutdown order)	4271	action	.github/actions/cap-10c0-contract-cross-checks-bounds-no-shell-at-the-link-no-name-kill/action.yml
+macos-arm64	CAP-10C0 contract cross-checks (bounds, no shell at the link, no name-kill, env, shutdown order)	5268	action	.github/actions/cap-10c0-contract-cross-checks-bounds-no-shell-at-the-link-no-name-kill/action.yml
+windows	CAP-10C0 supervision suite + pweb run gates + evidence	2035	action	.github/actions/cap-10c0-supervision-suite-pweb-run-gates-evidence/action.yml
+macos-x64	CAP-10C0 supervision suite + pweb run gates + evidence	4277	action	.github/actions/cap-10c0-supervision-suite-pweb-run-gates-evidence/action.yml
+macos-arm64	CAP-10C0 supervision suite + pweb run gates + evidence	5274	action	.github/actions/cap-10c0-supervision-suite-pweb-run-gates-evidence/action.yml
+linux	CAP-10C0 supervision suite + pweb run gates + evidence	3205	action	.github/actions/cap-10c0-supervision-suite-pweb-run-gates-evidence/action.yml
+windows	CAP-10C1 complete the SDK root and build the pipeline driver	2060	action	.github/actions/cap-10c1-complete-the-sdk-root-and-build-the-pipeline-driver/action.yml
+linux	CAP-10C1 complete the SDK root and build the pipeline driver	3230	action	.github/actions/cap-10c1-complete-the-sdk-root-and-build-the-pipeline-driver/action.yml
+macos-x64	CAP-10C1 complete the SDK root and build the pipeline driver	4302	action	.github/actions/cap-10c1-complete-the-sdk-root-and-build-the-pipeline-driver/action.yml
+macos-arm64	CAP-10C1 complete the SDK root and build the pipeline driver	5299	action	.github/actions/cap-10c1-complete-the-sdk-root-and-build-the-pipeline-driver/action.yml
+windows	CAP-10C1 contract cross-checks (bounds, library names, linkage, no conditional, no env read)	2067	action	.github/actions/cap-10c1-contract-cross-checks-bounds-library-names-linkage-no/action.yml
+linux	CAP-10C1 contract cross-checks (bounds, library names, linkage, no conditional, no env read)	3235	action	.github/actions/cap-10c1-contract-cross-checks-bounds-library-names-linkage-no/action.yml
+macos-x64	CAP-10C1 contract cross-checks (bounds, library names, linkage, no conditional, no env read)	4307	action	.github/actions/cap-10c1-contract-cross-checks-bounds-library-names-linkage-no/action.yml
+macos-arm64	CAP-10C1 contract cross-checks (bounds, library names, linkage, no conditional, no env read)	5304	action	.github/actions/cap-10c1-contract-cross-checks-bounds-library-names-linkage-no/action.yml
+windows	CAP-10C1 lifecycle pipeline gates + app.pwb parity + evidence	2073	action	.github/actions/cap-10c1-lifecycle-pipeline-gates-app-pwb-parity-evidence/action.yml
+macos-x64	CAP-10C1 lifecycle pipeline gates + app.pwb parity + evidence	4313	action	.github/actions/cap-10c1-lifecycle-pipeline-gates-app-pwb-parity-evidence/action.yml
+macos-arm64	CAP-10C1 lifecycle pipeline gates + app.pwb parity + evidence	5310	action	.github/actions/cap-10c1-lifecycle-pipeline-gates-app-pwb-parity-evidence/action.yml
+linux	CAP-10C1 lifecycle pipeline gates + app.pwb parity + evidence	3241	action	.github/actions/cap-10c1-lifecycle-pipeline-gates-app-pwb-parity-evidence/action.yml
+windows	CAP-10C2 build the development suite, the driver and both host binaries	2099	action	.github/actions/cap-10c2-build-the-development-suite-the-driver-and-both-host-binaries/action.yml
+linux	CAP-10C2 build the development suite, the driver and both host binaries	3267	action	.github/actions/cap-10c2-build-the-development-suite-the-driver-and-both-host-binaries/action.yml
+macos-x64	CAP-10C2 build the development suite, the driver and both host binaries	4339	action	.github/actions/cap-10c2-build-the-development-suite-the-driver-and-both-host-binaries/action.yml
+macos-arm64	CAP-10C2 build the development suite, the driver and both host binaries	5336	action	.github/actions/cap-10c2-build-the-development-suite-the-driver-and-both-host-binaries/action.yml
+windows	CAP-10C2 contract cross-checks (bounds, linkage, dev-free release, CSP, no transport)	2105	action	.github/actions/cap-10c2-contract-cross-checks-bounds-linkage-dev-free-release-csp-no/action.yml
+linux	CAP-10C2 contract cross-checks (bounds, linkage, dev-free release, CSP, no transport)	3271	action	.github/actions/cap-10c2-contract-cross-checks-bounds-linkage-dev-free-release-csp-no/action.yml
+macos-x64	CAP-10C2 contract cross-checks (bounds, linkage, dev-free release, CSP, no transport)	4343	action	.github/actions/cap-10c2-contract-cross-checks-bounds-linkage-dev-free-release-csp-no/action.yml
+macos-arm64	CAP-10C2 contract cross-checks (bounds, linkage, dev-free release, CSP, no transport)	5340	action	.github/actions/cap-10c2-contract-cross-checks-bounds-linkage-dev-free-release-csp-no/action.yml
+windows	CAP-10C2 development-loop gates (DEV1-DEV14, T1-T5) + evidence	2111	action	.github/actions/cap-10c2-development-loop-gates-dev1-dev14-t1-t5-evidence/action.yml
+macos-x64	CAP-10C2 development-loop gates (DEV1-DEV14, T1-T5) + evidence	4349	action	.github/actions/cap-10c2-development-loop-gates-dev1-dev14-t1-t5-evidence/action.yml
+macos-arm64	CAP-10C2 development-loop gates (DEV1-DEV14, T1-T5) + evidence	5346	action	.github/actions/cap-10c2-development-loop-gates-dev1-dev14-t1-t5-evidence/action.yml
+linux	CAP-10C2 development-loop gates (DEV1-DEV14, T1-T5) + evidence	3277	action	.github/actions/cap-10c2-development-loop-gates-dev1-dev14-t1-t5-evidence/action.yml
+windows	CAP-10C3 build the pas2js development suite, the driver and both host binaries	2143	action	.github/actions/cap-10c3-build-the-pas2js-development-suite-the-driver-and-both-host/action.yml
+linux	CAP-10C3 build the pas2js development suite, the driver and both host binaries	3309	action	.github/actions/cap-10c3-build-the-pas2js-development-suite-the-driver-and-both-host/action.yml
+macos-x64	CAP-10C3 build the pas2js development suite, the driver and both host binaries	4381	action	.github/actions/cap-10c3-build-the-pas2js-development-suite-the-driver-and-both-host/action.yml
+macos-arm64	CAP-10C3 build the pas2js development suite, the driver and both host binaries	5378	action	.github/actions/cap-10c3-build-the-pas2js-development-suite-the-driver-and-both-host/action.yml
+windows	CAP-10C3 contract cross-checks (bounds, detector linkage, no watch API, pas2js CSP + dev-free release)	2149	action	.github/actions/cap-10c3-contract-cross-checks-bounds-detector-linkage-no-watch-api/action.yml
+linux	CAP-10C3 contract cross-checks (bounds, detector linkage, no watch API, pas2js CSP + dev-free release)	3313	action	.github/actions/cap-10c3-contract-cross-checks-bounds-detector-linkage-no-watch-api/action.yml
+macos-x64	CAP-10C3 contract cross-checks (bounds, detector linkage, no watch API, pas2js CSP + dev-free release)	4385	action	.github/actions/cap-10c3-contract-cross-checks-bounds-detector-linkage-no-watch-api/action.yml
+macos-arm64	CAP-10C3 contract cross-checks (bounds, detector linkage, no watch API, pas2js CSP + dev-free release)	5382	action	.github/actions/cap-10c3-contract-cross-checks-bounds-detector-linkage-no-watch-api/action.yml
+windows	CAP-10C3 the CAP-10C ledger disposition (CL2, CL3)	2154	action	.github/actions/cap-10c3-the-cap-10c-ledger-disposition-cl2-cl3/action.yml
+linux	CAP-10C3 the CAP-10C ledger disposition (CL2, CL3)	3318	action	.github/actions/cap-10c3-the-cap-10c-ledger-disposition-cl2-cl3/action.yml
+macos-x64	CAP-10C3 the CAP-10C ledger disposition (CL2, CL3)	4390	action	.github/actions/cap-10c3-the-cap-10c-ledger-disposition-cl2-cl3/action.yml
+macos-arm64	CAP-10C3 the CAP-10C ledger disposition (CL2, CL3)	5387	action	.github/actions/cap-10c3-the-cap-10c-ledger-disposition-cl2-cl3/action.yml
+windows	CAP-10C3 pas2js development-loop gates (PD1-PD15, RD1, T1-T5, CL1-CL3) + evidence	2160	action	.github/actions/cap-10c3-pas2js-development-loop-gates-pd1-pd15-rd1-t1-t5-cl1-cl3/action.yml
+macos-x64	CAP-10C3 pas2js development-loop gates (PD1-PD15, RD1, T1-T5, CL1-CL3) + evidence	4396	action	.github/actions/cap-10c3-pas2js-development-loop-gates-pd1-pd15-rd1-t1-t5-cl1-cl3/action.yml
+macos-arm64	CAP-10C3 pas2js development-loop gates (PD1-PD15, RD1, T1-T5, CL1-CL3) + evidence	5393	action	.github/actions/cap-10c3-pas2js-development-loop-gates-pd1-pd15-rd1-t1-t5-cl1-cl3/action.yml
+linux	CAP-10C3 pas2js development-loop gates (PD1-PD15, RD1, T1-T5, CL1-CL3) + evidence	3324	action	.github/actions/cap-10c3-pas2js-development-loop-gates-pd1-pd15-rd1-t1-t5-cl1-cl3/action.yml
+windows	CAP-10D0 build the public-build suite and its driver	2192	action	.github/actions/cap-10d0-build-the-public-build-suite-and-its-driver/action.yml
+linux	CAP-10D0 build the public-build suite and its driver	3356	action	.github/actions/cap-10d0-build-the-public-build-suite-and-its-driver/action.yml
+macos-x64	CAP-10D0 build the public-build suite and its driver	4428	action	.github/actions/cap-10d0-build-the-public-build-suite-and-its-driver/action.yml
+macos-arm64	CAP-10D0 build the public-build suite and its driver	5425	action	.github/actions/cap-10d0-build-the-public-build-suite-and-its-driver/action.yml
+windows	CAP-10D0 contract cross-checks (one execution path, ten stages, five commands, gate quoting)	2198	action	.github/actions/cap-10d0-contract-cross-checks-one-execution-path-ten-stages-five/action.yml
+linux	CAP-10D0 contract cross-checks (one execution path, ten stages, five commands, gate quoting)	3360	action	.github/actions/cap-10d0-contract-cross-checks-one-execution-path-ten-stages-five/action.yml
+macos-x64	CAP-10D0 contract cross-checks (one execution path, ten stages, five commands, gate quoting)	4432	action	.github/actions/cap-10d0-contract-cross-checks-one-execution-path-ten-stages-five/action.yml
+macos-arm64	CAP-10D0 contract cross-checks (one execution path, ten stages, five commands, gate quoting)	5429	action	.github/actions/cap-10d0-contract-cross-checks-one-execution-path-ten-stages-five/action.yml
+windows	CAP-10D0 public-build gates (B1-B12, L1-L3, R1-R2) + evidence	2204	action	.github/actions/cap-10d0-public-build-gates-b1-b12-l1-l3-r1-r2-evidence/action.yml
+macos-x64	CAP-10D0 public-build gates (B1-B12, L1-L3, R1-R2) + evidence	4438	action	.github/actions/cap-10d0-public-build-gates-b1-b12-l1-l3-r1-r2-evidence/action.yml
+macos-arm64	CAP-10D0 public-build gates (B1-B12, L1-L3, R1-R2) + evidence	5435	action	.github/actions/cap-10d0-public-build-gates-b1-b12-l1-l3-r1-r2-evidence/action.yml
+linux	CAP-10D0 public-build gates (B1-B12, L1-L3, R1-R2) + evidence	3366	action	.github/actions/cap-10d0-public-build-gates-b1-b12-l1-l3-r1-r2-evidence/action.yml
+windows	CAP-10D1 contract cross-checks (pins vs locks, five engine callers, the anti-fork twins, no signing, no network)	2243	action	.github/actions/cap-10d1-contract-cross-checks-pins-vs-locks-five-engine-callers-the/action.yml
+linux	CAP-10D1 contract cross-checks (pins vs locks, five engine callers, the anti-fork twins, no signing, no network)	3405	action	.github/actions/cap-10d1-contract-cross-checks-pins-vs-locks-five-engine-callers-the/action.yml
+macos-x64	CAP-10D1 contract cross-checks (pins vs locks, five engine callers, the anti-fork twins, no signing, no network)	4477	action	.github/actions/cap-10d1-contract-cross-checks-pins-vs-locks-five-engine-callers-the/action.yml
+macos-arm64	CAP-10D1 contract cross-checks (pins vs locks, five engine callers, the anti-fork twins, no signing, no network)	5474	action	.github/actions/cap-10d1-contract-cross-checks-pins-vs-locks-five-engine-callers-the/action.yml
+windows	CAP-10D1 stage the packaging kit and build the suite and driver	2248	action	.github/actions/cap-10d1-stage-the-packaging-kit-and-build-the-suite-and-driver/action.yml
+linux	CAP-10D1 stage the packaging kit and build the suite and driver	3410	action	.github/actions/cap-10d1-stage-the-packaging-kit-and-build-the-suite-and-driver/action.yml
+macos-x64	CAP-10D1 stage the packaging kit and build the suite and driver	4482	action	.github/actions/cap-10d1-stage-the-packaging-kit-and-build-the-suite-and-driver/action.yml
+macos-arm64	CAP-10D1 stage the packaging kit and build the suite and driver	5479	action	.github/actions/cap-10d1-stage-the-packaging-kit-and-build-the-suite-and-driver/action.yml
+windows	CAP-10D1 packaging gates + evidence	2252	action	.github/actions/cap-10d1-packaging-gates-evidence/action.yml
+macos-x64	CAP-10D1 packaging gates + evidence	4486	action	.github/actions/cap-10d1-packaging-gates-evidence/action.yml
+macos-arm64	CAP-10D1 packaging gates + evidence	5483	action	.github/actions/cap-10d1-packaging-gates-evidence/action.yml
+linux	CAP-10D1 packaging gates + evidence	3414	action	.github/actions/cap-10d1-packaging-gates-evidence/action.yml
+windows	CAP-10D0 L2b - the CAP-10 chain at a repository path with a space	2315	action	.github/actions/cap-10d0-l2b-the-cap-10-chain-at-a-repository-path-with-a-space/action.yml
+windows	CAP-10D2 contract cross-checks (no network, no env root, the licence table, the tool rule)	2411	action	.github/actions/cap-10d2-contract-cross-checks-no-network-no-env-root-the-licence-table/action.yml
+linux	CAP-10D2 contract cross-checks (no network, no env root, the licence table, the tool rule)	3451	action	.github/actions/cap-10d2-contract-cross-checks-no-network-no-env-root-the-licence-table/action.yml
+macos-x64	CAP-10D2 contract cross-checks (no network, no env root, the licence table, the tool rule)	4523	action	.github/actions/cap-10d2-contract-cross-checks-no-network-no-env-root-the-licence-table/action.yml
+macos-arm64	CAP-10D2 contract cross-checks (no network, no env root, the licence table, the tool rule)	5520	action	.github/actions/cap-10d2-contract-cross-checks-no-network-no-env-root-the-licence-table/action.yml
+windows	CAP-10D2 the phase-wide CAP-10 ledger disposition (CL1-CL4)	2416	action	.github/actions/cap-10d2-the-phase-wide-cap-10-ledger-disposition-cl1-cl4/action.yml
+linux	CAP-10D2 the phase-wide CAP-10 ledger disposition (CL1-CL4)	3456	action	.github/actions/cap-10d2-the-phase-wide-cap-10-ledger-disposition-cl1-cl4/action.yml
+macos-x64	CAP-10D2 the phase-wide CAP-10 ledger disposition (CL1-CL4)	4528	action	.github/actions/cap-10d2-the-phase-wide-cap-10-ledger-disposition-cl1-cl4/action.yml
+macos-arm64	CAP-10D2 the phase-wide CAP-10 ledger disposition (CL1-CL4)	5525	action	.github/actions/cap-10d2-the-phase-wide-cap-10-ledger-disposition-cl1-cl4/action.yml
+windows	CAP-10D2 stage the licence set and build the packager and suite	2421	action	.github/actions/cap-10d2-stage-the-licence-set-and-build-the-packager-and-suite/action.yml
+linux	CAP-10D2 stage the licence set and build the packager and suite	3461	action	.github/actions/cap-10d2-stage-the-licence-set-and-build-the-packager-and-suite/action.yml
+macos-x64	CAP-10D2 stage the licence set and build the packager and suite	4533	action	.github/actions/cap-10d2-stage-the-licence-set-and-build-the-packager-and-suite/action.yml
+macos-arm64	CAP-10D2 stage the licence set and build the packager and suite	5530	action	.github/actions/cap-10d2-stage-the-licence-set-and-build-the-packager-and-suite/action.yml
+windows	CAP-10D2 SDK distribution gates (PK1-PK4, IN1-IN4, CM1-CM6, CL1-CL4) + evidence	2425	action	.github/actions/cap-10d2-sdk-distribution-gates-pk1-pk4-in1-in4-cm1-cm6-cl1-cl4-evidence/action.yml
+macos-x64	CAP-10D2 SDK distribution gates (PK1-PK4, IN1-IN4, CM1-CM6, CL1-CL4) + evidence	4537	action	.github/actions/cap-10d2-sdk-distribution-gates-pk1-pk4-in1-in4-cm1-cm6-cl1-cl4-evidence/action.yml
+macos-arm64	CAP-10D2 SDK distribution gates (PK1-PK4, IN1-IN4, CM1-CM6, CL1-CL4) + evidence	5534	action	.github/actions/cap-10d2-sdk-distribution-gates-pk1-pk4-in1-in4-cm1-cm6-cl1-cl4-evidence/action.yml
+linux	CAP-10D2 SDK distribution gates (PK1-PK4, IN1-IN4, CM1-CM6, CL1-CL4) + evidence	3465	action	.github/actions/cap-10d2-sdk-distribution-gates-pk1-pk4-in1-in4-cm1-cm6-cl1-cl4-evidence/action.yml
+windows	CAP-10E image-path source gate (zero ParamStr(0), zero ProgramFilePath, one reader)	2465	action	.github/actions/cap-10e-image-path-source-gate-zero-paramstr-0-zero-programfilepath-one/action.yml
+linux	CAP-10E image-path source gate (zero ParamStr(0), zero ProgramFilePath, one reader)	3507	action	.github/actions/cap-10e-image-path-source-gate-zero-paramstr-0-zero-programfilepath-one/action.yml
+macos-x64	CAP-10E image-path source gate (zero ParamStr(0), zero ProgramFilePath, one reader)	4577	action	.github/actions/cap-10e-image-path-source-gate-zero-paramstr-0-zero-programfilepath-one/action.yml
+macos-arm64	CAP-10E image-path source gate (zero ParamStr(0), zero ProgramFilePath, one reader)	5572	action	.github/actions/cap-10e-image-path-source-gate-zero-paramstr-0-zero-programfilepath-one/action.yml
+windows	CAP-10E kernel image path - non-ASCII release host, junction, long path (E1/E2/E6/E7/E9)	2473	action	.github/actions/cap-10e-kernel-image-path-non-ascii-release-host-junction-long-path-e1/action.yml
+windows	CAP-7F emit the Windows evidence artifact	2497	action	.github/actions/cap-7f-emit-the-windows-evidence-artifact/action.yml
+linux	CAP-10E kernel image path - non-ASCII release host and the symlink rule (E1/E2/E5/E9)	3512	action	.github/actions/cap-10e-kernel-image-path-non-ascii-release-host-and-the-symlink-rule/action.yml
+linux	CAP-7F emit the Linux evidence artifact	3534	action	.github/actions/cap-7f-emit-the-linux-evidence-artifact/action.yml
+macos-x64	CAP-10E kernel image path - non-ASCII (NFD) release host and the symlink rule (E1/E2/E5/E9)	4582	action	.github/actions/cap-10e-kernel-image-path-non-ascii-nfd-release-host-and-the-symlink/action.yml
+macos-arm64	CAP-10E kernel image path - non-ASCII (NFD) release host and the symlink rule (E1/E2/E5/E9)	5577	action	.github/actions/cap-10e-kernel-image-path-non-ascii-nfd-release-host-and-the-symlink/action.yml
+macos-x64	CAP-7F emit the macOS x64 evidence artifact	4603	action	.github/actions/cap-7f-emit-the-macos-x64-evidence-artifact/action.yml
+macos-arm64	CAP-7F emit the macOS arm64 evidence artifact	5598	action	.github/actions/cap-7f-emit-the-macos-arm64-evidence-artifact/action.yml
+macos-x64	CAP-7M0 per-arch headline facts to the run summary	4632	action	.github/actions/cap-7m0-per-arch-headline-facts-to-the-run-summary/action.yml
+macos-arm64	CAP-7M0 per-arch headline facts to the run summary	5627	action	.github/actions/cap-7m0-per-arch-headline-facts-to-the-run-summary/action.yml
+windows	CAP-5 diagnostics on failure	1053	collection:diagnostics	leg-diagnostics-${target}
+windows	CAP-6 diagnostics on failure	1094	collection:diagnostics	leg-diagnostics-${target}
+windows	CAP-6b0 diagnostics on failure	1154	collection:diagnostics	leg-diagnostics-${target}
+windows	CAP-6b1 diagnostics on failure	1233	collection:diagnostics	leg-diagnostics-${target}
+windows	CAP-6b2 diagnostics on failure	1308	collection:diagnostics	leg-diagnostics-${target}
+windows	CAP-6b3 diagnostics on failure	1398	collection:diagnostics	leg-diagnostics-${target}
+windows	CAP-8B upload the Windows nav-matrix record	1559	collection:records	leg-records-${target}
+windows	CAP-8C upload the Windows multiprincipal record	1591	collection:records	leg-records-${target}
+linux	CAP-8B upload the Linux nav-matrix record	2856	collection:records	leg-records-${target}
+linux	CAP-8C upload the Linux multiprincipal record	2882	collection:records	leg-records-${target}
+macos-x64	CAP-7M2 release manifests and inventories	3897	collection:release	leg-release-${target}
+macos-arm64	CAP-7M2 release manifests and inventories	4911	collection:release	leg-release-${target}
+macos-arm64	CAP-8B upload the macOS arm64 nav-matrix record	4943	collection:records	leg-records-${target}
+macos-x64	CAP-8B upload the macOS x64 nav-matrix record	3932	collection:records	leg-records-${target}
+macos-x64	CAP-8C upload the macOS x64 multiprincipal record	3957	collection:records	leg-records-${target}
+macos-arm64	CAP-8C upload the macOS arm64 multiprincipal record	4965	collection:records	leg-records-${target}
+macos-arm64	CAP-9A upload the macOS arm64 quickjs record	4987	collection:records	leg-records-${target}
+windows	CAP-9A upload the Windows quickjs record	1620	collection:records	leg-records-${target}
+linux	CAP-9A upload the Linux quickjs record	2904	collection:records	leg-records-${target}
+macos-x64	CAP-9A upload the macOS x64 quickjs record	3982	collection:records	leg-records-${target}
+macos-x64	CAP-9B1 upload the macOS x64 package record	4007	collection:records	leg-records-${target}
+windows	CAP-9B1 upload the Windows package record	1652	collection:records	leg-records-${target}
+linux	CAP-9B1 upload the Linux package record	2928	collection:records	leg-records-${target}
+macos-arm64	CAP-9B1 upload the macOS arm64 package record	5010	collection:records	leg-records-${target}
+macos-arm64	CAP-9B2 upload the macOS arm64 lifecycle record	5030	collection:records	leg-records-${target}
+windows	CAP-9B2 upload the Windows lifecycle record	1684	collection:records	leg-records-${target}
+linux	CAP-9B2 upload the Linux lifecycle record	2951	collection:records	leg-records-${target}
+macos-x64	CAP-9B2 upload the macOS x64 lifecycle record	4029	collection:records	leg-records-${target}
+macos-x64	CAP-9C1 upload the macOS x64 release record and payload	4047	collection:records	leg-records-${target}
+windows	CAP-9C1 upload the Windows release record and payload	1715	collection:records	leg-records-${target}
+linux	CAP-9C1 upload the Linux release record and payload	2974	collection:records	leg-records-${target}
+macos-arm64	CAP-9C1 upload the macOS arm64 release record and payload	5048	collection:records	leg-records-${target}
+macos-arm64	CAP-9C2 upload the macOS arm64 plugin-enabled record and layout	5083	collection:records	leg-records-${target}
+windows	CAP-9C2 upload the Windows plugin-enabled record and layout	1773	collection:records	leg-records-${target}
+linux	CAP-9C2 upload the Linux plugin-enabled record and layout	3011	collection:records	leg-records-${target}
+macos-x64	CAP-9C2 upload the macOS x64 plugin-enabled record and layout	4082	collection:records	leg-records-${target}
+windows	CAP-10A upload the CLI corpus	1851	collection:records	leg-records-${target}
+linux	CAP-10A upload the CLI corpus	3073	collection:records	leg-records-${target}
+macos-x64	CAP-10A upload the CLI corpus	4145	collection:records	leg-records-${target}
+macos-arm64	CAP-10A upload the CLI corpus	5142	collection:records	leg-records-${target}
+windows	CAP-10B0 upload the scaffold corpus	1894	collection:records	leg-records-${target}
+linux	CAP-10B0 upload the scaffold corpus	3104	collection:records	leg-records-${target}
+macos-x64	CAP-10B0 upload the scaffold corpus	4174	collection:records	leg-records-${target}
+macos-arm64	CAP-10B0 upload the scaffold corpus	5171	collection:records	leg-records-${target}
+windows	CAP-10B1 upload the create corpus	1945	collection:records	leg-records-${target}
+linux	CAP-10B1 upload the create corpus	3139	collection:records	leg-records-${target}
+macos-x64	CAP-10B1 upload the create corpus	4210	collection:records	leg-records-${target}
+macos-arm64	CAP-10B1 upload the create corpus	5206	collection:records	leg-records-${target}
+windows	CAP-10B2 upload the pas2js corpus	2006	collection:records	leg-records-${target}
+linux	CAP-10B2 upload the pas2js corpus	3180	collection:records	leg-records-${target}
+macos-x64	CAP-10B2 upload the pas2js corpus	4252	collection:records	leg-records-${target}
+macos-arm64	CAP-10B2 upload the pas2js corpus	5249	collection:records	leg-records-${target}
+windows	CAP-10C0 upload the supervision corpus	2043	collection:records	leg-records-${target}
+linux	CAP-10C0 upload the supervision corpus	3213	collection:records	leg-records-${target}
+macos-x64	CAP-10C0 upload the supervision corpus	4285	collection:records	leg-records-${target}
+macos-arm64	CAP-10C0 upload the supervision corpus	5282	collection:records	leg-records-${target}
+windows	CAP-10C1 upload the pipeline corpus	2081	collection:records	leg-records-${target}
+linux	CAP-10C1 upload the pipeline corpus	3249	collection:records	leg-records-${target}
+macos-x64	CAP-10C1 upload the pipeline corpus	4321	collection:records	leg-records-${target}
+macos-arm64	CAP-10C1 upload the pipeline corpus	5318	collection:records	leg-records-${target}
+windows	CAP-10C2 upload the development corpus	2119	collection:records	leg-records-${target}
+linux	CAP-10C2 upload the development corpus	3285	collection:records	leg-records-${target}
+macos-x64	CAP-10C2 upload the development corpus	4357	collection:records	leg-records-${target}
+macos-arm64	CAP-10C2 upload the development corpus	5354	collection:records	leg-records-${target}
+windows	CAP-10C3 upload the pas2js development corpus	2168	collection:records	leg-records-${target}
+linux	CAP-10C3 upload the pas2js development corpus	3332	collection:records	leg-records-${target}
+macos-x64	CAP-10C3 upload the pas2js development corpus	4404	collection:records	leg-records-${target}
+macos-arm64	CAP-10C3 upload the pas2js development corpus	5401	collection:records	leg-records-${target}
+windows	CAP-10D0 upload the public-build corpus	2212	collection:records	leg-records-${target}
+linux	CAP-10D0 upload the public-build corpus	3374	collection:records	leg-records-${target}
+macos-x64	CAP-10D0 upload the public-build corpus	4446	collection:records	leg-records-${target}
+macos-arm64	CAP-10D0 upload the public-build corpus	5443	collection:records	leg-records-${target}
+windows	CAP-10D1 upload the packaging corpus	2260	collection:records	leg-records-${target}
+linux	CAP-10D1 upload the packaging corpus	3422	collection:records	leg-records-${target}
+macos-x64	CAP-10D1 upload the packaging corpus	4494	collection:records	leg-records-${target}
+macos-arm64	CAP-10D1 upload the packaging corpus	5491	collection:records	leg-records-${target}
+windows	CAP-10D2 upload the SDK distribution corpus	2433	collection:records	leg-records-${target}
+linux	CAP-10D2 upload the SDK distribution corpus	3473	collection:records	leg-records-${target}
+macos-x64	CAP-10D2 upload the SDK distribution corpus	4545	collection:records	leg-records-${target}
+macos-arm64	CAP-10D2 upload the SDK distribution corpus	5542	collection:records	leg-records-${target}
+windows	CAP-10D2 upload the SDK archive and its manifest	2450	collection:dist	leg-dist-${target}
+linux	CAP-10D2 upload the SDK archive and its manifest	3490	collection:dist	leg-dist-${target}
+macos-x64	CAP-10D2 upload the SDK archive and its manifest	4562	collection:dist	leg-dist-${target}
+macos-arm64	CAP-10D2 upload the SDK archive and its manifest	5559	collection:dist	leg-dist-${target}
+windows	CAP-10E upload the Windows image-path record	2481	collection:records	leg-records-${target}
+windows	CAP-7F upload the Windows evidence	2507	collection:evidence	leg-evidence-${target}
+linux	CAP-10E upload the Linux image-path record	3520	collection:records	leg-records-${target}
+linux	CAP-7F upload the Linux evidence	3539	collection:evidence	leg-evidence-${target}
+macos-x64	CAP-10E upload the macOS x64 image-path record	4589	collection:records	leg-records-${target}
+macos-x64	CAP-7F upload the macOS x64 evidence	4608	collection:evidence	leg-evidence-${target}
+macos-arm64	CAP-10E upload the macOS arm64 image-path record	5584	collection:records	leg-records-${target}
+macos-arm64	CAP-7F upload the macOS arm64 evidence	5603	collection:evidence	leg-evidence-${target}
+windows	CAP-7F diagnostics on failure	2518	collection:diagnostics	leg-diagnostics-${target}
+linux	CAP-7F diagnostics on failure	3551	collection:diagnostics	leg-diagnostics-${target}
+macos-x64	CAP-7F diagnostics on failure	4617	collection:diagnostics	leg-diagnostics-${target}
+macos-arm64	CAP-7F diagnostics on failure	5612	collection:diagnostics	leg-diagnostics-${target}
+macos-x64	CAP-7M0 measurements (always uploaded - the shard's whole output)	4641	collection:records	leg-records-${target}
+macos-arm64	CAP-7M0 measurements (always uploaded - the shard's whole output)	5632	collection:records	leg-records-${target}
+macos-x64	CAP-7M0 diagnostics on failure (permissive by design)	4651	collection:diagnostics	leg-diagnostics-${target}
+macos-arm64	CAP-7M0 diagnostics on failure (permissive by design)	5642	collection:diagnostics	leg-diagnostics-${target}
+windows	CAP-6b4 diagnostics on failure	2542	collection:diagnostics	leg-diagnostics-${target}
+windows	Upload diagnostics on failure	2560	collection:diagnostics	leg-diagnostics-${target}
+linux	CAP-7L diagnostics on failure	3566	collection:diagnostics	leg-diagnostics-${target}

@@ -1,0 +1,11 @@
+name: 'CAP-5 cross-SDK captured-wire parity'
+description: 'CAP-11A: the body of the "CAP-5 cross-SDK captured-wire parity" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        node tools/check-sdk-parity.mjs `
+          build/cap5/ts-capture.log build/cap5/p2j-capture.log
+        if ($LASTEXITCODE -ne 0) { throw 'SDK wire parity FAILED' }

@@ -1,0 +1,15 @@
+# -IndexOnly: the three artifacts already exist from the blocks
+# above, so the orchestrator only measures them and writes the
+# release index the isolation gate then verifies
+
+name: 'CAP-6b4 release index from the three built profiles'
+description: 'CAP-11A: the body of the "CAP-6b4 release index from the three built profiles" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File tools/build-windows-profiles.ps1 -IndexOnly 2>&1 |
+          Tee-Object -FilePath build/cap6b4-index.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-6b4 release index FAILED' }

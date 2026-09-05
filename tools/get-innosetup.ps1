@@ -118,8 +118,14 @@ if (Test-Path $Installer) { Remove-Item -Force $Installer }
 try {
     if ($Lock['url'] -match '^https://') {
         Write-Host "fetching $($Lock['url'])"
-        Invoke-WebRequest -Uri $Lock['url'] -OutFile $Installer -UseBasicParsing `
-            -TimeoutSec 300
+        # CAP-11A: three bounded attempts with a row each, instead of one
+        # unbounded request. The verification below is unchanged and remains the
+        # single word on what is ACCEPTED; the helper only decides how many times
+        # a TRANSPORT fault may be answered, and it refuses a digest mismatch on
+        # the first attempt without ever retrying it.
+        . (Join-Path $PSScriptRoot 'pwebfetch.ps1')
+        Invoke-PWebFetch -Name 'innosetup' -Url $Lock['url'] -OutFile $Installer `
+            -Sha256 $Lock['sha256'] -Shape 'MZ' -Attempt (New-PWebWebRequestAttempt)
     }
     else {
         # fixture mode only (-AllowLocalSource validated above)

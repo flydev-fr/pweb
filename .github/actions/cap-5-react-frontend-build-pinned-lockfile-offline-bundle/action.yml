@@ -1,0 +1,22 @@
+name: 'CAP-5 React frontend build (pinned lockfile, offline bundle)'
+description: 'CAP-11A: the body of the "CAP-5 React frontend build (pinned lockfile, offline bundle)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        Push-Location examples/04-react/frontend
+        try {
+          npm ci
+          if ($LASTEXITCODE -ne 0) { throw 'react frontend npm ci failed' }
+          npm run typecheck
+          if ($LASTEXITCODE -ne 0) { throw 'react frontend typecheck failed' }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'react frontend build failed' }
+        }
+        finally { Pop-Location }
+        foreach ($f in 'examples/04-react/frontend/dist/index.html',
+                       'examples/04-react/frontend/dist/assets/app.js') {
+          if (-not (Test-Path $f)) { throw "react frontend output missing: $f" }
+        }

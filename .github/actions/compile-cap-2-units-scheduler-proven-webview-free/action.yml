@@ -1,0 +1,36 @@
+# CAP-2: the scheduler MUST compile with no src/webview unit path and
+# no mORMot path - proving it is source-generic and RTL-only, per the
+# frozen "defined over invocation sources" rule. The other new units
+# compile with exactly the dependencies the layering allows them.
+
+name: 'Compile CAP-2 units (scheduler proven webview-free)'
+description: 'CAP-11A: the body of the "Compile CAP-2 units (scheduler proven webview-free)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force build/fpc-rpc, build/fpc-cap2 | Out-Null
+        # the neutral support unit must stay RTL-only over pweb.rpc.intf
+        # alone: compiled with -Fusrc/rpc ONLY so any webview/mORMot/
+        # platform dependency creeping in fails this gate
+        fpc -MObjFPC -Sh -B -FUbuild/fpc-rpc -Fusrc/rpc src/rpc/pweb.rpc.support.pas
+        if ($LASTEXITCODE -ne 0) { throw 'pweb.rpc.support.pas failed its RTL-only intf-only compile' }
+        fpc -MObjFPC -Sh -B -FUbuild/fpc-rpc -Fusrc/rpc src/rpc/pweb.rpc.scheduler.pas
+        if ($LASTEXITCODE -ne 0) { throw 'pweb.rpc.scheduler.pas failed its webview-free RTL-only compile' }
+        fpc -MObjFPC -Sh -FUbuild/fpc-rpc -Fusrc/rpc src/rpc/pweb.rpc.bridge.dummy.pas
+        if ($LASTEXITCODE -ne 0) { throw 'pweb.rpc.bridge.dummy.pas failed' }
+        fpc -MObjFPC -Sh -FUbuild/fpc-rpc -Fusrc/rpc -Fusrc/security src/security/pweb.capabilities.pas
+        if ($LASTEXITCODE -ne 0) { throw 'pweb.capabilities.pas failed' }
+        # CAP-8A: the production capability engine must stay RTL-only
+        # over the rpc contracts + neutral support alone - any mORMot,
+        # webview or platform dependency creeping in fails this gate
+        fpc -MObjFPC -Sh -B -FUbuild/fpc-rpc -Fusrc/rpc -Fusrc/security src/security/pweb.capabilities.policy.pas
+        if ($LASTEXITCODE -ne 0) { throw 'pweb.capabilities.policy.pas failed its RTL-only isolation compile' }
+        # the binding may use pinned mORMot2 core units (project include
+        # pattern); src/lib alone stays mORMot-free
+        fpc -Sh -B -FUbuild/fpc-cap2 -Fusrc/lib -Fusrc/rpc -Fusrc/webview `
+          -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+          src/webview/pweb.webview.binding.pas
+        if ($LASTEXITCODE -ne 0) { throw 'pweb.webview.binding.pas failed' }

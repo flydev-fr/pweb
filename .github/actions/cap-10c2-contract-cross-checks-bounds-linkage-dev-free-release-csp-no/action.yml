@@ -1,0 +1,10 @@
+name: 'CAP-10C2 contract cross-checks (bounds, linkage, dev-free release, CSP, no transport)'
+description: 'CAP-11A: the body of the "CAP-10C2 contract cross-checks (bounds, linkage, dev-free release, CSP, no transport)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows, linux, macos-x64, macos-arm64
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap10c2/check_cap10c2_contracts.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-10C2 contract cross-checks FAILED' }

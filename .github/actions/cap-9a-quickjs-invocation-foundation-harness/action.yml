@@ -1,0 +1,30 @@
+# CAP-9A: the QuickJS invocation-foundation harness. Fully headless:
+# two QuickJS plugin threads (calculator allowed / reporting denied)
+# drive the UNCHANGED production scheduler + CAP-8A policy + real
+# mORMot SOA bridge through the frozen IInvocationSource path, with
+# the Q1-Q30 matrix, the ABI probes and the resource-limit gates. It
+# writes build/cap9a/quickjs-corpus.txt (the cross-target digest
+# source) and quickjsfoundation-windows-x86_64.json, which the CAP-7F
+# emitter reads into quickjs_corpus (must-PASS; never SKIPs). It runs
+# BEFORE the emitter so its verdict is this job's.
+
+name: 'CAP-9A QuickJS invocation foundation harness'
+description: 'CAP-11A: the body of the "CAP-9A QuickJS invocation foundation harness" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: windows
+      if: ${{ inputs.target == 'windows' }}
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap9a/run_quickjsfoundation.ps1 2>&1 |
+          Tee-Object -FilePath build/cap9a-quickjsfoundation.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-9A quickjsfoundation gate FAILED' }
+    - name: linux, macos-x64, macos-arm64
+      if: ${{ inputs.target != 'windows' }}
+      shell: bash
+      run: test/cap9a/run_quickjsfoundation.sh

@@ -1,0 +1,11 @@
+name: 'CAP-6b2 offline setup gates - streamed V-legs, isolated-dir skip path, layout, smoke, uninstall'
+description: 'CAP-11A: the body of the "CAP-6b2 offline setup gates - streamed V-legs, isolated-dir skip path, layout, smoke, uninstall" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap6b2/run_offline_setup_gates.ps1 2>&1 |
+          Tee-Object -FilePath build/cap6b2-gates.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-6b2 offline setup gates FAILED' }

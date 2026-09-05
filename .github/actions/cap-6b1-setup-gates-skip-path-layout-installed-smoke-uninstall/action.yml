@@ -1,0 +1,11 @@
+name: 'CAP-6b1 setup gates - skip path, layout, installed smoke, uninstall'
+description: 'CAP-11A: the body of the "CAP-6b1 setup gates - skip path, layout, installed smoke, uninstall" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap6b1/run_normal_setup_gates.ps1 2>&1 |
+          Tee-Object -FilePath build/cap6b1-gates.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-6b1 setup gates FAILED' }

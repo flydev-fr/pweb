@@ -1,0 +1,21 @@
+# Same pinned Pas2JS 3.0.1 as the Windows job, its linux-x86_64
+# artifact, sha256-verified into deps/pas2js-linux. Same frontend
+# sources, same SDK, same compiler version: L17 is a parity proof,
+# not a second frontend path.
+
+name: 'CAP-7L fetch pinned pas2js (sha256-verified) and build its frontend'
+description: 'CAP-11A: the body of the "CAP-7L fetch pinned pas2js (sha256-verified) and build its frontend" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: linux
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File tools/get-pas2js.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'pinned pas2js fetch FAILED' }
+        pwsh -NoProfile -File examples/05-pas2js/frontend/build.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'pas2js frontend build FAILED' }
+        foreach ($f in 'examples/05-pas2js/frontend/dist/index.html',
+                       'examples/05-pas2js/frontend/dist/assets/app.js') {
+          if (-not (Test-Path $f)) { throw "pas2js frontend output missing: $f" }
+        }

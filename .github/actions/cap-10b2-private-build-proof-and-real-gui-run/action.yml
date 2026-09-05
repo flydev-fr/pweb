@@ -1,0 +1,24 @@
+name: 'CAP-10B2 private build proof and real GUI run'
+description: 'CAP-11A: the body of the "CAP-10B2 private build proof and real GUI run" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: windows
+      if: ${{ inputs.target == 'windows' }}
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap10b2/prove_cap10b2.ps1 2>&1 |
+          Tee-Object -FilePath build/cap10b2-proof.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-10B2 build proof FAILED' }
+    - name: linux
+      if: ${{ inputs.target == 'linux' }}
+      shell: bash
+      run: xvfb-run -a test/cap10b2/prove_cap10b2.sh
+    - name: macos-x64, macos-arm64
+      if: ${{ inputs.target == 'macos-x64' || inputs.target == 'macos-arm64' }}
+      shell: bash
+      run: test/cap10b2/prove_cap10b2.sh

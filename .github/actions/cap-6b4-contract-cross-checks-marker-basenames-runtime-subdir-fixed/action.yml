@@ -1,0 +1,30 @@
+# ------------------------- CAP-6b4 gates -------------------------
+# Windows profile INTEGRATION: the three profiles above are
+# mutually exclusive MODES of one product (one AppId, one install
+# directory, one HKCU profile marker), and this block proves the
+# integration rather than the individual profiles. Everything
+# below is additive; no earlier step is altered.
+#
+# It runs LAST on purpose: the CAP-6b1/6b2/6b3 steps have already
+# built all three artifacts and left the machine clean, so the
+# matrix can chain real installs, real switches, real refusals and
+# real uninstalls without paying for a fourth set of compiles.
+#
+# Nothing here installs, repairs or uninstalls the runner's shared
+# WebView2 Evergreen runtime, and nothing deletes the shared
+# WebView2 user-data folder - both are ASSERTED by the matrix (the
+# detector verdict must be identical before and after the whole
+# chain, and a user-data sentinel must survive all three
+# uninstalls), not merely intended.
+
+name: 'CAP-6b4 contract cross-checks (marker, basenames, runtime subdir, fixed [Files] order, sweeps, prior-gate aggregation)'
+description: 'CAP-11A: the body of the "CAP-6b4 contract cross-checks (marker, basenames, runtime subdir, fixed [Files] order, sweeps, prior-gate aggregation)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap6b4/check_cap6b4_contracts.ps1 2>&1 |
+          Tee-Object -FilePath build/cap6b4-contracts.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-6b4 contract cross-checks FAILED' }

@@ -1,0 +1,21 @@
+# ------------------------- CAP-7F closure -------------------------
+# Everything below is additive; no earlier step is altered. The args
+# gate executes the CAP-7M2 host arguments on Windows for the first
+# time (deferred-work D1), on the release triple the CAP-6 gates
+# assembled above; the emitter then writes the per-target evidence
+# the final cap7-aggregate job compares. Evidence honesty: these run
+# AFTER every gate they summarize, in this same job, so a failed
+# gate kills the job before any evidence uploads - and a conditional
+# SKIP is recorded as SKIP, which the aggregator refuses.
+
+name: 'CAP-7F host-argument gate on the release triple (closes D1 on Windows)'
+description: 'CAP-11A: the body of the "CAP-7F host-argument gate on the release triple (closes D1 on Windows)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap7f/run_host_args_gate.ps1 2>&1 |
+          Tee-Object -FilePath build/cap7f-host-args.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-7F host-argument gate FAILED' }

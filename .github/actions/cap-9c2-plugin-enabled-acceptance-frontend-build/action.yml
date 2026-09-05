@@ -1,0 +1,47 @@
+# CAP-9C2: the plugin-enabled acceptance frontend. It imports the
+# CAP-5 App component UNMODIFIED across the example boundary and
+# adds the browser-invisibility probe block beside it, so the CAP-8
+# corpus this page runs cannot drift from the release host's - and
+# examples/04-react stays byte-untouched, which is what keeps every
+# existing app.pwb hash and logical-inventory gate unaffected.
+
+name: 'CAP-9C2 plugin-enabled acceptance frontend build'
+description: 'CAP-11A: the body of the "CAP-9C2 plugin-enabled acceptance frontend build" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: windows
+      if: ${{ inputs.target == 'windows' }}
+      shell: pwsh
+      run: |
+        Push-Location examples/07-quickjs/frontend
+        try {
+          npm ci
+          if ($LASTEXITCODE -ne 0) { throw 'quickjs frontend npm ci failed' }
+          npm run typecheck
+          if ($LASTEXITCODE -ne 0) { throw 'quickjs frontend typecheck failed' }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'quickjs frontend build failed' }
+        }
+        finally { Pop-Location }
+        foreach ($f in 'examples/07-quickjs/frontend/dist/index.html',
+                       'examples/07-quickjs/frontend/dist/assets/app.js') {
+          if (-not (Test-Path $f)) { throw "quickjs frontend output missing: $f" }
+        }
+    - name: linux, macos-x64, macos-arm64
+      if: ${{ inputs.target != 'windows' }}
+      shell: bash
+      run: |
+        cd examples/07-quickjs/frontend
+        npm ci
+        npm run typecheck
+        npm run build
+        cd ../../..
+        for f in examples/07-quickjs/frontend/dist/index.html \
+                 examples/07-quickjs/frontend/dist/assets/app.js; do
+          [ -f "${f}" ] || { echo "quickjs frontend output missing: ${f}"; exit 1; }
+        done

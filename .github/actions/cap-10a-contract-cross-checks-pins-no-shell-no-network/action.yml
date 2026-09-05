@@ -1,0 +1,10 @@
+name: 'CAP-10A contract cross-checks (pins, no shell, no network)'
+description: 'CAP-11A: the body of the "CAP-10A contract cross-checks (pins, no shell, no network)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows, linux, macos-x64, macos-arm64
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap10a/check_cap10a_contracts.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-10A contract cross-checks FAILED' }

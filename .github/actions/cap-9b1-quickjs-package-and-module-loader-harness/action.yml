@@ -1,0 +1,31 @@
+# CAP-9B1: the QuickJS plugin-package + deterministic module-loader
+# harness. Fully headless and fixture-free on disk: it GENERATES the
+# reference package and every hostile fixture from in-source byte
+# constants into a temp folder AND an in-memory ZIP, then runs the
+# P1-P40 matrix through both carriers against the UNCHANGED production
+# scheduler + CAP-8A policy + real mORMot SOA bridge. It writes
+# build/cap9b1/quickjs-package-corpus.txt (the cross-target digest
+# source) and quickjspackage-windows-x86_64.json, which the CAP-7F
+# emitter reads into quickjs_package_corpus (must-PASS; never SKIPs).
+# It runs BEFORE the emitter so its verdict is this job's.
+
+name: 'CAP-9B1 QuickJS package and module-loader harness'
+description: 'CAP-11A: the body of the "CAP-9B1 QuickJS package and module-loader harness" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: windows
+      if: ${{ inputs.target == 'windows' }}
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap9b1/run_quickjspackage.ps1 2>&1 |
+          Tee-Object -FilePath build/cap9b1-quickjspackage.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-9B1 quickjspackage gate FAILED' }
+    - name: linux, macos-x64, macos-arm64
+      if: ${{ inputs.target != 'windows' }}
+      shell: bash
+      run: test/cap9b1/run_quickjspackage.sh

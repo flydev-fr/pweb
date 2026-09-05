@@ -18,11 +18,24 @@ foreach ($pre in 'build/cap6/release/releaseapp.exe',
 $exe = (Resolve-Path build/cap6/release/releaseapp.exe).Path
 $marker = 'releaseapp: app.pwb -> pweb://app -> SDK -> mORMot -> 42 PASS'
 $env:PWEB_SMOKE_AUTOCLOSE_MS = '8000'
+# CAP-11A (ledger B1-10, B2-16, D1-15): a `state=0` non-report has never said
+# WHICH of three things happened. The observer watches from outside the process
+# and types a cause afterwards; the run below is byte-unchanged, and an observer
+# that fails records `observer_error` instead of touching this gate's verdict.
+. (Join-Path $PSScriptRoot '..\cap11a\smokeobserve.ps1')
+$observer = Start-PWebSmokeObserver -ProcessName 'releaseapp' `
+    -OutFile 'build/cap6/smoke-observations.txt' `
+    -UserDataDir (Join-Path $env:APPDATA 'releaseapp.exe')
 Push-Location ([System.IO.Path]::GetTempPath())  # unrelated CWD
 try {
     $out = & $exe 2>&1 | Out-String
     $code = $LASTEXITCODE
 } finally { Pop-Location }
+$observed = $null
+try {
+    $observed = Stop-PWebSmokeObserver -State $observer -Output $out -ExitCode $code `
+        -AutocloseMs 8000
+} catch { Write-Host "[cap11a] observer error: $($_.Exception.Message)" }
 Write-Host $out
 $out | Out-File -Encoding utf8 build/cap6/smoke-release.log
 

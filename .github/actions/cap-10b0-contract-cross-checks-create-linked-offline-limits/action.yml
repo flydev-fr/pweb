@@ -1,0 +1,25 @@
+# ----------------------------------------------------------------
+# CAP-10B0: the scaffold engine (built above, with CAP-10B1's pack).
+# The checkout-plus-build contract gates, then the headless matrices,
+# the deterministic-rebuild comparison and the seven deliberately
+# broken template sources.
+#
+# `pweb create` NOW EXISTS, and the gates measure that rather than
+# asserting it: the CAP-10B0 linkage rule is INVERTED - the engine
+# must be in the CLI's own compiled unit set - and the real
+# executable is run to confirm that create is advertised while dev,
+# run and build are still unknown commands.
+#
+# Nothing here needs a window, a display or a network on any target.
+# ----------------------------------------------------------------
+
+name: 'CAP-10B0 contract cross-checks (create linked, offline, limits)'
+description: 'CAP-11A: the body of the "CAP-10B0 contract cross-checks (create linked, offline, limits)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows, linux, macos-x64, macos-arm64
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap10b0/check_cap10b0_contracts.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-10B0 contract cross-checks FAILED' }

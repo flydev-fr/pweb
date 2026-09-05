@@ -1,0 +1,39 @@
+# ------------------------- CAP-6b1 gates -------------------------
+# Normal-profile Evergreen Bootstrapper provisioning installer.
+# Everything below is additive; no earlier step is altered. The
+# lock/Authenticode fixture matrix (including the new
+# authenticode-subject cases) already ran inside the CAP-6b0 lock
+# step above via the extended check_wv2lock.ps1, and the N1-N12
+# provisioning cases ran inside the PWeb test suite step. CI
+# fetches the LOCKED bootstrapper (sha256 + Authenticode subject
+# verified, drift fails the build and deletes the download) and
+# builds/validates the REAL normal-profile setup - but NEVER executes the
+# bootstrapper: on the hosted runner the AlreadyUsable skip path
+# is the proof, and the genuine provisioning proof is the
+# clean-machine VM gate (test/cap6b1/run_clean_machine_gate.ps1,
+# human-run, never mocked here).
+
+name: 'CAP-6b1 isolation compile - provisioning unit + setup helper'
+description: 'CAP-11A: the body of the "CAP-6b1 isolation compile - provisioning unit + setup helper" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force build/cap6b1/fpc,
+          build/cap6b1/bin | Out-Null
+        fpc -MObjFPC -Sh -B -FUbuild/cap6b1/fpc `
+          -Fusrc/platform/windows `
+          -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+          -Fudeps/mormot2/src/crypt `
+          src/platform/windows/pweb.platform.webview2.provision.pas
+        if ($LASTEXITCODE -ne 0) {
+          throw 'pweb.platform.webview2.provision.pas failed its isolation compile'
+        }
+        fpc -MObjFPC -Sh -B -FUbuild/cap6b1/fpc -FEbuild/cap6b1/bin `
+          -Fusrc/platform/windows `
+          -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+          -Fudeps/mormot2/src/crypt `
+          tools/setup/pwebwv2prov.pas
+        if ($LASTEXITCODE -ne 0) { throw 'pwebwv2prov helper compile failed' }

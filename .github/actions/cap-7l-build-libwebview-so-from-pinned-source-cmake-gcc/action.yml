@@ -1,0 +1,8 @@
+name: 'CAP-7L build libwebview.so from pinned source (cmake + gcc)'
+description: 'CAP-11A: the body of the "CAP-7L build libwebview.so from pinned source (cmake + gcc)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: linux
+      shell: bash
+      run: tools/build-webview-so.sh

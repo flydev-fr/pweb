@@ -1,0 +1,20 @@
+name: 'Install the ratified WebKitGTK stack and FPC (distro packages)'
+description: 'CAP-11A: the body of the "Install the ratified WebKitGTK stack and FPC (distro packages)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: linux
+      shell: bash
+      run: |
+        sudo apt-get update
+        # Exactly the ratified baseline plus a real virtual display.
+        # webkitgtk-6.0 is deliberately NOT installed: the build asserts
+        # which module pkg-config resolved, and an unratified engine on
+        # the machine must fail that assertion rather than be chosen.
+        sudo apt-get install -y --no-install-recommends \
+          cmake pkg-config ninja-build build-essential \
+          libgtk-3-dev libwebkit2gtk-4.1-dev \
+          xvfb x11-utils xauth \
+          fpc binutils
+        echo "gtk+-3.0      $(pkg-config --modversion gtk+-3.0)"
+        echo "webkit2gtk-4.1 $(pkg-config --modversion webkit2gtk-4.1)"

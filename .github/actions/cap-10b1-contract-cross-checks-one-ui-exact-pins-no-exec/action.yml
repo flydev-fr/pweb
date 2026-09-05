@@ -1,0 +1,26 @@
+# ----------------------------------------------------------------
+# CAP-10B1: the public `pweb create` command and the React scaffold.
+#
+# Three layers, and only the last needs a machine that can open a
+# window: the checkout-plus-build contract sweep, the headless
+# create matrix (the advertised surface, fifteen refusals, a project
+# created three times from three different working directories and
+# required to be byte-identical, and the real `pweb doctor` over the
+# result), and then the private build proof - npm, FPC, app.pwb and a
+# real GUI run of the generated application from an unrelated CWD.
+#
+# The build proof is a TEST HARNESS and not `pweb build`: this shard
+# exposes no build command, and nothing in the CLI's command table
+# knows any of these steps exist.
+# ----------------------------------------------------------------
+
+name: 'CAP-10B1 contract cross-checks (one UI, exact pins, no exec)'
+description: 'CAP-11A: the body of the "CAP-10B1 contract cross-checks (one UI, exact pins, no exec)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows, linux, macos-x64, macos-arm64
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap10b1/check_cap10b1_contracts.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-10B1 contract cross-checks FAILED' }

@@ -1,0 +1,8 @@
+name: 'CAP-6b1 innosetup.lock fixture matrix (zero network)'
+description: 'CAP-11A: the body of the "CAP-6b1 innosetup.lock fixture matrix (zero network)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: pwsh -NoProfile -File test/cap6b1/check_innosetup_lock.ps1

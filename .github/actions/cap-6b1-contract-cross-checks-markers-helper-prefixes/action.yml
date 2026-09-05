@@ -1,0 +1,8 @@
+name: 'CAP-6b1 contract cross-checks (markers + helper prefixes)'
+description: 'CAP-11A: the body of the "CAP-6b1 contract cross-checks (markers + helper prefixes)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: pwsh -NoProfile -File test/cap6b1/check_cap6b1_contracts.ps1

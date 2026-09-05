@@ -1,0 +1,15 @@
+# the offline abort probe (matrix row F2) plus the one consolidated
+# parse point the matrix reads; it embeds the ~210 MB standalone
+# exactly like the real offline setup, so it gets a real budget
+
+name: 'CAP-6b4 build switch probes (offline abort probe + consolidated facts)'
+description: 'CAP-11A: the body of the "CAP-6b4 build switch probes (offline abort probe + consolidated facts)" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap6b4/build_switch_probes.ps1 2>&1 |
+          Tee-Object -FilePath build/cap6b4-probes.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-6b4 switch-probe build FAILED' }

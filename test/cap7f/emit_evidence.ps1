@@ -1263,6 +1263,53 @@ if (-not $sha) { $sha = (& git rev-parse HEAD).Trim() }
 $runId = $env:GITHUB_RUN_ID
 if (-not $runId) { $runId = '<local>' }
 
+# --- CAP-11A: the records the structure, migration, schema and flake gates
+# --- wrote on this job, plus the two facts that are read rather than measured.
+function Read-Cap11aJson([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw ("missing precondition: $Path -- the CAP-11A gates must have run " +
+            'in this workspace before evidence can summarize them')
+    }
+    return (Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json)
+}
+$cap11aStructure = Read-Cap11aJson 'build/cap11a/structure.json'
+$cap11aMigration = Read-Cap11aJson 'build/cap11a/migration.json'
+$cap11aFlakes = Read-Cap11aJson 'build/cap11a/flakes.json'
+$cap11aSchema = Read-Cap11aJson 'build/cap7f/schema-agreement.json'
+# THE SEQUENCE DIGEST IS OVER THE SOURCE, not over the run: four targets must
+# agree that they were given the same list, and the run-measured half - that
+# they actually EXECUTED the same list - is the aggregate's own gate.
+$cap11aSeqRows = @(Get-Content -LiteralPath 'test/cap11a/step-applicability.tsv' |
+    Select-Object -Skip 1 | Where-Object { $_.Trim() } |
+    ForEach-Object { ($_ -split "`t")[1] })
+$cap11aSha = [System.Security.Cryptography.SHA256]::Create()
+try {
+    # ONE LINE PER STEP, LF-terminated, exactly as the POSIX twin writes them:
+    # the digest is compared across four targets, so the bytes hashed have to be
+    # the same bytes on both emitters or the comparison would only ever measure
+    # which family produced the row.
+    $cap11aSeqText = (($cap11aSeqRows -join "`n") + "`n")
+    $cap11aSeqDigest = ([System.BitConverter]::ToString(
+        $cap11aSha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($cap11aSeqText))
+        ) -replace '-', '').ToLowerInvariant()
+} finally { $cap11aSha.Dispose() }
+# The twin-run record exists only once the migration has been PROVEN equal; on
+# the twin commit itself it does not, and `pending` is the honest word for that.
+$cap11aTwin = 'pending'
+if (Test-Path -LiteralPath 'test/cap11a/twin-run.json') {
+    $t = Get-Content -Raw -LiteralPath 'test/cap11a/twin-run.json' | ConvertFrom-Json
+    $cap11aTwin = "$($t.equal)".ToLowerInvariant()
+}
+# PWeb's OWN licence. `undeclared` is a measurement, not an omission: the
+# repository tracks no LICENSE file, so the distribution ships third-party
+# notices only and ledger D2-8 stays open with the human as its owner. This
+# shard never chooses one.
+$cap11aLicense = 'undeclared'
+foreach ($cand in 'LICENSE', 'LICENSE.md', 'LICENSE.txt', 'COPYING') {
+    $tracked = (& git ls-files --error-unmatch $cand 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $tracked) { $cap11aLicense = 'declared'; break }
+}
+
 $evidence = [ordered]@{
     schema                          = 1
     target                          = 'windows-x86_64'
@@ -1968,6 +2015,32 @@ $evidence = [ordered]@{
     app_pwb_react_sha256            = $reactPwbSha
     logical_inventory_sha256_react  = $reactInventorySha
     logical_inventory_sha256_pas2js = ''
+    # --- CAP-11A: the CI structure, its uploads and the three flakes ----------
+    # Every one of these is READ from a record a gate on this same job wrote, in
+    # the same way every other row here is: the CAP-11A gates run immediately
+    # above this emitter, and a failed gate kills the job before it is reached.
+    ci_sequence_digest              = $cap11aSeqDigest
+    ci_file_max_bytes               = "$($cap11aStructure.ci_file_max_bytes)"
+    ci_file_bound_bytes             = "$($cap11aStructure.ci_file_bound_bytes)"
+    ci_legacy_present               = "$($cap11aStructure.ci_legacy_present)".ToLowerInvariant()
+    retention_policy_digest         = $cap11aStructure.retention_policy_digest
+    ci_timeouts                     = $cap11aStructure.ci_timeouts
+    ci_timeouts_digest              = $cap11aStructure.ci_timeouts_digest
+    upload_model                    = $cap11aStructure.upload_model
+    upload_max_attempts             = "$($cap11aStructure.upload_max_attempts)"
+    gate_reads_artifact             = "$($cap11aStructure.gate_reads_artifact)"
+    ci_migration_bodies_compared    = "$($cap11aMigration.bodies_compared)"
+    ci_migration_uploads_folded     = "$($cap11aMigration.uploads_folded)"
+    ci_twin_run_equal               = $cap11aTwin
+    schema_field_count              = "$($cap11aSchema.fields_ps1)"
+    flake_nonreport_cause_row       = $cap11aFlakes.flake_nonreport_cause_row
+    flake_nonreport_causes          = $cap11aFlakes.flake_nonreport_causes
+    u3_drain_before_measure         = $cap11aFlakes.u3_drain_before_measure
+    u3_drain_rows                   = "$($cap11aFlakes.u3_drain_rows)"
+    fetch_retry_rows                = "$($cap11aFlakes.fetch_retry_rows)"
+    fetch_retry_max_attempts        = "$($cap11aFlakes.fetch_retry_max_attempts)"
+    fetch_retry_bound_s             = "$($cap11aFlakes.fetch_retry_bound_s)"
+    sdk_own_license                 = $cap11aLicense
     github_sha                      = $sha
     github_run_id                   = "$runId"
     waivers                         = @(

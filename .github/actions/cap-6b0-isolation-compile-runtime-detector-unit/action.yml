@@ -1,0 +1,27 @@
+# ------------------------- CAP-6b0 gates -------------------------
+# WebView2 runtime detection and provisioning foundation.
+# Everything below is additive; no earlier step is altered. The
+# headless policy/provisioning cases (pweb.test.webview2runtime)
+# already ran inside the PWeb test suite step above. CI NEVER
+# downloads or installs a runtime here: the lock/fetch gates run
+# over local fixtures only, and the host detection smoke merely
+# reports the runner's registry state as diagnostic evidence
+# (unavailable is a SKIP, only a crashed probe fails).
+
+name: 'CAP-6b0 isolation compile - runtime detector unit'
+description: 'CAP-11A: the body of the "CAP-6b0 isolation compile - runtime detector unit" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force build/cap6b/fpc,
+          build/cap6b/bin | Out-Null
+        fpc -MObjFPC -Sh -B -FUbuild/cap6b/fpc `
+          -Fusrc/platform/windows `
+          -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+          src/platform/windows/pweb.platform.webview2.runtime.pas
+        if ($LASTEXITCODE -ne 0) {
+          throw 'pweb.platform.webview2.runtime.pas failed its isolation compile'
+        }

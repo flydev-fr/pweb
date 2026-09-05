@@ -1,0 +1,17 @@
+# 75: the gate script's OWN bounded waits can sum past an hour in
+# the worst case (install 20 min + two manifest verifies 10 min
+# each + smoke/control/negative legs + uninstall 10 min + the
+# abort probe 20 min), and a step budget below its script's sum
+# would kill a healthy run before the script could report
+
+name: 'CAP-6b3 fixed setup gates - install, ACL by SID, manifest, observed identity, no-fallback, uninstall, abort probe'
+description: 'CAP-11A: the body of the "CAP-6b3 fixed setup gates - install, ACL by SID, manifest, observed identity, no-fallback, uninstall, abort probe" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap6b3/run_fixed_setup_gates.ps1 2>&1 |
+          Tee-Object -FilePath build/cap6b3-gates.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-6b3 fixed setup gates FAILED' }

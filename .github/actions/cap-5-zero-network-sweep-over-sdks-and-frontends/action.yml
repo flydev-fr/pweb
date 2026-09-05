@@ -1,0 +1,14 @@
+# Zero-network sweep, host compiles (re-applied CAP-3U window) and
+# both real-frontend runtime smokes live in test/cap5/*.ps1; the
+# smokes follow the established conditional hosted PASS/SKIP/FAIL
+# policy - a genuine failure gates, only an absent WebView2/desktop
+# session records SKIP, local runs stay authoritative.
+
+name: 'CAP-5 zero-network sweep over SDKs and frontends'
+description: 'CAP-11A: the body of the "CAP-5 zero-network sweep over SDKs and frontends" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: pwsh -NoProfile -File test/cap5/check_cap5_nonetwork.ps1

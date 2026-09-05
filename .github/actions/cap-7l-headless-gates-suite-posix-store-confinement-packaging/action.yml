@@ -1,0 +1,8 @@
+name: 'CAP-7L headless gates - suite, POSIX store confinement, packaging'
+description: 'CAP-11A: the body of the "CAP-7L headless gates - suite, POSIX store confinement, packaging" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: linux
+      shell: bash
+      run: test/cap7l/run_cap7l_gates.sh
