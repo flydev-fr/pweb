@@ -1391,25 +1391,6 @@ jobs:
             Tee-Object -FilePath build/cap6b3-gates.log
           if ($LASTEXITCODE -ne 0) { throw 'CAP-6b3 fixed setup gates FAILED' }
 
-      # CAP-10E E4: THE SAME GATE BODY, a second time, at an install
-      # directory whose name carries a space and a non-ASCII character.
-      # Parameterised rather than copied - a copy would drift away from the
-      # ten legs above the first time one of them changed. It runs AFTER the
-      # ratified one, on the same machine, so a failure here is about the
-      # path and about nothing else; and it runs unconditionally rather than
-      # only on Windows-with-a-session, because the gate's own SKIP policy
-      # already decides what an absent desktop session means.
-      - name: CAP-10E E4 fixed-runtime profile at a non-ASCII install directory
-        shell: pwsh
-        timeout-minutes: 75
-        run: |
-          $leaf = 'Programs\PWebRelease ' + ([char]0x00E9) + 'tude'
-          pwsh -NoProfile -File test/cap6b3/run_fixed_setup_gates.ps1 `
-            -InstallLeaf $leaf `
-            -RecordFile (Join-Path $PWD 'build/cap6b3/fixed-nonascii.json') 2>&1 |
-            Tee-Object -FilePath build/cap6b3-nonascii-gates.log
-          if ($LASTEXITCODE -ne 0) { throw 'CAP-10E E4 fixed setup gates at a non-ASCII directory FAILED' }
-
       # same deliberate deviation as CAP-6b2: the fixed-profile setup
       # (~276 MB) is NOT uploaded on failure - the logs, listing and
       # lockfacts below identify any defect, and the binary is
@@ -1504,6 +1485,37 @@ jobs:
           pwsh -NoProfile -File test/cap6b4/run_profile_matrix.ps1 2>&1 |
             Tee-Object -FilePath build/cap6b4-matrix.log
           if ($LASTEXITCODE -ne 0) { throw 'CAP-6b4 profile matrix FAILED' }
+
+      # CAP-10E E4: THE SAME CAP-6b3 GATE BODY, a second time, at an install
+      # directory whose name carries a space and a non-ASCII character.
+      # Parameterised rather than copied - a copy would drift away from the
+      # ten legs the first time one of them changed.
+      #
+      # IT RUNS HERE, AFTER THE WHOLE CAP-6b PROFILE CHAIN, AND THE POSITION
+      # IS MEASURED RATHER THAN CHOSEN. Its first placement was directly
+      # after the CAP-6b3 gates, which put a SECOND fixed-profile install
+      # and uninstall between them and CAP-6b4 - and on run 33981222264
+      # CAP-6b4's S5 leg then failed with `setup exited 5` (fixed-runtime
+      # tree validation) while Inno's own log recorded
+      # `RestartManager found an application using one of our files:
+      # Microsoft Edge WebView2`. That is ledger D1-16's intermittent U3
+      # residue, and doubling the install/uninstall cycles that precede
+      # CAP-6b4 is exactly what makes a live-WebView2 file hold likelier.
+      # A new gate must not raise the failure rate of an existing one, so
+      # this step moved to where it perturbs nothing: everything it needs
+      # (the built fixed-profile setup, the lock facts, the manifest) is
+      # produced by the CAP-6b3 build step far above and is untouched by
+      # CAP-6b4.
+      - name: CAP-10E E4 fixed-runtime profile at a non-ASCII install directory
+        shell: pwsh
+        timeout-minutes: 75
+        run: |
+          $leaf = 'Programs\PWebRelease ' + ([char]0x00E9) + 'tude'
+          pwsh -NoProfile -File test/cap6b3/run_fixed_setup_gates.ps1 `
+            -InstallLeaf $leaf `
+            -RecordFile (Join-Path $PWD 'build/cap6b3/fixed-nonascii.json') 2>&1 |
+            Tee-Object -FilePath build/cap6b3-nonascii-gates.log
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-10E E4 fixed setup gates at a non-ASCII directory FAILED' }
 
       # ------------------------- CAP-7F closure -------------------------
       # Everything below is additive; no earlier step is altered. The args
