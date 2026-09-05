@@ -1601,7 +1601,10 @@ for f in sdk_corpus sdk_suite sdk_digest sdk_corpus_lines sdk_package_built \
          sdk_absent_manifest_row pack_fixture_baseline pack_link_leg_armed \
          pack_refusals pack_refusal_count packaging_network_calls \
          packaging_children_spawned clean_machine_path_has_space \
-         clean_machine_path_non_ascii clean_machine_react_rpc \
+         clean_machine_path_non_ascii clean_machine_project_path \
+         clean_machine_project_has_space nonascii_project_path \
+         nonascii_project_non_ascii nonascii_build_exit \
+         nonascii_pack_lines clean_machine_react_rpc \
          clean_machine_pas2js_rpc clean_machine_react_build_exit \
          clean_machine_pas2js_build_exit clean_machine_completed \
          checkout_path_in_argv unit_paths_under_sdk checkout_restored \
@@ -2254,6 +2257,12 @@ cat > "${work}/evidence.json" <<EOF
   "packaging_children_spawned": "${packaging_children_spawned}",
   "clean_machine_path_has_space": "${clean_machine_path_has_space}",
   "clean_machine_path_non_ascii": "${clean_machine_path_non_ascii}",
+  "clean_machine_project_path": "${clean_machine_project_path}",
+  "clean_machine_project_has_space": "${clean_machine_project_has_space}",
+  "nonascii_project_path": "${nonascii_project_path}",
+  "nonascii_project_non_ascii": "${nonascii_project_non_ascii}",
+  "nonascii_build_exit": "${nonascii_build_exit}",
+  "nonascii_pack_lines": "${nonascii_pack_lines}",
   "clean_machine_react_rpc": "${clean_machine_react_rpc}",
   "clean_machine_pas2js_rpc": "${clean_machine_pas2js_rpc}",
   "clean_machine_react_build_exit": "${clean_machine_react_build_exit}",
