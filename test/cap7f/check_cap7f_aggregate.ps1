@@ -957,6 +957,13 @@ $absolutePins = @{
     # PWeb declares no licence of its own (ledger D2-8, owner: the human). The
     # pin is what stops this shard - or a later one - from quietly choosing one.
     sdk_own_license                    = 'undeclared'
+    # THE MIGRATION IS PROVEN, and the pin is what keeps it proven. The row is
+    # read from `test/cap11a/twin-run.json`, the committed record of one commit
+    # measured twice by two CI structures - runs 33997353852 (the legacy file)
+    # and 33997353945 (the split), both on ae75469, 60 compared fields
+    # byte-identical. Before that record existed the emitters reported
+    # `pending`, which is why this pin lands with it and not before.
+    ci_twin_run_equal                  = 'true'
 }
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
 $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',

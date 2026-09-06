@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "equal": true,
+  "repository": "flydev-fr/pweb",
+  "commit": "ae75469828d9f568e213c80f48c07b73b5fe3ce7",
+  "old_run": "33997353852",
+  "old_structure": ".github/workflows/ci.yml (one file, six jobs)",
+  "new_run": "33997353945",
+  "new_structure": ".github/workflows/ci-matrix.yml + platform-leg.yml + .github/actions/**",
+  "agreement_fields": 60,
+  "target_fields": 324,
+  "observations_differing": [
+    "windows-x86_64.pas2js_run_elapsed_ms old='20862' new='21253'",
+    "windows-x86_64.run_elapsed_ms old='21325,21985' new='22665,21263'",
+    "windows-x86_64.stage_react_release_digest old='751beedcff96a4b08e60ac2dc2597a270f2b81c27a8442f3552094c2ee136972' new='0c0ca6e4af8e4db9098010fc8a7e83863d1a7110de31ddb823f09d1d1af7601f'",
+    "windows-x86_64.stage_pas2js_release_digest old='8196134001988854d92063102695f4f0c466d8f568f72148293941a335897ea0' new='7353cf7f6a933181514d518bd7962b2a30509a18687a335d85619d4eff3e8305'",
+    "windows-x86_64.github_run_id old='33997353852' new='33997353945'",
+    "linux-x86_64.run_elapsed_ms old='20551,20296' new='20395,20674'",
+    "linux-x86_64.run_descendants_drained old='2,2' new='2,0'",
+    "linux-x86_64.run_descendants_forced old='0,0' new='0,-1'",
+    "linux-x86_64.run_drain_passes old='2,2' new='2,0'",
+    "linux-x86_64.github_run_id old='33997353852' new='33997353945'",
+    "macos-x86_64.pas2js_run_elapsed_ms old='21000' new='20000'",
+    "macos-x86_64.run_elapsed_ms old='21222,21018' new='21234,21074'",
+    "macos-x86_64.github_run_id old='33997353852' new='33997353945'",
+    "macos-arm64.pas2js_compiler_sha256 old='de5cb9d99554a8dc5b2c1afc008ee9d54e94fce8e2ebf9f8a7bee3cecbb2bb85' new='56bce2aad374854776010e8d1a67823653a686513c5894db3cd1f204e57f1d3a'",
+    "macos-arm64.run_elapsed_ms old='21247,21387' new='21099,21240'",
+    "macos-arm64.github_run_id old='33997353852' new='33997353945'"
+  ],
+  "violations": []
+}

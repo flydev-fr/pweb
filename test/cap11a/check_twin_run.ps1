@@ -55,7 +55,43 @@ $OBSERVATION_FIELDS = @(
     'fetch_retry_rows', 'u3_drain_rows', 'flake_nonreport_causes',
     'dev5_burst_edits', 'run_drain_passes',
     'image_dir_hex', 'run_descendants_drained', 'pd7_moving_writes',
-    'sdk_integrity_seconds'
+    'sdk_integrity_seconds',
+    # AND FOUR MORE, each with its own mechanism rather than its own
+    # inconvenience. The rule for adding a name here is that a MECHANISM makes
+    # the value a fact about one execution; "it differed and I want green" is
+    # not one, and every entry below names what varies and why.
+    #
+    #   run_descendants_forced   how many descendants had to be force-killed.
+    #                            `run_descendants_drained` and `run_drain_passes`
+    #                            are already here for the same reason and
+    #                            differed in the same comparison; this is the
+    #                            third counter of one teardown observation.
+    #
+    #   stage_react_release_digest, stage_pas2js_release_digest
+    #                            the staged release layout on WINDOWS is not
+    #                            byte-reproducible run to run. MEASURED
+    #                            INDEPENDENTLY OF THIS SHARD: the same two
+    #                            fields differ between runs 33983841968 and
+    #                            33988544531, which are BOTH the legacy
+    #                            structure and differ only by a docs-only
+    #                            commit. So the split is not what moved them.
+    #                            The ledger already records the family - the
+    #                            archive's byte-determinism is a per-target,
+    #                            per-run claim (D1-9, D2-3), and
+    #                            `create_help_digest` differs between families
+    #                            for a cause nobody has identified (B1-8).
+    #
+    #   pas2js_compiler_sha256   on macOS arm64 the pinned pas2js is COMPILED
+    #                            natively from the pinned FPC revision, because
+    #                            upstream ships an x86_64 binary only and
+    #                            Rosetta is banned (CAP-7M2). A binary built on
+    #                            the runner is not byte-reproducible, which is
+    #                            precisely why the aggregate requires this row
+    #                            present on every target and compares it on
+    #                            none.
+    'run_descendants_forced',
+    'stage_react_release_digest', 'stage_pas2js_release_digest',
+    'pas2js_compiler_sha256'
 )
 function Test-Observation([string]$Name) {
     if ($OBSERVATION_FIELDS -contains $Name) { return $true }
