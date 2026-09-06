@@ -1,5 +1,13 @@
 # CAP-11A — the CI matrix: one step sequence, non-blocking evidence, three instrumented flakes
 
+**CLOSED.** Hosted run **`34022414932`** on commit **`d63d7e3`** — the first run
+in which `.github/workflows/ci.yml` *is* the caller — went green on all six jobs,
+and its aggregate measured the shard's premise rather than assuming it: four
+identical sequences of 196 steps under digest `3b28ac8d…f4f5fe3a`, that digest
+equal to the digest of the sequence declared, and every leg running all of its
+legacy steps in order. No product code was touched. Two ledger entries record the
+closure and what the three twin runs cost.
+
 ## SPLIT MODEL
 
 **A + B**, and B is forced by a measurement rather than chosen for taste.
@@ -49,17 +57,55 @@ would have renamed a gate, and a renamed gate is a gate nobody can find.
 | claim | measurement |
 |---|---|
 | every legacy step accounted for | 445 rows in `ci-legacy-inventory.tsv`, 445 in `ci-migration-map.tsv`, 0 unmapped |
-| bodies unchanged | **342 compared against their pre-migration digests, 0 differences** (341 against the legacy digest, 1 against a declared amendment) |
+| bodies unchanged | **342 compared against their pre-migration digests, 0 differences** (340 against the legacy digest, 2 against a declared amendment) |
 | order preserved | the generator refuses if any leg's subsequence differs from its current order |
 | the ratified exception | 61 upload steps (103 rows) folded into the collection block, each path preserved in `collection-paths.json` |
-| the amendment | one: the Windows floating-upstream-ref guard, which *named* `ci.yml` and now sweeps the tree — declared in `post-migration-amendments.tsv` with the digest it is allowed to have |
+| the amendments | two, both declared in `post-migration-amendments.tsv` with the digest each is allowed to have: the Windows floating-upstream-ref guard, which *named* `ci.yml` and now sweeps the tree; and the CAP-4 dual-mode runtime smoke, the fourth driver on which the `state=0` non-report demonstrated itself mid-shard (run `33996400159`) and which is therefore instrumented like the other three |
 
 `docs/ci-migration.md` names all **236** distinct legacy step names and states
 the resolution procedure for a `ci.yml:<line>` citation: **resolve by step name,
 not by line number**, because a line number was only ever true of the file at the
 commit that cited it.
 
-TWIN_RUN_BLOCK
+**The twin run.** Commit `ae75469` fired both structures at once and each
+produced its own six-job run and its own `platform-matrix.json`:
+
+| | run | structure |
+|---|---|---|
+| control | **`33997353852`** | `.github/workflows/ci.yml` — one file, six jobs |
+| migrated | **`33997353945`** | the caller + `platform-leg.yml` + 168 composite actions |
+
+Both green on all six jobs. `test/cap11a/check_twin_run.ps1` then compared the
+two matrices:
+
+- **60 of 60 compared fields byte-identical** — the aggregate's agreement block,
+  which carries the compared fields, the absolute pins and the four-target
+  equality list;
+- 324 per-target fields compared, **16 differing, every one typed as an
+  observation**: run identifiers, elapsed and kill/interrupt milliseconds,
+  sampler counts, the CAP-10E probe directory's random suffix.
+
+Four of those sixteen needed naming, and each was added on a mechanism rather
+than on inconvenience. `run_descendants_forced` is the third counter of a
+teardown observation whose two siblings were already typed and differed in the
+same comparison. `stage_react_release_digest` and `stage_pas2js_release_digest`
+differ between **two runs of the LEGACY structure** — `33983841968` and
+`33988544531`, one docs-only commit apart — so the split is not what moved them;
+the ledger already records the family (D1-9, D2-3: byte-determinism is a
+per-target, per-run claim). `pas2js_compiler_sha256` varies because on macOS
+arm64 the pinned pas2js is **compiled natively on the runner** — upstream ships
+an x86_64 binary only and Rosetta is banned (CAP-7M2) — which is exactly why the
+aggregate requires that row on every target and compares it on none.
+
+The record is committed as `test/cap11a/twin-run.json`, and
+`ci_twin_run_equal = 'true'` is pinned from it. Before that file existed the
+emitters reported `pending`, which is the honest word for a proof not yet made.
+
+**Three twins were run, and the two that were discarded earned their cost.** The
+first (`aed6e27`) was stopped when the review found two defects that would each
+have failed the closure run; the second (`32ea624`) died on the hosted Linux leg
+with the exact `Code Cache` separator fault WSL had predicted locally, character
+for character. Only the third proves anything, and that is the one recorded.
 
 ## UPLOADS
 
@@ -210,7 +256,77 @@ rule, and `git add LICENSE.txt`. Both emitters already detect a tracked
 `LICENSE`/`LICENSE.md`/`LICENSE.txt`/`COPYING` and would report `declared` with
 no further work.
 
-REGRESSIONS_BLOCK
+## REGRESSIONS
+
+**The closure run.** `34022414932` on commit `d63d7e3`, every job green:
+
+| job | conclusion |
+|---|---|
+| `windows` | **success** |
+| `linux` | **success** |
+| `macos-x64` | **success** |
+| `macos-arm64` | **success** |
+| `macos release inventory (x64 = arm64)` | **success** |
+| `cap7 aggregate (windows = linux = macos-x64 = macos-arm64)` | **success** |
+
+That is every gate of CAP-1 through CAP-10E — the whole inherited suite — running
+through the new structure, plus this shard's own six leg gates and the aggregate's
+measured premise.
+
+**What the run measured about itself**, verbatim from the aggregate's own log on
+the closure run:
+
+```
+[cap11a] run 34022414932 reports 6 job(s)
+[cap11a] windows      job=101457284443 conclusion=success authored_steps=196
+[cap11a] linux        job=101457284436 conclusion=success authored_steps=196
+[cap11a] macos-x64    job=101457284244 conclusion=success authored_steps=196
+[cap11a] macos-arm64  job=101457284377 conclusion=success authored_steps=196
+[cap11a] four identical sequences of 196 steps, digest 3b28ac8d…f4f5fe3a
+[cap11a] declared applicability for 196 steps
+[cap11a] legs held to the declared applicability: [windows,linux,macos-x64,macos-arm64]
+[cap11a] applicability: 9 conditional of 196 steps
+[cap11a] the sequence run is the sequence declared (3b28ac8d…f4f5fe3a)
+[cap11a] windows runs all 125 of its legacy steps, in order
+[cap11a] linux runs all 69 of its legacy steps, in order
+[cap11a] macos-x64 runs all 74 of its legacy steps, in order
+[cap11a] macos-arm64 runs all 74 of its legacy steps, in order
+[cap11a] windows      status=ok evidence_uploaded=True upload_attempts=3
+[cap11a] linux        status=ok evidence_uploaded=True upload_attempts=3
+[cap11a] macos-x64    status=ok evidence_uploaded=True upload_attempts=4
+[cap11a] macos-arm64  status=ok evidence_uploaded=True upload_attempts=4
+[CAP-7F] divergence sweep PASS - 212 platform conditionals, all inside the ratified allowlist
+[CAP-7F] selftest PASS - 232 aggregator refusals + 2 divergence refusals
+[CAP-7F] aggregate PASS - platform-matrix.json written
+```
+
+Two lines there are worth reading twice. `the sequence run is the sequence
+declared` is a digest equality over one canonical form, so the gate cannot pass
+by comparing a list to itself; and `upload_attempts` is 3 or 4 — the *upload
+step count in the collection block*, all of which succeeded, which is what a
+bounded-retry model looks like when nothing goes wrong.
+
+**CI1 is a measurement, not an assertion**, and so is the answer to "did any step
+disappear or reorder": every leg executes all of its legacy steps, in order, read
+back from the run.
+
+**CI3, measured against the CAP-10E closure run `33983841968`:** all **65**
+digest and sha256 rows on the Linux leg read their closure values on the new
+structure — **zero differences**.
+
+**Retention, observed on the artifact service** rather than in the YAML:
+`leg-evidence-*`, `leg-records-*` and `leg-release-*` expire at 90 days,
+`leg-dist-*` at 14.
+
+**The collection block under a red leg.** On run `33996400291` the linux leg
+failed a gate and *still* reported `evidence_uploaded=True`, and the aggregate
+typed it `gate_failure` naming the exact gate. That is the reference case
+inverted: the thing that used to cost a target thirty steps now costs it nothing.
+
+**Two flakes fired during the shard and neither was re-ratified.** The `state=0`
+non-report appeared on the CAP-4 dual-mode smoke of the control leg (run
+`33996400159`), and the pinned-installer stall class appeared as a 1002-second
+FPC install on `33962919229`. Both dispositions unchanged: re-run the job.
 
 ## FREEZE CHECK
 
@@ -253,4 +369,31 @@ the harness files named at Checkpoint 1 (`test/cap6/run_cap6_smoke.ps1`,
 
 ## VERDICT
 
-VERDICT_BLOCK
+The property CAP-11A was asked to establish is that **the four platform jobs run
+the same step sequence**, and the change is that this is now *true by
+construction and measured on every run* rather than maintained by hand. There is
+one sequence of 196 steps in `platform-leg.yml`; the four legs are four calls to
+it; and the aggregate reads the run back and refuses unless the four observed
+sequences are identical, each leg holds to its declared applicability, and the
+digest of the sequence run equals the digest of the sequence declared.
+
+The migration is proven rather than asserted: one commit fired both structures,
+both went green on all six jobs, and their two `platform-matrix.json` files agree
+on all 60 compared fields, with 16 of 324 per-target fields differing and every
+one typed as an observation. 445 legacy steps are mapped one-for-one, 342 bodies
+match their pre-migration digests exactly, and all 726 legacy upload paths are
+present in the collection union. No step was cleaned up while migrating.
+
+Gates no longer depend on an upload: evidence is written to disk, collected in a
+final block of bounded-retry uploads, and an upload failure is typed
+`INFRASTRUCTURE, NOT A GATE` — proven inverted on a red leg that still reported
+`evidence_uploaded=True`. Retention, concurrency and per-job timeouts are
+ratified and enforced. Three flakes are instrumented so a failure names its
+cause, and **no timeout was lengthened anywhere**. The SDK ships no licence it
+was not given: `sdk_own_license = undeclared` is a measurement, and D2-8 stays
+open with the human as its owner.
+
+Closure run **`34022414932`** on **`d63d7e3`**, six jobs green, product code
+byte-untouched.
+
+CAP-11A PASS — CI MATRIX FROZEN
