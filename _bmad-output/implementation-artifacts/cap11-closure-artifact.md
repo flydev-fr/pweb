@@ -230,11 +230,14 @@ different messages.
 | 11B-10 | 74aab1a5 | RECORDED-ONLY | the dev host's i386 FPC cannot run the compile-based cases; a named refusal, never a skip |
 | 11B-11 | 787116f2 | RESOLVED | twelve review defects, every one patched in this commit; §9b names each and what it would have cost |
 | 11B-12 | df2373d6 | RECORDED-ONLY | the watcher builds an unreviewed commit and the bound on that is the permissions; branch protection is not in the tree |
-| 11B-13 | ee1b0fa6 | LATER | a fourth Windows flake class sighted in CAP-10C0's no-listener sampler; re-run, and the instrumentation belongs to whoever owns test/cap10c0/ |
+| 11B-13 | ee1b0fa6 | RESOLVED | superseded by 11B-15: the sampler types every listener by owner image, so this class names its owner instead of re-running |
 | 11B-14 | eb4cb087 | RESOLVED | the shell emitter's reader truncated the one list row at its first comma; an absolute pin caught what equality could not |
+| 11B-15 | 3a637757 | RESOLVED | 11B-13 answered: every sampled listener typed by owner image, must-PASS is host-owned = 0 |
+| 11B-16 | c8ea7d90 | RECORDED-ONLY | superseded meaning, same names and same pin: the four `*_listener_members_max` rows are host-owned |
+| 11B-17 | 0cd16a27 | RECORDED-ONLY | two more PowerShell array traps in the new sampler, both found by probing rather than reading |
 
-**Orphans: 0. Strays: 0. Rewords: 0.** Census: 16 RESOLVED, 14 RECORDED-ONLY,
-1 CAP-12, 1 LATER.
+**Orphans: 0. Strays: 0. Rewords: 0.** Census: 18 RESOLVED, 16 RECORDED-ONLY,
+1 CAP-12.
 
 ## 6. `sdk_own_license`, RE-MEASURED
 

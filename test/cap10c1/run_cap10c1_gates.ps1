@@ -469,6 +469,10 @@ function RunApplication([string]$Project, [string]$Tag) {
     $listenerMax = 0
     $connMax = 0
     $sampled = 0
+    $browserMax = 0
+    $unknownMax = 0
+    $hostImageSeen = $false
+    $listenerDetail = @()
     $readyWhileAlive = $false
     while (-not $p.HasExited -and ($sw.ElapsedMilliseconds -lt 90000)) {
         Start-Sleep -Milliseconds 400
@@ -492,9 +496,17 @@ function RunApplication([string]$Project, [string]$Tag) {
             $members = @(Get-PWebTreeMembers -RootPid $appPid)
             if ($members.Count -gt $membersSeen) { $membersSeen = $members.Count }
             $sampled++
+            # CAP-11B: `listenerMax` is the HOST-owned maximum; a browser
+            # engine's own socket is recorded beside it (ledger 11B-13).
+            $typed = Get-PWebTypedListeners -RootPid $appPid
+            if ($typed.Host_ -gt $listenerMax) { $listenerMax = $typed.Host_ }
+            if ($typed.Browser -gt $browserMax) { $browserMax = $typed.Browser }
+            if ($typed.Unknown -gt $unknownMax) { $unknownMax = $typed.Unknown }
+            if ($typed.HostImageResolved) { $hostImageSeen = $true }
+            foreach ($d in $typed.Detail) {
+                if (-not ($listenerDetail -contains $d)) { $listenerDetail += $d }
+            }
             foreach ($m in $members) {
-                $n = Get-PWebListenerCount -OwnerPid $m
-                if ($n -gt $listenerMax) { $listenerMax = $n }
                 $c = Get-PWebConnectionCount -OwnerPid $m
                 if ($c -gt $connMax) { $connMax = $c }
             }
@@ -520,8 +532,57 @@ function RunApplication([string]$Project, [string]$Tag) {
         Code = $p.ExitCode; Rpc = $value; Listeners = $listenerMax
         Connections = $connMax; Members = $membersSeen; Sampled = $sampled
         ReadyLive = $readyWhileAlive; Out = $out; Err = $err
+        Browser = $browserMax; Unknown = $unknownMax
+        HostImageSeen = $hostImageSeen; ListenerDetail = $listenerDetail
     }
 }
+# --- CAP-11B: the owner-typing rule itself, offline -------------------------
+# The live samplers above report `host = 0` on a healthy run, which is also
+# what a broken classifier reports. These seven cases fix the rule in place
+# with no process involved: a ratified engine NAME from an unratified place is
+# `unknown`, never `browser`, and containment is on a component boundary.
+$typingHostImage = if ($IsWindows) { 'C:\app\demo.exe' } else { '/app/demo' }
+$typingHostDir = if ($IsWindows) { 'C:\app' } else { '/app' }
+# `@(...)` around the call, and it is not decoration: the Windows branch of
+# Get-PWebEngineImageNames returns ONE name, PowerShell unrolls a one-element
+# array into a string, and `[0]` then indexed the STRING - the case built
+# `C:\app\m` and typed it `host`, which is a self-test passing itself.
+$typingEngine = @(Get-PWebEngineImageNames)[0]
+$typingCases = if ($IsWindows) {
+    @(
+        @('C:\app\demo.exe', 'host'),
+        @('C:\app\sub\helper.exe', 'host'),
+        @("C:\Program Files (x86)\Microsoft\EdgeWebView\Application\1\$typingEngine", 'browser'),
+        @("C:\app\$typingEngine", 'browser'),
+        @("C:\temp\$typingEngine", 'unknown'),
+        @('C:\Windows\System32\svchost.exe', 'unknown'),
+        @('', 'unknown')
+    )
+} else {
+    @(
+        @('/app/demo', 'host'),
+        @('/app/sub/helper', 'host'),
+        @("/usr/libexec/$typingEngine", 'browser'),
+        @("/app/$typingEngine", 'browser'),
+        @("/tmp/$typingEngine", 'unknown'),
+        @('/usr/bin/sshd', 'unknown'),
+        @('', 'unknown')
+    )
+}
+$typingOk = 0
+foreach ($c in $typingCases) {
+    $got = Get-PWebListenerOwnerKind -Image $c[0] -HostImage $typingHostImage -HostDir $typingHostDir
+    if ($got -ceq $c[1]) { $typingOk++ }
+    else { Require $false "LT1: '$($c[0])' typed '$got', expected '$($c[1])'" }
+}
+# `C:\a\bc` is not under `C:\a\b`, and a comparison that forgot the separator
+# would say it was
+Require (Test-PWebImageUnder -Image (Join-Path $typingHostDir 'x') -Root $typingHostDir) `
+    'LT2: a file in the host directory is not seen as under it'
+Require (-not (Test-PWebImageUnder -Image "${typingHostDir}x/y" -Root $typingHostDir)) `
+    'LT2: containment is not on a component boundary'
+Row 'listener_owner_typing_cases' "$typingOk/$($typingCases.Count)"
+
 $runReact = RunApplication $reactProject 'react'
 $runPas2js = RunApplication $pas2jsProject 'pas2js'
 foreach ($pair in @(@('react', $runReact), @('pas2js', $runPas2js))) {
@@ -531,15 +592,27 @@ foreach ($pair in @(@('react', $runReact), @('pas2js', $runPas2js))) {
     Require ($r.Sampled -gt 0) `
         "DB3 $tag`: the membership sampler never ran: the counts would be a vacuous 0"
     Require ($r.Members -gt 0) "DB3 $tag`: the sampler saw no tree member at all"
-    Require ($r.Listeners -eq 0) "ST8 $tag`: a tree member opened $($r.Listeners) listener(s)"
+    # CAP-11B: HOST-owned only. The typing is vacuous unless the sampler could
+    # read the application's own image, so that is required first.
+    Require ($r.HostImageSeen) `
+        "ST8 $tag`: the sampler never resolved the application image, so its owner typing says nothing"
+    Require ($r.Listeners -eq 0) "ST8 $tag`: a HOST-owned tree member opened $($r.Listeners) listener(s)"
+    foreach ($d in $r.ListenerDetail) { Write-Host "[cap10c1] $tag sampled listener: $d" }
     Require ($r.ReadyLive) `
         "DB1 $tag`: the host's ready report did not arrive while the host was alive"
 }
 Row 'run_rpc_value_react' $runReact.Rpc
 Row 'run_rpc_value_pas2js' $runPas2js.Rpc
+# CAP-11B: HOST-owned. The row and its pin of 0 are unchanged; what a browser
+# engine owns is recorded beside them (ledger 11B-13).
 Row 'listener_members_max' ([Math]::Max($runReact.Listeners, $runPas2js.Listeners))
 Row 'listener_members_seen' ([Math]::Max($runReact.Members, $runPas2js.Members))
 Row 'listener_sampler_scope' (Get-PWebSamplerScope)
+Row 'listener_owner_browser' ([Math]::Max($runReact.Browser, $runPas2js.Browser))
+Row 'listener_owner_unknown' ([Math]::Max($runReact.Unknown, $runPas2js.Unknown))
+Row 'listener_detail' $(
+    $d = @($runReact.ListenerDetail) + @($runPas2js.ListenerDetail)
+    if ($d.Count -eq 0) { 'none' } else { ($d -join ' | ') })
 Row 'run_connections_max' ([Math]::Max($runReact.Connections, $runPas2js.Connections))
 Row 'flush_live_lines' (Bool ($runReact.ReadyLive -and $runPas2js.ReadyLive))
 Row 'layout_accepted_by_run' $(

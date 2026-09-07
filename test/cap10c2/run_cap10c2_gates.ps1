@@ -662,19 +662,27 @@ if (Test-Path -LiteralPath $react) {
     $listenMax = 0
     $membersSeen = 0
     $passes = 0
+    $browserMax = 0
+    $unknownMax = 0
+    $hostImageSeen = $false
+    $listenerDetail = @()
     while (($passes -lt 8) -and (-not $p2.HasExited) -and
            ($livePids.Count -gt 0)) {
         $passes++
         $pass = 0
         foreach ($rootPid in $livePids) {
-            $members = @(Get-PWebTreeMembers -RootPid $rootPid)
-            $pass += $members.Count
             # every member, not the root alone: the CAP-10C1 upgrade exists
             # because a browser helper that opened a socket was outside a
-            # per-pid count
-            foreach ($m in $members) {
-                $n = Get-PWebListenerCount -OwnerPid $m
-                if ($n -gt $listenMax) { $listenMax = $n }
+            # per-pid count. CAP-11B types each one by OWNER IMAGE, so
+            # `listenMax` is the HOST-owned maximum (ledger 11B-13).
+            $typed = Get-PWebTypedListeners -RootPid $rootPid
+            $pass += $typed.MembersSeen
+            if ($typed.Host_ -gt $listenMax) { $listenMax = $typed.Host_ }
+            if ($typed.Browser -gt $browserMax) { $browserMax = $typed.Browser }
+            if ($typed.Unknown -gt $unknownMax) { $unknownMax = $typed.Unknown }
+            if ($typed.HostImageResolved) { $hostImageSeen = $true }
+            foreach ($d in $typed.Detail) {
+                if (-not ($listenerDetail -contains $d)) { $listenerDetail += $d }
             }
         }
         if ($pass -gt $membersSeen) { $membersSeen = $pass }
@@ -683,12 +691,19 @@ if (Test-Path -LiteralPath $react) {
     Row 'dev_listener_sampler_scope' (Get-PWebSamplerScope)
     Row 'dev_listener_members_seen' "$membersSeen"
     Row 'dev_listener_members_max' "$listenMax"
+    Row 'dev_listener_owner_browser' "$browserMax"
+    Row 'dev_listener_owner_unknown' "$unknownMax"
+    Row 'dev_listener_detail' $(
+        if ($listenerDetail.Count -eq 0) { 'none' } else { ($listenerDetail -join ' | ') })
+    foreach ($d in $listenerDetail) { Write-Host "[cap10c2] sampled listener: $d" }
     # a sampler that never sampled reports a clean zero for any host, so the
     # count of members it SAW is required as well as the count of listeners
     Require ($membersSeen -gt 0) `
         'the listener sampler saw no member at all, so its zero says nothing'
+    Require ($hostImageSeen) `
+        'the sampler never resolved a development-set image, so its owner typing says nothing'
     Require ($listenMax -eq 0) `
-        "a member of the live development set held $listenMax listening socket(s)"
+        "a HOST-owned member of the live development set held $listenMax listening socket(s)"
     if (-not $p2.HasExited) { $p2.Kill($true) }
     $p2.WaitForExit(30000) | Out-Null
     Row 'dev14_second_install_line' $(

@@ -253,6 +253,10 @@ function RunPweb([string[]]$CliArgs, [int]$TimeoutMs, [string]$AutoCloseMs) {
     $toolChildren = 0
     $memberListeners = 0
     $memberSeen = 0
+    $browserListeners = 0
+    $unknownListeners = 0
+    $hostImageSeen = $false
+    $listenerDetail = @()
     while (-not $p.HasExited -and $sw.ElapsedMilliseconds -lt $TimeoutMs) {
         Start-Sleep -Milliseconds 400
         if ($appPid -eq 0 -and (Test-Path -LiteralPath $se)) {
@@ -281,15 +285,21 @@ function RunPweb([string[]]$CliArgs, [int]$TimeoutMs, [string]$AutoCloseMs) {
                 if (($n + $u) -gt $listeners) { $listeners = $n + $u }
                 if ($c -gt $connections) { $connections = $c }
             } catch { }
-            # CAP-10C1: the same question asked of every MEMBER of the tree
+            # CAP-10C1 asked this of every MEMBER of the tree; CAP-11B types
+            # each answer by OWNER IMAGE. `memberListeners` is now the
+            # HOST-owned maximum - the product's own listeners - and a browser
+            # engine's socket is a recorded observation rather than a failure
+            # nobody can read (ledger 11B-13).
             try {
-                foreach ($m in @(Get-PWebTreeMembers -RootPid $appPid)) {
-                    # $m is a pid; the count is what matters, not its value
-                    $mn = Get-PWebListenerCount -OwnerPid $m
-                    if ($mn -gt $memberListeners) { $memberListeners = $mn }
+                $typed = Get-PWebTypedListeners -RootPid $appPid
+                if ($typed.MembersSeen -gt $memberSeen) { $memberSeen = $typed.MembersSeen }
+                if ($typed.Host_ -gt $memberListeners) { $memberListeners = $typed.Host_ }
+                if ($typed.Browser -gt $browserListeners) { $browserListeners = $typed.Browser }
+                if ($typed.Unknown -gt $unknownListeners) { $unknownListeners = $typed.Unknown }
+                if ($typed.HostImageResolved) { $hostImageSeen = $true }
+                foreach ($d in $typed.Detail) {
+                    if (-not ($listenerDetail -contains $d)) { $listenerDetail += $d }
                 }
-                $seen = @(Get-PWebTreeMembers -RootPid $appPid).Count
-                if ($seen -gt $memberSeen) { $memberSeen = $seen }
             } catch { }
             # no tool may run under the application: the children of the
             # application pid, by name, are only ever browser processes
@@ -322,6 +332,8 @@ function RunPweb([string[]]$CliArgs, [int]$TimeoutMs, [string]$AutoCloseMs) {
         ToolChildren = $toolChildren; ElapsedMs = [int]$sw.ElapsedMilliseconds
         HarnessKilled = $forced
         MemberListeners = $memberListeners; MemberSeen = $memberSeen
+        BrowserListeners = $browserListeners; UnknownListeners = $unknownListeners
+        HostImageSeen = $hostImageSeen; ListenerDetail = $listenerDetail
     }
 }
 
@@ -406,6 +418,8 @@ function RunLeg([string]$Tag, [string]$Stage, [string]$Before) {
         Unchanged = ($after -ceq $Before); ElapsedMs = $r.ElapsedMs; AppPid = $r.AppPid
         Ansi = ($r.Out.Contains([char]27) -or $r.Err.Contains([char]27))
         MemberListeners = $r.MemberListeners; MemberSeen = $r.MemberSeen
+        BrowserListeners = $r.BrowserListeners; UnknownListeners = $r.UnknownListeners
+        HostImageSeen = $r.HostImageSeen; ListenerDetail = $r.ListenerDetail
     }
 }
 
@@ -417,11 +431,30 @@ Row 'run_pas2js_rpc_value' $pas2js.Rpc
 Row 'run_secure_origin' $(if ($react.Secure -and $pas2js.Secure) { 'PASS' } else { 'FAIL' })
 Row 'run_error_mapping' $(if ($react.Errmap -and $pas2js.Errmap) { 'PASS' } else { 'FAIL' })
 Row 'run_listener_count' ([Math]::Max($react.Listeners, $pas2js.Listeners))
+# CAP-11B: `run_listener_members_max` is the HOST-owned maximum. The row name
+# and its absolute pin of 0 are unchanged, and so is what the pin was always
+# about - the PRODUCT opens no listener. What changed is that a browser
+# engine's own socket no longer counts against it, because it never was the
+# product's (ledger 11B-13, hosted run 34118821940).
 Row 'run_listener_members_max' ([Math]::Max($react.MemberListeners, $pas2js.MemberListeners))
 Row 'run_listener_members_seen' ([Math]::Max($react.MemberSeen, $pas2js.MemberSeen))
 Row 'run_listener_sampler_scope' (Get-PWebSamplerScope)
+Row 'run_listener_owner_browser' ([Math]::Max($react.BrowserListeners, $pas2js.BrowserListeners))
+Row 'run_listener_owner_unknown' ([Math]::Max($react.UnknownListeners, $pas2js.UnknownListeners))
+Row 'run_listener_detail' $(
+    $d = @($react.ListenerDetail) + @($pas2js.ListenerDetail)
+    if ($d.Count -eq 0) { 'none' } else { ($d -join ' | ') })
+foreach ($d in (@($react.ListenerDetail) + @($pas2js.ListenerDetail))) {
+    Write-Host "[cap10c0] sampled listener: $d"
+}
 Require ([Math]::Max($react.MemberSeen, $pas2js.MemberSeen) -gt 0) 'the membership sampler saw no tree member: run_listener_members_max would be a vacuous 0'
-Require ([Math]::Max($react.MemberListeners, $pas2js.MemberListeners) -eq 0) 'a tree member opened a listener'
+# The typing is only worth anything if the host's own image was readable: a
+# sampler that could not resolve it would type every listener `unknown` and the
+# host-owned count would be a clean, meaningless zero.
+Require ($react.HostImageSeen -and $pas2js.HostImageSeen) `
+    'the sampler never resolved the application image, so its owner typing says nothing'
+Require ([Math]::Max($react.MemberListeners, $pas2js.MemberListeners) -eq 0) `
+    'a HOST-owned tree member opened a listener'
 Row 'run_network_calls' ([Math]::Max($react.Connections, $pas2js.Connections))
 Row 'run_tool_calls' ($react.ToolChildren + $pas2js.ToolChildren)
 Row 'descendants_after_exit' ([Math]::Max($react.Survived, $pas2js.Survived) + [Math]::Max($react.Under, $pas2js.Under))
