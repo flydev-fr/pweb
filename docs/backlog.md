@@ -16,9 +16,9 @@ from and the one the gate reads.
 
 | verdict | count | what it means |
 |---|---:|---|
-| `FIX_NOW` | 3 | closed by this triage, one commit each, cited below |
+| `FIX_NOW` | 4 | closed by this triage, one commit each, cited below |
 | `UPSTREAM` | 2 | the defect belongs to a third-party project; a report is written and PWeb carries a local workaround |
-| `ROADMAP` | 40 | real work, deferred, with a named owner |
+| `ROADMAP` | 39 | real work, deferred, with a named owner |
 | `ACCEPTED` | 95 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
 | `CLOSED` | 198 | the thing the entry describes is done |
 
@@ -55,13 +55,13 @@ history and is an ancestor of HEAD** on every `FIX_NOW`. It requires this
 document to carry every open row and to state the counts its own table
 measures, so the two halves cannot drift. A source spec it cannot key is a
 refusal rather than a skip, so a ledger that grows a new spec cannot grow a
-silently undisposed entry with it. And it re-measures the three closures below
+silently undisposed entry with it. And it re-measures the four closures below
 in source, so that the one thing this triage fixed cannot quietly come undone.
 
-`test/backlog/check_backlog_selftest.ps1` perturbs the tree thirteen ways — a
+`test/backlog/check_backlog_selftest.ps1` perturbs the tree fourteen ways — a
 reworded entry, a missing row, a stray row, an unknown verdict, each of the
 three commit rules, a reason nobody wrote, an open row dropped from this
-document, a summary that disagrees with its own table, and each of the three
+document, a summary that disagrees with its own table, and each of the four
 closures undone — requires the gate to refuse every one, and restores the tree
 byte for byte. It earned its place immediately: the gate's first
 `create_help_digest` check looked for the two field names anywhere in the
@@ -152,7 +152,8 @@ here for the first time, and that is where most of this triage's work went.
 
 ## FIX_NOW — closed by this triage
 
-Three items, one commit each, and nothing else.
+Four items, one commit each. Three were this triage's own scope; the fourth,
+`7M0-6`, was promoted from the roadmap afterwards on the owner's instruction.
 
 ### `B2-15` — the generated `.gitattributes` covers `*.cfg` · `e90cc74`
 
@@ -228,6 +229,47 @@ of the nine, so consolidating cost no CI step a new flag; the other seven hosts
 gained `-Futest/core` in both their `.ps1` and `.sh` twins. All seven host gates
 and the 2,502-assertion mORMot-core suite were re-run green on windows-x86_64.
 
+### `7M0-6` — every recursive delete names its target and its root · `b39e07c`
+
+Promoted from `ROADMAP` after the triage, on the owner's instruction. Seven
+sites across `test/cap7l/*.sh` and `tools/build-webview-so.sh` opened by
+deleting a tree with a bare `rm -rf -- "${var}"`, with nothing validating the
+variable first — so an empty one turned `rm -rf -- "${work}/abi"` into
+`rm -rf -- /abi`. They were not wired to misfire, but that is an argument that
+an accident is unlikely rather than impossible, in scripts CI runs as programs.
+
+`tools/pwebrmtree.sh` is now the one guarded delete, and **the rule is lifted
+rather than invented**: every refusal is `cap7m_rm_tree`'s, in its order — an
+empty target, a missing or explicitly empty allowed root, `/`, a `..` path
+*component* (matched against a slash-padded copy, so `report..old` stays a
+legitimate filename), an unusable basename, an unresolvable parent, a target
+outside the allowed root (a literal, trailing-slashed prefix strip on `pwd -P`
+output, so `/x/buildkit` can never pass as inside `/x/build`), and the root
+itself. One narrowing: **the allowed root is required**, not defaulted, because
+with six call sites a root every caller names beats a default every reader has
+to know.
+
+**Six sites name `build`; one names `dist`, and that is measured rather than
+waived.** `run_release_layout.sh` deletes `dist/linux-x64/release`, which is
+the CAP-7L release layout the release-layout gate reads back and CAP-10D1's
+artifact rules point at — legitimately outside `build`, so the caller names the
+root it means instead of the guard quietly widening for everyone.
+
+`test/cap7l/check_rmtree.sh` drives all ten refusals **and both accepts**
+against a real filesystem — a guard that refused everything would pass a test
+that only ever asked it to refuse — and sweeps the six scripts for a bare
+delete returning. **13/13 under WSL**, with `bash -n` clean on all eight
+touched scripts and `tools/build-webview-so.sh --print-plan` byte-identical to
+its pinned expectation, so the sourcing changed no build decision.
+
+What is **not** done, and why: `test/cap7m/cap7m_common.sh` and
+`tools/build-webview-dylib.sh` carry the same rule twice, deliberately
+duplicated by CAP-7M0 so a build tool would not depend on the test tree — which
+is the gap this file closes on the `tools/` side. Retiring those two into this
+one is the obvious next move and is not taken here: both are macOS-only, this
+host cannot run either, and a consolidation nobody can execute before pushing
+is how a green tree becomes four red legs.
+
 ---
 
 ## UPSTREAM — two reports, ready to post
@@ -274,9 +316,9 @@ tampering (`7M0-5`), an `[InstallDelete]` in the fixed profile against the first
 pin bump (`6B4-7`), and hash-pinning or vendoring the WebView2 SDK nuget the
 upstream cmake fetches unverified (`P1-1`).
 
-**Harness hygiene owns five**, all named and all mechanical: seven unguarded
-`rm -rf -- "${var}"` sites in the CAP-7L POSIX scripts with the proven
-replacement already written beside them (`7M0-6`), the four copies of
+**Harness hygiene owns four**, all named and all mechanical — the fifth,
+`7M0-6`'s seven unguarded recursive deletes, was promoted to `FIX_NOW` and is
+closed above: the four copies of
 `Invoke-Bounded` (`6B2-3`), the `set -e`-unreachable failure paths in
 `prove_cap10b1.sh` (`B2-10`), the CAP-9A runner's case-sensitivity and its
 unremoved `mktemp -d` (`9B1-8`), and `pwebqjspack.pas` still reading `ParamStr`
@@ -325,12 +367,13 @@ than appended to an append-only ledger:
 
 ## The open work, in full
 
-Forty-five rows: the three `FIX_NOW` items this triage closed, the two
+Forty-five rows: the four `FIX_NOW` items this triage closed, the two
 `UPSTREAM` reports, and the forty on the roadmap. Everything else — 95
 `ACCEPTED` and 198 `CLOSED` — is in `test/backlog/dispositions.tsv`.
 
 | key | verdict | owner | reason |
 |---|---|---|---|
+| `7M0-6` | FIX_NOW · closed by `b39e07c` | this triage | the seven bare recursive deletes are gone: every removal now goes through `tools/pwebrmtree.sh`, which refuses an empty target, a missing or explicitly empty allowed root, `/`, a `..` path component, an unusable basename, an unresolvable parent, a target outside the named root, and the root itself. The rule is lifted from the ratified `cap7m_rm_tree` with the allowed root made REQUIRED rather than defaulted, so no site can inherit a root its reader has to know. Six sites name `build`; `run_release_layout.sh` names `dist`, because the CAP-7L release layout is ratified at `dist/linux-x64/release` and is legitimately outside `build`. `test/cap7l/check_rmtree.sh` drives all ten refusals and both accepts against a real filesystem and sweeps the six scripts for a bare delete returning - 13/13 under WSL |
 | `8B-7` | FIX_NOW · closed by `0029fc5` | this triage | `RepoRootFromExecutable` was duplicated across the CAP-8A, CAP-8B and CAP-8C hosts and had since grown a fourth copy. It is security-adjacent path resolution and the copies could drift independently; they are now one shared test helper with a contract check that keeps them one |
 | `B1-8` | FIX_NOW · closed by `5656508` | this triage | `create_help_digest` differed between Windows and POSIX for a compile-time ASCII constant, and the ledger recorded that nobody knew why. The cause is now found and closed, and the field is compared across four targets again instead of being recorded per target |
 | `B2-15` | FIX_NOW · closed by `e90cc74` | this triage | the generated `.gitattributes` opened `* -text` and never opted `.cfg` back in, so `frontend/pas2js.cfg` was treated as binary in every generated Pas2JS project and a Windows edit could commit CRLF into a compiler configuration. The template parity gate made it a supersession rather than a one-line change, which is why it waited |
@@ -346,7 +389,6 @@ Forty-five rows: the three `FIX_NOW` items this triage closed, the two
 | `6B4-7` | ROADMAP | the shard that first bumps the Fixed Runtime pin | `fixed.iss` authors no `[InstallDelete]`, so a pin-bumped fixed install over an older one strands the previous ~690 MB runtime tree and no gate would see it. Unreachable today because exactly one version is pinned, and real the moment a bump lands |
 | `6B4-10` | ROADMAP | next WebView2 pin bump | `-Refresh` reads the `url` key, which is now the immutable CDN target, so a bump must re-resolve the fwlink by hand. A `discovery-url` key alongside `url` closes it and is a lock-schema change. Pairs with 7M1-3 |
 | `7M0-5` | ROADMAP | next webview version bump | both native build scripts assert lock values as string literals rather than as shapes derived from `version.h`, so a routine version bump fails with a message that reads as tampering |
-| `7M0-6` | ROADMAP | the shard that next touches the CAP-7L POSIX scripts | seven unguarded `rm -rf -- "${var}"` sites remain in `test/cap7l/*.sh` and `tools/build-webview-so.sh`, where an empty variable turns a wipe into a wipe of the wrong tree. The replacement to lift is already written and proven — `cap7m_prepare_dir` plus `cap7m_rm_tree`, whose default path deletes nothing |
 | `7M1-3` | ROADMAP | a lock-schema shard | no machine-readable marker distinguishes a RATIFIED pinned value from a provisional one; the distinction lives only in prose comments no gate reads. Pairs with 6B4-10 and 7M1-10 |
 | `7M1-5` | ROADMAP | CAP-12 | a 206 response with `Content-Range` over a large body needs chunked or deferred delivery, at which point `stopURLSchemeTask:` really can interleave and the claim-once guards become load-bearing. `stop_arrivals=0` is printed as an explicit limitation on every runtime leg |
 | `7M1-6` | ROADMAP | the shard that ratifies a cross-platform attach seam | `examples/06-assets` cannot select `TCocoaAssetHandler` without a ratified answer to what shape the attach seam has when one platform cannot attach after creation. That is an API question, not a macOS one |
@@ -376,4 +418,3 @@ Forty-five rows: the three `FIX_NOW` items this triage closed, the two
 | `10E-4` | ROADMAP | CI owner | Pascal sources are not LF-pinned in `.gitattributes`, so `sed`-based marker extraction in several POSIX gates cannot run from a Windows checkout under WSL — the documented way of validating the Linux legs without spending a hosted run. Both candidate fixes are named, and the first is a checkout-behaviour change for every collaborator that should be decided rather than slipped in |
 | `11B-4` | ROADMAP | CAP-12 | the webview watcher's shape does not fit mORMot head — no C headers, no platform patch, no library build, no signature pin — and `mormot.lock` pins statics to a release asset, so `build_failed` would be the normal outcome rather than news. A mORMot watcher is a different instrument with its own budget |
 | `11B-19` | ROADMAP | CAP-12 | close-on-report is unavailable to every smoke driver, measured four ways. What remains owed is one of two host-side changes — flush the report line so a driver can see it, or close the window on the first report inside the host — either of which turns a 15-second floor into a 300-millisecond run. `examples/` and `src/` were frozen for CAP-11B |
-

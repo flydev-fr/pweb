@@ -1,4 +1,4 @@
-# THE BACKLOG GATE'S NEGATIVE SELF-TEST: thirteen perturbations, each of which
+# THE BACKLOG GATE'S NEGATIVE SELF-TEST: fourteen perturbations, each of which
 # check_backlog.ps1 must refuse, and each of which is byte-restored afterwards.
 #
 # A gate that has only ever been seen to PASS has an unproven failure path, and
@@ -30,6 +30,7 @@ $targets = [ordered]@{
     backlog = 'test/backlog/dispositions.tsv'
     doc     = 'docs/backlog.md'
     ga      = 'tools/templates/react/gitattributes'
+    abi     = 'test/cap7l/check_abi.sh'
     b1      = 'test/cap10b1/run_cap10b1_gates.ps1'
     agg     = 'test/cap7f/check_cap7f_aggregate.ps1'
 }
@@ -70,7 +71,7 @@ try {
         throw ('the gate does not pass on the unperturbed tree, so no leg below ' +
             'would mean anything; fix that first')
     }
-    Write-Host '[backlog] baseline PASS; thirteen perturbations follow'
+    Write-Host '[backlog] baseline PASS; fourteen perturbations follow'
 
     # Rewrite one row of the disposition table, addressed by its key, so a leg
     # says what it changes rather than depending on a substring that could
@@ -142,10 +143,10 @@ try {
     Leg 'a summary that disagrees with its own table' {
         $p = Join-Path $repoRoot 'docs/backlog.md'
         $t = [System.IO.File]::ReadAllText($p)
-        [System.IO.File]::WriteAllText($p, $t.Replace('| `ROADMAP` | 40 |', '| `ROADMAP` | 39 |'))
+        [System.IO.File]::WriteAllText($p, $t.Replace('| `ROADMAP` | 39 |', '| `ROADMAP` | 38 |'))
     } 'does not state the measured ROADMAP count'
 
-    # --- the three FIX_NOW closures, each undone in the tree ----------------
+    # --- the four FIX_NOW closures, each undone in the tree -----------------
     Leg 'B2-15 undone: the template .gitattributes drops *.cfg' {
         $p = Join-Path $repoRoot 'tools/templates/react/gitattributes'
         $t = [System.IO.File]::ReadAllText($p)
@@ -160,6 +161,14 @@ try {
             ("    `$p = Start-PWebProcess -FilePath `$Exe -RedirectStandardOutput `$so`n" +
              '    $utf8 = [System.Text.UTF8Encoding]::new($false)')))
     } 'B1-8 REGRESSED'
+
+    Leg '7M0-6 undone: a bare recursive delete comes back' {
+        $p = Join-Path $repoRoot 'test/cap7l/check_abi.sh'
+        $t = [System.IO.File]::ReadAllText($p)
+        [System.IO.File]::WriteAllText($p, $t.Replace(
+            'pweb_rm_tree "${work}" "${repo_root}/build"',
+            ('rm -' + 'rf -- "${work}"')))
+    } '7M0-6 REGRESSED'
 
     Leg 'B1-8 undone: the field leaves the four-target equality list' {
         $p = Join-Path $repoRoot 'test/cap7f/check_cap7f_aggregate.ps1'

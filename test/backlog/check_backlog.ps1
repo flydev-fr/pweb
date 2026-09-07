@@ -316,7 +316,7 @@ foreach ($claim in @(
     }
 }
 
-# --- 5. the three FIX_NOW closures, re-measured in source ---------------------
+# --- 5. the four FIX_NOW closures, re-measured in source ----------------------
 # Recording that something was fixed is a document. Failing when it is undone
 # is a gate. Each check names the row it protects.
 
@@ -404,6 +404,36 @@ if (Test-Path -LiteralPath $agg) {
     }
 }
 else { Violation "B1-8: $agg is missing" }
+
+# 7M0-6: no bare recursive delete in the six scripts the guard protects, and
+# the guard itself is still there. The needles are built by concatenation so
+# this file cannot satisfy its own sweep.
+$rmGuard = 'tools/pwebrmtree.sh'
+$rmProtected = @(
+    'test/cap7l/build_cap7l.sh', 'test/cap7l/check_abi.sh',
+    'test/cap7l/run_cap7l_gates.sh', 'test/cap7l/run_gui_matrix.sh',
+    'test/cap7l/run_release_layout.sh', 'tools/build-webview-so.sh')
+if (-not (Test-Path -LiteralPath $rmGuard)) {
+    Violation "7M0-6 REGRESSED: the one guarded delete, $rmGuard, is gone"
+}
+$bareDeletes = @()
+$unsourced = @()
+foreach ($f in $rmProtected) {
+    if (-not (Test-Path -LiteralPath $f)) { Violation "7M0-6: $f is missing"; continue }
+    $t = [System.IO.File]::ReadAllText($f)
+    if ($t -match ('(?m)(^|[^\w])rm\s+-' + 'rf')) { $bareDeletes += $f }
+    if ($t -notmatch 'pweb' + 'rmtree\.sh') { $unsourced += $f }
+}
+$facts['rmtree_bare_deletes'] = ($bareDeletes -join ',')
+$facts['rmtree_unsourced'] = ($unsourced -join ',')
+if ($bareDeletes.Count -gt 0) {
+    Violation ('7M0-6 REGRESSED: a bare recursive delete is back in ' +
+        ($bareDeletes -join ', ') + ' -- every removal names its target AND the ' +
+        'root that target must lie inside')
+}
+if ($unsourced.Count -gt 0) {
+    Violation ('7M0-6 REGRESSED: ' + ($unsourced -join ', ') + " no longer source $rmGuard")
+}
 
 # --- 6. verdict ---------------------------------------------------------------
 $facts['violations'] = $violations.Count
