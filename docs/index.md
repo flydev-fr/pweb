@@ -48,3 +48,14 @@ handoff.
 | [webkitgtk-linux-semantics.md](webkitgtk-linux-semantics.md) | what WebKitGTK 4.1 does, measured |
 | [wkwebview-macos-semantics.md](wkwebview-macos-semantics.md) | what WKWebView does, measured |
 | [third-party-licenses.md](third-party-licenses.md) | every dependency this product ships and the licence it ships under |
+
+## The backlog
+
+| document | what it records |
+|---|---|
+| [backlog.md](backlog.md) | a verdict for every one of the 338 `deferred-work.md` entries — `FIX_NOW`, `ROADMAP`, `UPSTREAM`, `ACCEPTED` or `CLOSED` — with an owner and a reason, and a closing commit on everything fixed. `test/backlog/check_backlog.ps1` holds it to the ledger and `check_backlog_selftest.ps1` proves its eleven refusals |
+
+`docs/upstream/` holds reports written for a third-party project rather than
+for this one: they quote only that project's files, carry no PWeb-specific
+detail, and are ready to post as they stand. Each is cited from the
+`UPSTREAM` row it answers.

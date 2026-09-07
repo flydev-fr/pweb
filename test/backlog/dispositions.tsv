@@ -1,0 +1,339 @@
+key	digest	verdict	owner	commit	reason
+P0-1	ce6a0c25	CLOSED	CAP-1 / CAP-3 CI	-	the Phase-0 freeze gate is committed and re-runnable: `platform-leg.yml` carries the RTL-only isolation compile of the intf units, the frozen-contracts byte-identity sweep against the Phase-0 baseline, and the CAP-3 Phase-0/1/2 implementation-boundary sweep
+P1-1	4f13a32a	ROADMAP	next webview pin review	-	upstream's cmake fetches the WebView2 SDK nuget by version with no URL_HASH, so the integrity of that build input rests on nuget version immutability alone. Vendoring it or hash-pinning it is PWeb's move, not upstream's, and it belongs with the next pin bump
+P4-1	a6695f37	CLOSED	P6-1	-	the ASCII-only fold is replaced by the pinned mORMot Unicode 10.0 UpperCaseReference fold at both bundle construction and store construction
+P5-1	12c46f80	ROADMAP	CI cost owner	-	the pinned pas2js archive is still fetched on every run with no cache; only the FPC disk image is cached. 11A-4 bounded the fetch, but CAP-11A's freeze forbade changing WHAT CI runs and 11A-14 sent caching to whoever next owns the matrix's cost
+P6-1	7cf2fbb9	CLOSED	itself	-	the record of a completed CAP-6 D1 ratification
+P6-2	8fa1f69c	ROADMAP	long-path shard	-	the Ansi-argv half is closed by P6U-1. The unprefixed `FindFirstFileW` MAX_PATH bound in the bundler's directory walk stands; failures are loud build errors, never silent corruption. Same family as 6B3-4
+6B0-1	7df41de2	CLOSED	itself	-	the signer pin landed as the optional `authenticode-subject` lock key, enforced after the sha256 pass and re-verified natively before execution
+6B1-1	90b8d16c	CLOSED	6B2-1	-	the digest primitive now streams through a 1 MiB buffer with its signature and seam unchanged
+6B1-2	798f1b0b	CLOSED	6B4-9	-	pinning the resolved immutable per-build CDN url instead of the fwlink removed the drift breakage that made the caching question urgent
+6B1-3	43210170	ROADMAP	repository owner	-	`normal.iss` declares no MinVersion, so setup runs on Windows versions the Evergreen runtime no longer supports and fails later inside the bootstrapper with an opaque diagnostic. Picking the floor is a product decision ratified nowhere in the spec set
+6B2-1	d009b661	CLOSED	itself	-	the streamed digest, proven on the real ~210 MB standalone installer
+6B1-4	748dd51f	CLOSED	6B1-5	-	a genuine runtime-absent transcript ending in `CAP6B1_CLEAN_MACHINE_PASS` superseded the waiver
+6B2-2	0b2f12b1	CLOSED	6B2-4	-	the disposition moved to the explicit waiver, which is where it is now carried
+6B2-3	b205f90c	ROADMAP	the shard that next touches all four setup gate scripts	-	`Invoke-Bounded`/`Invoke-Captured` is still copy-pasted across `test/cap6b1`, `cap6b2`, `cap6b3` and `cap6b4`, and each copy has independently patched kill/wait semantics
+6B1-5	e1e5c562	CLOSED	itself	-	the clean-machine transcript that cleared the gate
+6B2-4	ee949f55	ACCEPTED	repository owner	-	waived by explicit user decision on 2026-08-13. The offline provisioning-execute path is proven indirectly by the CAP-6b1 clean-machine run over the same shared `pwebprovgate.issi` flow plus the automated skip-path and verification legs; a WebView2-free Windows VM is hard to obtain, and the waiver is the decision rather than an omission
+6B3-1	9c894ea7	CLOSED	6B3-7	-	superseded by the explicit waiver of Gates B and C
+6B3-2	c12bf963	CLOSED	6B4-1	-	profiles became mutually exclusive modes with a deterministic HKCU marker and an `[InstallDelete]` reclaim
+6B3-3	0d87dfaa	ROADMAP	a per-profile userDataFolder shard	-	6B4-3 ratified that user data is shared and preserved, and said in as many words that the compatibility concern is NOT closed by that policy: a profile folder written by a newer Evergreen can still make `webview_create` fail against the older pinned fixed runtime
+6B3-4	6a805e67	ROADMAP	long-path shard	-	`pweb.platform.webview2.fixed.pas` composes every path by concatenation with no `\\?\` prefix, so a deep install plus the deepest members of the runtime subtree can exceed MAX_PATH. Same family as P6-2
+6B3-5	6e1ef0a8	ACCEPTED	fail-closed by ratified design	-	refusing an ACE whose type is neither ALLOWED nor DENIED is the correct fail-closed choice. Supporting conditional or callback ACEs first needs a ratified decision about which access-control shapes the fixed profile supports, and no supported deployment shape is known to add them to `%LOCALAPPDATA%`
+6B3-6	5a86f06f	CLOSED	6B4-2	-	`PWEB_SETUP_BASENAME` replaced the shimmed `setup.exe` and ISCC no longer emits the appcompat warning
+6B3-7	72a5eec2	ACCEPTED	repository owner	-	Gates B and C waived by explicit user decision on 2026-08-14. Exactly two things stay unproven on real hardware — the runtime-absent case and Windows-10 AppContainer enforcement — and both are named; everything else those gates covered is proven on a host that has Evergreen
+6B4-1	26ab70ec	CLOSED	itself	-	one product identity, profiles as modes, and the mode recorded by an HKCU marker written at Inno's own commit point
+6B4-2	d1dc5264	CLOSED	itself	-	per-profile setup basenames authored once per manifest, with a contract sweep forbidding the old name
+6B4-3	6fbafe83	ACCEPTED	ratified policy	-	user data is shared across profiles and preserved by uninstall, proven by a sentinel that survives all three uninstalls byte-identical. The residual engine-version compatibility concern is carried separately at 6B3-3
+6B4-4	2e1924fb	ACCEPTED	Inno Setup's installation order	-	a stale `fixed-runtime` marker can survive a failed three-file copy after the reclaim, and cannot produce the dangerous class. Inno offers no post-`[Registry]` failure hook, and hand-rolled cleanup is what CAP-6b3 measured to be harmful
+6B4-5	be0e7317	CLOSED	6B4-6 then 6B4-9	-	re-ratified the same day, then closed structurally by the immutable-url re-pin
+6B4-6	ffac603a	CLOSED	itself	-	the human re-ratification of the rotated bootstrapper pin
+6B4-7	cc1d25bf	ROADMAP	the shard that first bumps the Fixed Runtime pin	-	`fixed.iss` authors no `[InstallDelete]`, so a pin-bumped fixed install over an older one strands the previous ~690 MB runtime tree and no gate would see it. Unreachable today because exactly one version is pinned, and real the moment a bump lands
+6B4-8	43192215	ACCEPTED	frozen ratified artifacts	-	the CAP-6b1/6b2/6b3 specs still name `dist/windows/*/setup.exe`; they are frozen and deliberately not rewritten. The authoritative current name is the `PWEB_SETUP_BASENAME` define in each profile manifest
+6B4-9	ac078cef	CLOSED	itself	-	both Evergreen entries pin the immutable per-build CDN url the fwlink resolved to, the same shape the Fixed Runtime entry always had
+6B4-10	0d70c701	ROADMAP	next WebView2 pin bump	-	`-Refresh` reads the `url` key, which is now the immutable CDN target, so a bump must re-resolve the fwlink by hand. A `discovery-url` key alongside `url` closes it and is a lock-schema change. Pairs with 7M1-3
+7M0-1	dc822331	CLOSED	7M1-1	-	both guard loops now fail with `MISSING GUARD TARGET` before the pattern scan
+7M0-2	6004e02f	CLOSED	7M1-2	-	the key is `srclib-platform-patch-sha256` with the value byte-preserved and a gate refusing the old name
+7M0-3	91e9a42b	ACCEPTED	dev host	-	ChetCLI is a Windows-only Delphi tool no runner has, so the generator's post-process and its throw-on-shape-change path are exercised by hand. The blast radius is bounded by `check_binding_surface.ps1` on Windows CI, and 11B-2's projector now reproduces the pinned binding exactly on every leg
+7M0-4	4f6542e6	CLOSED	7M2-1 then 7F-3	-	the cross-architecture reconciliation landed in two steps; the named remainder is carried at 7F-3
+7M0-5	6ab372fb	ROADMAP	next webview version bump	-	both native build scripts assert lock values as string literals rather than as shapes derived from `version.h`, so a routine version bump fails with a message that reads as tampering
+7M0-6	f6616f8e	ROADMAP	the shard that next touches the CAP-7L POSIX scripts	-	seven unguarded `rm -rf -- "${var}"` sites remain in `test/cap7l/*.sh` and `tools/build-webview-so.sh`, where an empty variable turns a wipe into a wipe of the wrong tree. The replacement to lift is already written and proven — `cap7m_prepare_dir` plus `cap7m_rm_tree`, whose default path deletes nothing
+7M0-7	3ca960d7	CLOSED	itself	-	the unpinned setup-lazarus action was replaced by a pinned sha256-and-size-verified fetch and install
+7M1-1	1fbea941	CLOSED	itself	-	the guard-target precondition, on both the Windows and the Linux loop
+7M1-2	53c1b00f	CLOSED	itself	-	the rename, with a gate that fails if the old key name reappears
+7M1-3	c24068b7	ROADMAP	a lock-schema shard	-	no machine-readable marker distinguishes a RATIFIED pinned value from a provisional one; the distinction lives only in prose comments no gate reads. Pairs with 6B4-10 and 7M1-10
+7M1-4	e9ea4259	ACCEPTED	measured cost, recorded rather than hidden	-	a few hundred bytes of deterministic proof surface ship in every macOS binary. The alternative makes the claim-once guards provable only by races a synchronous main-thread handler structurally removes
+7M1-5	a4366e50	ROADMAP	CAP-12	-	a 206 response with `Content-Range` over a large body needs chunked or deferred delivery, at which point `stopURLSchemeTask:` really can interleave and the claim-once guards become load-bearing. `stop_arrivals=0` is printed as an explicit limitation on every runtime leg
+7M1-6	036670e9	ROADMAP	the shard that ratifies a cross-platform attach seam	-	`examples/06-assets` cannot select `TCocoaAssetHandler` without a ratified answer to what shape the attach seam has when one platform cannot attach after creation. That is an API question, not a macOS one
+7M1-7	f97c4704	CLOSED	11A-1	-	the workflow split retired the single-file budget this entry tracked
+7M1-8	48a03ade	CLOSED	7F-3	-	carried forward and narrowed; the remainder lives at 7F-3
+7M1-9	91b4a292	ROADMAP	a macOS signing shard	-	`DYLD_LIBRARY_PATH` can still redirect an ad-hoc-signed binary by leaf name ahead of `@rpath` expansion. Closure is hardened runtime plus library validation applied at signing time, and nothing in the tree signs. Pairs with D2-4
+7M1-10	bdb4d255	ROADMAP	a lock-schema shard	-	the dylib export gate's RTTI allowance is unbounded: `other_count` is measured and recorded but never compared, so a patched upstream that added a C++ class with RTTI passes silently. Pinning it per architecture closes it
+7M1-11	e3720a0f	ROADMAP	a shard that revisits the CAP-7L confinement algorithm	-	a hard link inside the asset root pointing at an inode outside it is served on Linux and Darwin alike, and neither `readlink` nor `F_GETPATH` closes it. The named fix is same-device plus inode-set membership, or an `openat`-relative walk from a root descriptor
+7M1-12	015f13ae	ACCEPTED	measured platform divergence	-	Darwin's `F_GETPATH` returns the last known path for an unlinked file where Linux returns `<path> (deleted)`. It is not an escape — the descriptor was opened `O_NOFOLLOW` at a walked path inside the root — and a deterministic fixture needs a seam the store does not have
+7M1-13	6bcaf196	CLOSED	7M1-15	-	both architectures reported `readback=ours`, so `Attach` now refuses anything else
+7M1-14	da1b0486	ROADMAP	the shard that next touches the macOS gate suite	-	a bash-3.2 self-referencing-`local` scan belongs beside the existing no-inline-macOS-flag scan. It was deliberately not added in the same change as the fix, because `run_cap7m_gates.sh` runs before every other macOS gate and a buggy scanner there blocks the whole job
+7M1-15	e06909b7	CLOSED	itself	-	the per-view read-back promotion, on the measurement the entry it closes asked for
+7M2-1	deb311dd	CLOSED	7F-3	-	the release-surface comparison landed; the remainder is carried at 7F-3
+7M2-2	2d064214	ACCEPTED	gate-local prep, recorded for the signing shard	-	the LaunchServices fallback is conditional so only one of its two branches runs per run; the aarch64-darwin pas2js link has since run on every hosted arm64 leg; and the `ci.yml` budget half is closed by 11A-1
+7M2-3	6b5f8e40	CLOSED	7F-1	-	the argumented matrix is executed on the real Windows and Linux release layouts
+7F-1	07ed78e9	CLOSED	itself	-	the host-argument gate on both real release layouts, hosted green
+7F-2	505d244b	ACCEPTED	permanent provenance limitation	-	the CAP-7M1/M2 mirror-era run ids are unfetchable because the mirror repository was deleted. Superseding runs on the origin repository are cited, and no earlier artifact is rewritten
+7F-3	ea6daed4	ROADMAP	CAP-12	-	the 36 ABI probe facts, the 6 fcntl facts and the CAP-7M1 runtime markers are still per-target records no job compares between architectures. The 17-name export set and the logical inventories ARE compared across four targets; this is the named remainder
+7F-4	d48a0fe4	CLOSED	8A-1	-	the allowlist gained a per-file fingerprint over the ordered matched directive texts
+8A-1	fda76fef	CLOSED	itself	-	the directive fingerprint, with a count-preserving swap proven to refuse
+8A-2	0ab6429a	CLOSED	11A-1	-	the workflow split retired the budget this entry tracked
+8A-3	d609eb52	ROADMAP	a host-hardening shard	-	`SnapshotCapabilities` on a principal or window id that was never configured yields the full `AppMaximum`, so a host typo fails open to ceiling rights instead of failing loudly. Ratified semantics rather than a defect, but an opt-in strict mode or a startup assertion would make misconfiguration a named failure
+8A-4	9721fb4d	ACCEPTED	ratified shape, proven by the deny probe	-	the two zero-cap registrations are the ratified mapped-but-unregistered shape; every other unknown method is forbidden pre-bridge, which the runtime deny probe proves on every run
+8B-1	d8297449	ROADMAP	spec owner	-	the ratification records the intended new `security-model.md` wording — a privileged WebView never navigates to external content, and approved URIs reach the OS only through a capability-authorized invocation — and applying it to the spec is an explicit doc-only follow-up that has not been done
+8B-2	8ef5cc72	ACCEPTED	measured engine limitation	-	`frame-src 'none'` does not block an `about:blank` iframe on either engine measured. The deliverable property — no untrusted content executes in any frame — is proven by a tripwire counter required to stay 0
+8B-3	7304397b	ACCEPTED	measured engine limitation	-	on WebView2 a `javascript:` URL raises no navigation event and executes in place, so the native CSP is the enforcement there. The classifier carries those rows as defence in depth for an engine that might one day hand them over
+8B-4	16c71232	ACCEPTED	deliberate proof division	-	the nav matrix substitutes a counting bridge so every native arrival is attributed by method; the mORMot SOA path is proven separately by the release smoke on all four targets
+8B-5	3bcbd4b6	CLOSED	11A-1	-	the workflow split retired the budget this entry tracked
+8B-6	fc17484b	CLOSED	8C-3 and 10A-1	-	the success path is driven from the real MainWindow principal, and the four private copies became one decorator over the frozen bridge
+8B-7	0dafdc5d	FIX_NOW	this triage	0029fc5	`RepoRootFromExecutable` was duplicated across the CAP-8A, CAP-8B and CAP-8C hosts and had since grown a fourth copy. It is security-adjacent path resolution and the copies could drift independently; they are now one shared test helper with a contract check that keeps them one
+8B-8	550e52bb	ROADMAP	a shard that adds a deterministic cross-engine download trigger	-	the driver's cross-origin `download`-attribute anchor is treated by engines as a plain navigation, so the dedicated download events plausibly never fire and no gate asserts a download operation was actually prevented — dropping the Windows `put_Handled` turns no gate red
+8C-1	58419f9f	ACCEPTED	measured engine constraints the model never meets	-	`webview_terminate` posts a thread-global quit on Windows and `webview_destroy` of a second instance kills the process on macOS. The ratified lifecycle performs neither: close and reopen are source-level, terminate is run-owner only, and destroy is post-loop in reverse creation order
+8C-2	a00d7c9e	ROADMAP	the shard that needs an external-content view	-	the frozen model already carries everything such a principal needs, and the `TrustedContent=false` gate is proven denied-before-method-row. What does not exist is host wiring, a guard profile, or a spec ratification
+8C-3	be22203b	CLOSED	10A-1	-	the consolidation half landed as the runtime command bridge decorator
+8C-4	fad13eea	CLOSED	11A-1	-	the workflow split retired the budget this entry tracked
+8C-5	c2c9369e	ACCEPTED	the production gate is the ongoing measurement	-	the ratified macOS teardown was never reached by the topology probe, and the multiprincipal harness performs exactly that sequence on every hosted run — so a teardown crash is a red step rather than a silent assumption
+8C-6	be8162f3	CLOSED	8C-7	-	the staged-arm plus per-view binding table closed the escalation under ratification R-C4
+8C-7	e2ba660f	CLOSED	itself	-	the private-bridge extension the ratification authorized, with the public ABI unchanged
+9A-1	c106349b	CLOSED	CAP-9B1 / CAP-9B2	-	the named successor shipped the package loader and the plugin lifecycle
+9A-2	61f21f8a	ROADMAP	CAP-12	-	the Promise-returning `pweb.invoke` was measured at Checkpoint 1 and not chosen; it needs a job pump and cross-enqueue JSValue rooting the pinned wrapper does not expose. It is the same ratification 9B1-2 waits on, and a shard wanting async-first plugin scripts owns both
+9A-3	625ccb8f	UPSTREAM	synopse/mORMot2	-	`mormot.lib.quickjs.pas` declares `JS_SetMaxStackSize(ctx: JSContext; ...)` where the pinned C takes `JSRuntime*`; calling the pinned binding was measured to corrupt the context. PWeb re-declares it correctly unit-local, so no PWeb path is affected. Report: `docs/upstream/mormot-quickjs-js-setmaxstacksize-signature.md`
+9A-4	4f14cc19	UPSTREAM	synopse/mORMot2	-	`mormot.lib.static.pas` declares `pas_malloc(size: cardinal)` and `pas_malloc_usable_size(...): integer` where the pinned QuickJS C calls them with `size_t`, truncating an over-4 GiB request to its low 32 bits on 64-bit targets. Unreachable in PWeb under the per-plugin memory ceiling. Report: `docs/upstream/mormot-static-pas-malloc-size-t.md`
+9B1-1	71eed3b1	CLOSED	CAP-9B2	-	the named successor shipped the lifecycle state machine
+9B1-2	49bfa3ce	ACCEPTED	measured position	-	dynamic `import()` is unavailable rather than blocked: PWeb pumps no job queue so the promise never settles, and force-pumping was proven to route through the same scoped resolver. Enabling it means ratifying a job pump, which is tracked once at 9A-2
+9B1-3	a0d8bfb1	ACCEPTED	hazard recorded; no PWeb code calls it	-	`JS_ExecutePendingJob(rt, pctx)` carries an unresolved TODO in the pin and the pinned C writes through that pointer, so calling it with `nil` is a null store. Recorded so that a future job pump passes the address of a real `JSContext`
+9B1-4	d47805fa	CLOSED	11A-1	-	the workflow split retired the budget this entry tracked
+9B1-5	2fc7badf	ACCEPTED	irrelevant at the ratified bounds	-	`TPWebModuleGraph.IndexOf` is a linear scan and the ratified default is 256 modules. A host that raised `MaxModules` toward the 4096 hard cap would want a hash index first
+9B1-6	d687886f	ROADMAP	CAP-12	-	module and manifest size bounds are checked after the carrier has already materialised the asset, because the frozen `TryRead` has no size, HEAD or streaming form. The real fix is a carrier-side materialisation cap, which needs `IAssetStore` ratification and belongs with the blob plane
+9B1-7	e9cb4753	ROADMAP	the shard that ratifies a module-source validator	-	module source shares the path validator, so a raw C1 control byte is refused even inside a comment or a string literal. Deterministic and fail-closed, but stricter than JavaScript requires, and whether module source gets its own validator is a decision to ratify rather than a second copy of a security validator to grow
+9B1-8	6ba384e3	ROADMAP	the shard that next touches `test/cap9a`	-	`run_quickjsfoundation.ps1` extracts `MARKER_PASS` case-sensitively and then tests it with `-match`, and `run_quickjsfoundation.sh` never removes its `mktemp -d`. Both shapes were corrected in the CAP-9B1 runners; the CAP-9A pair is untouched
+9B1-9	c06483d8	CLOSED	itself	-	both constructors build the base first and start last, and the shipped path validates through a non-raising predicate
+9B2-1	3278b8a1	CLOSED	CAP-9C1 / CAP-9C2	-	the named successor shipped release packaging and the GUI release
+9B2-2	bbbfa4a1	ACCEPTED	ratified position, measured	-	this pin exposes no module-namespace accessor, and the one route that works costs a normalize plus a graph edge — both corpus fields — so it would move a frozen four-target digest. Real ES exports need a pin patch or a re-baselined digest
+9B2-3	34143115	ACCEPTED	hazard recorded	-	a `JSValue` alive at `JS_FreeRuntime` trips a pinned assert and terminates the process with no catchable Pascal exception. The rule is recorded and the shipped plugin obeys it
+9B2-4	90b03b7c	ACCEPTED	no API alternative in this pin	-	stack overflow and out-of-memory arrive as ordinary catchable exceptions, so they are recognised by the exact literals the pinned C throws. Ambiguity resolves towards the limit, which is the safe direction
+9B2-5	4097207b	ROADMAP	the shard that next revisits the CAP-9A script surface	-	the `PostScript`/`WaitScript`/`Eval` mailbox path gained no pending-job gate, and adding one would move the frozen CAP-9A corpus. It is the diagnostic surface rather than the production call API, and that shard should decide whether to extend the gate or retire the path
+9B2-6	89d5387f	CLOSED	11A-1	-	the workflow split retired the budget this entry tracked
+9C1-1	1c6e6aa8	CLOSED	CAP-9C2	-	the named successor placed the payload into the release layouts
+9C1-2	f7afc4db	ACCEPTED	measured constraint carried into the evidence design	-	`plugins.zip` is deterministic per toolchain and not across toolchains, so the registry is generated per target and the semantic corpus is what is compared across four
+9C1-3	ed2c61a1	ACCEPTED	defence in depth, recorded rather than dressed up as a tested branch	-	`prcRegistryEmit` is unreachable through the public API because validation precedes emission. The literal writer stays as the last line between a future unvalidated field and generated Pascal
+9C1-4	a62050ec	ACCEPTED	worked around, and the rule recorded	-	FPC's `FindFirst` refused the packager root on Windows while mORMot's `DirectoryExists` accepted the same string. The packager talks to the wide Win32 API directly on Windows, which is the shape `pwebbundle` already used
+9C1-5	eea80ecc	ACCEPTED	irrelevant at the ratified bounds	-	three linear cross-checks are quadratic against ceilings of 4096 entries and 64 plugins; at the shipped scale of 7 entries and 2 plugins the cost is nothing. Same class as 9B1-5 and would be fixed with it
+9C1-6	89b9e56d	ACCEPTED	ratified position, revisit only with evidence	-	the runtime verifier materialises the whole archive under a 64 MiB cap rather than streaming twice, because reading once means the bytes hashed ARE the bytes parsed and there is no check-then-open window to race
+9C1-7	2b052167	CLOSED	11A-1	-	the workflow split retired the budget this entry tracked
+9C2-1	4d156b5a	ACCEPTED	recorded supersession	-	extending the shipped acceptance plugins necessarily moved six measured values; the CAP-9C1 contract is unchanged and its full gate re-ran green against the extended corpus
+9C2-2	cd92e480	ACCEPTED	coverage boundary, recorded rather than quietly omitted	-	two whole-archive refusal rows cannot be produced from outside a compiled host. CAP-9C1 proves them on a mutated registry in the same job, and the CAP-9C2 corpus records that dependency by name
+9C2-3	fac6fce0	ROADMAP	CAP-13	-	no `plugins.zip`, generated registry or `LICENSE.quickjs` enters the three Windows installer profiles. CAP-10 was named as the owner of deciding which generated applications include plugins and closed without doing it, so the decision now travels with the installers
+9C2-4	393cd4fb	ACCEPTED	a waiver recorded honestly and refused by the aggregator	-	the reparse-point row needs a privilege a non-elevated dev shell lacks, so it travels as its own field the aggregate requires to read `yes`. A dev-host run waives it; a hosted run that waived it goes red
+9C2-5	582a06e2	ACCEPTED	ratified scope	-	there is no plugin-enabled Pas2JS product, because CAP-9 tests QuickJS against the UI backend rather than React against Pas2JS again. The host is frontend-agnostic, so a future one needs only its own frontend directory
+9C2-6	3fe9d552	CLOSED	itself	-	the esbuild aliases pin react, react-dom and the runtime to the importing package's own resolution
+9C2-7	7a4f8c8e	ACCEPTED	proof division, stated so neither shard is credited with the other's evidence	-	CAP-9C2 proves that concurrent UI and plugin completions do not cross; the stale-completion and two-active-generations contracts remain CAP-9B2's and are re-run green in the same job
+9C2-8	6e7827e1	ACCEPTED	deliberate measurement shape	-	the UI and plugin overlap is forced by a barrier so that "they ran concurrently" is a counter rather than a probability. The cost is that the legs measure that the architecture permits overlap, not how much a real workload achieves
+9C2-9	41f82c70	CLOSED	11A-1	-	the workflow split retired the budget this entry tracked
+9C2-10	0e649680	CLOSED	itself	-	the reparse-refusing open flag, with the negative matrix that first exercised it
+9C2-11	c7a2ab0f	CLOSED	itself	-	naming `-k-lgcc_s` on the Linux link that combines the QuickJS static with libwebview
+9C2-12	ca356d1d	CLOSED	itself	-	both waits are bounded by the clock rather than by an attempt count
+10A-1	0f3649c6	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+10A-2	a12b9c5f	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+10A-3	75818210	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+10A-4	8e217c49	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+10A-5	6c6bb469	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+10A-6	a6a7ef3d	CLOSED	11A-1	-	the ci.yml budget this entry re-assigned to CAP-11 is retired by the workflow split: a 13 KB caller, one reusable leg carrying the single step sequence, and one composite action per step
+10A-7	b9d94dfc	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+B0-1	0827868a	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+B0-2	9a646b62	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+B0-3	5bb43210	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+B0-4	0746420e	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+B0-5	eb83acf6	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+B0-6	befab678	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+B0-7	8f079714	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+B0-8	eeb7e5b3	CLOSED	11A-1	-	the workflow split retired the budget this entry tracked
+B0-9	fd2a5d93	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+B0-10	594f9220	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+9C2-13	2c7e880e	CLOSED	itself	-	the harness barrier now expires strictly before the plugin's own completion cap, enforced by a raise
+B1-1	62d43ca1	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+B1-2	deb0b2e9	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+B1-3	c338c9d9	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+B1-4	651a3ed2	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+B1-5	bfe98de2	ROADMAP	CAP-12	-	`examples/08-release`, `examples/07-quickjs` and the CAP-8 harnesses still compose the runtime by hand rather than through `pweb.webview.host`, so there are two compositions of one runtime and only one is exercised by a generated project. Migrating them re-baselines three frozen closure digests, which belongs to a shard whose gates already re-measure them
+B1-6	45e58ff2	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+B1-7	5c503423	CLOSED	11A-1	-	the workflow split retired the budget this entry tracked
+B1-8	43618ec6	FIX_NOW	this triage	5656508	`create_help_digest` differed between Windows and POSIX for a compile-time ASCII constant, and the ledger recorded that nobody knew why. The cause is now found and closed, and the field is compared across four targets again instead of being recorded per target
+B1-9	cb6251e3	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+B1-10	5b22a894	CLOSED	11A-13 and 11B-18	-	the non-report now carries a typed cause on four drivers, and the auto-close window is sized from three measurements. The remaining page-side work is tracked once, at 11B-19
+B2-1	9682ddd1	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+B2-2	a0294511	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+B2-3	740db426	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+B2-4	79aa1abc	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+B2-5	f023e6e6	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+B2-6	80baf736	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+B2-7	b2c9a7aa	CLOSED	11A-1	-	the workflow split retired the budget this entry tracked
+B2-8	523763ea	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+B2-9	090e91e6	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+B2-10	893d2f06	ROADMAP	the shard that next touches `test/cap10b1`	-	`prove_cap10b1.sh` still captures `$?` after a bare simple command for `npm ci`, the typecheck, the build and the native compile, and extracts its ready report with an unguarded `grep` under `pipefail`. Under `set -e` those failure paths are unreachable. The identical shape was fixed in the CAP-10B2 twin
+B2-11	7a25ed21	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+B2-12	9de45780	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+B2-13	eaf489c5	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+B2-14	392c344a	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+B2-15	7c6f224c	FIX_NOW	this triage	e90cc74	the generated `.gitattributes` opened `* -text` and never opted `.cfg` back in, so `frontend/pas2js.cfg` was treated as binary in every generated Pas2JS project and a Windows edit could commit CRLF into a compiler configuration. The template parity gate made it a supersession rather than a one-line change, which is why it waited
+B2-16	41282910	ROADMAP	the owner of the smoke non-report	-	CAP-11A instrumented the OBSERVER and seeded the cause rule, but no fixture executes the CAP-10B1/B2 proofs' own report parser or their timeout path; the self-test legs all mutate an already-emitted evidence file and exercise the aggregator. Departs from the CAP-10 closure's CAP-11 disposition because CAP-11A closed the observer half only
+B2-17	10123fb2	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+B2-18	c52fcdcb	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+B2-19	88c7aac1	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+B2-20	84baf3c1	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+B2-21	ba2acb8c	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C0-1	6a879f6b	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C0-2	b7705b61	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C0-3	de150d85	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+C0-4	5f9b0d7d	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+C0-5	d3c93b0b	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C0-6	c2af93ab	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C0-7	de2ce481	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C0-8	190d54dc	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+C0-9	9d0d6d92	CLOSED	11A-1	-	the workflow split retired the budget this entry tracked
+C0-10	faaaba61	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C0-11	3c693cb8	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C0-12	b084a444	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C0-13	362abf97	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C1-1	84302c2d	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C1-2	b7078ba0	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C1-3	71067ae3	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C1-4	07d1910b	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+C1-5	46f8b18d	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C1-6	51443cae	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C1-7	f2625bce	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C1-8	89e345d4	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C1-9	c2ae96b1	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C1-10	f40c60bb	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C1-11	560f8db5	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C1-12	826b8a81	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C1-13	42bb2042	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C1-14	c0df29e1	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C1-15	a1d3bbf7	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C1-16	0cc8ebbc	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C2-1	965318f5	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C2-2	61de6c63	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C2-3	3d220578	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C2-4	d32a10c9	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C2-5	6d781b05	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+C2-6	0fc62574	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C2-7	0c5c066f	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C2-8	9808ec67	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C2-9	d0f8749c	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C2-10	41a9f4e0	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C2-11	05d462c6	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C2-12	5927c7c0	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C2-13	b68515cc	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C2-14	ae7e7fec	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C2-15	88179bd9	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C2-16	c12491aa	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C2-17	a9fefa01	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C2-18	13418636	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C2-19	b99b53e3	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C2-20	74f477e4	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C2-21	6da94776	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+C2-22	8255d4ed	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C2-23	edaa8b8c	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+C2-24	38b3ab56	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C2-25	5b5bc3a6	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C3-1	dea40c70	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+C3-2	fc15aa29	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C3-3	1350cea0	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+C3-4	104a2127	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+C3-5	5a59ee4d	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C3-6	adb9b67b	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C3-7	55d17d75	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+C3-8	f1cd2ee3	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C3-9	9a55ff0b	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+C3-10	2c636b01	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C3-11	adb12f3a	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C3-12	2cd1e180	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C3-13	42db28d2	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+C3-14	351a39b2	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+C3-15	5087de8b	CLOSED	11A-4 and 11A-13	-	every pinned-artifact fetch is three bounded attempts with a row each, inside the tightest step budget those fetchers run under, and a digest mismatch is still refused on the first attempt
+D0-1	de05ae0d	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+D0-2	f582503b	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+D0-3	5520fdaf	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D0-4	e16857b1	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D0-5	ef15bf8b	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D0-6	370fdf29	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D0-7	c3a80c88	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D0-8	31806c6c	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D0-9	0940bc39	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D0-10	b0fa568e	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+D0-11	b1399381	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+D0-12	20d241df	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D0-13	3d99e9ef	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D0-14	dda0986e	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D0-15	bf359b5b	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+D0-16	f8ca4996	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D1-1	733f147f	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D1-2	48c38b9b	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D1-3	5607df75	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D1-4	a5876488	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D1-5	723ad529	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D1-6	83e0f997	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+D1-7	6f2d4612	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D1-8	1e23241c	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+D1-9	7e800df5	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+D1-10	606376c8	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D1-11	73e5221d	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D1-12	da5abe7c	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D1-13	030fd3a3	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D1-14	f146f29e	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D1-15	1c146d3d	CLOSED	11A-13 and 11B-18	-	the non-report carries a typed cause and the auto-close window is sized from three measurements. The remaining page-side work is tracked once, at 11B-19
+D1-16	d5d67fb8	CLOSED	11A-3 and 11A-12	-	the U3 drain runs scoped to the install directory before the uninstaller and writes what it observed, which is exactly what this entry asked for; P6U-7 supplied the diagnosis it was waiting on
+D1-17	95381015	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D2-1	24bec94a	ROADMAP	a licensing shard, conditional	-	the SDK ships no compiler at all, and the pinned Pas2JS release archive additionally carries no licence text — its own README points at a `COPYING.FPC` the archive does not contain. Shipping Pas2JS becomes possible the day an offline licence text can be pinned by digest from a reviewed source, and not before
+D2-2	16005996	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+D2-3	b310af3b	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+D2-4	39d4c9a7	ROADMAP	a release-signing shard	-	the manifest catches a half-copied, truncated or altered SDK but not a manifest rewritten to describe the altered bytes, and it does not notice its own absence. Closing the whole class needs a signature over the manifest and a key nobody has ratified a home for. Pairs with 7M1-9
+D2-5	6acfde06	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+D2-6	b1cce380	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+D2-7	1e73e270	ACCEPTED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+D2-8	928bae59	CLOSED	11B-6	-	the owner tracked LICENSE at the repository root, and the SDK licence table gained a fifth row for it. No shard chose terms
+D2-9	cf28989d	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D2-10	7e66f6b4	CLOSED	11A-1 and 11A-17	-	the 253 KB single workflow became a caller plus one reusable leg plus 168 composite actions, with the four legs proven to extract to four identical step-name sequences
+D2-11	58acec74	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D2-12	eb03bf0d	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D2-13	c3483e49	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D2-14	2fa8354b	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+D2-15	dd9d4690	CLOSED	phase closure	-	carried forward unchanged from the cap10-closure-artifact.md disposition RESOLVED
+P6U-1	c25f8f92	CLOSED	itself	-	the bundler reads its argv from the kernel on Windows, with the archive proven byte-identical from an accented path
+P6U-2	d6d53046	ROADMAP	a shard touching `tools/quickjs`	-	`pwebqjspack.pas` still reads `ParamStr`, so a CHECKOUT under a non-ASCII directory meets the same RTL Ansi conversion on Windows. It ships in no SDK and no `pweb` command spawns it, so the reach is a developer's machine rather than a user's
+P6U-3	d937ad67	CLOSED	10E-1	-	every shipped host now asks the kernel for its own image
+P6U-4	60403af3	CLOSED	11A-2	-	no gate depends on an upload, collection is one final block, and an upload failure is typed as infrastructure
+P6U-5	3f8a2f66	CLOSED	11A-8	-	`check_schema_agreement.ps1` compares the three hand-maintained field lists and refuses in three typed directions
+P6U-6	72a14ac5	ROADMAP	CAP-12	-	the schema-agreement gate compares the three field LISTS, and nothing enforces the required-versus-compared-versus-per-target DISTINCTION. That distinction has since cost two further red runs, at D1-17 and 11B-14. The named fix is a declarative field set: one place saying, per field, required, compared, or per-target
+P6U-7	09d44eb6	CLOSED	11A-3	-	the U3 drain was built and reports before the residue is measured
+10E-1	42e24698	CLOSED	itself	-	one leaf unit with three kernel bodies, and five shipped readers moved onto it
+10E-2	334cac24	ROADMAP	the CAP-4 / CAP-6 asset layer	-	`PWebBundleLoadFile` accepts a symbolic-link `app.pwb` while the plugin reader refuses one. The asymmetry is pre-existing and unowned; closing it means giving the bundle loader the reparse-refusing open `pweb.script.release.pas` already has, with a supersession of its own
+10E-3	deaa7500	ACCEPTED	the bound is Windows', not the helper's	-	`LongPathsEnabled` widens the Win32 file APIs and not the application path `CreateProcess` accepts, so no gate can buy a live over-MAX_PATH launch by choosing a better runner. The helper's non-truncation behaviour is proven by construction and by the source gate
+10E-4	35e86020	ROADMAP	CI owner	-	Pascal sources are not LF-pinned in `.gitattributes`, so `sed`-based marker extraction in several POSIX gates cannot run from a Windows checkout under WSL — the documented way of validating the Linux legs without spending a hosted run. Both candidate fixes are named, and the first is a checkout-behaviour change for every collaborator that should be decided rather than slipped in
+10E-5	0fd65d57	CLOSED	itself	-	the E4 leg moved to after the CAP-6b4 matrix so that it perturbs nothing, and the underlying residue is closed by 11A-3
+10E-6	cd792d0a	ACCEPTED	two assumptions retired by measurement	-	APFS preserves the Unicode composition it is given, and `rtl_equals_kernel` is false on macOS because the kernel path is realpath-resolved while the RTL's is not
+10E-7	81b09b62	ACCEPTED	a prediction disproved by its own closure run	-	recorded rather than glossed, together with the gate-design lesson that made the difference visible: the leg records the environment fact beside the outcome
+11A-1	95839d39	CLOSED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RESOLVED
+11A-2	7008df19	CLOSED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RESOLVED
+11A-3	8337ae0c	CLOSED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RESOLVED
+11A-4	12530023	CLOSED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RESOLVED
+11A-5	e601b7cc	ACCEPTED	the typed cause shipped	-	the non-report now names whether the page never loaded, never ran, or ran and missed its window, with every observation recorded beside the verdict. The page-side progress report that would replace an inference with a measurement is owed work tracked once, at 11B-19
+11A-6	f77c24c0	CLOSED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RESOLVED
+11A-7	030c5240	CLOSED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RESOLVED
+11A-8	3cd2c754	CLOSED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RESOLVED
+11A-9	1db27551	ACCEPTED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+11A-10	53dc4526	ACCEPTED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+11A-11	2a9178ef	ACCEPTED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+11A-12	c3d20ce7	CLOSED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RESOLVED
+11A-13	dd6a17bb	CLOSED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RESOLVED
+11A-14	71f39aa1	ACCEPTED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+11A-15	3ec2ff77	ACCEPTED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+11A-16	28293caf	ACCEPTED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+11A-17	7f09472b	CLOSED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RESOLVED
+11A-18	a9990833	ACCEPTED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+11B-1	2bf41240	CLOSED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RESOLVED
+11B-2	15baaea8	CLOSED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RESOLVED
+11B-3	40fd8675	ACCEPTED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+11B-4	cdab7d4d	ROADMAP	CAP-12	-	the webview watcher's shape does not fit mORMot head — no C headers, no platform patch, no library build, no signature pin — and `mormot.lock` pins statics to a release asset, so `build_failed` would be the normal outcome rather than news. A mORMot watcher is a different instrument with its own budget
+11B-5	726b4ebe	CLOSED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RESOLVED
+11B-6	0e94ead7	CLOSED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RESOLVED
+11B-7	952bf510	ACCEPTED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+11B-8	1185f8d8	ACCEPTED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+11B-9	5038a385	ACCEPTED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+11B-10	74aab1a5	ACCEPTED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+11B-11	787116f2	CLOSED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RESOLVED
+11B-12	df2373d6	ACCEPTED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+11B-13	ee1b0fa6	CLOSED	11B-15	-	every sampled listener is now typed by its owner image, and the must-pass gate is host-owned only
+11B-14	eb4cb087	CLOSED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RESOLVED
+11B-15	3a637757	CLOSED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RESOLVED
+11B-16	c8ea7d90	ACCEPTED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+11B-17	0cd16a27	ACCEPTED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RECORDED-ONLY - never work, but a measured limitation, a ratification or a lesson
+11B-18	1fa5488d	CLOSED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RESOLVED
+11B-19	dd132977	ROADMAP	CAP-12	-	close-on-report is unavailable to every smoke driver, measured four ways. What remains owed is one of two host-side changes — flush the report line so a driver can see it, or close the window on the first report inside the host — either of which turns a 15-second floor into a 300-millisecond run. `examples/` and `src/` were frozen for CAP-11B
+11B-20	d2ed8e15	CLOSED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RESOLVED
+11B-21	85b94833	CLOSED	phase closure	-	carried forward unchanged from the cap11-closure-artifact.md disposition RESOLVED
