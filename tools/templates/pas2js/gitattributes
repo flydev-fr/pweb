@@ -8,6 +8,12 @@
 # The default is binary and the text kinds opt back in by extension. That
 # direction is deliberate: the next file somebody adds inherits nothing, and
 # an image or a font declared as text would be corrupted on checkout.
+#
+# ONE FILE SERVES BOTH TEMPLATES, byte for byte, and the list is therefore
+# the UNION of what either of them can ship rather than what this one does.
+# A React project has no `.cfg` and a Pas2JS project has no `.ts`; both
+# rules are here because a per-template copy is a per-template drift, and a
+# rule for a kind a project does not contain costs it nothing.
 
 * -text
 
@@ -25,6 +31,7 @@
 *.lpi           text eol=lf
 *.pas           text eol=lf
 *.inc           text eol=lf
+*.cfg           text eol=lf
 *.sh            text eol=lf
 .gitignore      text eol=lf
 .gitattributes  text eol=lf

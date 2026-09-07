@@ -131,10 +131,38 @@ Set-Location $repoRoot
 # README.md's bytes did. Nothing in dist/ changed either, so no `app.pwb`
 # digest moves - CAP-10D0 re-measures every c1_app_pwb_* and records them
 # unchanged rather than claiming they are.
+# THE POST-MVP LEDGER TRIAGE SUPERSEDES `.gitattributes` IN BOTH TEMPLATES,
+# and it is the change B2-15 said would need exactly this. The generated
+# `.gitattributes` opened `* -text` and opted the text kinds back in by
+# extension, and `.cfg` was not among them - so `frontend/pas2js.cfg`, which
+# the Pas2JS template ships as PRODUCT, was binary in every generated
+# project. Nothing broke, because `-text` converts nothing and the committed
+# LF bytes survive a Windows checkout; what the rule buys is the case the
+# entry named, a developer editing the file on Windows and committing CRLF
+# into a compiler configuration that git had been told not to normalise.
+#
+# `*.cfg text eol=lf` is the whole of the rule. The rest of the delta is the
+# header paragraph that answers the entry's SECOND half - the same file
+# lists `*.ts`/`*.tsx` for a template the contract check forbids from ever
+# containing TypeScript. The two copies are byte-identical by ratified
+# design, so the honest resolution is not to remove a rule React needs but
+# to say what the file is: ONE list serving both templates, the UNION of the
+# kinds either can ship. A rule for a kind a project does not contain costs
+# it nothing; a per-template copy would cost it drift.
+#
+# BOTH TEMPLATES MOVE IDENTICALLY, +392 bytes each, and the count does not
+# move because no file was added or removed. MEASURED on windows-x86_64 by
+# running this gate against the rebuilt pack rather than computed:
+#   inventory 578a30933f3a37d66fac5f9ac554e5fb92227ca5ba839e4e57647301eaa145f0
+#          -> 5bcfb4976ea9cd2ce3ae3c82746b65e5dfdf47a3d97b6d4cb7aa0b23fa7ded77
+#   bytes     72784 -> 73176   (16 files, unchanged)
+# The Pas2JS side carries no literal pin here - its inventory travels as an
+# evidence row compared across four targets - so it moves with the same
+# bytes on every target and needs no second number.
 $CAP10B1_REACT_INVENTORY_DIGEST =
-    '578a30933f3a37d66fac5f9ac554e5fb92227ca5ba839e4e57647301eaa145f0'
+    '5bcfb4976ea9cd2ce3ae3c82746b65e5dfdf47a3d97b6d4cb7aa0b23fa7ded77'
 $CAP10B1_REACT_FILE_COUNT = 16
-$CAP10B1_REACT_TOTAL_BYTES = 72784
+$CAP10B1_REACT_TOTAL_BYTES = 73176
 
 $exeSuffix = if ($IsWindows) { '.exe' } else { '' }
 $work = Join-Path $repoRoot 'build/cap10b2'
