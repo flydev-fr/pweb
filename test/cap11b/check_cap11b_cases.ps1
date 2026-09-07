@@ -94,29 +94,64 @@ $PATCH_TARGETS = @(
     'core/include/webview/detail/backends/win32_edge.hh',
     'core/include/webview/detail/platform/windows/webview2/loader.hh'
 )
-# EVERY COPY IS LF-NORMALISED, and that is not tidiness. Git for Windows
-# checks `deps/webview` out with CRLF (core.autocrlf=true), the CAP-4W patch is
-# LF, and a fixture that inherited CRLF makes `git apply` fail on CONTEXT
-# rather than on the seed - which is a case that goes green for a reason that
-# has nothing to do with what it claims to test. The fixture repository is
-# created with core.autocrlf=false so the bytes stay what was written here on
-# all four targets.
-function Copy-AsLf([string]$From, [string]$To) {
-    $text = [IO.File]::ReadAllText($From) -replace "`r`n", "`n"
-    [IO.File]::WriteAllText($To, $text, [Text.UTF8Encoding]::new($false))
+# EVERY FIXTURE FILE COMES FROM THE PINNED COMMIT'S BLOB, NOT FROM THE WORKING
+# TREE, and that is the second time this file has had to learn the lesson.
+#
+#   the first: Git for Windows checks `deps/webview` out with CRLF
+#   (core.autocrlf=true) while the CAP-4W patch is LF, so a fixture copied from
+#   disk made `git apply` fail on CONTEXT rather than on the seed.
+#
+#   the second, found by the CONTROL case on hosted run 34113334940: on the
+#   WINDOWS leg `deps/webview` is ALREADY PATCHED by the time this gate runs -
+#   `tools/build-webview-dll.ps1` applies the CAP-4W patch and leaves it applied
+#   - so a fixture copied from disk carried a patched `win32_edge.hh` and the
+#   pinned patch was rejected by its own output.
+#
+# `git show <pin>:<path>` answers both at once: it is the blob, so it is LF and
+# it is the pin, whatever the working tree happens to be. The fixture repository
+# is still created with core.autocrlf=false so those bytes survive on Windows.
+$PINNED_COMMIT_FOR_FIXTURES = (git -C $pinned rev-parse HEAD 2>$null)
+if ([string]::IsNullOrWhiteSpace($PINNED_COMMIT_FOR_FIXTURES)) {
+    throw 'deps/webview has no readable HEAD; the fixtures have no pinned source'
+}
+$PINNED_COMMIT_FOR_FIXTURES = "$PINNED_COMMIT_FOR_FIXTURES".Trim()
+function Copy-FromPin([string]$Rel, [string]$To) {
+    $psi = [Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = 'git'
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.StandardOutputEncoding = [Text.UTF8Encoding]::new($false)
+    $psi.WorkingDirectory = $pinned
+    foreach ($a in @('show', "$PINNED_COMMIT_FOR_FIXTURES`:$Rel")) { [void]$psi.ArgumentList.Add($a) }
+    $p = [Diagnostics.Process]::Start($psi)
+    $soTask = $p.StandardOutput.ReadToEndAsync()
+    $seTask = $p.StandardError.ReadToEndAsync()
+    [void][Threading.Tasks.Task]::WaitAll(@($soTask, $seTask))
+    $p.WaitForExit()
+    if ($p.ExitCode -ne 0) { throw "git show of the pinned $Rel failed: $($seTask.Result.Trim())" }
+    [IO.File]::WriteAllText($To, ($soTask.Result -replace "`r`n", "`n"), [Text.UTF8Encoding]::new($false))
+}
+function Get-PinnedHeaderNames {
+    $out = @(git -C $pinned ls-tree --name-only "$PINNED_COMMIT_FOR_FIXTURES" 'core/include/webview/' 2>$null)
+    return @($out | Where-Object { $_ -match '\.h$' })
 }
 function New-Fixture([string]$Name, [switch]$WithPatchTargets, [switch]$AsGitRepo) {
     $dir = Join-Path $casesRoot $Name
     $inc = Join-Path $dir 'core/include/webview'
     New-Item -ItemType Directory -Force $inc | Out-Null
-    foreach ($h in @(Get-ChildItem -LiteralPath (Join-Path $pinned 'core/include/webview') -Filter '*.h' -File)) {
-        Copy-AsLf $h.FullName (Join-Path $inc $h.Name)
+    $headerRels = Get-PinnedHeaderNames
+    if ($headerRels.Count -lt 5) {
+        throw "the pinned tree lists $($headerRels.Count) public headers; the fixture would be a fixture of nothing"
+    }
+    foreach ($rel in $headerRels) {
+        Copy-FromPin $rel (Join-Path $inc (Split-Path -Leaf $rel))
     }
     if ($WithPatchTargets) {
         foreach ($rel in $PATCH_TARGETS) {
             $dst = Join-Path $dir $rel
             New-Item -ItemType Directory -Force (Split-Path -Parent $dst) | Out-Null
-            Copy-AsLf (Join-Path $pinned $rel) $dst
+            Copy-FromPin $rel $dst
         }
     }
     # CMakeLists.txt: the build scripts refuse without it, and a fixture that

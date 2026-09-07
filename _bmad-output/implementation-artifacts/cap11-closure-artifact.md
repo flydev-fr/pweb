@@ -70,10 +70,11 @@ compiled against the result. If that fails the tool is broken and the verdict is
 `webview.lock` already pins. Which is why the other five verdicts are proved by
 seeded input rather than by waiting.
 
-**The watcher ran, hosted, on all four targets: run `34107491647`, conclusion
-`success`.** Every leg fetched head, built the library from it through the
-ref-parameterised build script, projected and compiled the pins, checked the
-exports and published its report:
+**The watcher ran, hosted, on all four targets: run `34113334581` on commit
+`c0354a0`, conclusion `success`** (and run `34107491647` on `3487764` before the
+review's fixes, with the same four verdicts). Every leg fetched head, built the
+library from it through the ref-parameterised build script, projected and
+compiled the pins, checked the exports and published its report:
 
 | target | verdict | platform patch | build | signature_pin | ABI probe | exports | diff |
 |---|---|---|---|---|---|---|---|
