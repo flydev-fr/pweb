@@ -43,13 +43,13 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..')).Path
 Set-Location $repoRoot
 
-# CAP-10D0: the ONE pwsh argument-quoting helper, dot-sourced rather than
-# reimplemented. `Start-Process -ArgumentList <array>` joins the array with
-# single spaces and quotes nothing, so a path carrying a space splits into
-# two arguments and `--project` takes half of it. Start-PWebProcess quotes
-# by the C runtime's rules - the same ones PWebCliWindowsCommandLine
-# implements and the CAP-10C0 golden table proves on four targets.
-. (Join-Path $repoRoot 'test/cap10d0/psargs.ps1')
+# CAP-10D0's `Start-PWebProcess` is deliberately NOT dot-sourced here any
+# more, and the reason is not that its rule stopped mattering: this gate's
+# one spawn site now goes through .NET's own per-argument `ArgumentList`
+# (see RunCli below), which needs no command-line grammar at all, so the
+# quoting the helper exists to get right cannot be got wrong. A dot-source
+# that no call site uses would tell a reader this gate quotes through the
+# helper when it does not.
 
 $exeSuffix = if ($IsWindows) { '.exe' } else { '' }
 $work = Join-Path $repoRoot 'build/cap10b1'
@@ -106,16 +106,65 @@ function SortOrdinal([string[]]$Items) {
 $capture = Join-Path $work 'capture'
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $capture
 New-Item -ItemType Directory -Force $capture | Out-Null
+# THE CAPTURE IS BYTE-FAITHFUL, AND THAT IS A MEASUREMENT RATHER THAN A
+# PREFERENCE. `Start-Process -RedirectStandardOutput` does not write the
+# child's bytes on Unix: it reads the stream a LINE AT A TIME and writes the
+# lines back, and an EMPTY line is dropped on the way. On Windows the same
+# parameter hands the file to the child as its stdout handle and the bytes
+# arrive untouched. MEASURED on 2026-09-08 with a probe that links the real
+# `pweb.cli.report` and writes `PWebCliCreateHelp` through the CLI's own
+# `Emit` body: the program's own stdout is 1025 bytes with 26 line feeds and
+# sha256 `b5fced8dd30a66f91594c35ccdaa2b07753a475477fb4144ffbf9530443763dc`
+# on BOTH windows-x86_64 and linux-x86_64 - byte-identical - while the same
+# text captured through `Start-Process` on Linux is 1020 bytes with 21 line
+# feeds, and `diff` names the difference exactly: the help's five blank
+# lines, and nothing else.
+#
+# THAT IS THE WHOLE OF THE `create_help_digest` DIVERGENCE (ledger B1-8),
+# and the entry's own inference - "the difference is in that string and not
+# in the console seam" - is the opposite of what the string does. It is not
+# a property of the help text, of `Emit`, or of the CLI at all: it is the
+# harness transcribing its subject. `create_stdout_digest` agreed on four
+# targets throughout for the reason the same rule predicts - a creation
+# report carries no blank line, so a lossy transcription of it is lossless.
+#
+# So the spawn goes through .NET directly. `ArgumentList` is a per-argument
+# collection, which is STRONGER than the C-runtime string rule the CAP-10D0
+# helper encodes rather than weaker - there is no command-line grammar for a
+# value to escape from, on any platform - and both streams are read to end
+# ASYNCHRONOUSLY before the wait, which is the CAP-10C0 lesson about a child
+# that fills one pipe while the reader is blocked on the other. The two
+# capture files are still written, byte for byte, so a failing leg's
+# transcript remains on disk for whoever reads the artifact.
 function RunCli([string]$Exe, [string]$WorkDir, [string[]]$CliArgs) {
     $so = Join-Path $capture 'stdout.txt'
     $se = Join-Path $capture 'stderr.txt'
-    $p = Start-PWebProcess -FilePath $Exe -ArgumentList $CliArgs -Wait -PassThru `
-        -NoNewWindow -WorkingDirectory $WorkDir `
-        -RedirectStandardOutput $so -RedirectStandardError $se
+    $utf8 = [System.Text.UTF8Encoding]::new($false)
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = $Exe
+    foreach ($a in $CliArgs) { [void]$psi.ArgumentList.Add($a) }
+    $psi.WorkingDirectory = $WorkDir
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.StandardOutputEncoding = $utf8
+    $psi.StandardErrorEncoding = $utf8
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    try {
+        $outTask = $proc.StandardOutput.ReadToEndAsync()
+        $errTask = $proc.StandardError.ReadToEndAsync()
+        $out = $outTask.GetAwaiter().GetResult()
+        $err = $errTask.GetAwaiter().GetResult()
+        $proc.WaitForExit()
+        $code = $proc.ExitCode
+    } finally { $proc.Dispose() }
+    [System.IO.File]::WriteAllText($so, $out, $utf8)
+    [System.IO.File]::WriteAllText($se, $err, $utf8)
     return [pscustomobject]@{
-        Code = $p.ExitCode
-        Out = [System.IO.File]::ReadAllText($so)
-        Err = [System.IO.File]::ReadAllText($se)
+        Code = $code
+        Out = $out
+        Err = $err
     }
 }
 
@@ -206,20 +255,30 @@ $createHelp = RunCli $pweb $repoRoot @('create', '--help')
 Require ($createHelp.Code -eq 0) 'create --help did not exit 0'
 Require ($createHelp.Out.Contains('This build supports: react|pas2js')) `
     'create --help does not advertise both frontend kinds'
-# RECORDED, NOT COMPARED - and the reason is a measurement that has not
-# been finished rather than a preference. On hosted run 33126638202 the
-# Linux and both macOS runners produced one digest for this text and the
-# Windows dev host another, with the text pure ASCII and LF-only on
-# Windows (1011 bytes). `create_stdout_digest` below, produced through the
-# SAME Emit path, agreed on all of them - so whatever differs is in this
-# string and not in the console seam, and this shard has not measured it.
+# COMPARED ACROSS FOUR TARGETS AGAIN, because the divergence that demoted
+# it has a cause and the cause was the harness. Run 33126638202 produced
+# one digest on Linux and both macOS runners and another on Windows, and
+# CAP-10B1 concluded - in writing - that "whatever differs is in this
+# string and not in the console seam". THE OPPOSITE IS WHAT MEASURES: the
+# string is byte-identical on both families, and the console seam was
+# never involved either. `Start-Process -RedirectStandardOutput` DROPPED
+# THE HELP'S FIVE BLANK LINES on Unix, which is a property of the
+# transcription and not of the thing transcribed - the full measurement is
+# recorded at RunCli above, where the capture was corrected.
 #
-# What the help must CLAIM is asserted structurally instead, on every
-# target: create appears in the global help, `This build supports:
-# react|pas2js` appears here, dev/run/build do not, and `supported_uis` is
-# parsed back OUT of this text and absolute-pinned to `pas2js,react` by the
-# aggregator. The byte length travels beside the digest so the next reader
-# can tell a length difference from a substitution in one look.
+# `create_stdout_digest` below agreed on four targets throughout, and the
+# same rule is why: a creation report carries no blank line, so a lossy
+# transcription of it loses nothing. That agreement was read at the time
+# as evidence that the seam was innocent; it was evidence that the input
+# had nothing to lose.
+#
+# The help's CONTRACT is still asserted structurally on every target -
+# create appears in the global help, `This build supports: react|pas2js`
+# appears here, dev/run/build do not, and `supported_uis` is parsed back
+# OUT of this text and absolute-pinned by the aggregator - because a digest
+# says two builds agree and never says what they agreed on. The byte length
+# still travels beside the digest, and is now compared too, so a length
+# difference and a substitution stay two different failures.
 Row 'create_help_digest' (Sha256Text ($createHelp.Out.Replace("`r`n", "`n")))
 Row 'create_help_bytes' ([System.Text.Encoding]::UTF8.GetByteCount(
     $createHelp.Out.Replace("`r`n", "`n")))

@@ -1157,18 +1157,27 @@ $equalityFields = @(
     # are the cheapest way for a divergence to become legible before anyone
     # reads a digest.
     #
-    # create_help_digest is deliberately ABSENT, and it is the one field in
-    # this list that was demoted rather than chosen. Run 33126638202
-    # produced one value on Linux and both macOS targets and another on the
-    # Windows dev host, while create_stdout_digest - produced through the
-    # SAME Emit path - agreed everywhere. So the difference is in that
-    # string and not in the console seam, and this shard did not finish
-    # measuring it. The help's CONTRACT is asserted structurally on every
-    # target instead (create advertised, react the only supported UI,
-    # dev/run/build absent), and `advertised_ui` is parsed back out of the
-    # text and absolute-pinned above. create_help_bytes travels beside the
-    # digest so the next reader can tell a length change from a
-    # substitution without a hosted run.
+    # create_help_digest was the one field in this list that was DEMOTED
+    # rather than chosen, and it is back because the demotion rested on an
+    # inference that measurement contradicts. Run 33126638202 produced one
+    # value on Linux and both macOS targets and another on Windows, and
+    # CAP-10B1 read that - together with create_stdout_digest agreeing
+    # everywhere through the same Emit path - as proof that the difference
+    # lived in the help string. IT DID NOT. The help text is byte-identical
+    # on both families (measured 2026-09-08: 1025 bytes, 26 line feeds, one
+    # sha256, from a probe linking the real pweb.cli.report and writing
+    # through the CLI's own Emit body); what differed was the HARNESS.
+    # `Start-Process -RedirectStandardOutput` transcribes a child's stdout
+    # line by line on Unix and drops every EMPTY line, so the help arrived
+    # 1020 bytes and five blank lines short, while on Windows the same
+    # parameter hands the file to the child and the bytes arrive untouched.
+    # create_stdout_digest agreed throughout because a creation report has
+    # no blank line to lose - which is the same rule, not a counter-example.
+    # The capture is corrected in test/cap10b1/run_cap10b1_gates.ps1 RunCli,
+    # where the full measurement is recorded. create_help_bytes is compared
+    # beside the digest so a length change and a substitution stay two
+    # different failures.
+    'create_help_digest', 'create_help_bytes',
     'create_stdout_digest',
     'create_refusals', 'public_semantic_digest', 'public_file_count',
     'generated_inventory_digest', 'generated_pweb_json_digest',
