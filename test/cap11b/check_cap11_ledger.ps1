@@ -203,6 +203,21 @@ foreach ($closed in 'CAP-11A') {
         Violation "$closurePath leaves $closed's hosted run ``pending``: that shard is closed and its green run is a fact"
     }
 }
+# AND THE ALLOWANCE HAS AN END. Without this the gate would pass forever with
+# CAP-11B's own row unresolved, because nothing but a future shard's memory
+# would ever require it to be filled. The tie is to the artifact's OWN verdict:
+# a document that declares the phase closed may not leave the run that closed
+# it as `pending`.
+# THE VERDICT LINE, anchored at column zero. The artifact necessarily EXPLAINS
+# this rule, and a document that quotes the words it must not claim is not
+# claiming them - matching the bare phrase anywhere would refuse the file for
+# describing its own gate.
+$declaresPass = $closure -match '(?m)^CAP-11B PASS\b'
+if ($declaresPass -and @($pending).Count -gt 0) {
+    Violation ("$closurePath declares CAP-11B PASS while leaving a hosted run ``pending``: " +
+        ($pending -join ', ') + ' -- a closure cites the run that closed it')
+}
+$facts['closure_declares_pass'] = $declaresPass
 # CASE-INSENSITIVE, deliberately: these are subjects the closure has to cover,
 # not strings it has to spell a particular way. A section titled "KNOWN
 # LIMITATIONS" records exactly what "known limitation" asks for.
@@ -247,8 +262,12 @@ foreach ($flake in 'state=0', 'U3 uninstall residue', 'pinned-installer fetch') 
 # such workflow exists, `undecided` if neither is true.
 # A workflow that merely NAMES mORMot is the pinned fetch every leg does; what
 # would make a watcher is a workflow or driver dedicated to watching it.
-$mormotWorkflows = @(Get-ChildItem -Path .github/workflows -File -Filter '*.yml' -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -imatch 'mormot' -and $_.Name -imatch 'watch' })
+# `.yaml` TOO: GitHub accepts both spellings, and a mORMot watcher shipped
+# under the other one would leave this row reading `ledgered` about a watcher
+# that exists - the same reason the CAP-11A action sweep enumerates both.
+$mormotWorkflows = @(Get-ChildItem -Path .github/workflows -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Extension -in @('.yml', '.yaml') -and
+                   $_.Name -imatch 'mormot' -and $_.Name -imatch 'watch' })
 $mormotWorkflows += @(Get-ChildItem -Path test -Recurse -File -Filter 'watch_mormot*.ps1' -ErrorAction SilentlyContinue)
 $ledgerText = [System.IO.File]::ReadAllText($ledgerPath)
 $mormotLedgered = $ledgerText -imatch 'THE mORMot HEAD WATCHER IS LEDGERED RATHER THAN BUILT'

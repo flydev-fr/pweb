@@ -60,6 +60,13 @@ if ($ShaKeys.Count -eq 0) {
 }
 
 # --- CAP-11B: the one optional input, resolved in one place ------------------
+# AN EXPLICIT EMPTY REF IS A REFUSAL, never a silent fall-back to pinned mode.
+# `-Ref ''` reaching here as "no ref" would send a watcher fetch into
+# `deps/webview` - the pinned checkout - which is the one outcome this input
+# exists to make impossible.
+if ($PSBoundParameters.ContainsKey('Ref') -and [string]::IsNullOrWhiteSpace($Ref)) {
+    throw '-Ref was given an empty value; omit it for the pinned path'
+}
 $RefMode = -not [string]::IsNullOrWhiteSpace($Ref)
 if ($RefMode) {
     $Checkout  = Join-Path $DepsDir 'webview-watch'
@@ -70,7 +77,12 @@ else {
 }
 
 if ($PrintPlan) {
-    $planCheckout = if ($RefMode) { 'deps/webview-watch' } else { 'deps/webview' }
+    # THE RESOLVED $Checkout, never a literal restating it. A plan that printed
+    # its own idea of the path would still say `deps/webview-watch` after the
+    # assignment above was broken, and the mirror check in
+    # test/cap11b/check_ref_input.ps1 - whose whole job is to notice a ref plan
+    # pointing at the pinned tree - would be comparing prose to prose.
+    $planCheckout = $Checkout.Substring($RepoRoot.Length + 1).Replace('\', '/')
     $plan = @(
         'script=tools/get-webview.ps1'
         "mode=$(if ($RefMode) { 'ref' } else { 'pinned' })"

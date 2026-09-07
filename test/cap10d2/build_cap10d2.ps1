@@ -76,10 +76,16 @@ function Stage([string]$Source, [string]$Name, [string]$WantSha) {
 }
 
 Stage (Join-Path $repoRoot 'deps/mormot2/LICENCE.md') 'LICENSE.mormot2.md' ''
-# CAP-11B: PWeb's own licence, staged from the repository root. It is here
-# because `<repo>/LICENSE` is TRACKED (commit 864fca7); nothing chooses terms,
-# and if the file ever stops being tracked this stage fails loudly rather than
-# shipping a stale copy.
+# CAP-11B: PWeb's own licence, staged from the repository root. It ships because
+# `<repo>/LICENSE` is TRACKED (commit 864fca7) and for no other reason - which
+# is the same measurement the CAP-7F emitters make for `sdk_own_license`, so the
+# two can never disagree about whether this row exists. `Stage` tests EXISTENCE,
+# and an untracked-but-present LICENSE on a developer's machine would satisfy
+# that while a CI checkout had no such file: the tracked test is made here.
+& git ls-files --error-unmatch LICENSE 2>&1 | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    throw '<repo>/LICENSE is not tracked; the SDK ships no licence PWeb was not given'
+}
 Stage (Join-Path $repoRoot 'LICENSE') 'LICENSE.pweb.txt' ''
 Stage (Join-Path $repoRoot 'build/webview-dist/LICENSE.webview') `
     'LICENSE.webview.txt' ''

@@ -2749,6 +2749,26 @@ $e.watcher_verdict_vocabulary_digest = ('0' * 64)
 $e | ConvertTo-Json -Depth 4 | Set-Content $f
 Invoke-AggExpectFail 'cap11b-vocabulary-diverged' 'watcher_verdict_vocabulary_digest'
 
+# (w5-w9) the remaining CAP-11B absolute pins. Every one of them is the same
+# shape as w1-w4 - four legs could agree perfectly and be wrong together - so
+# every one gets a seeded refusal rather than four of nine getting one.
+foreach ($case in @(
+        @{ n = 'cap11b-locks-moved';        f = 'locks_unchanged_after_watch'; v = 'false' },
+        @{ n = 'cap11b-verdicts-short';     f = 'watcher_seeded_verdicts';
+           v = 'abi_break,build_failed,compatible_additive,inconclusive,unchanged' },
+        @{ n = 'cap11b-mormot-undecided';   f = 'mormot_watcher';              v = 'undecided' },
+        @{ n = 'cap11b-ledger-orphan';      f = 'cap11_ledger_orphans';        v = '1' },
+        @{ n = 'cap11b-watcher-absent';     f = 'watcher_available';           v = 'false' })) {
+    Reset-Fixture
+    foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+        $f = Join-Path $fx "ev/$leg/evidence.json"
+        $e = Get-Content $f -Raw | ConvertFrom-Json
+        $e.($case.f) = $case.v
+        $e | ConvertTo-Json -Depth 4 | Set-Content $f
+    }
+    Invoke-AggExpectFail $case.n $case.f
+}
+
 Remove-Item -Force -ErrorAction SilentlyContinue $matrix
 # a floor, so a leg that silently stops running is caught. It is deliberately
 # NOT an equality: adding a refusal branch is normal and should not require
@@ -2762,11 +2782,13 @@ Remove-Item -Force -ErrorAction SilentlyContinue $matrix
 # added, for the reason CAP-10E raised it from 215: leaving the floor where it
 # was would exempt exactly the newest legs from the one check that notices a leg
 # quietly ceasing to run.
-# CAP-11B raised it from 221 to 225 with its four watcher-contract legs, for the
-# same reason again.
-if ($script:AggRefusals -lt 225) {
+# CAP-11B raised it from 221 to 230 with its nine watcher legs - one per
+# absolute pin and one for the compared vocabulary digest - for the same reason
+# again. Four of nine would have exempted the other five from the one check
+# that notices a leg quietly ceasing to run.
+if ($script:AggRefusals -lt 230) {
     throw ("selftest: only $($script:AggRefusals) aggregator refusals fired, " +
-        'expected at least 225 -- a negative leg stopped running')
+        'expected at least 230 -- a negative leg stopped running')
 }
 if ($script:SweepRefusals -lt 2) {
     throw ("selftest: only $($script:SweepRefusals) divergence refusals fired, " +

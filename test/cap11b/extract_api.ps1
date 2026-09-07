@@ -291,6 +291,28 @@ foreach ($rel in $headers) {
         [void]$typedefs.Add([pscustomobject]@{ name = $d.Name; type = $d.Type })
     }
 
+    # --- every `#include "..."` must be inside the set we parse ---------------
+    # The public C API is `api.h` plus the public headers it includes. Scanning
+    # this directory non-recursively is only complete while that stays true, so
+    # the claim is CHECKED rather than assumed: a quoted include naming a file
+    # outside the parsed set is a refusal, which is how a public header moving
+    # under `detail/` becomes news instead of a blind spot.
+    foreach ($im in [regex]::Matches($src, '(?m)^[ \t]*#[ \t]*include[ \t]+"([^"]+)"')) {
+        $inc = $im.Groups[1].Value
+        $incRel = "core/include/webview/$inc"
+        if ($inc -match '\.hh$') { continue }   # C++ internals, out of scope by contract
+        if ($headers -cnotcontains $incRel) {
+            Refuse "$rel includes '$inc', which is outside the parsed public header set"
+        }
+    }
+
+    # --- the include guard, so conditional depth means something --------------
+    # Every one of these headers wraps its whole body in `#ifndef X / #define X`
+    # ... `#endif`, so a naive `#if` depth is 1 everywhere. The guard pair is
+    # identified and excluded; what is left is a real conditional.
+    $guardDepth = 0
+    if ($src -match '(?m)^[ \t]*#[ \t]*ifndef[ \t]+(\w+)[ \t]*\n[ \t]*#[ \t]*define[ \t]+\1\b') { $guardDepth = 1 }
+
     # --- WEBVIEW_API entry points --------------------------------------------
     # From each `WEBVIEW_API` to the first `;` at paren depth 0. Everything in
     # between is one declaration however many lines upstream spread it over.
@@ -302,6 +324,20 @@ foreach ($rel in $headers) {
         $lineStart = $src.LastIndexOf("`n", [Math]::Max($at - 1, 0))
         $lineHead = $src.Substring($lineStart + 1, $at - $lineStart - 1)
         if ($lineHead -match '#\s*(define|ifndef|ifdef|if|elif|undef)') { $idx = $at + 11; continue }
+
+        # A DECLARATION INSIDE A PREPROCESSOR CONDITIONAL IS A REFUSAL. This
+        # parser has no preprocessor: an entry point upstream guarded by
+        # `#if defined(...)` would be extracted for every target and then
+        # projected into a binding that declares it unconditionally. Refusing
+        # types the run `inconclusive`, which is the honest answer to "there is
+        # a shape here I cannot evaluate".
+        $before = $src.Substring(0, $at)
+        $opens = ([regex]::Matches($before, '(?m)^[ \t]*#[ \t]*(if|ifdef|ifndef)\b')).Count
+        $closes = ([regex]::Matches($before, '(?m)^[ \t]*#[ \t]*endif\b')).Count
+        if (($opens - $closes) -gt $guardDepth) {
+            Refuse "$rel`: a WEBVIEW_API declaration sits inside a preprocessor conditional, which this parser cannot evaluate"
+            $idx = $at + 11; continue
+        }
 
         $j = $at + 11; $depth = 0; $end = -1
         while ($j -lt $src.Length) {

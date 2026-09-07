@@ -1820,7 +1820,9 @@ cap11a_record build/cap11a/structure.json test/cap11a/check_ci_structure.ps1
 cap11a_record build/cap11a/migration.json test/cap11a/check_migration_map.ps1
 cap11a_record build/cap11a/flakes.json test/cap11a/check_flake_instrumentation.ps1
 cap11a_record build/cap7f/schema-agreement.json test/cap7f/check_schema_agreement.ps1
-# CAP-11B: the four records the watcher's gates wrote on this same job.
+# CAP-11B: the four records the watcher's gates wrote on this same job. See the
+# PowerShell twin for why the re-execution fall-back below is a safety net and
+# not a normal path: `check_cap11b_cases.ps1` builds a library.
 cap11a_record build/cap11b/contract.json test/cap11b/check_watcher_contract.ps1
 cap11a_record build/cap11b/refinput.json test/cap11b/check_ref_input.ps1
 cap11a_record build/cap11b/cases.json    test/cap11b/check_cap11b_cases.ps1

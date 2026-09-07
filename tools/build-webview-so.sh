@@ -48,10 +48,17 @@ cap11b_ref=''
 cap11b_print_plan=0
 while [ "$#" -gt 0 ]; do
     case "$1" in
+        # AN EXPLICIT EMPTY REF IS A REFUSAL, never a fall-back to the pinned
+        # path: `--ref ''` treated as "no ref" would make a watcher build write
+        # into build/cap7l and assert the pinned SONAME.
         --ref)
             [ "$#" -ge 2 ] || { printf '[CAP-7L] --ref needs a value\n' >&2; exit 1; }
+            [ -n "$2" ] || { printf '[CAP-7L] --ref was given an empty value\n' >&2; exit 1; }
             cap11b_ref="$2"; shift 2 ;;
-        --ref=*) cap11b_ref="${1#--ref=}"; shift ;;
+        --ref=*)
+            cap11b_ref="${1#--ref=}"
+            [ -n "${cap11b_ref}" ] || { printf '[CAP-7L] --ref= is empty\n' >&2; exit 1; }
+            shift ;;
         --print-plan) cap11b_print_plan=1; shift ;;
         *) printf '[CAP-7L] unknown argument: %s\n' "$1" >&2; exit 1 ;;
     esac

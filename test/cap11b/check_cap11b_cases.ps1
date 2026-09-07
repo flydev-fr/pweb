@@ -64,12 +64,26 @@ $locksBefore = @{
 # every CI leg the pinned FPC compiles this, so the gate stays a gate.
 $fpcTarget = (& fpc -iTP 2>&1 | Out-String).Trim()
 $fpcOs = (& fpc -iTO 2>&1 | Out-String).Trim()
-if ($IsWindows -and $fpcTarget -cne 'x86_64') {
-    Write-Host "[cap11b] REFUSED: this host's FPC targets $fpcTarget-$fpcOs."
-    Write-Host '[cap11b] The projected binding declares LIB_WEBVIEW only for WIN64, DARWIN and LINUX,'
-    Write-Host '[cap11b] so an i386 compiler stops at {$MESSAGE Error ''Unsupported platform''} and every'
+# THE TARGET THIS LEG IS. The platform leg sets PWEB_CI_TARGET; off CI it is
+# derived from the host, so a developer gets the same behaviour without having
+# to know the variable exists.
+$legTarget = if ($env:PWEB_CI_TARGET) { $env:PWEB_CI_TARGET }
+    elseif ($IsWindows) { 'windows' }
+    elseif ($IsLinux) { 'linux' }
+    elseif ($fpcTarget -ceq 'aarch64') { 'macos-arm64' }
+    else { 'macos-x64' }
+# EVERY HOST, not only Windows. The projected binding declares LIB_WEBVIEW for
+# WIN64, DARWIN and LINUX on x86_64/aarch64 only, so any other FPC target makes
+# every compile-based case report `inconclusive` ABOUT THE HOST rather than
+# about its seed. One named sentence beats eight confusing case failures - and
+# it is a REFUSAL, never a skip, so the gate stays a gate on every CI leg.
+$wantCpu = if ($legTarget -eq 'macos-arm64') { 'aarch64' } else { 'x86_64' }
+if ($fpcTarget -cne $wantCpu) {
+    Write-Host "[cap11b] REFUSED: this host's FPC targets $fpcTarget-$fpcOs; target '$legTarget' needs $wantCpu."
+    Write-Host '[cap11b] The projected binding declares LIB_WEBVIEW only for WIN64, DARWIN and LINUX, so a'
+    Write-Host '[cap11b] compiler for another CPU stops at the unsupported-platform message and every'
     Write-Host '[cap11b] compile-based case below would report `inconclusive` about the HOST, not the seed.'
-    Write-Host '[cap11b] The Windows leg of the matrix installs the pinned x86_64 FPC and does run these.'
+    Write-Host '[cap11b] Each CI leg installs the pinned FPC for its own target and does run these.'
     exit 1
 }
 
@@ -138,7 +152,7 @@ function Edit-Exact([string]$Path, [string]$From, [string]$To) {
 
 # --- run one case -------------------------------------------------------------
 $results = New-Object System.Collections.Generic.List[object]
-function Invoke-Case([string]$Name, [string]$Expected, [string[]]$Arguments) {
+function Invoke-Case([string]$Name, [string]$Expected, [string[]]$Arguments, [switch]$Unseeded) {
     $outDir = "build/cap11b/cases/$Name-out"
     $all = @('-NoProfile', '-File', 'test/cap11b/watch_upstream.ps1', '-OutDir', $outDir) + $Arguments
     $log = Join-Path $repoRoot "build/cap11b/cases/$Name.log"
@@ -170,13 +184,24 @@ function Invoke-Case([string]$Name, [string]$Expected, [string[]]$Arguments) {
     if ($r.verdict -cne $Expected) {
         Violation "$Name`: verdict '$($r.verdict)', expected '$Expected' (findings: $($r.findings -join ' | '))"
     }
-    if (-not $r.seeded) { Violation "$Name`: the report is not stamped seeded:true" }
+    # A SEEDED REPORT MUST SAY SO, and W8 - the one real run - must not.
+    if ($Unseeded) {
+        if ($r.seeded) { Violation "$Name`: a real run is stamped seeded:true" }
+    }
+    elseif (-not $r.seeded) { Violation "$Name`: the report is not stamped seeded:true" }
     if (-not $r.locks_unchanged) { Violation "$Name`: the report says a lock changed during the watch" }
     if (-not (Test-Path -LiteralPath (Join-Path $repoRoot "$outDir/report.md"))) {
         Violation "$Name`: no human report was written"
     }
     [void]$results.Add([pscustomobject]@{ case = $Name; expected = $Expected; got = $r.verdict })
     Write-Host "[cap11b] $Name -> $($r.verdict)"
+    # A REPORT WITHOUT A DIFF IS A REPORT NO CASE MAY DEREFERENCE. Under
+    # StrictMode `$r.diff.counts` on a null diff throws and kills the suite
+    # mid-way, which turns one wrong verdict into no verdicts at all.
+    if ($null -eq $r.diff -and $Expected -cne 'inconclusive' -and $Expected -cne 'build_failed') {
+        Violation "$Name`: the report carries no diff, so nothing was compared"
+        return $null
+    }
     return $r
 }
 
@@ -184,7 +209,7 @@ function Invoke-Case([string]$Name, [string]$Expected, [string[]]$Arguments) {
 # W2 -- head IS the pin
 # =============================================================================
 $fx = New-Fixture 'w2-unchanged'
-$r = Invoke-Case 'W2' 'unchanged' @('-Target', 'linux', '-SeedHeadRoot', 'build/cap11b/cases/w2-unchanged', '-SeedSkipBuild')
+$r = Invoke-Case 'W2' 'unchanged' @('-Target', 'linux', '-SeedHeadRoot', $fx.Substring($repoRoot.Length + 1).Replace([char]92, [char]47), '-SeedSkipBuild')
 if ($r) {
     if ($r.diff.counts.added -ne 0 -or $r.diff.counts.removed -ne 0 -or $r.diff.counts.changed -ne 0) {
         Violation "W2: the diff is not empty ($($r.diff.counts.added)/$($r.diff.counts.removed)/$($r.diff.counts.changed))"
@@ -201,7 +226,7 @@ Edit-Exact (Join-Path $fx 'core/include/webview/api.h') `
     'WEBVIEW_API const webview_version_info_t *webview_version(void);' `
     ("WEBVIEW_API const webview_version_info_t *webview_version(void);`n`n" +
      "WEBVIEW_API webview_error_t webview_set_icon(webview_t w, const char *path);")
-$r = Invoke-Case 'W3' 'compatible_additive' @('-Target', 'linux', '-SeedHeadRoot', 'build/cap11b/cases/w3-additive', '-SeedSkipBuild')
+$r = Invoke-Case 'W3' 'compatible_additive' @('-Target', 'linux', '-SeedHeadRoot', $fx.Substring($repoRoot.Length + 1).Replace([char]92, [char]47), '-SeedSkipBuild')
 if ($r) {
     $named = @($r.diff.added | Where-Object { $_.name -ceq 'webview_set_icon' })
     if ($named.Count -ne 1) { Violation 'W3: the diff does not name webview_set_icon as added' }
@@ -221,7 +246,7 @@ $fx = New-Fixture 'w4-abi-break'
 Edit-Exact (Join-Path $fx 'core/include/webview/api.h') `
     'WEBVIEW_API webview_error_t webview_navigate(webview_t w, const char *url);' `
     'WEBVIEW_API webview_error_t webview_navigate(webview_t w, const char *url, int flags);'
-$r = Invoke-Case 'W4' 'abi_break' @('-Target', 'linux', '-SeedHeadRoot', 'build/cap11b/cases/w4-abi-break', '-SeedSkipBuild')
+$r = Invoke-Case 'W4' 'abi_break' @('-Target', 'linux', '-SeedHeadRoot', $fx.Substring($repoRoot.Length + 1).Replace([char]92, [char]47), '-SeedSkipBuild')
 if ($r) {
     if ($r.signature_pin -cne 'failed') {
         Violation "W4: signature_pin must FAIL to compile against a changed signature, reads '$($r.signature_pin)'"
@@ -246,7 +271,7 @@ if ($r) {
 # context mismatch in a file neither of them touched.)
 # =============================================================================
 $fx = New-Fixture 'w5c-patch-control' -WithPatchTargets -AsGitRepo
-$r = Invoke-Case 'W5c' 'unchanged' @('-Target', 'windows', '-SeedHeadRoot', 'build/cap11b/cases/w5c-patch-control', '-SeedSkipBuild')
+$r = Invoke-Case 'W5c' 'unchanged' @('-Target', 'windows', '-SeedHeadRoot', $fx.Substring($repoRoot.Length + 1).Replace([char]92, [char]47), '-SeedSkipBuild')
 if ($r) {
     if ($r.patch.outcome -cne 'clean') {
         Violation ("W5c CONTROL: the UNEDITED fixture reports patch outcome " +
@@ -261,7 +286,7 @@ $fx = New-Fixture 'w5a-patch-rejected' -WithPatchTargets -AsGitRepo
 Edit-Exact (Join-Path $fx 'core/include/webview/detail/backends/win32_edge.hh') `
     '    PathCombineW(userDataFolder, dataPath, currentExeName);' `
     '    PathCombineW(userDataFolder, dataPath, exeNameForProfile);'
-$r = Invoke-Case 'W5a' 'patch_drift' @('-Target', 'windows', '-SeedHeadRoot', 'build/cap11b/cases/w5a-patch-rejected', '-SeedSkipBuild')
+$r = Invoke-Case 'W5a' 'patch_drift' @('-Target', 'windows', '-SeedHeadRoot', $fx.Substring($repoRoot.Length + 1).Replace([char]92, [char]47), '-SeedSkipBuild')
 if ($r) {
     if ($r.patch.outcome -cne 'rejected') { Violation "W5a: patch outcome '$($r.patch.outcome)', expected 'rejected'" }
     if (-not $r.patch.hunk) { Violation 'W5a: the report carries no hunk for the rejection' }
@@ -275,7 +300,7 @@ $fx = New-Fixture 'w5b-patch-offset' -WithPatchTargets -AsGitRepo
 $hh = Join-Path $fx 'core/include/webview/detail/backends/win32_edge.hh'
 $body = [IO.File]::ReadAllText($hh) -replace "`r`n", "`n"
 [IO.File]::WriteAllText($hh, ("`n`n`n" + $body), [Text.UTF8Encoding]::new($false))
-$r = Invoke-Case 'W5b' 'patch_drift' @('-Target', 'windows', '-SeedHeadRoot', 'build/cap11b/cases/w5b-patch-offset', '-SeedSkipBuild')
+$r = Invoke-Case 'W5b' 'patch_drift' @('-Target', 'windows', '-SeedHeadRoot', $fx.Substring($repoRoot.Length + 1).Replace([char]92, [char]47), '-SeedSkipBuild')
 if ($r) {
     if ($r.patch.outcome -cne 'offset') { Violation "W5b: patch outcome '$($r.patch.outcome)', expected 'offset'" }
     if ($r.patch.hunk -notmatch 'offset') { Violation 'W5b: the report does not record the offset git measured' }
@@ -286,7 +311,7 @@ if ($r) {
 # =============================================================================
 $fx = New-Fixture 'w6-build-failed'
 $tail = "ninja: build stopped: subcommand failed.`nwebview.cc:1:10: fatal error: 'WebKit/WebKit.h' file not found"
-$r = Invoke-Case 'W6' 'build_failed' @('-Target', 'linux', '-SeedHeadRoot', 'build/cap11b/cases/w6-build-failed', '-SeedBuildFailure', $tail)
+$r = Invoke-Case 'W6' 'build_failed' @('-Target', 'linux', '-SeedHeadRoot', $fx.Substring($repoRoot.Length + 1).Replace([char]92, [char]47), '-SeedBuildFailure', $tail)
 if ($r) {
     if ($r.build.outcome -cne 'failed') { Violation "W6: build outcome '$($r.build.outcome)'" }
     if ($r.build.tail -notmatch 'fatal error') { Violation 'W6: the report carries no build log tail' }
@@ -305,6 +330,49 @@ if ($r) {
     # THE POINT OF THE VERDICT: a run that measured nothing must never be
     # reported as a run that found nothing.
     if ($r.verdict -ceq 'unchanged') { Violation 'W7: inconclusive is indistinguishable from unchanged' }
+}
+
+# =============================================================================
+# W8 -- THE REF PATH, FOR REAL, ON THIS LEG.
+#
+# Every case above passes `-SeedSkipBuild`, `-SeedBuildFailure` or
+# `-SeedFetchFailure`, so `$buildOutcome -eq 'ok'` is unreachable in all of
+# them - and the export check and the paired ABI probe are both guarded on it.
+# That left the half of the watcher that actually compiles anything against a
+# fetched tree executed by NO GATE: a broken ref build would surface only as a
+# `build_failed` verdict on the weekly run, which the contract defines as
+# legitimate news about upstream, on a job that concludes `success` either way.
+#
+# So this case runs the driver with NO seed at all, pointed at the PINNED
+# commit as its ref. It is the same code path the weekly watcher takes -
+# get-webview.ps1 -Ref, the platform build script --ref, the projection, both
+# compiles, the export comparison, the paired probe - executed on this leg's
+# own target, on every push, with an answer that is knowable in advance:
+# head == the pin means `unchanged`.
+#
+# It is the one case that takes the network (one shallow fetch of a commit this
+# leg has already fetched once) and the one that builds a library, which is why
+# it is last.
+# =============================================================================
+$pinnedCommit = ''
+foreach ($line in (Get-Content -LiteralPath (Join-Path $repoRoot 'webview.lock'))) {
+    if ($line.Trim() -match '^commit\s*=\s*([0-9a-f]{40})$') { $pinnedCommit = $Matches[1]; break }
+}
+if (-not $pinnedCommit) { Violation 'webview.lock carries no 40-char commit pin' }
+else {
+    $r = Invoke-Case 'W8' 'unchanged' @('-Target', $legTarget, '-Ref', $pinnedCommit) -Unseeded
+    if ($r) {
+        if ($r.build.outcome -cne 'ok') {
+            Violation "W8: the ref build did not produce a library (build.outcome='$($r.build.outcome)'): $($r.build.tail)"
+        }
+        if ($r.exports -cne 'ok') { Violation "W8: the export comparison reads '$($r.exports)'" }
+        if ($r.abi_probe -cne 'ok') { Violation "W8: the paired ABI probe reads '$($r.abi_probe)'" }
+        if ($r.signature_pin -cne 'ok') { Violation "W8: signature_pin reads '$($r.signature_pin)'" }
+        if (-not $r.pinned_checkout_untouched) { Violation 'W8: the pinned checkout moved during a real watch' }
+        if ($r.head_commit -cne $pinnedCommit) {
+            Violation "W8: the ref resolved to '$($r.head_commit)', not the pinned '$pinnedCommit'"
+        }
+    }
 }
 
 # =============================================================================

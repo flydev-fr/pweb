@@ -168,14 +168,20 @@ CAP11B_REF=''
 CAP11B_PRINT_PLAN=0
 cap7m_args=()
 cap11b_want_ref=0
+# AN EXPLICIT EMPTY REF IS A REFUSAL, never a fall-back to the pinned path:
+# `--ref ''` treated as "no ref" would make a watcher build write into
+# build/cap7m and assert the pinned dylib names it was told to observe.
 for cap7m_arg in "$@"; do
     if [ "${cap11b_want_ref}" -eq 1 ]; then
+        [ -n "${cap7m_arg}" ] || { printf '[CAP-7M0] --ref was given an empty value\n' >&2; exit 1; }
         CAP11B_REF="${cap7m_arg}"; cap11b_want_ref=0; continue
     fi
     case "${cap7m_arg}" in
         --clean) CAP7M_CLEAN=1 ;;
         --ref) cap11b_want_ref=1 ;;
-        --ref=*) CAP11B_REF="${cap7m_arg#--ref=}" ;;
+        --ref=*)
+            CAP11B_REF="${cap7m_arg#--ref=}"
+            [ -n "${CAP11B_REF}" ] || { printf '[CAP-7M0] --ref= is empty\n' >&2; exit 1; } ;;
         --print-plan) CAP11B_PRINT_PLAN=1 ;;
         *) cap7m_args+=( "${cap7m_arg}" ) ;;
     esac
@@ -417,6 +423,11 @@ if [ -n "${CAP11B_REF}" ]; then
     # the compatibility name is the real name minus its patch component, which
     # is how CMake derives SOVERSION from VERSION on Apple
     dylib_versioned="$(printf '%s' "${dylib_real}" | sed -E 's/^libwebview\.([0-9]+\.[0-9]+)\.[0-9]+\.dylib$/libwebview.\1.dylib/')"
+    # A sed that matched nothing returns its input unchanged, and the staging
+    # below would then copy the real file onto itself under two names that are
+    # the same name. An unrecognised shape is a refusal, not a silent collision.
+    [ "${dylib_versioned}" != "${dylib_real}" ] ||
+        die "cannot derive a compatibility name from '${dylib_real}' -- upstream's dylib naming changed shape"
     printf '[CAP-11B] observed dylib %s (compatibility name %s; pinned %s)\n' \
         "${dylib_real}" "${dylib_versioned}" "$(lock_get macos-dylib-real)"
 else

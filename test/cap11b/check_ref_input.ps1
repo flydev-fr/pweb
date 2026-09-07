@@ -39,10 +39,56 @@ function Get-FileSha([string]$Path) {
 }
 
 $expectedPath = 'test/cap11b/pinned-plan.expected.txt'
-$locksBefore = @{
-    webview = Get-FileSha 'webview.lock'
-    mormot  = Get-FileSha 'mormot.lock'
+
+# `-Record` REWRITES THE PIN AND EXITS 0 BEFORE ANY COMPARISON. On a developer's
+# machine that is what it is for; reaching a CI leg it would silently
+# re-ratify whatever the pinned build had become and report PASS.
+if ($Record -and $env:GITHUB_ACTIONS) {
+    Write-Host '[cap11b] REFUSED: -Record re-ratifies the pinned build plan and may never run in CI.'
+    exit 1
 }
+# `bash` READS THE TWO POSIX PLANS ON EVERY TARGET, WINDOWS INCLUDED - AND ON
+# WINDOWS THE NAME `bash` IS NOT THE SHELL. `C:\Windows\System32\bash.exe` is
+# the WSL launcher and is always on PATH ahead of Git's; on a hosted runner with
+# no distro installed it exits 1 with nothing on stderr, which is exactly what
+# it did (run 34107491800: three POSIX plans "exited 1" with an empty message
+# and fifty violations behind it). Git for Windows' own bash is resolved by
+# path, and the WSL launcher is refused by name.
+function Resolve-Bash {
+    $candidates = New-Object System.Collections.Generic.List[string]
+    foreach ($pf in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:ProgramW6432)) {
+        if ($pf) { [void]$candidates.Add((Join-Path $pf 'Git\bin\bash.exe')) }
+    }
+    foreach ($c in @(Get-Command bash -All -ErrorAction SilentlyContinue |
+            ForEach-Object { $_.Source })) {
+        if ($c) { [void]$candidates.Add($c) }
+    }
+    foreach ($c in $candidates.ToArray()) {
+        if (-not (Test-Path -LiteralPath $c)) { continue }
+        if ($c -match '(?i)[\\/]System32[\\/]bash\.exe$') { continue }
+        return $c
+    }
+    return ''
+}
+$BASH = Resolve-Bash
+if (-not $BASH) {
+    Write-Host '[cap11b] REFUSED: no usable bash. The two POSIX build plans are properties of files in'
+    Write-Host '[cap11b] this repository and are read on every target; on Windows that means Git Bash,'
+    Write-Host '[cap11b] never C:\Windows\System32\bash.exe, which is the WSL launcher and not a shell.'
+    exit 1
+}
+Write-Host "[cap11b] bash: $BASH"
+
+# EVERY LOCK, and the generated binding's config with them - the same set the
+# driver digests. The contract says "any pin", and this repository pins six.
+$LOCK_FILES = @('webview.lock', 'mormot.lock', 'fpc.lock', 'pas2js.lock',
+    'innosetup.lock', 'webview2-runtime.lock', 'src/lib/webview.chet')
+function Get-PinDigests {
+    $d = [ordered]@{}
+    foreach ($f in $LOCK_FILES) { $d[$f] = Get-FileSha $f }
+    return $d
+}
+$locksBefore = Get-PinDigests
 
 # THE FIVE PINNED INVOCATIONS. `bash` is used for the two POSIX scripts on
 # every target including Windows, where the runner image ships Git Bash: the
@@ -51,9 +97,9 @@ $locksBefore = @{
 $INVOCATIONS = @(
     @{ label = 'tools/get-webview.ps1';               file = 'pwsh'; args = @('-NoProfile', '-File', 'tools/get-webview.ps1', '-PrintPlan') },
     @{ label = 'tools/build-webview-dll.ps1';         file = 'pwsh'; args = @('-NoProfile', '-File', 'tools/build-webview-dll.ps1', '-PrintPlan') },
-    @{ label = 'tools/build-webview-so.sh';           file = 'bash'; args = @('tools/build-webview-so.sh', '--print-plan') },
-    @{ label = 'tools/build-webview-dylib.sh x86_64'; file = 'bash'; args = @('tools/build-webview-dylib.sh', 'x86_64', '--print-plan') },
-    @{ label = 'tools/build-webview-dylib.sh arm64';  file = 'bash'; args = @('tools/build-webview-dylib.sh', 'arm64', '--print-plan') }
+    @{ label = 'tools/build-webview-so.sh';           file = $BASH; args = @('tools/build-webview-so.sh', '--print-plan') },
+    @{ label = 'tools/build-webview-dylib.sh x86_64'; file = $BASH; args = @('tools/build-webview-dylib.sh', 'x86_64', '--print-plan') },
+    @{ label = 'tools/build-webview-dylib.sh arm64';  file = $BASH; args = @('tools/build-webview-dylib.sh', 'arm64', '--print-plan') }
 )
 
 function Invoke-Plan($Inv) {
@@ -76,7 +122,11 @@ $planOk = $true
 foreach ($inv in $INVOCATIONS) {
     $r = Invoke-Plan $inv
     if ($r.rc -ne 0) {
-        Violation "$($inv.label): --print-plan exited $($r.rc): $($r.err.Trim())"
+        # BOTH STREAMS in the message. The WSL launcher exits 1 with an empty
+        # stderr, and a violation that printed only stderr said "exited 1: "
+        # and sent a reader nowhere.
+        Violation ("$($inv.label): --print-plan exited $($r.rc): " +
+            (("$($r.err) $($r.out)") -replace '\s+', ' ').Trim())
         $planOk = $false
         continue
     }
@@ -124,8 +174,8 @@ else {
 $refInvocations = @(
     @{ label = 'tools/get-webview.ps1';       file = 'pwsh'; args = @('-NoProfile', '-File', 'tools/get-webview.ps1', '-Ref', 'HEAD', '-PrintPlan') },
     @{ label = 'tools/build-webview-dll.ps1'; file = 'pwsh'; args = @('-NoProfile', '-File', 'tools/build-webview-dll.ps1', '-Ref', 'HEAD', '-PrintPlan') },
-    @{ label = 'tools/build-webview-so.sh';   file = 'bash'; args = @('tools/build-webview-so.sh', '--ref', 'HEAD', '--print-plan') },
-    @{ label = 'tools/build-webview-dylib.sh'; file = 'bash'; args = @('tools/build-webview-dylib.sh', 'arm64', '--ref', 'HEAD', '--print-plan') }
+    @{ label = 'tools/build-webview-so.sh';   file = $BASH; args = @('tools/build-webview-so.sh', '--ref', 'HEAD', '--print-plan') },
+    @{ label = 'tools/build-webview-dylib.sh'; file = $BASH; args = @('tools/build-webview-dylib.sh', 'arm64', '--ref', 'HEAD', '--print-plan') }
 )
 $refCapable = 0
 foreach ($inv in $refInvocations) {
@@ -146,38 +196,30 @@ foreach ($inv in $refInvocations) {
     $refCapable++
 }
 
-# --- the watcher never writes a lock -----------------------------------------
-$lockWriters = New-Object System.Collections.Generic.List[string]
-$watchSources = @('test/cap11b/watch_upstream.ps1', 'test/cap11b/extract_api.ps1',
-    'test/cap11b/project_binding.ps1', 'test/cap11b/diff_api.ps1')
-$wf = '.github/workflows/upstream-watch.yml'
-if (Test-Path -LiteralPath $wf) { $watchSources += $wf }
-foreach ($f in $watchSources) {
-    if (-not (Test-Path -LiteralPath $f)) { Violation "missing watcher source: $f"; continue }
-    foreach ($line in (([IO.File]::ReadAllText($f) -replace "`r`n", "`n") -split "`n")) {
-        # a WRITE to a lock: a redirection into one, or any of the file-writing
-        # cmdlets naming one. Reading a lock is what the watcher is for.
-        if ($line -match '(webview|mormot)\.lock' -and
-            $line -match '(>|>>|Set-Content|Out-File|WriteAllText|WriteAllLines|Add-Content|AppendAllText|Move-Item|Remove-Item|Copy-Item.*-Destination)') {
-            [void]$lockWriters.Add("$f`: $($line.Trim())")
-        }
+# THE "no watcher source writes a lock" SWEEP LIVES IN
+# test/cap11b/check_watcher_contract.ps1, and only there. It used to be here as
+# well, over a fourth, separately-maintained list of "the watcher's sources" -
+# so a file added to one list and not the other was unswept by both while each
+# looked thorough. One definition, one sweep.
+
+$locksAfter = Get-PinDigests
+$locksUnchanged = $true
+foreach ($f in $LOCK_FILES) {
+    if ($locksBefore[$f] -cne $locksAfter[$f]) {
+        $locksUnchanged = $false
+        Violation "$f changed while the plans were being read"
     }
 }
-foreach ($w in $lockWriters.ToArray()) { Violation "a watcher source writes a lock: $w" }
-
-$locksAfter = @{ webview = Get-FileSha 'webview.lock'; mormot = Get-FileSha 'mormot.lock' }
-$locksUnchanged = ($locksBefore.webview -ceq $locksAfter.webview) -and
-                  ($locksBefore.mormot -ceq $locksAfter.mormot)
-if (-not $locksUnchanged) { Violation 'a lock changed while the plans were being read' }
 
 $summary = [ordered]@{
     schema                          = 1
     invocations                     = $INVOCATIONS.Count
     watcher_pinned_path_byte_identical = $byteIdentical.ToString().ToLowerInvariant()
     ref_capable_scripts             = $refCapable
+    locks_watched                   = $LOCK_FILES.Count
     locks_unchanged_after_watch     = $locksUnchanged.ToString().ToLowerInvariant()
-    webview_lock_sha256             = $locksAfter.webview
-    mormot_lock_sha256              = $locksAfter.mormot
+    webview_lock_sha256             = $locksAfter['webview.lock']
+    mormot_lock_sha256              = $locksAfter['mormot.lock']
     violations                      = $violations.ToArray()
 }
 New-Item -ItemType Directory -Force 'build/cap11b' | Out-Null

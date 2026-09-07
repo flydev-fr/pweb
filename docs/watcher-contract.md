@@ -1,5 +1,10 @@
 # The upstream watcher contract
 
+**Version 1** (CAP-11B). The prose here may be reworded freely; the permissions,
+the trigger set and its `paths:` list, the schedule, the concurrency form, the
+six verdict words and their precedence, the retention value and the eight-stage
+order may not, except by incrementing this number.
+
 The watcher answers one question, on a schedule, per target:
 
 > Does the pinned PWeb binding still match upstream `webview/webview` head, and
@@ -7,13 +12,22 @@ The watcher answers one question, on a schedule, per target:
 
 It publishes the answer and **acts on nothing**. Everything below is enforced by
 `test/cap11b/check_watcher_contract.ps1`, which runs on all four platform legs
-of the ordinary matrix and proves it refuses with fourteen seeded perturbations
-of its own sources. The watcher's *source* is gated; the watcher's *runtime* is
-never part of the matrix.
+of the ordinary matrix and proves it refuses with twenty-two seeded
+perturbations of its own sources. The watcher's *source* is gated; the watcher's
+*runtime* is not part of the matrix — with one deliberate exception, §7's case
+W8, which runs the whole ref path against the **pinned** commit on every leg, so
+that the half of the watcher which compiles anything is not executed only once a
+week.
 
-The prose here may be reworded freely. The permissions, the trigger set, the six
-verdict words, the retention class and the eight-stage order may not, except by
-a version bump.
+## 0. Who reads it
+
+Nobody is paged. This is a **weekly report with a 90-day artifact**, and its
+intended reader is whoever next proposes to move `webview.lock`: the run for the
+week before that proposal says, in one table, whether the pin can move without
+an ABI change, whether the CAP-4W patch still applies, and what upstream added.
+A verdict other than `unchanged` is *news to be read*, not an alarm — the
+watcher deliberately has no channel that can wake anyone (§5), so a project that
+wants one has to build it on purpose, with the permissions that implies.
 
 ## 1. What it may never do
 
@@ -32,6 +46,25 @@ a version bump.
 job-level grant, no secret and no token beyond the default read-only one**. The
 job compiles code from an unpinned upstream commit; it runs with the least it
 can, and writes nothing but its own artifact and job summary.
+
+**State the risk rather than imply it is absent.** Stage 4 runs `cmake` over a
+commit nobody in this project has reviewed, and a `CMakeLists.txt` executes
+arbitrary code at configure and build time. That is inherent to "build the
+library from head": a watcher that would not build could not compile the pins
+against head, which is most of what it is for. What the contract does is bound
+the blast radius to the runner — read-only token, no secret, no write to the
+repository, nothing published but a report — and that bound is the *reason* for
+§2, not a nicety on top of it. Two further limits fall out of the same
+reasoning: the pinned checkout `deps/webview` is measured before and after every
+watch (`pinned_checkout_untouched`), and the watcher refuses outright to apply a
+patch to it.
+
+**Also stated: branch protection is not in the tree.** "The watcher is not a
+required check" is enforced here as far as a repository can enforce it — it is
+not called by `ci.yml` or `platform-leg.yml`, it declares no `workflow_call`,
+and nothing `needs:` it, all of which the gate checks. Whether a branch
+protection rule *names* it is a GitHub repository setting, and no gate in this
+repository can read it.
 
 ## 3. Triggers
 
@@ -95,9 +128,19 @@ that produced no API model reports `inconclusive`, because "nothing changed" and
 ## 5. The report, and why there is no issue
 
 One artifact per target — `upstream-watch-<target>`, JSON plus a human Markdown,
-retention 90 days (the CAP-11A **records** class) — and one job summary. **The
-job's conclusion is `success` whenever the watcher itself ran**; the driver
-exits 0 unconditionally and the verdict lives inside the report.
+`retention-days: 90`, the same value the CAP-11A **records** class carries — and
+one job summary. That value is pinned by `check_watcher_contract.ps1`, not by
+`check_ci_structure.ps1`, whose retention sweep is scoped to the caller and the
+platform leg; saying "the records class" is a statement about the number, not a
+claim that CAP-11A's table covers this file.
+
+**The job's conclusion is `success` whenever the watcher itself ran**: the
+driver exits 0 unconditionally, the verdict lives inside the report, and the
+gate refuses a `throw`, an `exit` or an `if:` on the verdict anywhere in the
+workflow. What *can* redden the job is infrastructure — the checkout, the
+toolchain, the two pinned fetches, the report-exists assertion, the frozen-tree
+check, the upload — and a red job there means the watcher did not run, never
+that upstream moved.
 
 There is no GitHub issue. Writing one needs `issues: write`, which cannot
 coexist with the `contents: read`-only posture of §2 on a job that compiles an
@@ -139,6 +182,31 @@ Per target, in the CAP-7F matrix: `watcher_available`,
 
 Six verdicts cannot be demonstrated by an upstream that has not moved, so
 `test/cap11b/check_cap11b_cases.ps1` drives the same driver through a named seam
-with seeded input on every leg: eight cases, offline, six verdicts, **with a
-real FPC compile behind `abi_break`** and a control case proving the unedited
-fixture takes the pinned patch cleanly.
+with seeded input on every leg: **nine cases**, six verdicts, with a real FPC
+compile behind `abi_break` and a control case proving the unedited fixture takes
+the pinned patch cleanly.
+
+The ninth is **W8**, and it is not seeded. Every other case skips or fakes the
+build, so `build ok` — and with it the export comparison and the paired ABI
+probe, both guarded on it — was reachable by no gate at all: a broken ref build
+would have surfaced only as a `build_failed` verdict on the weekly run, which
+this contract defines as legitimate news, on a job that concludes `success`
+either way. W8 runs the whole ref path for real on the leg's own target,
+pointed at the **pinned** commit, where the answer is knowable in advance:
+`unchanged`, `build ok`, `exports ok`, `abi_probe ok`, and the pinned checkout
+untouched.
+
+### What the export comparison does, and why it is not the matrix's gate
+
+`test/cap4w/check_webview_exports.ps1`, `test/cap7l/check_webview_exports.sh`
+and `test/cap7m/check_webview_exports.sh` assert **exactly** the pinned
+seventeen, because on the pinned path an extra export means somebody patched
+upstream. Against head that same rule would type a purely additive upstream
+commit as a break and make `compatible_additive` unreachable on any run that
+builds. So the watcher compares the sets itself and types the difference: a
+pinned name gone is `abi_break`; an extra name head also declares is
+`compatible_additive`; an extra name head does **not** declare is `abi_break`
+(an export nothing can bind against is not new API); and a non-`webview_*`
+export is refused everywhere except the C++ typeinfo macOS emits, measured on
+run 31904189177. The three ratified gates keep their job on the pinned path,
+where the matrix runs them on every push.

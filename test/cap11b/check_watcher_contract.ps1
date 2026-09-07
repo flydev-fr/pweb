@@ -66,6 +66,17 @@ $PINNED_ACTIONS = @(
 $RATIFIED_VERDICTS = @('unchanged', 'compatible_additive', 'patch_drift',
     'abi_break', 'build_failed', 'inconclusive')
 $RATIFIED_TRIGGERS = @('schedule', 'workflow_dispatch', 'push')
+# Sorted, because the gate compares a sorted list; the workflow may write them
+# in whatever order reads best.
+$RATIFIED_PUSH_PATHS = @(
+    '.github/workflows/upstream-watch.yml',
+    'test/cap11b/**',
+    'tools/build-webview-dll.ps1',
+    'tools/build-webview-dylib.sh',
+    'tools/build-webview-so.sh',
+    'tools/get-webview.ps1'
+) | Sort-Object
+$RATIFIED_CRON = '17 4 * * 1'
 $WATCH_RETENTION = '90'
 
 # EVERY PATH IS RESOLVED AGAINST $repoRoot, never left relative. `Set-Location`
@@ -127,11 +138,46 @@ $jobPerms = @($wfCode | Where-Object { $_ -match '^\s+permissions:' })
 if ($jobPerms.Count -ne 0) {
     Violation "$WATCHER declares a JOB-level permissions block; the workflow-level one is the whole grant"
 }
-$watcherPermissions = if ($violations.Count -eq 0 -or $wfText -match '(?m)^permissions:\n  contents: read\n') { 'contents_read' } else { 'other' }
+# THE BLOCK IS EXACTLY ONE LINE LONG. `^permissions:\n  contents: read\n` also
+# matches a block whose THIRD line grants `issues: write`, so the evidence row
+# would read `contents_read` about a workflow that had gained a second grant.
+# The separate sweep below still refuses that workflow - but a row computed
+# from a weaker predicate than the name it carries is a row nobody can trust.
+$permGrants = 0
+if ($onePermBlock = [regex]::Match($wfText, '(?m)^permissions:\n((?:  \S.*\n)+)')) {
+    if ($onePermBlock.Success) {
+        $permGrants = @($onePermBlock.Groups[1].Value -split "`n" | Where-Object { $_.Trim() }).Count
+    }
+}
+$permIsExactlyContentsRead = ($wfText -match '(?m)^permissions:\n  contents: read\n') -and ($permGrants -eq 1)
+if (-not $permIsExactlyContentsRead) {
+    Violation "$WATCHER's permissions block is not exactly one grant of 'contents: read' ($permGrants grant(s))"
+}
+$watcherPermissions = if ($permIsExactlyContentsRead) { 'contents_read' } else { 'other' }
 foreach ($grant in 'issues: write', 'pull-requests: write', 'contents: write',
          'packages: write', 'id-token: write', 'actions: write', 'permissions: write-all') {
     foreach ($l in $wfCode) {
         if ($l -match [regex]::Escape($grant)) { Violation "$WATCHER grants '$grant'" }
+    }
+}
+
+# --- 2b. no GitHub expression inside a shell body ---------------------------
+# `${{ }}` in a `run:` block is textual substitution BEFORE the shell parses the
+# line, so a dispatch input carrying a quote closes the argument and executes
+# whatever follows on the runner. Inputs reach a script through `env:`; the
+# `${{ }}` that populate `env:`, `if:`, `with:` and `uses:` are fine.
+$inRun = $false
+$runIndent = 0
+for ($i = 0; $i -lt $wfLines.Count; $i++) {
+    $l = $wfLines[$i]
+    if ($l -match '^(\s*)-?\s*run:\s*\|?\s*$' -or $l -match '^(\s*)run:\s*\|') {
+        $inRun = $true; $runIndent = $Matches[1].Length; continue
+    }
+    if ($inRun) {
+        if ($l.Trim() -ne '' -and ($l.Length - $l.TrimStart().Length) -le $runIndent) { $inRun = $false }
+        elseif ($l -match '\$\{\{') {
+            Violation "$WATCHER interpolates a GitHub expression inside a run: block -- pass it through env: instead: $($l.Trim())"
+        }
     }
 }
 
@@ -151,6 +197,9 @@ if ($onIdx -lt 0) { Violation "$WATCHER has no top-level 'on:' block" }
 else {
     $triggers = @()
     for ($i = $onIdx + 1; $i -lt $wfLines.Count; $i++) {
+        # A comment or a blank line at column zero is not the end of the block.
+        # Reading one as the end reports every ratified trigger as missing.
+        if ($wfLines[$i].Trim() -eq '' -or $wfLines[$i] -match '^\s*#') { continue }
         if ($wfLines[$i] -match '^\S') { break }
         if ($wfLines[$i] -match '^  ([a-z_]+):') { $triggers += $Matches[1] }
     }
@@ -159,12 +208,52 @@ else {
     foreach ($t in $RATIFIED_TRIGGERS) {
         if ($triggers -cnotcontains $t) { Violation "$WATCHER is missing the ratified trigger '$t'" }
     }
-    # `push` MUST be path-filtered. Without the filter the watcher would build
-    # an unpinned upstream commit on every commit to the repository, which is
-    # both a cost and a shape nobody ratified.
-    if ($triggers -ccontains 'push' -and $wfText -notmatch '(?m)^  push:\n    paths:\n') {
-        Violation "$WATCHER's push trigger has no paths: filter"
+    # `push` MUST be path-filtered, AND THE FILTER'S CONTENTS ARE THE POINT.
+    # `paths: ['**']` satisfies "has a filter" while producing exactly what the
+    # filter exists to prevent: an unpinned upstream build on every commit to
+    # the repository. The ratified list is the watcher's own sources.
+    if ($triggers -ccontains 'push') {
+        $pm = [regex]::Match($wfText, '(?m)^  push:\n    paths:\n((?:      - .*\n)+)')
+        if (-not $pm.Success) { Violation "$WATCHER's push trigger has no paths: filter" }
+        else {
+            $got = @($pm.Groups[1].Value -split "`n" | Where-Object { $_.Trim() } |
+                ForEach-Object { ($_ -replace '^\s*-\s*', '').Trim().Trim("'").Trim('"') } | Sort-Object)
+            if (($got -join ',') -cne ($RATIFIED_PUSH_PATHS -join ',')) {
+                Violation ("$WATCHER's push paths are [" + ($got -join ',') +
+                    '], ratified [' + ($RATIFIED_PUSH_PATHS -join ',') + ']')
+            }
+        }
     }
+}
+
+# --- 4b. the schedule, the concurrency and the matrix shape ------------------
+# docs/watcher-contract.md freezes these; without a gate the cron could become
+# `* * * * *`, `cancel-in-progress` could start cancelling on `main`, or
+# `fail-fast` could let one target's failure delete the other three's answers -
+# and every other check here would still pass.
+if ($wfText -notmatch "(?m)^\s*- cron: '$([regex]::Escape($RATIFIED_CRON))'\s*$") {
+    Violation "$WATCHER's schedule is not the ratified '$RATIFIED_CRON'"
+}
+if ($wfText -notmatch '(?m)^\s*group: upstream-watch-\$\{\{ github\.ref \}\}\s*$') {
+    Violation "$WATCHER's concurrency group is not the ratified upstream-watch-<ref>"
+}
+if ($wfText -notmatch "cancel-in-progress: \`$\{\{ github\.ref_name != 'main' \}\}") {
+    Violation "$WATCHER's cancel-in-progress is not the ratified off-the-default-branch form"
+}
+if ($wfText -notmatch '(?m)^\s*fail-fast: false\s*$') {
+    Violation "$WATCHER does not declare fail-fast: false -- one target's failure would delete the other three's answers"
+}
+foreach ($t in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    if ($wfText -notmatch "(?m)^\s*- target: $([regex]::Escape($t))\s*$") {
+        Violation "$WATCHER does not watch the target '$t'"
+    }
+}
+# THE ONE PLACE THE REPORT IS PUBLISHED. The driver writes the job summary only
+# when this is set, so the case gate's nine drivers on an ordinary leg publish
+# nothing; if the workflow stopped setting it, the weekly run would go quiet
+# instead of loud, which is the failure nobody would notice.
+if ($wfText -notmatch "(?m)^\s*PWEB_WATCH_PUBLISH: '1'\s*$") {
+    Violation "$WATCHER does not set PWEB_WATCH_PUBLISH -- the watcher's own run would publish no job summary"
 }
 if ($wfCode -match 'workflow_call') { Violation "$WATCHER declares workflow_call; it must not be callable" }
 foreach ($l in $wfCode) {
@@ -265,6 +354,71 @@ foreach ($f in @($WATCHER, $DRIVER) + $ENGINE) {
         foreach ($fz in $FROZEN) {
             if ($target.Contains($fz)) { Violation "$f writes into a frozen path: $($l.Trim())" }
         }
+        # A WRITE TO ANY LOCK, in the one place this sweep lives. It used to be
+        # duplicated in check_ref_input.ps1 over a separately-maintained list of
+        # "the watcher's sources", so a file added to one list and not the other
+        # was unswept by both while each looked thorough.
+        if ($target -match '\.lock\b' -or $target -match '\.chet\b') {
+            Violation "$f writes a pin: $($l.Trim())"
+        }
+    }
+}
+
+# --- 7b. NOTHING READS THE WATCHER'S REPORT ---------------------------------
+# "the report is never an input to a build" is only half proved by refusing
+# `download-artifact` inside the watcher: the other half is that nothing in the
+# repository reads the report the watcher leaves on disk. `build/cap11b/watch/`
+# is the driver's own output directory, and the driver is the only file allowed
+# to name it. The gate records (`contract.json`, `refinput.json`, `cases.json`,
+# `ledger.json`) sit beside it and ARE read by the emitters - those are gate
+# verdicts about the watcher's source, never the watcher's answer about
+# upstream, and the distinction is exactly what this separates.
+$WATCH_OUT = 'build/cap11b/watch'
+$readers = New-Object System.Collections.Generic.List[string]
+foreach ($f in @(Get-ChildItem -Path test, .github, tools -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Extension -in @('.ps1', '.sh', '.yml', '.yaml', '.pas') })) {
+    $rel = $f.FullName.Substring($repoRoot.Length + 1).Replace('\', '/')
+    # The driver OWNS the directory; this gate has to name it to check it.
+    if ($rel -eq $DRIVER -or $rel -eq 'test/cap11b/check_watcher_contract.ps1') { continue }
+    $codeLines = @(Get-CodeLines $rel)
+    for ($i = 0; $i -lt $codeLines.Count; $i++) {
+        if (-not $codeLines[$i].Contains($WATCH_OUT)) { continue }
+        # PUBLISHING IS NOT CONSUMING. The watcher's own upload step names the
+        # directory as an artifact `path:`, which is the report leaving the
+        # runner - the opposite of the report coming back in. Only the upload's
+        # own path list is exempt, and only in the watcher.
+        # THE WATCHER'S OWN JOB IS THE PRODUCER AND THE PUBLISHER. It names the
+        # directory to upload it and to assert it exists, and neither is the
+        # report becoming an input. What it may NOT do is branch on the answer,
+        # which is checked separately below.
+        if ($rel -eq $WATCHER) { continue }
+        [void]$readers.Add("$rel`: $($codeLines[$i].Trim())")
+    }
+}
+foreach ($r in $readers.ToArray()) {
+    Violation "the watcher's report is named outside the driver -- it may never be an input: $r"
+}
+# THE WORKFLOW MAY NOT ACT ON THE VERDICT. Reading it into the log is how the
+# run says what it found; turning it into a `throw`, an `exit` or an `if:` would
+# make a verdict redden the job, which is the one thing the contract forbids
+# outright. `$r.verdict` on a Write-Host line is fine; on a branch it is not.
+foreach ($l in $wfCode) {
+    if ($l -notmatch 'verdict') { continue }
+    if ($l -match '\bthrow\b' -or $l -match '\bexit\s' -or $l -match '^\s*if:') {
+        Violation "$WATCHER branches on the verdict -- a verdict may never redden the job: $($l.Trim())"
+    }
+}
+
+# --- 7c. the driver measures the PINNED checkout on both sides --------------
+# `deps/` is git-ignored, so a `git status` over the repository says nothing
+# about `deps/webview`; and the watcher legitimately writes inside `deps/`, into
+# its own `deps/webview-watch`. The one thing that separates those two facts is
+# the driver measuring the pinned checkout before and after, and refusing to
+# apply a patch to it. Both are required to be present.
+foreach ($needle in 'pinned_checkout_untouched', 'Get-PinnedCheckoutState',
+                    'the watcher refuses to patch the pinned checkout') {
+    if ((Read-Norm $DRIVER) -notmatch [regex]::Escape($needle)) {
+        Violation "$DRIVER no longer proves the pinned checkout is untouched: '$needle' is gone"
     }
 }
 
@@ -428,6 +582,31 @@ if (-not $NoSelfTest -and $violations.Count -eq 0) {
         @{ n = 'driver-pushes';      f = $DRIVER;  from = '$stages = New-Object'; to = 'git push origin HEAD
 $stages = New-Object' },
         @{ n = 'driver-writes-src';  f = $DRIVER;  from = '$stages = New-Object'; to = 'Set-Content -LiteralPath ''src/lib/x.pas'' -Value ''x''
+$stages = New-Object' },
+        @{ n = 'report-read-by-leg'; f = $LEG; from = '    steps:'; to = '    steps:
+      - name: read the last watch
+        run: cat build/cap11b/watch/report.json' },
+        @{ n = 'pinned-checkout-unmeasured'; f = $DRIVER;
+           from = 'pinned_checkout_untouched = $pinnedCheckoutUntouched';
+           to = 'pinned_checkout_measured = $true' },
+        # --- the rules the adversarial review added, each proved to refuse ---
+        @{ n = 'expression-in-run';  f = $WATCHER;
+           from = '          $ref = if ($env:PWEB_WATCH_REF)';
+           to = '          $ref = ''${{ inputs.ref }}''
+          $unused = if ($env:PWEB_WATCH_REF)' },
+        @{ n = 'push-paths-widened'; f = $WATCHER;
+           from = "      - 'tools/get-webview.ps1'"; to = "      - '**'" },
+        @{ n = 'cron-moved';         f = $WATCHER;
+           from = "    - cron: '17 4 * * 1'"; to = "    - cron: '* * * * *'" },
+        @{ n = 'fail-fast-on';       f = $WATCHER;
+           from = '      fail-fast: false'; to = '      fail-fast: true' },
+        @{ n = 'verdict-branch';     f = $WATCHER;
+           from = '          Write-Host "verdict: $($r.verdict)';
+           to = '          if ($r.verdict -ne ''unchanged'') { throw $r.verdict }
+          Write-Host "verdict: $($r.verdict)' },
+        @{ n = 'driver-writes-lock'; f = $DRIVER;
+           from = '$stages = New-Object';
+           to = 'Set-Content -LiteralPath ''webview.lock'' -Value ''x''
 $stages = New-Object' }
     )
     # The files a sandbox needs. `.github/actions/*/action.yml` is copied

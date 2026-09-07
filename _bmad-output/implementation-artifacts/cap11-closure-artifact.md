@@ -1,10 +1,15 @@
 # CAP-11 — phase closure: the full matrix, and a watcher that reports and nothing else
 
-**CAP-11 is CLOSED.** Two shards. CAP-11A made the four platform jobs one step
-sequence and measured that premise from the run itself. CAP-11B added the second
-half of the SPEC's acceptance — a separate watcher that compiles the binding
-against upstream head and reports an API diff **without changing the pinned
-version** — and closed the phase.
+Two shards. CAP-11A made the four platform jobs one step sequence and measured
+that premise from the run itself. CAP-11B added the second half of the SPEC's
+acceptance — a separate watcher that compiles the binding against upstream head
+and reports an API diff **without changing the pinned version** — and closes the
+phase.
+
+> **The verdict at the bottom of this file is written by the commit that carries
+> the closure run's id, and not before.** `test/cap11b/check_cap11_ledger.ps1`
+> refuses a document that declares `CAP-11B PASS` while leaving a hosted run
+> `pending`, so the claim and its evidence land together or not at all.
 
 The SPEC states CAP-11 as one intent and one success sentence:
 
@@ -62,10 +67,24 @@ compiled against the result. If that fails the tool is broken and the verdict is
 **The first real answer is `unchanged`, and that is a fact about upstream.**
 `tools/get-webview.ps1 -Ref HEAD` resolved `webview/webview`'s default branch to
 `cbbdee44afff22867de9fd88a9fc8350d9bdd399` (2026-03-09T07:51:25Z) — the commit
-`webview.lock` already pins. A full local Linux run produced verdict
-`unchanged`, an empty diff, 17 exports, and 36 paired ABI facts with exactly the
-two ratified signedness deltas. Which is why the other five verdicts are proved
-by seeded input rather than by waiting.
+`webview.lock` already pins. Which is why the other five verdicts are proved by
+seeded input rather than by waiting.
+
+**The watcher ran, hosted, on all four targets: run `34107491647`, conclusion
+`success`.** Every leg fetched head, built the library from it through the
+ref-parameterised build script, projected and compiled the pins, checked the
+exports and published its report:
+
+| target | verdict | platform patch | build | signature_pin | ABI probe | exports | diff |
+|---|---|---|---|---|---|---|---|
+| windows | `unchanged` | `webview2-custom-scheme.patch` — **clean** | ok | ok | ok | ok | 0/0/0 |
+| linux | `unchanged` | none declared — *not_applicable* | ok | ok | ok | ok | 0/0/0 |
+| macos-x64 | `unchanged` | none declared — *not_applicable* | ok | ok | ok | ok | 0/0/0 |
+| macos-arm64 | `unchanged` | none declared — *not_applicable* | ok | ok | ok | ok | 0/0/0 |
+
+Windows is the row worth reading twice: it is the only target with a declared
+platform patch, and the run shows the pinned CAP-4W patch applying **clean** to
+head — the `patch` stage exercised for real rather than only by a seed.
 
 ### The seeded verdicts (offline, on all four legs)
 
@@ -79,10 +98,22 @@ by seeded input rather than by waiting.
 | W5b | the patch's position moved | `patch_drift` | outcome `offset`, with git's own displacement |
 | W6 | the library build fails | `build_failed` | the log tail |
 | W7 | the fetch is refused | `inconclusive` | the cause, and *not* `unchanged` |
+| **W8** | **no seed at all**, ref = the pinned commit | `unchanged` | build `ok`, exports `ok`, ABI probe `ok`, the pinned checkout untouched |
 
 W5c is the case that makes W5a and W5b mean anything, and it exists because the
 first version of them did not: CRLF fixtures made both go green on a context
 mismatch in a file neither of them touched.
+
+**W8 is the case the adversarial review demanded, and it is not seeded.** Every
+other case skips or fakes the build, and both the export comparison and the
+paired ABI probe are guarded on `build ok` — so the half of the watcher that
+compiles anything against a fetched tree was executed by *no gate*: a broken ref
+build would have surfaced only as a `build_failed` verdict on the weekly run,
+which the contract defines as legitimate news, on a job that concludes `success`
+either way. W8 runs the whole ref path for real on the leg's own target against
+the **pinned** commit, where the answer is knowable in advance. It costs one
+library build per leg and it is the difference between "the watcher builds" and
+"we believe the watcher builds".
 
 ## 3. REF PARAMETERISATION / PINNED-PATH IDENTITY
 
@@ -163,8 +194,10 @@ different messages.
 | 11B-8 | 1185f8d8 | RECORDED-ONLY | five defects found by running the shard's own code; each is now gated or commented at its site |
 | 11B-9 | 5038a385 | RECORDED-ONLY | the `push` trigger and the measurement that forces it; the trigger set is pinned |
 | 11B-10 | 74aab1a5 | RECORDED-ONLY | the dev host's i386 FPC cannot run the compile-based cases; a named refusal, never a skip |
+| 11B-11 | 787116f2 | RESOLVED | twelve review defects, every one patched in this commit; §9b names each and what it would have cost |
+| 11B-12 | df2373d6 | RECORDED-ONLY | the watcher builds an unreviewed commit and the bound on that is the permissions; branch protection is not in the tree |
 
-**Orphans: 0. Strays: 0. Rewords: 0.** Census: 14 RESOLVED, 13 RECORDED-ONLY,
+**Orphans: 0. Strays: 0. Rewords: 0.** Census: 15 RESOLVED, 14 RECORDED-ONLY,
 1 CAP-12.
 
 ## 6. `sdk_own_license`, RE-MEASURED
@@ -214,7 +247,7 @@ page-side progress report belongs to whichever shard may next touch it.
 | A3 | MET | *"and reports an API diff"* — one artifact and one job summary per target, the diff taken mechanically from the headers, six typed verdicts each demonstrated by a seeded case on every leg |
 | A4 | MET | *"without changing the pinned version"* — `contents: read`, no write to a lock, the pinned plan compared byte for byte with no ref input, and both lock digests re-read before and after every watch |
 | A5 | MET | *"This phase extends CI; it does not introduce it"* — the Phase 1 Windows gate still runs, inside the one sequence; 445 legacy steps mapped one-for-one and every leg observed running all of its legacy steps in order |
-| A6 | MET | *"Production pins an explicit upstream `webview/webview` version and never follows `master` automatically"* (SPEC constraint) — `webview.lock` is unchanged; the only floating ref in the repository is the watcher's, it can reach only `deps/webview-watch` and `build/cap11b/`, and the floating-upstream-ref guards still sweep every workflow file and every pinned fetch script |
+| A6 | MET | *"Production pins an explicit upstream `webview/webview` version and never follows `master` automatically"* (SPEC constraint) — `webview.lock` is unchanged; the floating-ref guards still sweep `tools/get-webview.ps1`, `build-webview-dll.ps1`, `build-webview-so.sh`, `build-webview-dylib.sh` and every workflow file, and none of them matches. The ONE file in this repository that legitimately holds a floating ref is `test/cap11b/watch_upstream.ps1`, which the guards deliberately do not sweep and which can reach only `deps/webview-watch` and `build/cap11b/` — asserted by the ref-plan mirror check and by the driver's before/after measurement of `deps/webview` |
 
 ## 9. THE CAP-12 HANDOFF
 
@@ -280,6 +313,31 @@ Phase 5 and the MVP does not require it (`phase-plan.md`, Phase 4b).
   touch `examples/` — in which case a page-side progress report is the fix the
   ledger has been asking for.
 
+## 9b. THE ADVERSARIAL REVIEW, AND WHAT IT COST
+
+Three independent reviewers read the whole diff. **Every finding that survived
+checking was a patch; none required the intent to change**, and four of them
+were defects a reading of the code would not have found:
+
+| finding | why it mattered |
+|---|---|
+| `${{ inputs.ref }}` expanded inside a `pwsh` `run:` body | a dispatch input carrying a quote closes the argument and executes on the runner. It now reaches the script through `env:` and is validated against a ref's shape; the gate refuses any `${{ }}` in a `run:` |
+| `compatible_additive` was unreachable on any run that built | the three ratified export gates assert *exactly* seventeen, so an additive upstream commit typed as `abi_break`. §10.3 |
+| the whole ref BUILD path was executed by no gate | six cases skip the build, one fakes it, one refuses the fetch. W8 now runs it for real on every leg |
+| nine seeded reports were appended to every leg's job summary | the driver inherits `GITHUB_STEP_SUMMARY`; publication is now an explicit opt-in only the watcher workflow sets |
+| both output pipes drained sequentially | `cmake` and `fpc` fill stderr; a full buffer deadlocks the parent until the job timeout. Both are drained concurrently |
+| `$x = if (…) { @() }` collapses to `$null` | `$badOther.Count` threw under StrictMode on the *healthy* path — found by W8, the case the review asked for, on its first run |
+| `get-webview.ps1 --print-plan` printed a literal `checkout=` | the one mirror check that exists to notice a ref plan pointing at the pinned tree was comparing prose to prose. It prints the resolved variable now, as its three siblings already did |
+| `-Record` re-ratifies the pinned plan and exits 0 first | refused when `GITHUB_ACTIONS` is set |
+| the out-of-driver frozen check covered two of six locks | every lock, `webview.chet`, and `tools/`, `test/` and `docs/` with them |
+| five of ten new evidence rows had no seeded refusal | nine now do; the aggregator's refusal floor rose 221 → 230 |
+| Pascal reserved words, duplicate `unnamed`, zero-length arrays | all three would have produced a compile failure *caused by the projector* and read as `abi_break` about upstream |
+| a `WEBVIEW_API` inside a `#if`, and a public header outside the flat scan | both are refusals now, so they type `inconclusive` rather than being projected for every target |
+
+Everything above is in this commit. The contract gate's own negative self-test
+grew from fourteen perturbations to **twenty-two**, one for each rule the review
+added, so none of them can stop working quietly.
+
 ## 10. KNOWN LIMITATIONS
 
 1. **The projector is a narrow translator, not a C compiler.** It handles the
@@ -292,18 +350,33 @@ Phase 5 and the MVP does not require it (`phase-plan.md`, Phase 4b).
    only for WIN64, DARWIN and LINUX. `check_cap11b_cases.ps1` refuses with a
    named message rather than skipping; the four CI legs, which install the
    pinned x86_64 FPC, do run them.
-3. **The macOS export rule is applied by the driver rather than delegated.**
-   `test/cap7m/check_webview_exports.sh` sources a harness that expects the
-   CAP-7M working tree, so the driver applies the same ratified rule itself and
-   the contract gate cross-checks the two entry-point lists so they cannot
-   drift. Windows and Linux delegate to their ratified gates unchanged.
+3. **The export comparison is the watcher's own, not the three ratified gates'.**
+   Those gates assert *exactly* the pinned seventeen, which against head would
+   type a purely additive upstream commit as a break and make
+   `compatible_additive` unreachable on any run that builds — the review found
+   that, and it was real. The watcher compares the sets and types the
+   difference; the ratified gates keep their job on the pinned path, where the
+   matrix runs them on every push, and the contract gate cross-checks the
+   entry-point lists so the two cannot drift.
 4. **`patch_drift` can only be measured on Windows.** It is the only target with
    a declared platform patch; the other three report `not_applicable`, which the
    two ratified "carries no patch" steps keep honest.
 5. **The watcher's first real answer is `unchanged` because upstream has not
-   moved.** Everything else about the instrument is proven by seeded input; the
-   day upstream does move, the first non-seeded `compatible_additive` will be
-   the first end-to-end demonstration of that path.
+   moved.** Every verdict other than `unchanged` is proven by seeded input, and
+   the build half is proven by W8 against the pin; the day upstream does move,
+   the first `compatible_additive` from a real head will be the first
+   end-to-end demonstration of that particular path.
+6. **"Not a required check" is enforced as far as a repository can enforce it.**
+   The gate proves the watcher is not called by `ci.yml` or `platform-leg.yml`,
+   declares no `workflow_call` and is `needs:`-linked to nothing. Whether a
+   branch-protection rule *names* it is a GitHub repository setting, and no gate
+   in this tree can read one.
+7. **The watcher builds an unreviewed commit, and that is the point of §2 of the
+   contract.** `cmake` over an upstream `CMakeLists.txt` executes arbitrary code
+   at configure and build time; a watcher that would not build could not compile
+   the pins against head. The blast radius is bounded to the runner — read-only
+   token, no secret, no write to the repository — and the pinned checkout is
+   measured before and after every watch.
 
 ## 11. FREEZE CHECK
 
@@ -343,4 +416,6 @@ and no orphan. `sdk_own_license` reads `declared` because the owner declared one
 and the pin moved in the open beside the licence, exactly as CAP-11A said it
 would have to.
 
-CAP-11B PASS — UPSTREAM WATCHER FROZEN, CAP-11 CLOSED
+**Verdict: pending the closure run.** It is written here, together with the run
+id in §1, by the commit that has one — and the ledger gate refuses this document
+if the two are ever separated.

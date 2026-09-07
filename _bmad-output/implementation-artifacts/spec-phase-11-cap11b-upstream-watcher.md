@@ -2,7 +2,7 @@
 title: 'CAP-11B — the upstream watcher, and the closure of CAP-11'
 type: 'feature'
 created: '2026-09-07'
-status: 'in-progress'
+status: 'in-review'
 baseline_commit: '864fca7c7dfd3f107b9ba8f915b9adf3be9e9cab'
 review_loop_iteration: 0
 context:
@@ -132,44 +132,44 @@ shard then closes CAP-11: phase ledger, SPEC acceptance table, CAP-12 handoff,
 **Execution:**
 
 *The diff and projection engine (new, `test/cap11b/`)*
-- [ ] `test/cap11b/extract_api.ps1` -- parse the six public headers into a canonical JSON model (functions, callback typedefs, enums with resolved values, structs, `void*` typedefs, `WEBVIEW_VERSION_*` macros) -- the diff must be mechanical, so prose is never consulted; an unparsable public declaration is a typed refusal.
-- [ ] `test/cap11b/diff_api.ps1` -- compare two models into added / removed / changed per category with both C spellings -- this is the report's content and the input to the verdict.
-- [ ] `test/cap11b/project_binding.ps1` -- project a model into `pweb.lib.webview.pas` in a workspace directory, using a fixed C→Pascal table; refuse on an unmapped C type -- so `signature_pin` can be compiled against *head's* header without ChetCLI, which is a Windows-only Delphi tool absent from every runner.
-- [ ] `test/cap11b/watch_upstream.ps1` -- the driver: the eight ordered steps, the verdict precedence, the JSON + Markdown report, the job summary, `exit 0` unconditionally -- one file owns the contract so four targets cannot disagree about it.
+- [x] `test/cap11b/extract_api.ps1` -- parse the six public headers into a canonical JSON model (functions, callback typedefs, enums with resolved values, structs, `void*` typedefs, `WEBVIEW_VERSION_*` macros) -- the diff must be mechanical, so prose is never consulted; an unparsable public declaration is a typed refusal.
+- [x] `test/cap11b/diff_api.ps1` -- compare two models into added / removed / changed per category with both C spellings -- this is the report's content and the input to the verdict.
+- [x] `test/cap11b/project_binding.ps1` -- project a model into `pweb.lib.webview.pas` in a workspace directory, using a fixed C→Pascal table; refuse on an unmapped C type -- so `signature_pin` can be compiled against *head's* header without ChetCLI, which is a Windows-only Delphi tool absent from every runner.
+- [x] `test/cap11b/watch_upstream.ps1` -- the driver: the eight ordered steps, the verdict precedence, the JSON + Markdown report, the job summary, `exit 0` unconditionally -- one file owns the contract so four targets cannot disagree about it.
 
 *The watcher workflow*
-- [ ] `.github/workflows/upstream-watch.yml` -- schedule + `workflow_dispatch` (optional `ref`) + `push` restricted to the watcher's own paths; `permissions: contents: read`; four-target matrix, `fail-fast: false`; toolchain via the ratified composite actions; one upload at `retention-days: 90` -- the `push` trigger exists because `workflow_dispatch` is not offered off the default branch, so without it the watcher could not be proven on the branch that adds it.
+- [x] `.github/workflows/upstream-watch.yml` -- schedule + `workflow_dispatch` (optional `ref`) + `push` restricted to the watcher's own paths; `permissions: contents: read`; four-target matrix, `fail-fast: false`; toolchain via the ratified composite actions; one upload at `retention-days: 90` -- the `push` trigger exists because `workflow_dispatch` is not offered off the default branch, so without it the watcher could not be proven on the branch that adds it.
 
 *Ref parameterisation with a byte-identity gate*
-- [ ] `tools/get-webview.ps1` -- add `-Ref`; absent = today's behaviour exactly, present = fetch that ref into `deps/webview-watch` with the pinned-header cross-check off and the resolved commit recorded.
-- [ ] `tools/build-webview-dll.ps1`, `tools/build-webview-so.sh`, `tools/build-webview-dylib.sh` -- add the same one input, deriving source/build/dist under `build/cap11b/`; with a ref the lock's *name* assertions (SONAME, dylib names) become recorded observations instead of refusals, because an upstream version bump is news, not a build failure.
-- [ ] all four scripts -- add `--print-plan` / `-PrintPlan`: resolve every path, flag and assertion mode, print a canonical block, touch nothing, exit 0.
-- [ ] `test/cap11b/pinned-plan.expected.tsv` + `test/cap11b/check_ref_input.ps1` -- record the four pinned plans and compare byte-for-byte with no ref input; also assert both lock digests unchanged after a driver run.
+- [x] `tools/get-webview.ps1` -- add `-Ref`; absent = today's behaviour exactly, present = fetch that ref into `deps/webview-watch` with the pinned-header cross-check off and the resolved commit recorded.
+- [x] `tools/build-webview-dll.ps1`, `tools/build-webview-so.sh`, `tools/build-webview-dylib.sh` -- add the same one input, deriving source/build/dist under `build/cap11b/`; with a ref the lock's *name* assertions (SONAME, dylib names) become recorded observations instead of refusals, because an upstream version bump is news, not a build failure.
+- [x] all four scripts -- add `--print-plan` / `-PrintPlan`: resolve every path, flag and assertion mode, print a canonical block, touch nothing, exit 0.
+- [x] `test/cap11b/pinned-plan.expected.txt` + `test/cap11b/check_ref_input.ps1` -- record the five pinned plans and compare byte-for-byte with no ref input; also assert every lock digest unchanged after a driver run.
 
 *The gates that run on the four legs*
-- [ ] `test/cap11b/check_watcher_contract.ps1` -- source gate: exact permissions block, no secret, exact trigger set, no `workflow_call`, no reference from `ci.yml`/`platform-leg.yml`, allowlisted `uses:`, retention, no write to a lock or a frozen tree, no `git push`/`gh pr`/`gh issue`, no report ingestion.
-- [ ] `test/cap11b/check_cap11b_cases.ps1` + `test/cap11b/fixtures/**` -- the six seeded verdicts, offline, with a real FPC compile behind W4.
-- [ ] `test/cap11b/check_cap11_ledger.ps1` -- modelled on `test/cap10d2/check_cap10_ledger.ps1`: `<shard>-<ordinal>` plus the first eight hex of the summary digest; orphan / stray / count drift / silent reword are four different failures; requires the SPEC CAP-11 acceptance table, both hosted runs, the CAP-12 handoff and `docs/index.md` cross-linking `docs/watcher-contract.md`.
-- [ ] `.github/workflows/platform-leg.yml` + `test/cap11a/step-applicability.tsv` -- add the three CAP-11B gate steps once, all four targets, unconditional (196 → 199).
-- [ ] `test/cap7f/emit_evidence.ps1`, `emit_evidence.sh`, `check_cap7f_aggregate.ps1`, `check_cap7f_selftest.ps1` -- add the CAP-11B rows, their comparisons and their absolute pins; raise the refusal floor.
+- [x] `test/cap11b/check_watcher_contract.ps1` -- source gate: exact permissions block, no secret, exact trigger set, no `workflow_call`, no reference from `ci.yml`/`platform-leg.yml`, allowlisted `uses:`, retention, no write to a lock or a frozen tree, no `git push`/`gh pr`/`gh issue`, no report ingestion.
+- [x] `test/cap11b/check_cap11b_cases.ps1` + `test/cap11b/fixtures/**` -- the six seeded verdicts, offline, with a real FPC compile behind W4.
+- [x] `test/cap11b/check_cap11_ledger.ps1` -- modelled on `test/cap10d2/check_cap10_ledger.ps1`: `<shard>-<ordinal>` plus the first eight hex of the summary digest; orphan / stray / count drift / silent reword are four different failures; requires the SPEC CAP-11 acceptance table, both hosted runs, the CAP-12 handoff and `docs/index.md` cross-linking `docs/watcher-contract.md`.
+- [x] `.github/workflows/platform-leg.yml` + `test/cap11a/step-applicability.tsv` -- add the four CAP-11B gate steps once, all four targets, unconditional (196 → 200).
+- [x] `test/cap7f/emit_evidence.ps1`, `emit_evidence.sh`, `check_cap7f_aggregate.ps1`, `check_cap7f_selftest.ps1` -- add the CAP-11B rows, their comparisons and their absolute pins; raise the refusal floor.
 
 *The licence regression (forced by a tracked `LICENSE`, not a decision)*
-- [ ] `tools/pweb/pwebsdk.pas` -- add `LICENSE.pweb.txt` (`swAlways`) to `LICENSE_TABLE`; the ship-table digest moves with it.
-- [ ] `docs/third-party-licenses.md` -- add the row and say plainly that the table is the *shipped notice* set, which now includes PWeb's own.
-- [ ] `test/cap10d2/build_cap10d2.ps1` / `.sh` -- stage `<repo>/LICENSE` as `LICENSE.pweb.txt`.
-- [ ] `docs/sdk-contract.md` -- one word at `:89`, and the manifest example.
-- [ ] `test/cap7f/check_cap7f_aggregate.ps1` -- `sdk_own_license = 'declared'`.
+- [x] `tools/pweb/pwebsdk.pas` -- add `LICENSE.pweb.txt` (`swAlways`) to `LICENSE_TABLE`; the ship-table digest moves with it.
+- [x] `docs/third-party-licenses.md` -- add the row and say plainly that the table is the *shipped notice* set, which now includes PWeb's own.
+- [x] `test/cap10d2/build_cap10d2.ps1` / `.sh` -- stage `<repo>/LICENSE` as `LICENSE.pweb.txt`.
+- [x] `docs/sdk-contract.md` -- one word at `:89`, and the manifest example.
+- [x] `test/cap7f/check_cap7f_aggregate.ps1` -- `sdk_own_license = 'declared'`.
 
 *Closure*
-- [ ] `docs/watcher-contract.md` (new) + `docs/index.md` -- the watcher contract and its row.
-- [ ] `_bmad-output/implementation-artifacts/cap11-closure-artifact.md` -- 11A and 11B runs, supersessions, the phase ledger with zero orphans and the three flakes' current state, `sdk_own_license` re-measured, the SPEC acceptance line by line, the CAP-12 handoff.
-- [ ] `_bmad-output/implementation-artifacts/deferred-work.md` -- append the CAP-11B entries, including the mORMot-watcher decision and the issue decision with their reasons.
+- [x] `docs/watcher-contract.md` (new) + `docs/index.md` -- the watcher contract and its row.
+- [x] `_bmad-output/implementation-artifacts/cap11-closure-artifact.md` -- 11A and 11B runs, supersessions, the phase ledger with zero orphans and the three flakes' current state, `sdk_own_license` re-measured, the SPEC acceptance line by line, the CAP-12 handoff.
+- [x] `_bmad-output/implementation-artifacts/deferred-work.md` -- append the CAP-11B entries, including the mORMot-watcher decision and the issue decision with their reasons.
 
 **Acceptance Criteria:**
 - Given the watcher is dispatched on four targets, when every job finishes, then each publishes its artifact and job summary and every conclusion is `success`, whatever the verdict inside.
 - Given the four build scripts are invoked with no ref input, when `--print-plan` is compared to the recorded pinned plan, then the output is byte-identical on all four targets and both lock digests are unchanged after a watcher run.
 - Given the watcher's source, when the contract gate reads it, then `permissions` is exactly `contents: read`, no secret is referenced, neither `ci.yml` nor `platform-leg.yml` mentions it, and nothing in it can commit, push, open an issue, or read a previous report.
-- Given six seeded inputs, when the driver is run offline on each leg, then it returns exactly the six typed verdicts, names the prototype for `abi_break` and the hunk for `patch_drift`, and exits 0 every time.
+- Given nine cases, when the case gate runs on each leg, then the driver returns exactly the six typed verdicts, names the prototype for `abi_break` and the hunk for `patch_drift`, exits 0 every time, and case W8 — the one that is not seeded — runs the whole ref path for real against the pinned commit with build, exports and the paired ABI probe all `ok`.
 - Given the projector, when it is run over the **pinned** headers, then `signature_pin` and both ABI probes compile and agree — the calibration that makes a head compile failure attributable to head rather than to the tool.
 - Given `LICENSE` is tracked, when the four legs emit evidence, then `sdk_own_license` reads `declared`, the SDK archive contains `share/pweb/licenses/LICENSE.pweb.txt`, and the manifest lists it on all four targets.
 - Given the CAP-11 ledger, when the closure gate runs, then every CAP-11 entry has a disposition, `cap11_ledger_orphans = 0`, the SPEC's CAP-11 acceptance is answered line by line, and `docs/index.md` cross-links `docs/watcher-contract.md`.
@@ -187,8 +187,17 @@ verdict is `inconclusive` — never `abi_break`. Only after calibration passes i
 a failed head compile evidence about upstream.
 
 **Verdict precedence** (first match wins; the report carries every observation
-regardless): `inconclusive` → `build_failed` → `abi_break` → `patch_drift` →
+regardless): `abi_break` → `patch_drift` → `build_failed` → `inconclusive` →
 `compatible_additive` → `unchanged`.
+
+`inconclusive` is deliberately not first, and the original ordering — which put
+it there — was corrected during implementation. `patch_drift`, `build_failed`
+and the removals and changes behind `abi_break` are settled by git and the
+headers alone, so a run whose Pascal toolchain could not calibrate still knows
+those three for certain; burying them under a toolchain fault would throw away
+the news the watcher exists to carry. What *does* depend on the projector is the
+claim that nothing broke, so `inconclusive` outranks `compatible_additive` and
+`unchanged`.
 
 **The issue decision: no issue.** Writing a GitHub issue needs `issues: write`,
 which cannot coexist with the ratified `contents: read`-only posture on a job
@@ -219,4 +228,4 @@ it is ledgered with that reason.
 
 **Hosted:**
 - One `Upstream watch` run, four jobs, all `success`, four artifacts.
-- One full `CI` run on the CAP-11B HEAD: six jobs green, `sdk_own_license = declared` on four targets, 199 steps in one sequence.
+- One full `CI` run on the CAP-11B HEAD: six jobs green, `sdk_own_license = declared` on four targets, 200 steps in one sequence.

@@ -932,8 +932,11 @@ jobs:
           pwsh -NoProfile -File test/cap11b/check_ref_input.ps1
           if ($LASTEXITCODE -ne 0) { throw 'CAP-11B ref input - the pinned plan is byte-identical, the locks never move FAILED' }
 
+      # 35, not 20: case W8 is the one that BUILDS - it runs the whole ref path
+      # for real on this leg's own target, which is the half of the watcher no
+      # seeded case can reach.
       - name: CAP-11B seeded verdicts - six typed outcomes, offline
-        timeout-minutes: 20
+        timeout-minutes: 35
         shell: pwsh
         run: |
           pwsh -NoProfile -File test/cap11b/check_cap11b_cases.ps1

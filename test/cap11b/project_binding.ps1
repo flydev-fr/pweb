@@ -41,6 +41,27 @@ function Refuse([string]$Text) { $script:refusals.Add($Text) }
 
 $m = Get-Content -LiteralPath $Model -Raw | ConvertFrom-Json
 
+# C AND PASCAL DO NOT SHARE A KEYWORD SET. `type`, `end`, `unit`, `object` and
+# friends are ordinary C identifiers and reserved words here, so a parameter or
+# field upstream named one of them would produce a unit that fails to compile -
+# and, after a passing calibration, that failure would be read as `abi_break`
+# about a rename. FPC's `&` escape keeps the identifier and removes the clash.
+$PAS_RESERVED = @(
+    'and', 'array', 'as', 'asm', 'begin', 'case', 'class', 'const', 'constructor',
+    'destructor', 'dispinterface', 'div', 'do', 'downto', 'else', 'end', 'except',
+    'exports', 'file', 'finalization', 'finally', 'for', 'function', 'goto', 'if',
+    'implementation', 'in', 'inherited', 'initialization', 'inline', 'interface',
+    'is', 'label', 'library', 'mod', 'nil', 'not', 'object', 'of', 'on', 'operator',
+    'or', 'packed', 'procedure', 'program', 'property', 'raise', 'record',
+    'repeat', 'resourcestring', 'set', 'shl', 'shr', 'string', 'then',
+    'threadvar', 'to', 'try', 'type', 'unit', 'until', 'uses', 'var', 'while',
+    'with', 'xor'
+)
+function Get-PasIdent([string]$Name) {
+    if ($PAS_RESERVED -icontains $Name) { return "&$Name" }
+    return $Name
+}
+
 # --- the type table -----------------------------------------------------------
 # Every entry is READ OFF the committed binding, not invented: `int` is
 # `Integer` there, `unsigned int` is `Cardinal`, `void *` is `Pointer`,
@@ -170,14 +191,20 @@ if ($m.structs.Count -gt 0) {
         foreach ($f in $s.fields) {
             $pt = Convert-Type $f.type "$($s.name).$($f.name)"
             if ($null -eq $pt) { continue }
+            $fname = Get-PasIdent $f.name
             if ($f.array -gt 0) {
-                Emit "    $($f.name): array [0..$($f.array - 1)] of $pt;"
+                Emit "    $fname`: array [0..$($f.array - 1)] of $pt;"
             }
             elseif ($f.array -lt 0) {
-                Refuse "$($s.name).$($f.name): flexible array member is not projectable"
+                # `char x[]` and `char x[0]` both arrive as a non-positive
+                # extent, and neither has a Pascal shape whose LAYOUT is the
+                # C one. Emitting a scalar there would silently change every
+                # later field's offset - which the ABI probe would then report
+                # as a break in the wrong place.
+                Refuse "$($s.name).$($f.name): a flexible or zero-length array member is not projectable"
             }
             else {
-                Emit "    $($f.name): $pt;"
+                Emit "    $fname`: $pt;"
             }
         }
         Emit '  end;'
@@ -195,12 +222,14 @@ foreach ($t in ($m.typedefs | Sort-Object name)) {
 
 foreach ($c in ($m.callbacks | Sort-Object name)) {
     $args = New-Object System.Collections.Generic.List[string]
+    $anon = 0
     foreach ($p in $c.params) {
         $pt = Convert-Type $p.type "$($c.name).$($p.name)"
         if ($null -eq $pt) { continue }
         # `const char *` is spelled `const x: PAnsiChar` in the generated unit
         $prefix = if ($p.type -match '^const\s') { 'const ' } else { '' }
-        [void]$args.Add("$prefix$($p.name): $pt")
+        $pn = if ($p.name) { Get-PasIdent $p.name } else { $anon++; "unnamed$anon" }
+        [void]$args.Add("$prefix$pn`: $pt")
     }
     $sig = ($args.ToArray() -join '; ')
     Emit 'type'
@@ -216,11 +245,15 @@ foreach ($c in ($m.callbacks | Sort-Object name)) {
 
 foreach ($f in ($m.functions | Sort-Object name)) {
     $args = New-Object System.Collections.Generic.List[string]
+    # NUMBERED, because two unnamed parameters would otherwise both be
+    # `unnamed` and the unit would fail on a duplicate identifier - a compile
+    # failure caused by this projector and read as `abi_break` about upstream.
+    $anon = 0
     foreach ($p in $f.params) {
         $pt = Convert-Type $p.type "$($f.name).$($p.name)"
         if ($null -eq $pt) { continue }
         $prefix = if ($p.type -match '^const\s') { 'const ' } else { '' }
-        $pname = if ($p.name) { $p.name } else { 'unnamed' }
+        $pname = if ($p.name) { Get-PasIdent $p.name } else { $anon++; "unnamed$anon" }
         [void]$args.Add("$prefix$pname`: $pt")
     }
     $sig = ($args.ToArray() -join '; ')

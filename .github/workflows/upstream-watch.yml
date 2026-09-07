@@ -20,10 +20,16 @@
 # titled by the upstream commit" would in any case create a second issue the
 # next time upstream moved. Artifact plus job summary, and nothing else.
 #
-# THE JOB'S CONCLUSION IS `success` WHENEVER THE WATCHER RAN. The verdict lives
-# inside the report; `inconclusive` is a legal verdict and always says why. A
-# watcher that turned red because upstream moved would be reporting news as a
-# regression, which is the one thing its contract forbids outright.
+# THE VERDICT NEVER REDDENS THE JOB. The driver exits 0 whatever it finds, so no
+# verdict - `abi_break` and `build_failed` included - can turn this job red; the
+# verdict lives inside the report and `inconclusive` always says why. A watcher
+# that turned red because upstream moved would be reporting news as a
+# regression, which its contract forbids outright.
+#
+# What CAN redden it, and this is stated rather than glossed: the checkout, the
+# toolchain actions, the two pinned fetches, the report-exists assertion, the
+# frozen-tree check and the upload - infrastructure, every one of them, and a
+# red job here means the watcher did not run rather than that upstream moved.
 #
 # WHY `push` IS A TRIGGER ALONGSIDE THE SCHEDULE AND THE BUTTON, and it is a
 # measurement rather than a preference: GitHub only offers `workflow_dispatch`
@@ -146,23 +152,63 @@ jobs:
       # - a driver that crashed rather than concluding is a real fault in this
       # shard's own code and must be visible, and it is the only way this job
       # can go red.
+      # THE DISPATCH INPUT REACHES THE SCRIPT THROUGH `env:`, NEVER THROUGH
+      # `${{ }}` INSIDE THE SHELL BODY. An expression expanded into a `run:`
+      # block is textual substitution BEFORE the shell parses it, so a ref
+      # carrying a quote would close the argument and execute whatever followed
+      # on this runner. Through `env:` it is data, and it is then validated
+      # against the shape a git ref may have before anything is done with it.
+      # test/cap11b/check_watcher_contract.ps1 refuses a `${{ }}` in any `run:`.
       - name: CAP-11B watch upstream webview/webview
         timeout-minutes: 30
         shell: pwsh
+        env:
+          PWEB_WATCH_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || 'HEAD' }}
+          PWEB_WATCH_TARGET: ${{ matrix.target }}
+          # THE ONE PLACE THE REPORT IS PUBLISHED TO A JOB SUMMARY. The seeded
+          # case gate runs the same driver nine times on every ordinary CI leg;
+          # without an explicit opt-in those nine reports would land in that
+          # leg's summary and read as drift nobody measured.
+          PWEB_WATCH_PUBLISH: '1'
         run: |
+          $ref = if ($env:PWEB_WATCH_REF) { $env:PWEB_WATCH_REF.Trim() } else { 'HEAD' }
+          if ($ref -eq '') { $ref = 'HEAD' }
+          if ($ref -notmatch '^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$') {
+            throw "refusing a ref of an unexpected shape: '$ref'"
+          }
           pwsh -NoProfile -File test/cap11b/watch_upstream.ps1 `
-            -Target '${{ matrix.target }}' `
-            -Ref '${{ github.event_name == 'workflow_dispatch' && inputs.ref || 'HEAD' }}'
+            -Target $env:PWEB_WATCH_TARGET -Ref $ref
           if ($LASTEXITCODE -ne 0) { throw 'the watcher driver did not conclude' }
 
-      # THE LOCKS, RE-READ FROM THE CHECKOUT. The driver digests them itself
-      # and reports the pair; this asserts the same thing from outside it, so a
-      # driver that lied about its own effect would still be caught.
-      - name: CAP-11B the locks did not move
+      # A WATCHER THAT PUBLISHED NOTHING IS NOT A WATCHER THAT FOUND NOTHING.
+      # The driver always exits 0, so its absence of output is exactly the case
+      # an exit code cannot carry; this asserts the report is there.
+      - name: CAP-11B the report exists
+        shell: pwsh
+        run: |
+          foreach ($f in 'build/cap11b/watch/report.json', 'build/cap11b/watch/report.md') {
+            if (-not (Test-Path -LiteralPath $f)) { throw "the watcher wrote no $f" }
+          }
+          # READ INTO THE LOG, NEVER BRANCHED ON. The report's answer about
+          # upstream may not decide whether this job is red - that is what
+          # `the verdict lives inside the report` means, and the contract gate
+          # refuses a `throw`, an `exit` or an `if:` on this line.
+          $r = Get-Content -Raw 'build/cap11b/watch/report.json' | ConvertFrom-Json
+          Write-Host "verdict: $($r.verdict) (locks_unchanged=$($r.locks_unchanged), pinned_checkout_untouched=$($r.pinned_checkout_untouched))"
+
+      # THE FROZEN SURFACE, RE-READ FROM THE CHECKOUT. The driver digests the
+      # locks itself and reports them; this asserts the same thing from outside
+      # it, so a driver that lied about its own effect would still be caught.
+      # The path list is EVERY lock, the generated-binding config, and every
+      # tree the contract freezes - `deps/` is git-ignored and is covered
+      # instead by the driver's own before/after measurement of deps/webview.
+      - name: CAP-11B the locks and the frozen trees did not move
         if: always()
         shell: pwsh
         run: |
-          $dirty = git status --porcelain -- webview.lock mormot.lock src sdk tools/pweb tools/setup examples
+          $dirty = git status --porcelain -- `
+            webview.lock mormot.lock fpc.lock pas2js.lock innosetup.lock webview2-runtime.lock `
+            src sdk tools examples test docs '*.chet'
           if ($dirty) { Write-Host $dirty; throw 'the watcher modified a lock or a frozen tree' }
           Write-Host 'locks and frozen trees untouched'
 
@@ -171,7 +217,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: upstream-watch-${{ matrix.target }}
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 90
           overwrite: true
           path: |

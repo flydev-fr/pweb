@@ -114,6 +114,15 @@ $PROBE_ALLOWED_PAIRS = @(
 $seeded = [bool]($SeedHeadRoot -or $SeedFetchFailure -or $SeedBuildFailure -or $SeedSkipBuild)
 
 $out = [IO.Path]::GetFullPath((Join-Path $repoRoot $OutDir))
+# CLEARED, not merely created. Every stage below writes into this directory and
+# several stages are conditional; a model, a projection or a diff left by an
+# earlier run would be read by a later one that refused to produce its own, and
+# the report would describe last week's head. The directory is under build/ by
+# construction - the parameter is checked here rather than trusted.
+if ($out -notmatch '[\\/]build[\\/]') {
+    throw "the watcher writes only under build/: refusing OutDir '$OutDir'"
+}
+if (Test-Path -LiteralPath $out) { Remove-Item -Recurse -Force -LiteralPath $out }
 New-Item -ItemType Directory -Force $out | Out-Null
 
 $stages = New-Object System.Collections.Generic.List[object]
@@ -137,10 +146,15 @@ function Invoke-Logged([string]$File, [string[]]$Arguments, [string]$LogPath) {
     $psi.WorkingDirectory = $repoRoot
     foreach ($a in $Arguments) { [void]$psi.ArgumentList.Add($a) }
     $p = [Diagnostics.Process]::Start($psi)
-    $so = $p.StandardOutput.ReadToEnd()
-    $se = $p.StandardError.ReadToEnd()
+    # BOTH PIPES ARE DRAINED CONCURRENTLY. Reading stdout to completion first
+    # deadlocks the moment a child fills its stderr pipe buffer and blocks -
+    # and cmake, fpc and git apply are exactly the children that write a lot to
+    # stderr. The job timeout would be the only thing that ended it.
+    $soTask = $p.StandardOutput.ReadToEndAsync()
+    $seTask = $p.StandardError.ReadToEndAsync()
+    [void][Threading.Tasks.Task]::WaitAll(@($soTask, $seTask))
     $p.WaitForExit()
-    [IO.File]::WriteAllText($LogPath, ($so + $se), [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($LogPath, ($soTask.Result + $seTask.Result), [Text.UTF8Encoding]::new($false))
     return $p.ExitCode
 }
 function Get-Tail([string]$LogPath, [int]$Lines = 40) {
@@ -159,9 +173,32 @@ function Find([string]$Verdict, [string]$Why) {
 # =============================================================================
 # 1. the pinned ref and the patch digest, from the lock
 # =============================================================================
+# EVERY LOCK, and the generated binding's config with them. The contract says
+# "webview.lock, mormot.lock OR ANY PIN", and this repository pins six things.
+# Digesting two of six would have left four unwatched for no reason.
+$LOCK_FILES = @('webview.lock', 'mormot.lock', 'fpc.lock', 'pas2js.lock',
+    'innosetup.lock', 'webview2-runtime.lock', 'src/lib/webview.chet')
+function Get-PinDigests {
+    $d = [ordered]@{}
+    foreach ($f in $LOCK_FILES) { $d[$f] = Get-FileSha (Join-Path $repoRoot $f) }
+    return $d
+}
 $webviewLock = Join-Path $repoRoot 'webview.lock'
-$mormotLock = Join-Path $repoRoot 'mormot.lock'
-$locksBefore = @{ webview = (Get-FileSha $webviewLock); mormot = (Get-FileSha $mormotLock) }
+$locksBefore = Get-PinDigests
+
+# THE PINNED CHECKOUT IS NOT THE WATCHER'S TO TOUCH. `deps/` is git-ignored, so
+# a `git status` over the repository says nothing about it - and the watcher
+# does write inside `deps/`, into its OWN checkout. The distinction is the whole
+# point, so it is measured on both sides: `deps/webview` must be at the pinned
+# commit and clean when the watch ends, exactly as it was when it began.
+$pinnedCheckout = Join-Path $repoRoot 'deps/webview'
+function Get-PinnedCheckoutState {
+    if (-not (Test-Path -LiteralPath (Join-Path $pinnedCheckout '.git'))) { return 'absent' }
+    $head = (git -C $pinnedCheckout rev-parse HEAD 2>$null)
+    $dirty = @(git -C $pinnedCheckout status --porcelain 2>$null)
+    return "$($head)`:$($dirty.Count)"
+}
+$pinnedStateBefore = Get-PinnedCheckoutState
 
 $lock = @{}
 foreach ($line in (Get-Content -LiteralPath $webviewLock)) {
@@ -205,12 +242,24 @@ else {
     }
     else {
         $headRoot = Join-Path $repoRoot 'deps/webview-watch'
-        $headCommit = (git -C $headRoot rev-parse HEAD).Trim()
+        # `git` can succeed as a process and still print nothing here (an empty
+        # checkout, a permission fault). `.Trim()` on that null throws, and the
+        # driver's one hard promise is that it always exits 0.
+        $rawCommit = (git -C $headRoot rev-parse HEAD 2>$null)
         # author-free on purpose: the watcher records WHAT changed and WHEN,
         # never who, and a report that carried author names would be publishing
         # personal data it has no use for.
-        $headDate = (git -C $headRoot log -1 --format=%cI).Trim()
-        Stage 'fetch' 'ok' "ref=$Ref commit=$headCommit date=$headDate"
+        $rawDate = (git -C $headRoot log -1 --format=%cI 2>$null)
+        if ([string]::IsNullOrWhiteSpace($rawCommit)) {
+            $headRoot = ''
+            Stage 'fetch' 'unreadable' 'the fetch reported success but the checkout has no HEAD'
+            Find 'inconclusive' 'the head checkout has no readable HEAD after a successful fetch'
+        }
+        else {
+            $headCommit = "$rawCommit".Trim()
+            $headDate = if ([string]::IsNullOrWhiteSpace($rawDate)) { 'unknown' } else { "$rawDate".Trim() }
+            Stage 'fetch' 'ok' "ref=$Ref commit=$headCommit date=$headDate"
+        }
     }
 }
 
@@ -228,6 +277,14 @@ if ($headRoot) {
         $patchOutcome = 'inconclusive'
         Stage 'patch' 'inconclusive' 'the head tree is not a git checkout, so git apply cannot judge the patch'
         Find 'inconclusive' 'the pinned platform patch could not be attempted: the head tree is not a git checkout'
+    }
+    elseif ((Resolve-Path -LiteralPath $headRoot).Path -ceq (Resolve-Path -LiteralPath $pinnedCheckout).Path) {
+        # A RUNTIME GUARD, not a comment. The patch is applied for real below,
+        # and the one tree it may never be applied to is the pinned checkout -
+        # which would leave `deps/webview` patched for whatever ran next.
+        $patchOutcome = 'refused'
+        Stage 'patch' 'refused' 'the head tree resolved to the PINNED checkout; the watcher patches only its own'
+        Find 'inconclusive' 'the head tree resolved to deps/webview -- the watcher refuses to patch the pinned checkout'
     }
     else {
         $patchFull = (Join-Path $repoRoot $patchRel)
@@ -301,7 +358,6 @@ if ($headRoot -and -not $SeedSkipBuild) {
         else {
             $buildOutcome = 'ok'
             $headDist = Join-Path $repoRoot 'build/cap11b/webview-dist'
-            if ($Target -eq 'windows') { $headDist = Join-Path $repoRoot 'build/cap11b/webview-dist' }
             Stage 'build' 'ok' $headDist
         }
     }
@@ -399,7 +455,11 @@ if (-not $SeedFetchFailure -and $headRoot) {
             }
             else {
                 $sigPinHead = 'ok'
-                Stage 'signature_pin' 'ok' '17 prototypes accepted against head'
+                # the COUNT HEAD DECLARES, not a constant: printing "17" on a
+                # run whose head declares eighteen would be the report telling
+                # the reader the opposite of what it measured
+                $headFnCount = @((Get-Content -LiteralPath $headModel -Raw | ConvertFrom-Json).functions).Count
+                Stage 'signature_pin' 'ok' "$headFnCount prototypes declared by head, all 17 pins accepted"
             }
         }
     }
@@ -407,95 +467,163 @@ if (-not $SeedFetchFailure -and $headRoot) {
     # --- the diff, whatever the compiles said ---------------------------------
     if ((Test-Path -LiteralPath $pinnedModel) -and (Test-Path -LiteralPath $headModel)) {
         $dlog = Join-Path $out 'diff.log'
-        [void](Invoke-Logged 'pwsh' @('-NoProfile', '-File', 'test/cap11b/diff_api.ps1',
-            '-Pinned', $pinnedModel, '-Head', $headModel, '-Out', $diffPath) $dlog)
+        $rcD = Invoke-Logged 'pwsh' @('-NoProfile', '-File', 'test/cap11b/diff_api.ps1',
+            '-Pinned', $pinnedModel, '-Head', $headModel, '-Out', $diffPath) $dlog
         Write-Host (Get-Content -LiteralPath $dlog -Raw)
-        $diff = Get-Content -LiteralPath $diffPath -Raw | ConvertFrom-Json
-        if ($diff.counts.removed -gt 0 -or $diff.counts.changed -gt 0) {
-            $names = @()
-            foreach ($x in $diff.removed) { $names += "removed $($x.kind) $($x.name)" }
-            foreach ($x in $diff.changed) { $names += "changed $($x.kind) $($x.name)" }
-            Find 'abi_break' ("the declared API is not backward compatible: " + ($names -join '; '))
+        if ($rcD -ne 0 -or -not (Test-Path -LiteralPath $diffPath)) {
+            Find 'inconclusive' "the diff tool did not produce a diff (exit $rcD): $(Get-Tail $dlog 8)"
         }
-        elseif ($diff.counts.added -gt 0) {
-            $names = @($diff.added | ForEach-Object { "added $($_.kind) $($_.name)" })
-            Find 'compatible_additive' ("upstream added surface: " + ($names -join '; '))
+        else {
+            $diff = Get-Content -LiteralPath $diffPath -Raw | ConvertFrom-Json
+            # A REFUSED HEAD MODEL CANNOT SUPPORT `abi_break`. If the extractor
+            # declined a declaration, everything it did not read looks REMOVED,
+            # and reporting that as a break would be the parser blaming
+            # upstream for its own blind spot. The diff is still published -
+            # what it may not do is carry the most consequential verdict.
+            $headComplete = ($rcH -eq 0)
+            if (-not $headComplete) {
+                Find 'inconclusive' 'head declarations were refused, so the diff below is partial and cannot be read as a break'
+            }
+            elseif ($diff.counts.removed -gt 0 -or $diff.counts.changed -gt 0) {
+                $names = @()
+                foreach ($x in $diff.removed) { $names += "removed $($x.kind) $($x.name)" }
+                foreach ($x in $diff.changed) { $names += "changed $($x.kind) $($x.name)" }
+                Find 'abi_break' ("the declared API is not backward compatible: " + ($names -join '; '))
+            }
+            elseif ($diff.counts.added -gt 0) {
+                $names = @($diff.added | ForEach-Object { "added $($_.kind) $($_.name)" })
+                Find 'compatible_additive' ("upstream added surface: " + ($names -join '; '))
+            }
+            # A HEADER APPEARING OR VANISHING IS NEWS IN ITS OWN RIGHT. Without
+            # this a new public header carrying nothing the parser recognises
+            # would produce `unchanged`, and a public header upstream DELETED
+            # would too if its declarations had moved elsewhere.
+            if ($headComplete -and @($diff.new_headers).Count -gt 0) {
+                Find 'compatible_additive' ("upstream added a public header: " + (@($diff.new_headers) -join ', '))
+            }
+            if ($headComplete -and @($diff.gone_headers).Count -gt 0) {
+                Find 'abi_break' ("a pinned public header is gone from head: " + (@($diff.gone_headers) -join ', '))
+            }
         }
     }
 }
 
 # --- the exported-symbol check, against the library head produced ------------
+# THE EXPORT SET IS READ AND TYPED HERE, NOT DELEGATED, AND THE REASON IS THE
+# WHOLE POINT OF THE VERDICT VOCABULARY. The ratified per-platform gates assert
+# EXACTLY the pinned seventeen ("the public surface may never grow an 18th
+# export") because on the PINNED path an extra export means someone patched
+# upstream. Against HEAD that same rule types a purely ADDITIVE upstream commit
+# as a break - which would make `compatible_additive` unreachable on any run
+# that actually builds, and would report news as a regression. Those gates keep
+# their job on the pinned path, where the matrix runs them on every push; here
+# the sets are compared and the difference is typed:
+#
+#   a pinned name that is gone           -> abi_break
+#   an extra name head also DECLARES     -> compatible_additive
+#   an extra name head does NOT declare  -> abi_break (an export with no
+#                                           declaration is not a new API, it is
+#                                           a surface nobody can bind against)
+#   a non-webview_* export               -> macOS allows C++ typeinfo (_ZTI /
+#                                           _ZTS), measured on run 31904189177;
+#                                           nothing else, anywhere
+#
+# `test/cap11b/check_watcher_contract.ps1` cross-checks the entry-point list
+# against test/cap7m/check_webview_exports.sh so the two cannot drift apart.
 if ($buildOutcome -eq 'ok') {
     $elog = Join-Path $out 'exports.log'
-    if ($Target -eq 'windows' -or $Target -eq 'linux') {
-        # The ratified per-platform gates, reused as they stand: both take the
-        # library path as an argument and need nothing but dumpbin / nm.
-        $rc = if ($Target -eq 'windows') {
-            Invoke-Logged 'pwsh' @('-NoProfile', '-File', 'test/cap4w/check_webview_exports.ps1',
-                '-DllPath', 'build/cap11b/webview-dist/webview.dll') $elog
-        }
-        else {
-            Invoke-Logged 'bash' @('test/cap7l/check_webview_exports.sh',
-                'build/cap11b/webview-dist/libwebview.so') $elog
-        }
-        $exportsOutcome = if ($rc -eq 0) { 'ok' } else { 'drifted' }
+    $lib = switch ($Target) {
+        'windows' { 'build/cap11b/webview-dist/webview.dll' }
+        'linux'   { 'build/cap11b/webview-dist/libwebview.so' }
+        default   { 'build/cap11b/webview-dist/libwebview.dylib' }
+    }
+    $rcNm = switch ($Target) {
+        'windows' { Invoke-Logged 'dumpbin' @('/nologo', '/exports', $lib) $elog }
+        'linux'   { Invoke-Logged 'nm' @('-D', '--defined-only', '--format=posix', $lib) $elog }
+        default   { Invoke-Logged 'nm' @('-gU', $lib) $elog }
+    }
+    if ($rcNm -ne 0) {
+        $exportsOutcome = 'unreadable'
+        Find 'inconclusive' "the export table of the head library could not be read: $(Get-Tail $elog 6)"
     }
     else {
-        # macOS is the one platform whose ratified gate cannot be reused as it
-        # stands: test/cap7m/check_webview_exports.sh sources cap7m_common.sh,
-        # which runs pweb_macos_init and record_environment and expects the
-        # CAP-7M working tree. Its RULE is applied here instead, quoted from
-        # that file and cross-checked against it by
-        # test/cap11b/check_watcher_contract.ps1 so the two cannot drift:
-        #   (a) the exported webview_* symbols are EXACTLY the pinned set;
-        #   (b) every other exported symbol is C++ typeinfo (_ZTI) or a
-        #       typeinfo name (_ZTS) - measured on run 31904189177, x86_64
-        #       emits eight of those and arm64 emits none.
-        # Mach-O prefixes every C symbol with one underscore; it is stripped
-        # before any comparison.
-        $lib = 'build/cap11b/webview-dist/libwebview.dylib'
-        $rcNm = Invoke-Logged 'nm' @('-gU', $lib) $elog
-        if ($rcNm -ne 0) {
-            $exportsOutcome = 'unreadable'
-            Find 'inconclusive' "nm could not read the head dylib: $(Get-Tail $elog 6)"
+        $raw = @(Get-Content -LiteralPath $elog)
+        # `switch` is an expression here for readability; every branch returns a
+        # non-empty list on a real library, and the `@(...)` below restores an
+        # array from a $null the way the $badOther note explains.
+        $symsRaw = switch ($Target) {
+            'windows' {
+                @($raw | ForEach-Object {
+                    if ($_ -match '^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]+\s+(\S+)(?:\s+.*)?$') { $Matches[1] }
+                })
+            }
+            'linux' { @($raw | Where-Object { $_.Trim() } | ForEach-Object { ($_ -split '\s+')[0] }) }
+            default {
+                # Mach-O prefixes every C symbol with one underscore; strip
+                # exactly one before any comparison.
+                @($raw | ForEach-Object { ($_ -split '\s+')[-1] } |
+                    Where-Object { $_ -match '^_' } | ForEach-Object { $_.Substring(1) })
+            }
+        }
+        $syms = @($symsRaw | Where-Object { $_ } | Sort-Object -Unique)
+        $wv = @($syms | Where-Object { $_ -like 'webview_*' } | Sort-Object)
+        $other = @($syms | Where-Object { $_ -notlike 'webview_*' })
+        $pinnedNames = @()
+        $headNames = @()
+        if (Test-Path -LiteralPath $pinnedModel) {
+            $pinnedNames = @((Get-Content -LiteralPath $pinnedModel -Raw | ConvertFrom-Json).functions |
+                ForEach-Object { $_.name })
+        }
+        if (Test-Path -LiteralPath $headModel) {
+            $headNames = @((Get-Content -LiteralPath $headModel -Raw | ConvertFrom-Json).functions |
+                ForEach-Object { $_.name })
+        }
+        $missing = @($pinnedNames | Where-Object { $wv -cnotcontains $_ } | Sort-Object)
+        $extra = @($wv | Where-Object { $pinnedNames -cnotcontains $_ } | Sort-Object)
+        $extraDeclared = @($extra | Where-Object { $headNames -ccontains $_ })
+        $extraUndeclared = @($extra | Where-Object { $headNames -cnotcontains $_ })
+        # ASSIGNED DIRECTLY, never through an `if` expression: an empty `@()`
+        # returned as the value of an `if` collapses to $null on the way out of
+        # the pipeline, and `$null.Count` throws under StrictMode - which is
+        # exactly the healthy case here, since a library with no unexpected
+        # exports is what everyone wants.
+        $badOther = @()
+        if ($Target -eq 'macos-x64' -or $Target -eq 'macos-arm64') {
+            $badOther = @($other | Where-Object { $_ -notmatch '^_ZT[IS]' })
         }
         else {
-            $syms = @(Get-Content -LiteralPath $elog |
-                ForEach-Object { ($_ -split '\s+')[-1] } |
-                Where-Object { $_ -match '^_' } |
-                ForEach-Object { $_.Substring(1) } | Sort-Object -Unique)
-            $wv = @($syms | Where-Object { $_ -like 'webview_*' } | Sort-Object)
-            $other = @($syms | Where-Object { $_ -notlike 'webview_*' })
-            $expect = @()
-            if (Test-Path -LiteralPath $pinnedModel) {
-                $expect = @((Get-Content -LiteralPath $pinnedModel -Raw | ConvertFrom-Json).functions |
-                    ForEach-Object { $_.name } | Sort-Object)
-            }
-            $badOther = @($other | Where-Object { $_ -notmatch '^_ZT[IS]' })
-            if ($expect.Count -eq 0) {
-                $exportsOutcome = 'not_compared'
-                Find 'inconclusive' 'the pinned model was not produced, so the export surface had nothing to be compared against'
-            }
-            elseif (($wv -join ',') -cne ($expect -join ',')) {
-                $exportsOutcome = 'drifted'
-                Find 'abi_break' ("the head dylib's webview_* exports are not the pinned set: got [" +
-                    ($wv -join ',') + '] expected [' + ($expect -join ',') + ']')
-            }
-            elseif ($badOther.Count -gt 0) {
-                $exportsOutcome = 'drifted'
-                Find 'abi_break' ("the head dylib exports a symbol that is neither an entry point nor RTTI: " +
-                    ($badOther -join ','))
-            }
-            else {
-                $exportsOutcome = 'ok'
-            }
-            Write-Host "[cap11b] macOS exports: $($wv.Count) webview_*, $($other.Count) other (RTTI)"
+            $badOther = @($other)
         }
+
+        if ($pinnedNames.Count -eq 0) {
+            $exportsOutcome = 'not_compared'
+            Find 'inconclusive' 'the pinned model was not produced, so the export surface had nothing to be compared against'
+        }
+        else {
+            $exportsOutcome = 'ok'
+            if ($missing.Count -gt 0) {
+                $exportsOutcome = 'drifted'
+                Find 'abi_break' ("the head library no longer exports: " + ($missing -join ','))
+            }
+            if ($extraUndeclared.Count -gt 0) {
+                $exportsOutcome = 'drifted'
+                Find 'abi_break' ("the head library exports a webview_* symbol head's headers do not declare: " +
+                    ($extraUndeclared -join ','))
+            }
+            if ($badOther.Count -gt 0) {
+                $exportsOutcome = 'drifted'
+                Find 'abi_break' ("the head library exports a symbol that is neither an entry point nor permitted RTTI: " +
+                    (($badOther | Select-Object -First 12) -join ','))
+            }
+            if ($extraDeclared.Count -gt 0 -and $exportsOutcome -eq 'ok') {
+                $exportsOutcome = 'additive'
+                Find 'compatible_additive' ("upstream exports new entry points: " + ($extraDeclared -join ','))
+            }
+        }
+        Write-Host ("[cap11b] exports: {0} webview_*, {1} other; {2} missing, {3} extra ({4} declared)" -f `
+            $wv.Count, $other.Count, $missing.Count, $extra.Count, $extraDeclared.Count)
     }
-    Stage 'exports' $exportsOutcome (Get-Tail $elog 12)
-    if ($exportsOutcome -eq 'drifted' -and $Target -ne 'macos-x64' -and $Target -ne 'macos-arm64') {
-        Find 'abi_break' "the head library's export surface is not the pinned 17: $(Get-Tail $elog 8)"
-    }
+    Stage 'exports' $exportsOutcome (Get-Tail $elog 6)
 }
 
 # =============================================================================
@@ -510,8 +638,19 @@ $checklist = [ordered]@{
     'record layout (PACKRECORDS C)'  = 'not_run'
     'callback typedef conventions'   = 'not_run'
     'calling conventions (17 pins)'  = $(if ($sigPinHead -eq 'ok') { 'pass' } elseif ($sigPinHead -eq 'failed') { 'fail' } else { 'not_run' })
-    'error-code values'              = $(if ($null -ne $diff) { 'pass' } else { 'not_run' })
-    'export surface (17, opaque)'    = $(if ($exportsOutcome -eq 'ok') { 'pass' } elseif ($exportsOutcome -eq 'drifted') { 'fail' } else { 'not_run' })
+    # MEASURED FROM THE DIFF, not merely from its existence. The row is about
+    # whether an error code MOVED, so a diff that changed or removed an enum
+    # member has to fail it - reading `pass` because a diff was produced was
+    # exactly the shape of a vacuous check.
+    'error-code values'              = $(
+        if ($null -eq $diff) { 'not_run' }
+        elseif (@(@($diff.changed) + @($diff.removed) |
+                  Where-Object { $_ -and ($_.kind -like 'enum*') }).Count -gt 0) { 'fail' }
+        else { 'pass' })
+    'export surface (opaque handles)' = $(
+        if ($exportsOutcome -eq 'ok') { 'pass' }
+        elseif ($exportsOutcome -eq 'additive') { 'pass_additive' }
+        elseif ($exportsOutcome -eq 'drifted') { 'fail' } else { 'not_run' })
 }
 if ($buildOutcome -eq 'ok' -and (Test-Path -LiteralPath $projHead)) {
     $probeDir = Join-Path $out 'probe'
@@ -614,9 +753,17 @@ if ($verdict -eq 'unchanged' -and $null -eq $diff) {
     $reasons = @($findings.ToArray() | ForEach-Object { ($_ -split "`t", 2)[0] })
 }
 
-$locksAfter = @{ webview = (Get-FileSha $webviewLock); mormot = (Get-FileSha $mormotLock) }
-$locksUnchanged = ($locksBefore.webview -ceq $locksAfter.webview) -and
-                  ($locksBefore.mormot -ceq $locksAfter.mormot)
+$locksAfter = Get-PinDigests
+$pinnedStateAfter = Get-PinnedCheckoutState
+$pinnedCheckoutUntouched = ($pinnedStateBefore -ceq $pinnedStateAfter)
+if (-not $pinnedCheckoutUntouched) {
+    Find 'inconclusive' ("THE PINNED CHECKOUT MOVED DURING THE WATCH -- deps/webview was " +
+        "'$pinnedStateBefore' and is now '$pinnedStateAfter'; the run is void")
+}
+$locksUnchanged = $true
+foreach ($f in $LOCK_FILES) {
+    if ($locksBefore[$f] -cne $locksAfter[$f]) { $locksUnchanged = $false }
+}
 if (-not $locksUnchanged) {
     # This cannot happen by design and is checked anyway: a watcher that moved a
     # pin would be the single worst failure this shard could have.
@@ -648,6 +795,9 @@ $report = [ordered]@{
     locks_unchanged   = $locksUnchanged
     locks_before      = $locksBefore
     locks_after       = $locksAfter
+    pinned_checkout_untouched = $pinnedCheckoutUntouched
+    pinned_checkout_before    = $pinnedStateBefore
+    pinned_checkout_after     = $pinnedStateAfter
 }
 [IO.File]::WriteAllText((Join-Path $out 'report.json'),
     (($report | ConvertTo-Json -Depth 14) -replace "`r`n", "`n"), [Text.UTF8Encoding]::new($false))
@@ -669,6 +819,7 @@ MdLine "| signature_pin (17 prototypes) | **$sigPinHead** |"
 MdLine "| paired ABI probe | **$probeOutcome** |"
 MdLine "| exported symbols | **$exportsOutcome** |"
 MdLine "| locks unchanged | **$locksUnchanged** |"
+MdLine "| pinned checkout untouched | **$pinnedCheckoutUntouched** |"
 MdLine ''
 if ($null -ne $diff) {
     MdLine "### API diff (pinned -> head)"
@@ -706,7 +857,16 @@ MdLine 'This report changes nothing. The watcher never re-pins, never regenerate
 
 $mdText = (($md.ToArray() -join "`n")) + "`n"
 [IO.File]::WriteAllText((Join-Path $out 'report.md'), $mdText, [Text.UTF8Encoding]::new($false))
-if ($env:GITHUB_STEP_SUMMARY) {
+# THE JOB SUMMARY IS PUBLISHED ONLY WHEN THE WATCHER WORKFLOW ASKS FOR IT.
+# Every child process inherits GITHUB_STEP_SUMMARY, and the case gate runs nine
+# drivers on every ordinary CI leg - so without an explicit opt-in, nine reports
+# headed `abi_break`, `patch_drift` and `build_failed` would land in the summary
+# of a leg that measured nothing of the sort. `seeded` is not the right
+# discriminator either: case W8 is a real, unseeded run and still must not
+# publish. Only `.github/workflows/upstream-watch.yml` sets this, and
+# test/cap11b/check_watcher_contract.ps1 requires that it does.
+# The report file is always written; only the publication is conditional.
+if ($env:GITHUB_STEP_SUMMARY -and $env:PWEB_WATCH_PUBLISH -eq '1') {
     [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, $mdText, [Text.UTF8Encoding]::new($false))
 }
 

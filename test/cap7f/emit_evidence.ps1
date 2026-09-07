@@ -1289,8 +1289,16 @@ $cap11aMigration = Read-Cap11aJson 'build/cap11a/migration.json' 'test/cap11a/ch
 $cap11aFlakes = Read-Cap11aJson 'build/cap11a/flakes.json' 'test/cap11a/check_flake_instrumentation.ps1'
 $cap11aSchema = Read-Cap11aJson 'build/cap7f/schema-agreement.json' 'test/cap7f/check_schema_agreement.ps1'
 # CAP-11B: the four records the watcher's gates wrote on this same job, read
-# exactly the way the CAP-11A records above are - and re-executed if absent for
-# the same reason, since all four are checkout-only and take seconds.
+# exactly the way the CAP-11A records above are.
+#
+# THE RE-EXECUTION FALL-BACK IS NOT FREE HERE, and that is stated rather than
+# implied. Two of these four are checkout-only and take seconds
+# (`check_watcher_contract.ps1` spawns twenty-two sandboxed sub-runs of itself,
+# `check_cap11_ledger.ps1` reads three files); `check_cap11b_cases.ps1` runs nine
+# driver processes, real FPC compiles and one real library build, and REFUSES
+# outright on a host whose FPC targets the wrong CPU. On a platform leg all four
+# records already exist - the gates run four steps before this emitter - so the
+# fall-back is the twin-run safety net it was written as, never the normal path.
 $cap11bContract = Read-Cap11aJson 'build/cap11b/contract.json' 'test/cap11b/check_watcher_contract.ps1'
 $cap11bRefInput = Read-Cap11aJson 'build/cap11b/refinput.json' 'test/cap11b/check_ref_input.ps1'
 $cap11bCases    = Read-Cap11aJson 'build/cap11b/cases.json'    'test/cap11b/check_cap11b_cases.ps1'

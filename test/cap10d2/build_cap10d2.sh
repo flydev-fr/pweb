@@ -102,10 +102,14 @@ stage_licence() {
 }
 
 stage_licence "${repo_root}/deps/mormot2/LICENCE.md" 'LICENSE.mormot2.md'
-# CAP-11B: PWeb's own licence, staged from the repository root. It is here
-# because `<repo>/LICENSE` is TRACKED (commit 864fca7); nothing chooses terms,
-# and if the file ever stops being tracked this stage fails loudly rather than
-# shipping a stale copy.
+# CAP-11B: PWeb's own licence, staged from the repository root. It ships because
+# `<repo>/LICENSE` is TRACKED (commit 864fca7) and for no other reason - the same
+# measurement the CAP-7F emitters make for `sdk_own_license`, so the two can
+# never disagree about whether this row exists. `stage_licence` tests EXISTENCE,
+# and an untracked-but-present LICENSE would satisfy that while a CI checkout
+# had no such file: the tracked test is made here.
+git -C "${repo_root}" ls-files --error-unmatch LICENSE >/dev/null 2>&1 ||
+    die '<repo>/LICENSE is not tracked; the SDK ships no licence PWeb was not given'
 stage_licence "${repo_root}/LICENSE" 'LICENSE.pweb.txt'
 stage_licence "${webview_dist}/LICENSE.webview" 'LICENSE.webview.txt'
 if [ "${ships_quickjs}" -eq 1 ]; then
