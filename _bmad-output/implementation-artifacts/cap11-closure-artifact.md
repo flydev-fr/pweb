@@ -1,10 +1,10 @@
 # CAP-11 — phase closure: the full matrix, and a watcher that reports and nothing else
 
-Two shards. CAP-11A made the four platform jobs one step sequence and measured
-that premise from the run itself. CAP-11B added the second half of the SPEC's
-acceptance — a separate watcher that compiles the binding against upstream head
-and reports an API diff **without changing the pinned version** — and closes the
-phase.
+**CAP-11 is CLOSED.** Two shards. CAP-11A made the four platform jobs one step
+sequence and measured that premise from the run itself. CAP-11B added the second
+half of the SPEC's acceptance — a separate watcher that compiles the binding
+against upstream head and reports an API diff **without changing the pinned
+version** — and closes the phase.
 
 > **The verdict at the bottom of this file is written by the commit that carries
 > the closure run's id, and not before.** `test/cap11b/check_cap11_ledger.ps1`
@@ -20,7 +20,40 @@ The SPEC states CAP-11 as one intent and one success sentence:
 | shard | commit | run | result |
 |---|---|---|---|
 | CAP-11A | `d63d7e3` | 34022414932 | six jobs green — the first run in which `.github/workflows/ci.yml` *is* the caller |
-| CAP-11B | `pending` | pending | pending |
+| CAP-11B | `e0bc6ba` | 34127608923 | six jobs green — 200 steps, one sequence, and the watcher's contract in the matrix |
+
+**What the closure run measured about itself**, verbatim from the aggregate's
+own log:
+
+```
+[cap11a] run 34127608923 reports 6 job(s)
+[cap11a] windows      job=101774164065 conclusion=success authored_steps=200
+[cap11a] linux        job=101774165565 conclusion=success authored_steps=200
+[cap11a] macos-x64    job=101774166132 conclusion=success authored_steps=200
+[cap11a] macos-arm64  job=101774195445 conclusion=success authored_steps=200
+[cap11a] four identical sequences of 200 steps, digest 8b3c15bd…60243a05
+[cap11a] the sequence run is the sequence declared (8b3c15bd…60243a05)
+[cap11a] windows runs all 125 of its legacy steps, in order
+[CAP-7F] divergence sweep PASS - 212 platform conditionals, all inside the ratified allowlist
+[CAP-7F] selftest PASS - 241 aggregator refusals + 2 divergence refusals
+[CAP-7F] aggregate PASS - platform-matrix.json written
+```
+
+and the CAP-11B rows the four targets agreed on, read back from
+`cap7f-platform-matrix`:
+
+| row | value |
+|---|---|
+| `watcher_available` | `true` |
+| `watcher_permissions` | `contents_read` |
+| `watcher_in_matrix` | `false` |
+| `watcher_verdict_vocabulary_digest` | `021d2f5c…6b16a56b` |
+| `watcher_pinned_path_byte_identical` | `true` |
+| `locks_unchanged_after_watch` | `true` |
+| `watcher_seeded_verdicts` | `abi_break,build_failed,compatible_additive,inconclusive,patch_drift,unchanged` |
+| `mormot_watcher` | `ledgered` |
+| `cap11_ledger_entries` / `cap11_ledger_orphans` | `32` / `0` |
+| `sdk_own_license` | **`declared`** |
 
 CAP-11A's closure run measured its own premise: four identical sequences of 196
 steps under digest `3b28ac8d…f4f5fe3a`, that digest equal to the digest of the
@@ -233,7 +266,7 @@ apart.
 
 | flake | state | observed since instrumentation |
 |---|---|---|
-| the `state=0` non-report (B1-10, B2-16, D1-15, and the CAP-4 dual-mode driver) | instrumented; `smokeobserve.ps1` types four causes from engine-side observations, `undetermined` is legal, and the observer is wrapped in `try/catch` at every call site | **not observed firing since CAP-11A's closure run.** The instrumentation has had two green runs to fire on and has not; the disposition is unchanged — re-run the job, never re-ratify |
+| the `state=0` non-report (B1-10, B2-16, D1-15, and the CAP-4 dual-mode driver) | instrumented; `smokeobserve.ps1` types four causes from engine-side observations, `undetermined` is legal, and the observer is wrapped in `try/catch` at every call site | **OBSERVED, and this is the first post-instrumentation sighting.** On run `34127608923` the Windows leg failed at `CAP-5 runtime smokes` with the familiar `state=0` line — and this time the row was not a mystery: four observations, every one `cause=ran_missed_window`, with `profile=true` on all four and `script_cache=true` on three (`engine_max` 4–6, 32–40 samples). The engine came up, it wrote a user-data profile, and on three of four it compiled JavaScript into `Code Cache/js` — so the page ran and the driver's window closed before the report arrived. That is a *timing* answer, not "we do not know", and it is the first time this flake has had one. Disposition unchanged: re-run the job, never re-ratify |
 | the CAP-6b4 U3 uninstall residue (D1-16) | instrumented; the drain runs scoped to the install directory *before* the uninstaller and writes pids, images and sweeps | **not observed since**; `u3_drain_before_measure` reads `true` on every run. The state of the U3 uninstall residue is therefore: instrumented, quiet |
 | the pinned-installer fetch stalls (C3-15) | instrumented; `tools/pwebfetch.ps1` gives every pinned fetch three attempts × 180 s with a row each, and a digest mismatch is refused on the first attempt and never retried | **not observed since**; `fetch_retry_max_attempts = 3`, `fetch_retry_bound_s = 180` |
 
@@ -453,6 +486,8 @@ and no orphan. `sdk_own_license` reads `declared` because the owner declared one
 and the pin moved in the open beside the licence, exactly as CAP-11A said it
 would have to.
 
-**Verdict: pending the closure run.** It is written here, together with the run
-id in §1, by the commit that has one — and the ledger gate refuses this document
-if the two are ever separated.
+Closure run **`34127608923`** on **`e0bc6ba`**, six jobs green; the watcher's own
+run **`34118821510`**, four targets, all `unchanged`. Product code
+byte-untouched.
+
+CAP-11B PASS — UPSTREAM WATCHER FROZEN, CAP-11 CLOSED

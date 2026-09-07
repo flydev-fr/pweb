@@ -2,7 +2,7 @@
 title: 'CAP-11B — the upstream watcher, and the closure of CAP-11'
 type: 'feature'
 created: '2026-09-07'
-status: 'in-review'
+status: 'done'
 baseline_commit: '864fca7c7dfd3f107b9ba8f915b9adf3be9e9cab'
 review_loop_iteration: 0
 context:
