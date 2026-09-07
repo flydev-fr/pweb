@@ -44,6 +44,7 @@ handoff.
 | document | what it records |
 |---|---|
 | [webview-upstream-semantics.md](webview-upstream-semantics.md) | the pinned `webview/webview` surface and its error paths |
+| [watcher-contract.md](watcher-contract.md) | what the upstream watcher may never do, its permissions and triggers, its eight stages, the six verdicts and the ref input — CAP-11B |
 | [webkitgtk-linux-semantics.md](webkitgtk-linux-semantics.md) | what WebKitGTK 4.1 does, measured |
 | [wkwebview-macos-semantics.md](wkwebview-macos-semantics.md) | what WKWebView does, measured |
 | [third-party-licenses.md](third-party-licenses.md) | every dependency this product ships and the licence it ships under |

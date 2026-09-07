@@ -454,6 +454,17 @@ $required = @(
     'u3_drain_before_measure', 'u3_drain_rows',
     'fetch_retry_rows', 'fetch_retry_max_attempts', 'fetch_retry_bound_s',
     'sdk_own_license',
+    # CAP-11B: the upstream watcher. Every one of these is a fact about the
+    # watcher's SOURCE and about what the ref input did to the pinned build -
+    # never about the watcher's runtime, which is a separate workflow this
+    # matrix deliberately never calls.
+    #   COMPARED: watcher_verdict_vocabulary_digest, cap11_ledger_entries
+    #   PINNED:   the permissions, the isolation, the byte-identity, the locks,
+    #             the six seeded verdicts, the mORMot decision, 0 orphans
+    'watcher_available', 'watcher_permissions', 'watcher_in_matrix',
+    'watcher_verdict_vocabulary_digest', 'watcher_pinned_path_byte_identical',
+    'locks_unchanged_after_watch', 'watcher_seeded_verdicts',
+    'mormot_watcher', 'cap11_ledger_entries', 'cap11_ledger_orphans',
     'github_sha', 'github_run_id', 'waivers'
 )
 # absolute pins: equality across targets is not enough - four targets that
@@ -954,9 +965,16 @@ $absolutePins = @{
     # 103 were the interleaved uploads folded into the collection block.
     ci_migration_bodies_compared       = '342'
     ci_migration_uploads_folded        = '103'
-    # PWeb declares no licence of its own (ledger D2-8, owner: the human). The
-    # pin is what stops this shard - or a later one - from quietly choosing one.
-    sdk_own_license                    = 'undeclared'
+    # CAP-11B: PWeb NOW DECLARES A LICENCE, and the pin moving is the
+    # enforcement working rather than being bypassed. CAP-11A pinned
+    # `undeclared` and its review recorded the consequence in as many words -
+    # "that will turn all four legs red the day someone commits a LICENSE" -
+    # answering that this is the point: the flip has to happen in the open,
+    # beside the licence. Commit 864fca7 tracked `<repo>/LICENSE` (MPL 2.0),
+    # the emitters' `git ls-files` probe reports `declared` on every target
+    # without further work, and ledger D2-8 closes with its owner's decision
+    # made rather than with a shard guessing at one.
+    sdk_own_license                    = 'declared'
     # THE MIGRATION IS PROVEN, and the pin is what keeps it proven. The row is
     # read from `test/cap11a/twin-run.json`, the committed record of one commit
     # measured twice by two CI structures - runs 33997353852 (the legacy file)
@@ -964,6 +982,25 @@ $absolutePins = @{
     # byte-identical. Before that record existed the emitters reported
     # `pending`, which is why this pin lands with it and not before.
     ci_twin_run_equal                  = 'true'
+    # CAP-11B: the values that make the watcher worth having, and every one of
+    # them is a NEGATIVE - what the watcher may not do. Four targets could
+    # agree perfectly that a watcher had gained `issues: write` or that ci.yml
+    # had started calling it, which is exactly what equality cannot catch.
+    watcher_available                  = 'true'
+    watcher_permissions                = 'contents_read'
+    watcher_in_matrix                  = 'false'
+    watcher_pinned_path_byte_identical = 'true'
+    locks_unchanged_after_watch        = 'true'
+    # The six ratified verdicts, sorted, every one demonstrated by a seeded
+    # case on this leg. A vocabulary that lost a word would still be six
+    # targets agreeing about five.
+    watcher_seeded_verdicts            =
+        'abi_break,build_failed,compatible_additive,inconclusive,patch_drift,unchanged'
+    # CAP-11B ledgered the mORMot head watcher rather than building one, with
+    # the reason recorded. The row is MEASURED off the repository, so shipping
+    # one later moves this pin in the same commit.
+    mormot_watcher                     = 'ledgered'
+    cap11_ledger_orphans               = '0'
 }
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
 $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
@@ -1403,7 +1440,13 @@ $equalityFields = @(
     # disagreed about it would be reading different repositories.
     'ci_sequence_digest', 'ci_file_max_bytes', 'ci_file_bound_bytes',
     'ci_legacy_present', 'retention_policy_digest', 'ci_timeouts',
-    'ci_timeouts_digest', 'ci_twin_run_equal', 'schema_field_count'
+    'ci_timeouts_digest', 'ci_twin_run_equal', 'schema_field_count',
+    # CAP-11B: the verdict vocabulary is read OUT OF THE DRIVER by the contract
+    # gate and digested over the sorted set, so four legs agreeing means they
+    # ran the same contract and not merely the same six words in some order.
+    # The ledger entry count is over one committed file: four targets that
+    # disagreed about it would be reading different repositories.
+    'watcher_verdict_vocabulary_digest', 'cap11_ledger_entries'
 )
 # the CAP-9C2 semantic gate names, carried in ONE place across the two
 # emitters and this aggregator (see test/cap7f/emit_evidence.ps1)
@@ -2079,6 +2122,18 @@ $matrix = [ordered]@{
         u3_drain_before_measure        = $first.u3_drain_before_measure
         fetch_retry_bound_s            = $first.fetch_retry_bound_s
         sdk_own_license                = $first.sdk_own_license
+        # CAP-11B: the watcher's contract as four legs read it, in the closure
+        # record beside everything else four targets had to agree about.
+        watcher_available              = $first.watcher_available
+        watcher_permissions            = $first.watcher_permissions
+        watcher_in_matrix              = $first.watcher_in_matrix
+        watcher_verdict_vocabulary_digest = $first.watcher_verdict_vocabulary_digest
+        watcher_pinned_path_byte_identical = $first.watcher_pinned_path_byte_identical
+        locks_unchanged_after_watch    = $first.locks_unchanged_after_watch
+        watcher_seeded_verdicts        = $first.watcher_seeded_verdicts
+        mormot_watcher                 = $first.mormot_watcher
+        cap11_ledger_entries           = $first.cap11_ledger_entries
+        cap11_ledger_orphans           = $first.cap11_ledger_orphans
     }
     targets    = [ordered]@{}
 }

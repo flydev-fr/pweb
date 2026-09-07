@@ -913,6 +913,39 @@ jobs:
           pwsh -NoProfile -File test/cap11a/check_cap11a_cases.ps1
           if ($LASTEXITCODE -ne 0) { throw 'CAP-11A seeded cases - the sequence gate and the non-report cause rule FAILED' }
 
+      # CAP-11B: the WATCHER'S SOURCE, never the watcher's runtime. The
+      # upstream watcher is a standalone scheduled workflow that this sequence
+      # deliberately never calls; what runs here is the gate over what that
+      # workflow may do, the proof that the ref input left the pinned build
+      # alone, and the six seeded verdicts.
+      - name: CAP-11B watcher contract gate (permissions, isolation, refusals)
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap11b/check_watcher_contract.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-11B watcher contract gate (permissions, isolation, refusals) FAILED' }
+
+      - name: CAP-11B ref input - the pinned plan is byte-identical, the locks never move
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap11b/check_ref_input.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-11B ref input - the pinned plan is byte-identical, the locks never move FAILED' }
+
+      - name: CAP-11B seeded verdicts - six typed outcomes, offline
+        timeout-minutes: 20
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap11b/check_cap11b_cases.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-11B seeded verdicts - six typed outcomes, offline FAILED' }
+
+      - name: CAP-11B the CAP-11 phase ledger disposition (CL1)
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap11b/check_cap11_ledger.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-11B the CAP-11 phase ledger disposition (CL1) FAILED' }
+
       - name: CAP-7F emit the Windows evidence artifact
         if: ${{ inputs.target == 'windows' }}
         timeout-minutes: 10

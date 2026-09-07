@@ -2704,6 +2704,51 @@ try {
     else { Remove-Item -Force -ErrorAction SilentlyContinue $seqReal }
 }
 
+# =============== CAP-11B: the watcher's contract, in the matrix =============
+# Both of these are ABSOLUTE-shaped claims, which is the whole reason they are
+# pinned: four targets that all reported a watcher with `issues: write`, or all
+# reported that the ref input had moved the pinned build, would agree perfectly
+# and an equality comparison would say so.
+
+# (w1) the watcher's permissions widened, in unison
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.watcher_permissions = 'contents_write'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap11b-watcher-permissions-widened' 'watcher_permissions'
+
+# (w2) the ref input moved the pinned build, in unison
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.watcher_pinned_path_byte_identical = 'false'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap11b-pinned-path-moved' 'watcher_pinned_path_byte_identical'
+
+# (w3) the watcher became part of the matrix
+Reset-Fixture
+foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+    $f = Join-Path $fx "ev/$leg/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.watcher_in_matrix = 'true'
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+}
+Invoke-AggExpectFail 'cap11b-watcher-in-matrix' 'watcher_in_matrix'
+
+# (w4) one leg ran a different verdict vocabulary. COMPARED, not pinned: what
+# this catches is four legs that were not running the same contract.
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.watcher_verdict_vocabulary_digest = ('0' * 64)
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap11b-vocabulary-diverged' 'watcher_verdict_vocabulary_digest'
+
 Remove-Item -Force -ErrorAction SilentlyContinue $matrix
 # a floor, so a leg that silently stops running is caught. It is deliberately
 # NOT an equality: adding a refusal branch is normal and should not require
@@ -2717,9 +2762,11 @@ Remove-Item -Force -ErrorAction SilentlyContinue $matrix
 # added, for the reason CAP-10E raised it from 215: leaving the floor where it
 # was would exempt exactly the newest legs from the one check that notices a leg
 # quietly ceasing to run.
-if ($script:AggRefusals -lt 221) {
+# CAP-11B raised it from 221 to 225 with its four watcher-contract legs, for the
+# same reason again.
+if ($script:AggRefusals -lt 225) {
     throw ("selftest: only $($script:AggRefusals) aggregator refusals fired, " +
-        'expected at least 221 -- a negative leg stopped running')
+        'expected at least 225 -- a negative leg stopped running')
 }
 if ($script:SweepRefusals -lt 2) {
     throw ("selftest: only $($script:SweepRefusals) divergence refusals fired, " +

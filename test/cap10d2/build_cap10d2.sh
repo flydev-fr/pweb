@@ -102,6 +102,11 @@ stage_licence() {
 }
 
 stage_licence "${repo_root}/deps/mormot2/LICENCE.md" 'LICENSE.mormot2.md'
+# CAP-11B: PWeb's own licence, staged from the repository root. It is here
+# because `<repo>/LICENSE` is TRACKED (commit 864fca7); nothing chooses terms,
+# and if the file ever stops being tracked this stage fails loudly rather than
+# shipping a stale copy.
+stage_licence "${repo_root}/LICENSE" 'LICENSE.pweb.txt'
 stage_licence "${webview_dist}/LICENSE.webview" 'LICENSE.webview.txt'
 if [ "${ships_quickjs}" -eq 1 ]; then
     stage_licence "${repo_root}/build/quickjs-release/LICENSE.quickjs" \

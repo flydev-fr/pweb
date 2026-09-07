@@ -86,7 +86,7 @@ compiler.**
 | `share/pweb/deps/mormot2/{src,static/<fpc-target>}` | **ship** | CAP-3U-patched on Windows, with `x64callmethod.obj`; `static/delphi` on Windows only |
 | `share/pweb/lib/<os>-<arch>/**` | **ship** | the webview library and, on Windows, the WebView2 loader |
 | `share/pweb/pack/**` | **ship**, Windows only | the CAP-10D1 packaging kit and its two compiled CAP-13 helpers |
-| `share/pweb/licenses/**` | **ship** | every shipped third-party component's notice, exactly once |
+| `share/pweb/licenses/**` | **ship** | every shipped component's notice, exactly once — the four third-party ones and, since CAP-11B, PWeb's own `LICENSE` as `LICENSE.pweb.txt` |
 | `share/pweb/sdk-manifest.json` | **ship** | §3 |
 | FPC, Node.js, npm | **pin only** | `pweb doctor` requires them; the SDK ships no compiler |
 | the Pas2JS compiler | **pin only** | the same rule — and a measured licence fact: the pinned 3.0.1 archive contains no `COPYING.FPC` (see [third-party-licenses.md](third-party-licenses.md)) |
@@ -121,7 +121,7 @@ reached the manifest.
   "target": "linux-x86_64",
   "templates": { "pack": "…", "inventory": "…", "registry": "…" },
   "locks": [ { "name": "fpc.lock", "sha256": "…" } ],
-  "licenses": [ "LICENSE.mormot2.md" ],
+  "licenses": [ "LICENSE.mormot2.md", "LICENSE.pweb.txt" ],
   "files": [ { "path": "bin/pweb", "bytes": 1098240, "sha256": "…" } ]
 }
 ```

@@ -1820,6 +1820,21 @@ cap11a_record build/cap11a/structure.json test/cap11a/check_ci_structure.ps1
 cap11a_record build/cap11a/migration.json test/cap11a/check_migration_map.ps1
 cap11a_record build/cap11a/flakes.json test/cap11a/check_flake_instrumentation.ps1
 cap11a_record build/cap7f/schema-agreement.json test/cap7f/check_schema_agreement.ps1
+# CAP-11B: the four records the watcher's gates wrote on this same job.
+cap11a_record build/cap11b/contract.json test/cap11b/check_watcher_contract.ps1
+cap11a_record build/cap11b/refinput.json test/cap11b/check_ref_input.ps1
+cap11a_record build/cap11b/cases.json    test/cap11b/check_cap11b_cases.ps1
+cap11a_record build/cap11b/ledger.json   test/cap11b/check_cap11_ledger.ps1
+watcher_available="$(cap11a_json build/cap11b/contract.json watcher_available)"
+watcher_permissions="$(cap11a_json build/cap11b/contract.json watcher_permissions)"
+watcher_in_matrix="$(cap11a_json build/cap11b/contract.json watcher_in_matrix)"
+watcher_verdict_vocabulary_digest="$(cap11a_json build/cap11b/contract.json watcher_verdict_vocabulary_digest)"
+watcher_pinned_path_byte_identical="$(cap11a_json build/cap11b/refinput.json watcher_pinned_path_byte_identical)"
+locks_unchanged_after_watch="$(cap11a_json build/cap11b/refinput.json locks_unchanged_after_watch)"
+watcher_seeded_verdicts="$(cap11a_json build/cap11b/cases.json seeded_verdicts_observed)"
+mormot_watcher="$(cap11a_json build/cap11b/ledger.json mormot_watcher)"
+cap11_ledger_entries="$(cap11a_json build/cap11b/ledger.json ledger_entries)"
+cap11_ledger_orphans="$(cap11a_json build/cap11b/ledger.json ledger_orphans)"
 ci_file_max_bytes="$(cap11a_json build/cap11a/structure.json ci_file_max_bytes)"
 ci_file_bound_bytes="$(cap11a_json build/cap11a/structure.json ci_file_bound_bytes)"
 ci_legacy_present="$(cap11a_json build/cap11a/structure.json ci_legacy_present | tr '[:upper:]' '[:lower:]')"
@@ -2587,6 +2602,16 @@ cat > "${work}/evidence.json" <<EOF
   "fetch_retry_max_attempts": "${fetch_retry_max_attempts}",
   "fetch_retry_bound_s": "${fetch_retry_bound_s}",
   "sdk_own_license": "${sdk_own_license}",
+  "watcher_available": "${watcher_available}",
+  "watcher_permissions": "${watcher_permissions}",
+  "watcher_in_matrix": "${watcher_in_matrix}",
+  "watcher_verdict_vocabulary_digest": "${watcher_verdict_vocabulary_digest}",
+  "watcher_pinned_path_byte_identical": "${watcher_pinned_path_byte_identical}",
+  "locks_unchanged_after_watch": "${locks_unchanged_after_watch}",
+  "watcher_seeded_verdicts": "${watcher_seeded_verdicts}",
+  "mormot_watcher": "${mormot_watcher}",
+  "cap11_ledger_entries": "${cap11_ledger_entries}",
+  "cap11_ledger_orphans": "${cap11_ledger_orphans}",
   "github_sha": "${github_sha}",
   "github_run_id": "${github_run_id}",
   "waivers": [${waivers}]

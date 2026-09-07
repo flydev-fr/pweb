@@ -182,14 +182,27 @@ const
      ForceExec: False; SourceOnly: False;
      Note: 'every shipped component''s licence, exactly once'));
 
-  { The ratified licence set. One row per SHIPPED third-party component;
-    the condition is the component's own. Windows and Linux carry QuickJS
-    because mORMot's static tree for those targets carries quickjs.o -
-    MEASURED: neither x86_64-darwin nor aarch64-darwin does. }
-  LICENSE_TABLE: array[0 .. 3] of TShipEntry = (
+  { The ratified licence set. One row per SHIPPED component; the condition is
+    the component's own. Windows and Linux carry QuickJS because mORMot's
+    static tree for those targets carries quickjs.o - MEASURED: neither
+    x86_64-darwin nor aarch64-darwin does.
+
+    CAP-11B added the FIRST row that is not third-party. Until commit 864fca7
+    this repository tracked no licence of its own, `sdk_own_license` read
+    `undeclared`, and the distribution shipped third-party notices only -
+    which CAP-10D2 recorded as a real gap in a distributable product and
+    CAP-11A refused to close by choosing terms nobody had chosen. The
+    repository now tracks `<repo>/LICENSE` (Mozilla Public License 2.0), so
+    shipping it is a MEASUREMENT catching up with a fact, not a decision: the
+    row exists because `git ls-files LICENSE` is non-empty, and it would go
+    away again if that stopped being true. }
+  LICENSE_TABLE: array[0 .. 4] of TShipEntry = (
     (Path: 'LICENSE.mormot2.md'; Kind: skFile; When_: swAlways;
      ForceExec: False; SourceOnly: False;
      Note: 'mORMot 2 - MPL 1.1 / GPL 2.0 / LGPL 2.1 tri-licence'),
+    (Path: 'LICENSE.pweb.txt'; Kind: skFile; When_: swAlways;
+     ForceExec: False; SourceOnly: False;
+     Note: 'PWeb itself - MPL 2.0, the repository''s own LICENSE'),
     (Path: 'LICENSE.quickjs.txt'; Kind: skFile; When_: swNotMacos;
      ForceExec: False; SourceOnly: False;
      Note: 'QuickJS - MIT, inside mORMot''s static tree'),

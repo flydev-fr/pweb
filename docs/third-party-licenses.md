@@ -1,17 +1,30 @@
 # Third-party license notices
 
-## What the PWeb SDK distribution ships (CAP-10D2)
+## What the PWeb SDK distribution ships (CAP-10D2, CAP-11B)
 
-This table is the **machine-readable** shipped subset. The SDK packager
+This table is the **machine-readable** shipped subset — every notice
+`share/pweb/licenses/` carries, whoever wrote the component. The SDK packager
 (`tools/pweb/pwebsdk.pas`) carries the same rows as a compiled table, the
 CAP-10D2 contract check requires the two to agree name for name and condition
 for condition, and the gate requires `share/pweb/licenses/` in a packaged SDK
 to contain exactly the rows that apply to its target — no more and no fewer.
 A notice nobody ratified is a notice nobody reviewed.
 
+**One row is not third-party, and the document keeps its name.** `LICENSE.pweb.txt`
+is PWeb's own licence. From CAP-10D2 to CAP-11A the repository tracked no
+licence of its own: the distribution shipped third-party notices only,
+`sdk_own_license` read `undeclared`, and ledger D2-8 stayed open with the human
+as its owner precisely because inventing terms is not a shard's call. Commit
+`864fca7` tracked `<repo>/LICENSE` (Mozilla Public License 2.0), so CAP-11B
+ships it — a measurement catching up with a fact, not a new decision. The file
+is still the one place the **shipped notice set** is written down, which is
+what the two gates read it for; renaming it would move a contract document for
+a reason that is only cosmetic.
+
 | file | targets | component | terms |
 |---|---|---|---|
 | `LICENSE.mormot2.md` | all | mORMot 2 sources and statics | MPL 1.1 / GPL 2.0 / LGPL 2.1 tri-license |
+| `LICENSE.pweb.txt` | all | PWeb itself — the repository's own `LICENSE` | MPL 2.0 |
 | `LICENSE.quickjs.txt` | not macos | QuickJS objects inside mORMot's static tree | MIT |
 | `LICENSE.webview.txt` | all | the webview library in `share/pweb/lib/<target>` | MIT |
 | `LICENSE.webview2sdk.txt` | windows-x86_64 | the WebView2 loader inside `webview.dll` and `pack/lib/WebView2Loader.dll` | BSD-style |

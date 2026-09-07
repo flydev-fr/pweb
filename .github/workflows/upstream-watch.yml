@@ -1,0 +1,178 @@
+# CAP-11B: THE UPSTREAM WATCHER. It reports, and it changes nothing.
+#
+# One question per target: does the pinned PWeb binding still match upstream
+# webview/webview head, and if not, what changed? The answer is an artifact and
+# a job summary. This workflow NEVER re-pins, NEVER regenerates the binding
+# into the tree, NEVER commits, NEVER opens a pull request or an issue, and its
+# output is never an input to a build.
+#
+# IT IS NOT PART OF THE MATRIX. `ci.yml` does not call it, `platform-leg.yml`
+# does not call it, nothing `needs:` it, and it declares no `workflow_call`, so
+# it cannot be made a required check by being wired into one. What DOES run in
+# the matrix is the CAP-11B GATE over this file and over the driver's seeded
+# verdicts - the watcher's source, never the watcher's runtime.
+#
+# PERMISSIONS ARE `contents: read` AND NOTHING ELSE, because this job compiles
+# code from an UNPINNED upstream commit. There is no secret, no `issues:
+# write`, no `pull-requests: write` and no token beyond the default read-only
+# one. That posture is why there is no GitHub issue: writing one needs
+# `issues: write`, which cannot coexist with this, and "one long-lived issue
+# titled by the upstream commit" would in any case create a second issue the
+# next time upstream moved. Artifact plus job summary, and nothing else.
+#
+# THE JOB'S CONCLUSION IS `success` WHENEVER THE WATCHER RAN. The verdict lives
+# inside the report; `inconclusive` is a legal verdict and always says why. A
+# watcher that turned red because upstream moved would be reporting news as a
+# regression, which is the one thing its contract forbids outright.
+#
+# WHY `push` IS A TRIGGER ALONGSIDE THE SCHEDULE AND THE BUTTON, and it is a
+# measurement rather than a preference: GitHub only offers `workflow_dispatch`
+# for workflows present on the DEFAULT branch. This repository's shard branches
+# are never merged to `main` before their closure, so a dispatch-only watcher
+# could not be run even once on the branch that introduces it, and every later
+# edit to it would ship unexercised. The `paths:` filter is the watcher's own
+# sources, so a commit that changes the watcher runs the watcher and nothing
+# else does.
+#
+# See docs/watcher-contract.md.
+
+name: Upstream watch
+
+on:
+  schedule:
+    # Mondays, 04:17 UTC. Weekly: upstream moves on a scale of weeks, and a
+    # watcher that fetched an unpinned commit and built it four times a day
+    # would be spending hosted minutes to re-learn the same answer.
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'upstream ref to measure (default: the remote head)'
+        type: string
+        required: false
+        default: HEAD
+  push:
+    paths:
+      - '.github/workflows/upstream-watch.yml'
+      - 'test/cap11b/**'
+      - 'tools/get-webview.ps1'
+      - 'tools/build-webview-dll.ps1'
+      - 'tools/build-webview-so.sh'
+      - 'tools/build-webview-dylib.sh'
+
+concurrency:
+  group: upstream-watch-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_name != 'main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  watch:
+    name: watch
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Backstops only, and every one is well under the platform leg's:
+          # this job fetches one upstream commit and builds ONE library, where
+          # a leg builds the whole product and runs every gate in the project.
+          - target: windows
+            runner: windows-latest
+            timeout: 60
+            expect_arch: ''
+            runner_label: ''
+          - target: linux
+            runner: ubuntu-24.04
+            timeout: 30
+            expect_arch: ''
+            runner_label: ''
+          - target: macos-x64
+            runner: macos-15-intel
+            timeout: 45
+            expect_arch: x86_64
+            runner_label: macos-15-intel
+          - target: macos-arm64
+            runner: macos-15
+            timeout: 45
+            expect_arch: arm64
+            runner_label: macos-15
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.timeout }}
+    env:
+      PWEB_CI_TARGET: ${{ matrix.target }}
+      CAP7M_EXPECT_ARCH: ${{ matrix.expect_arch }}
+      CAP7M_RUNNER_LABEL: ${{ matrix.runner_label }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # THE TOOLCHAIN IS THE MATRIX'S OWN, reused as composite actions rather
+      # than restated here. The watcher's whole claim is that it compiles the
+      # pins the way the product does; a second, subtly different toolchain
+      # would make every verdict a statement about this workflow instead.
+      - name: Install the ratified WebKitGTK stack and FPC (distro packages)
+        if: ${{ matrix.target == 'linux' }}
+        timeout-minutes: 15
+        uses: ./.github/actions/install-the-ratified-webkitgtk-stack-and-fpc-distro-packages
+
+      - name: Install FPC (pinned Lazarus 3.4 installer, sha256-verified)
+        if: ${{ matrix.target == 'windows' }}
+        timeout-minutes: 20
+        uses: ./.github/actions/install-fpc-pinned-lazarus-3-4-installer-sha256-verified
+
+      - name: MSVC environment
+        if: ${{ matrix.target == 'windows' }}
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+
+      - name: Install pinned FPC and select the pinned Xcode
+        if: ${{ matrix.target == 'macos-x64' || matrix.target == 'macos-arm64' }}
+        timeout-minutes: 20
+        uses: ./.github/actions/cap-7m0-install-pinned-fpc-and-select-the-pinned-xcode
+
+      # The PINNED checkouts. deps/webview is the calibration input and the
+      # left-hand side of every diff; deps/mormot2 supplies the two include
+      # files signature_pin and the ABI probes need. Both are exact SHAs.
+      - name: Fetch pinned webview/webview (exact SHA, checksum verified)
+        timeout-minutes: 10
+        uses: ./.github/actions/fetch-pinned-webview-webview-exact-sha-checksum-verified
+
+      - name: Fetch pinned mORMot2 (exact SHA + sha256-pinned statics)
+        timeout-minutes: 20
+        uses: ./.github/actions/fetch-pinned-mormot2-exact-sha-sha256-pinned-statics
+
+      # ONE STEP DOES THE WATCHING, and it cannot fail the job: the driver
+      # exits 0 whatever it finds. `continue-on-error` is deliberately NOT set
+      # - a driver that crashed rather than concluding is a real fault in this
+      # shard's own code and must be visible, and it is the only way this job
+      # can go red.
+      - name: CAP-11B watch upstream webview/webview
+        timeout-minutes: 30
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap11b/watch_upstream.ps1 `
+            -Target '${{ matrix.target }}' `
+            -Ref '${{ github.event_name == 'workflow_dispatch' && inputs.ref || 'HEAD' }}'
+          if ($LASTEXITCODE -ne 0) { throw 'the watcher driver did not conclude' }
+
+      # THE LOCKS, RE-READ FROM THE CHECKOUT. The driver digests them itself
+      # and reports the pair; this asserts the same thing from outside it, so a
+      # driver that lied about its own effect would still be caught.
+      - name: CAP-11B the locks did not move
+        if: always()
+        shell: pwsh
+        run: |
+          $dirty = git status --porcelain -- webview.lock mormot.lock src sdk tools/pweb tools/setup examples
+          if ($dirty) { Write-Host $dirty; throw 'the watcher modified a lock or a frozen tree' }
+          Write-Host 'locks and frozen trees untouched'
+
+      - name: CAP-11B upload the watch report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: upstream-watch-${{ matrix.target }}
+          if-no-files-found: warn
+          retention-days: 90
+          overwrite: true
+          path: |
+            build/cap11b/watch/

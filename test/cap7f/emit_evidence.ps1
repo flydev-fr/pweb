@@ -1288,6 +1288,13 @@ $cap11aStructure = Read-Cap11aJson 'build/cap11a/structure.json' 'test/cap11a/ch
 $cap11aMigration = Read-Cap11aJson 'build/cap11a/migration.json' 'test/cap11a/check_migration_map.ps1'
 $cap11aFlakes = Read-Cap11aJson 'build/cap11a/flakes.json' 'test/cap11a/check_flake_instrumentation.ps1'
 $cap11aSchema = Read-Cap11aJson 'build/cap7f/schema-agreement.json' 'test/cap7f/check_schema_agreement.ps1'
+# CAP-11B: the four records the watcher's gates wrote on this same job, read
+# exactly the way the CAP-11A records above are - and re-executed if absent for
+# the same reason, since all four are checkout-only and take seconds.
+$cap11bContract = Read-Cap11aJson 'build/cap11b/contract.json' 'test/cap11b/check_watcher_contract.ps1'
+$cap11bRefInput = Read-Cap11aJson 'build/cap11b/refinput.json' 'test/cap11b/check_ref_input.ps1'
+$cap11bCases    = Read-Cap11aJson 'build/cap11b/cases.json'    'test/cap11b/check_cap11b_cases.ps1'
+$cap11bLedger   = Read-Cap11aJson 'build/cap11b/ledger.json'   'test/cap11b/check_cap11_ledger.ps1'
 # THE SEQUENCE DIGEST IS OVER THE SOURCE, not over the run: four targets must
 # agree that they were given the same list, and the run-measured half - that
 # they actually EXECUTED the same list - is the aggregate's own gate.
@@ -2053,6 +2060,17 @@ $evidence = [ordered]@{
     fetch_retry_max_attempts        = "$($cap11aFlakes.fetch_retry_max_attempts)"
     fetch_retry_bound_s             = "$($cap11aFlakes.fetch_retry_bound_s)"
     sdk_own_license                 = $cap11aLicense
+    # --- CAP-11B: the upstream watcher's contract, read from its own gates ---
+    watcher_available                  = "$($cap11bContract.watcher_available)"
+    watcher_permissions                = "$($cap11bContract.watcher_permissions)"
+    watcher_in_matrix                  = "$($cap11bContract.watcher_in_matrix)"
+    watcher_verdict_vocabulary_digest  = "$($cap11bContract.watcher_verdict_vocabulary_digest)"
+    watcher_pinned_path_byte_identical = "$($cap11bRefInput.watcher_pinned_path_byte_identical)"
+    locks_unchanged_after_watch        = "$($cap11bRefInput.locks_unchanged_after_watch)"
+    watcher_seeded_verdicts            = "$($cap11bCases.seeded_verdicts_observed)"
+    mormot_watcher                     = "$($cap11bLedger.mormot_watcher)"
+    cap11_ledger_entries               = "$($cap11bLedger.ledger_entries)"
+    cap11_ledger_orphans               = "$($cap11bLedger.ledger_orphans)"
     github_sha                      = $sha
     github_run_id                   = "$runId"
     waivers                         = @(

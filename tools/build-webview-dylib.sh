@@ -158,15 +158,36 @@ cap7m_rm_tree() {
 
 # --clean is opt-in and is the ONLY way anything is removed. Lifted out of the
 # positional arguments so both `… arm64 --clean` and `… --clean arm64` work.
+#
+# CAP-11B lifts two more the same way: `--ref <ref>` builds the watcher's head
+# checkout into build/cap11b/ instead of the pinned one into build/cap7m/, and
+# `--print-plan` prints the resolved plan and exits without touching anything.
+# With neither, every path, flag and assertion below is what it always was.
 CAP7M_CLEAN=0
+CAP11B_REF=''
+CAP11B_PRINT_PLAN=0
 cap7m_args=()
+cap11b_want_ref=0
 for cap7m_arg in "$@"; do
+    if [ "${cap11b_want_ref}" -eq 1 ]; then
+        CAP11B_REF="${cap7m_arg}"; cap11b_want_ref=0; continue
+    fi
     case "${cap7m_arg}" in
         --clean) CAP7M_CLEAN=1 ;;
+        --ref) cap11b_want_ref=1 ;;
+        --ref=*) CAP11B_REF="${cap7m_arg#--ref=}" ;;
+        --print-plan) CAP11B_PRINT_PLAN=1 ;;
         *) cap7m_args+=( "${cap7m_arg}" ) ;;
     esac
 done
+[ "${cap11b_want_ref}" -eq 0 ] || { printf '[CAP-7M0] --ref needs a value\n' >&2; exit 1; }
 set -- ${cap7m_args[@]+"${cap7m_args[@]}"}
+
+if [ -n "${CAP11B_REF}" ]; then
+    src="${repo_root}/deps/webview-watch"
+    build_dir="${repo_root}/build/cap11b/webview-build"
+    dist_dir="${repo_root}/build/cap11b/webview-dist"
+fi
 
 # --- read a lock (strict: one 'key = value' per non-comment line) ------------
 # The reader itself now lives in tools/macos-buildenv.sh, so the build tool and
@@ -176,7 +197,6 @@ lock_get() { pweb_macos_lock_read "${lock_file}" "$1"; }
 fpc_lock_get() { pweb_macos_lock_read "${fpc_lock_file}" "$1"; }
 
 [ -f "${lock_file}" ] || die "webview.lock missing: ${lock_file}"
-[ -f "${src}/CMakeLists.txt" ] || die 'deps/webview missing -- run tools/get-webview.ps1 first'
 
 pinned_commit="$(lock_get commit)"
 case "${pinned_commit}" in
@@ -184,16 +204,51 @@ case "${pinned_commit}" in
     *) die "webview.lock does not pin a full 40-char lowercase SHA: ${pinned_commit}" ;;
 esac
 
+# --- CAP-11B: the plan, printed before anything is inspected or built --------
+# It runs before pweb_macos_init, which asserts Darwin, so the plan is readable
+# on any host - which is what lets test/cap11b/check_ref_input.ps1 compare all
+# four scripts' pinned plans on all four legs rather than only where each one
+# can build.
+if [ "${CAP11B_PRINT_PLAN}" -eq 1 ]; then
+    plan_arch="${1:-}"
+    [ -n "${plan_arch}" ] ||
+        die '--print-plan needs the architecture argument (x86_64 or arm64), so the plan is a fact and not a property of this host'
+    printf 'script=tools/build-webview-dylib.sh\n'
+    printf 'mode=%s\n' "$( [ -n "${CAP11B_REF}" ] && printf 'ref' || printf 'pinned' )"
+    printf 'arch=%s\n' "${plan_arch}"
+    printf 'source=%s\n' "${src#"${repo_root}/"}"
+    printf 'build_dir=%s\n' "${build_dir#"${repo_root}/"}"
+    printf 'dist_dir=%s\n' "${dist_dir#"${repo_root}/"}"
+    printf 'deployment_target=%s\n' "$(lock_get macos-deployment-target)"
+    printf 'dylib=%s\n' "$(lock_get macos-dylib)"
+    printf 'dylib_versioned=%s\n' "$(lock_get macos-dylib-versioned)"
+    printf 'dylib_real=%s\n' "$(lock_get macos-dylib-real)"
+    printf 'install_name_prefix=%s\n' "$(lock_get macos-install-name-prefix)"
+    printf 'assert_names=%s\n' "$( [ -n "${CAP11B_REF}" ] && printf 'false' || printf 'true' )"
+    printf 'assert_checkout_is_pin=%s\n' "$( [ -n "${CAP11B_REF}" ] && printf 'false' || printf 'true' )"
+    printf 'cmake_target=webview_core_shared\n'
+    exit 0
+fi
+
+[ -f "${src}/CMakeLists.txt" ] || die "webview source missing: ${src} -- run tools/get-webview.ps1 first"
+
 # The checkout must BE the pin, not merely be clean at some commit. CI's
 # `git status --porcelain` check passes perfectly on a tree parked at the
 # wrong revision, and every measurement below would then describe a different
 # library than the one this project ratified. One command turns a lock value
 # into a measurement, which is this whole shard's thesis.
+#
+# Under --ref the checkout is head BY CONSTRUCTION and the equality is the
+# question rather than the invariant, so the commit is RECORDED instead.
 checkout_commit="$(git -C "${src}" rev-parse HEAD 2>/dev/null || printf '')"
 [ -n "${checkout_commit}" ] ||
-    die "deps/webview is not a git checkout -- cannot verify it is at ${pinned_commit}"
-[ "${checkout_commit}" = "${pinned_commit}" ] ||
-    die "deps/webview is at ${checkout_commit}, webview.lock pins ${pinned_commit}"
+    die "${src} is not a git checkout -- cannot verify it is at ${pinned_commit}"
+if [ -n "${CAP11B_REF}" ]; then
+    printf '[CAP-11B] building ref checkout at %s (pinned %s)\n' "${checkout_commit}" "${pinned_commit}"
+else
+    [ "${checkout_commit}" = "${pinned_commit}" ] ||
+        die "deps/webview is at ${checkout_commit}, webview.lock pins ${pinned_commit}"
+fi
 
 # --- native architecture, never Rosetta, never a cross build -----------------
 # pweb_macos_init asserts Darwin, resolves every lock value, validates the
@@ -213,11 +268,19 @@ arch_arm64="${PWEB_MACOS_ARCH_ARM64}"
 # The ratified names are FACTS of this capability, not variables: a lock that
 # says something else is a deliberate re-ratification and must not be honoured
 # by a script that was reviewed against these values.
-[ "${dylib_link}" = 'libwebview.dylib' ] || die "unexpected macos-dylib pin '${dylib_link}'"
-[ "${dylib_versioned}" = 'libwebview.0.12.dylib' ] ||
-    die "unexpected macos-dylib-versioned pin '${dylib_versioned}'"
-[ "${dylib_real}" = 'libwebview.0.12.0.dylib' ] ||
-    die "unexpected macos-dylib-real pin '${dylib_real}'"
+#
+# Under --ref the three FILE NAMES become observations: upstream's own
+# core/include/webview/version.h decides CMake's VERSION and SOVERSION, so a
+# version bump renames all three, and a watcher that died on that would report
+# `build_failed` for news. The install-name STRATEGY is not a version fact and
+# is asserted in both modes.
+if [ -z "${CAP11B_REF}" ]; then
+    [ "${dylib_link}" = 'libwebview.dylib' ] || die "unexpected macos-dylib pin '${dylib_link}'"
+    [ "${dylib_versioned}" = 'libwebview.0.12.dylib' ] ||
+        die "unexpected macos-dylib-versioned pin '${dylib_versioned}'"
+    [ "${dylib_real}" = 'libwebview.0.12.0.dylib' ] ||
+        die "unexpected macos-dylib-real pin '${dylib_real}'"
+fi
 [ "${install_name_prefix}" = '@rpath/' ] ||
     die "unexpected macos-install-name-prefix pin '${install_name_prefix}'"
 
@@ -342,7 +405,23 @@ cmake --build "${build_dir}" --target webview_core_shared ||
 
 # Exact expected output path -- never a recursive first-match, which could
 # silently pick a stale artifact from an earlier configuration.
-real_lib="${build_dir}/core/${dylib_real}"
+if [ -n "${CAP11B_REF}" ]; then
+    # The exact name is not knowable in advance under --ref. The build
+    # directory was prepared fresh above, so there is nothing stale to pick,
+    # and finding none or more than one is still a refusal.
+    cap11b_found="$(find "${build_dir}/core" -maxdepth 1 -type f -name 'libwebview.*.dylib' | wc -l | tr -d ' ')"
+    [ "${cap11b_found}" = '1' ] ||
+        die "expected exactly one libwebview.*.dylib in ${build_dir}/core, found ${cap11b_found}"
+    real_lib="$(find "${build_dir}/core" -maxdepth 1 -type f -name 'libwebview.*.dylib')"
+    dylib_real="$(basename -- "${real_lib}")"
+    # the compatibility name is the real name minus its patch component, which
+    # is how CMake derives SOVERSION from VERSION on Apple
+    dylib_versioned="$(printf '%s' "${dylib_real}" | sed -E 's/^libwebview\.([0-9]+\.[0-9]+)\.[0-9]+\.dylib$/libwebview.\1.dylib/')"
+    printf '[CAP-11B] observed dylib %s (compatibility name %s; pinned %s)\n' \
+        "${dylib_real}" "${dylib_versioned}" "$(lock_get macos-dylib-real)"
+else
+    real_lib="${build_dir}/core/${dylib_real}"
+fi
 [ -f "${real_lib}" ] || die "expected shared library not found: ${real_lib}"
 
 # --- assert the Mach-O, then RECORD what cannot be assumed -------------------

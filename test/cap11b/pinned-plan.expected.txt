@@ -1,0 +1,66 @@
+>>> tools/get-webview.ps1
+script=tools/get-webview.ps1
+mode=pinned
+url=https://github.com/webview/webview
+fetch_spec=cbbdee44afff22867de9fd88a9fc8350d9bdd399
+checkout=deps/webview
+verify_pinned_header_checksums=true
+checksum_rows=6
+assert_head_equals_pin=true
+>>> tools/build-webview-dll.ps1
+script=tools/build-webview-dll.ps1
+mode=pinned
+source=deps/webview
+build_dir=build/webview-build-cap4w
+dist_dir=build/webview-dist
+apply_cap4w_patch=true
+webview2_sdk=1.0.1587.40
+assert_sdk_pin=true
+cmake_target=webview_core_shared
+cmake_config=Release
+cmake_args=-DWEBVIEW_MSWEBVIEW2_VERSION=1.0.1587.40;-DWEBVIEW_BUILD_TESTS=OFF;-DWEBVIEW_BUILD_EXAMPLES=OFF;-DWEBVIEW_BUILD_DOCS=OFF;-DWEBVIEW_BUILD_STATIC_LIBRARY=OFF;-DWEBVIEW_BUILD_AMALGAMATION=OFF
+expected_dll=build/webview-build-cap4w/core/Release/webview.dll
+>>> tools/build-webview-so.sh
+script=tools/build-webview-so.sh
+mode=pinned
+source=deps/webview
+build_dir=build/cap7l/webview-build
+dist_dir=build/cap7l/webview-dist
+webkitgtk_api=4.1
+gtk_api=3.0
+soname=libwebview.so.0.12
+assert_soname=true
+generator=Ninja
+build_type=Release
+cmake_target=webview_core_shared
+cmake_args=-DWEBVIEW_WEBKITGTK_API=4.1;-DWEBVIEW_BUILD_TESTS=OFF;-DWEBVIEW_BUILD_EXAMPLES=OFF;-DWEBVIEW_BUILD_DOCS=OFF;-DWEBVIEW_BUILD_STATIC_LIBRARY=OFF;-DWEBVIEW_BUILD_AMALGAMATION=OFF
+>>> tools/build-webview-dylib.sh x86_64
+script=tools/build-webview-dylib.sh
+mode=pinned
+arch=x86_64
+source=deps/webview
+build_dir=build/cap7m/webview-build
+dist_dir=build/cap7m/webview-dist
+deployment_target=12.0
+dylib=libwebview.dylib
+dylib_versioned=libwebview.0.12.dylib
+dylib_real=libwebview.0.12.0.dylib
+install_name_prefix=@rpath/
+assert_names=true
+assert_checkout_is_pin=true
+cmake_target=webview_core_shared
+>>> tools/build-webview-dylib.sh arm64
+script=tools/build-webview-dylib.sh
+mode=pinned
+arch=arm64
+source=deps/webview
+build_dir=build/cap7m/webview-build
+dist_dir=build/cap7m/webview-dist
+deployment_target=12.0
+dylib=libwebview.dylib
+dylib_versioned=libwebview.0.12.dylib
+dylib_real=libwebview.0.12.0.dylib
+install_name_prefix=@rpath/
+assert_names=true
+assert_checkout_is_pin=true
+cmake_target=webview_core_shared

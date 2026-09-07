@@ -3,9 +3,29 @@
 # a branch, a tag, or any floating ref -- only the exact SHA.
 #
 # Usage: pwsh tools/get-webview.ps1 [-Force]
+#
+# CAP-11B adds ONE optional input, and the pinned path above is what runs when
+# it is absent. `-Ref <ref>` fetches that ref into a SEPARATE checkout,
+# deps/webview-watch, for the upstream watcher to measure. It exists so the
+# watcher can look at upstream head WITHOUT the lock moving: nothing here
+# writes webview.lock, and the pinned checkout is never touched in ref mode.
+#
+# The recorded header checksums are deliberately NOT verified in ref mode.
+# They pin the PINNED commit; asserting them against another commit would
+# refuse every head that is not byte-identical to the pin, which is the exact
+# question the watcher exists to answer rather than to reject.
+#
+# `-PrintPlan` resolves every path and mode, prints them, touches nothing and
+# exits 0. It is what test/cap11b/check_ref_input.ps1 compares byte-for-byte
+# against the recorded pinned plan, so "the ref input changed nothing when
+# absent" is a comparison rather than a claim.
+#
+# Usage: pwsh tools/get-webview.ps1 [-Force] [-Ref <ref>] [-PrintPlan]
 
 param(
-    [switch]$Force
+    [switch]$Force,
+    [string]$Ref,
+    [switch]$PrintPlan
 )
 
 $ErrorActionPreference = 'Stop'
@@ -39,6 +59,32 @@ if ($ShaKeys.Count -eq 0) {
     throw 'webview.lock: no sha256: entries -- checksum verification would be vacuous'
 }
 
+# --- CAP-11B: the one optional input, resolved in one place ------------------
+$RefMode = -not [string]::IsNullOrWhiteSpace($Ref)
+if ($RefMode) {
+    $Checkout  = Join-Path $DepsDir 'webview-watch'
+    $FetchSpec = $Ref.Trim()
+}
+else {
+    $FetchSpec = $Sha
+}
+
+if ($PrintPlan) {
+    $planCheckout = if ($RefMode) { 'deps/webview-watch' } else { 'deps/webview' }
+    $plan = @(
+        'script=tools/get-webview.ps1'
+        "mode=$(if ($RefMode) { 'ref' } else { 'pinned' })"
+        "url=$Url"
+        "fetch_spec=$FetchSpec"
+        "checkout=$planCheckout"
+        "verify_pinned_header_checksums=$(if ($RefMode) { 'false' } else { 'true' })"
+        "checksum_rows=$($ShaKeys.Count)"
+        "assert_head_equals_pin=$(if ($RefMode) { 'false' } else { 'true' })"
+    )
+    foreach ($line in $plan) { [Console]::Out.Write($line + "`n") }
+    exit 0
+}
+
 # --- fetch the exact SHA -----------------------------------------------------
 if ((Test-Path $Checkout) -and $Force) { Remove-Item -Recurse -Force $Checkout }
 
@@ -54,13 +100,25 @@ else {
 }
 
 $Current = git -C $Checkout rev-parse --verify --quiet HEAD
-if ($Current -ne $Sha) {
+if ($RefMode) {
+    # THE ONE NETWORK STEP THE WATCHER TAKES. A ref, resolved by the remote,
+    # fetched into its own checkout and never into the pinned one. Always
+    # refetched: `-Ref HEAD` means "whatever upstream head is right now", and a
+    # cached answer from last week would be a stale measurement wearing a
+    # fresh timestamp.
+    git -C $Checkout fetch --quiet --depth 1 origin $FetchSpec
+    if ($LASTEXITCODE -ne 0) { throw "git fetch of ref '$FetchSpec' failed" }
+    git -C $Checkout -c advice.detachedHead=false checkout --quiet --force FETCH_HEAD
+    if ($LASTEXITCODE -ne 0) { throw "git checkout of ref '$FetchSpec' failed" }
+}
+elseif ($Current -ne $Sha) {
     # Fetch only the pinned commit. No branch names, no tags, no HEAD.
     git -C $Checkout fetch --quiet --depth 1 origin $Sha
     if ($LASTEXITCODE -ne 0) { throw "git fetch of pinned SHA $Sha failed" }
     git -C $Checkout -c advice.detachedHead=false checkout --quiet --force $Sha
     if ($LASTEXITCODE -ne 0) { throw "git checkout of pinned SHA $Sha failed" }
 }
+$Resolved = if ($RefMode) { (git -C $Checkout rev-parse HEAD).Trim() } else { $Sha }
 
 # Even when HEAD already matches, the working tree may have been modified
 # locally. Only a handful of headers are checksummed below but the WHOLE tree
@@ -68,7 +126,7 @@ if ($Current -ne $Sha) {
 $Dirty = git -C $Checkout status --porcelain
 if ($Dirty) {
     Write-Host 'pinned checkout modified locally -- restoring pristine tree'
-    git -C $Checkout checkout --force --quiet $Sha
+    git -C $Checkout checkout --force --quiet $Resolved
     if ($LASTEXITCODE -ne 0) { throw 'git checkout --force failed while cleaning' }
     git -C $Checkout clean -fdxq
     if ($LASTEXITCODE -ne 0) { throw 'git clean failed while cleaning' }
@@ -79,7 +137,9 @@ if ($Dirty) {
 # git content addressing already guarantees the tree matches the commit SHA;
 # verify it anyway, then cross-check the recorded header checksums.
 $Head = git -C $Checkout rev-parse HEAD
-if ($Head -ne $Sha) { throw "checkout mismatch: HEAD=$Head expected=$Sha" }
+if (-not $RefMode) {
+    if ($Head -ne $Sha) { throw "checkout mismatch: HEAD=$Head expected=$Sha" }
+}
 
 # --- verify recorded header checksums ---------------------------------------
 # The recorded value is the sha256 of the file with LF line endings, i.e. of
@@ -117,6 +177,17 @@ function Get-NormalisedSha256([string]$Path) {
         $sha.Dispose()
     }
     return ([BitConverter]::ToString($digest)).Replace('-', '').ToLowerInvariant()
+}
+
+if ($RefMode) {
+    # The recorded checksums pin the PINNED commit. Comparing them against
+    # another commit would refuse every head that differs from the pin - which
+    # is the question the watcher is asking, not an error. The DIFF reports
+    # which headers moved; that is a measurement, and this would be a refusal.
+    $when = (git -C $Checkout log -1 --format=%cI).Trim()
+    Write-Host "webview ref checkout OK: $Head ($when)"
+    Write-Host "  ref '$FetchSpec' at $Checkout (pinned checkout untouched)"
+    exit 0
 }
 
 $Failures = @()

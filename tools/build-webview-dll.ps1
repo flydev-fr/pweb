@@ -9,15 +9,43 @@
 # package and dependency patch hashes are checked before compilation.
 #
 # Output: build/webview-dist/webview.dll
-# Usage:  pwsh tools/build-webview-dll.ps1
+# Usage:  pwsh tools/build-webview-dll.ps1 [-Ref <ref>] [-PrintPlan]
+#
+# CAP-11B adds ONE optional input and the pinned path above is what runs when
+# it is absent. `-Ref <ref>` builds the checkout tools/get-webview.ps1 -Ref
+# produced (deps/webview-watch) into build/cap11b/, for the upstream watcher.
+#
+# In ref mode this script does NOT run the CAP-4W patch preparation: that
+# script asserts the checkout IS the pinned commit and would refuse head by
+# construction. The watcher applies the patch itself and TYPES the outcome
+# (clean / offset / rejected), which is the measurement it exists to make; by
+# the time this script runs, the head checkout is already in whatever state
+# that attempt left it. The WebView2 SDK pin still holds in both modes - the
+# watcher measures webview drift, not a different SDK.
+#
+# `--PrintPlan` resolves every path, flag and assertion mode, prints them and
+# exits 0 having touched nothing.
+
+param(
+    [string]$Ref,
+    [switch]$PrintPlan
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$Src      = Join-Path $RepoRoot 'deps\webview'
-$BuildDir = Join-Path $RepoRoot 'build\webview-build-cap4w'
-$DistDir  = Join-Path $RepoRoot 'build\webview-dist'
+$RefMode  = -not [string]::IsNullOrWhiteSpace($Ref)
+if ($RefMode) {
+    $Src      = Join-Path $RepoRoot 'deps\webview-watch'
+    $BuildDir = Join-Path $RepoRoot 'build\cap11b\webview-build'
+    $DistDir  = Join-Path $RepoRoot 'build\cap11b\webview-dist'
+}
+else {
+    $Src      = Join-Path $RepoRoot 'deps\webview'
+    $BuildDir = Join-Path $RepoRoot 'build\webview-build-cap4w'
+    $DistDir  = Join-Path $RepoRoot 'build\webview-dist'
+}
 $LockFile = Join-Path $RepoRoot 'webview.lock'
 $PatchScript = Join-Path $PSScriptRoot 'patch-cap4w-webview.ps1'
 
@@ -71,15 +99,36 @@ function Get-DirectoryTreeHash([string]$Root) {
     }
 }
 
-if (-not (Test-Path (Join-Path $Src 'CMakeLists.txt'))) {
-    throw 'deps/webview missing -- run tools/get-webview.ps1 first'
-}
 if (-not (Test-Path -LiteralPath $PatchScript -PathType Leaf)) {
     throw "CAP-4W patch script missing: $PatchScript"
 }
 
 $lock = Read-LockFile
 $SdkVersion = $lock['webview2-sdk']
+
+if ($PrintPlan) {
+    $rel = { param($p) $p.Substring($RepoRoot.Length + 1).Replace('\', '/') }
+    $plan = @(
+        'script=tools/build-webview-dll.ps1'
+        "mode=$(if ($RefMode) { 'ref' } else { 'pinned' })"
+        "source=$(& $rel $Src)"
+        "build_dir=$(& $rel $BuildDir)"
+        "dist_dir=$(& $rel $DistDir)"
+        "apply_cap4w_patch=$(if ($RefMode) { 'false' } else { 'true' })"
+        "webview2_sdk=$SdkVersion"
+        'assert_sdk_pin=true'
+        'cmake_target=webview_core_shared'
+        'cmake_config=Release'
+        "cmake_args=-DWEBVIEW_MSWEBVIEW2_VERSION=$SdkVersion;-DWEBVIEW_BUILD_TESTS=OFF;-DWEBVIEW_BUILD_EXAMPLES=OFF;-DWEBVIEW_BUILD_DOCS=OFF;-DWEBVIEW_BUILD_STATIC_LIBRARY=OFF;-DWEBVIEW_BUILD_AMALGAMATION=OFF"
+        "expected_dll=$(& $rel $BuildDir)/core/Release/webview.dll"
+    )
+    foreach ($line in $plan) { [Console]::Out.Write($line + "`n") }
+    exit 0
+}
+
+if (-not (Test-Path (Join-Path $Src 'CMakeLists.txt'))) {
+    throw "webview source missing: $Src -- run tools/get-webview.ps1 first"
+}
 $SdkSha256 = $lock['webview2-sdk-sha256']
 $SdkTreeSha256 = $lock['webview2-sdk-tree-sha256']
 if ($SdkVersion -cne '1.0.1587.40') {
@@ -93,9 +142,11 @@ if (-not $SdkTreeSha256 -or
     throw 'webview.lock has no full lowercase WebView2 SDK tree hash'
 }
 
-& pwsh -NoProfile -File $PatchScript
-if ($LASTEXITCODE -ne 0) {
-    throw 'CAP-4W dependency patch preparation failed'
+if (-not $RefMode) {
+    & pwsh -NoProfile -File $PatchScript
+    if ($LASTEXITCODE -ne 0) {
+        throw 'CAP-4W dependency patch preparation failed'
+    }
 }
 
 cmake -B $BuildDir -S $Src `

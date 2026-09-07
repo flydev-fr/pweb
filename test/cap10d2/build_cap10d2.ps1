@@ -76,6 +76,11 @@ function Stage([string]$Source, [string]$Name, [string]$WantSha) {
 }
 
 Stage (Join-Path $repoRoot 'deps/mormot2/LICENCE.md') 'LICENSE.mormot2.md' ''
+# CAP-11B: PWeb's own licence, staged from the repository root. It is here
+# because `<repo>/LICENSE` is TRACKED (commit 864fca7); nothing chooses terms,
+# and if the file ever stops being tracked this stage fails loudly rather than
+# shipping a stale copy.
+Stage (Join-Path $repoRoot 'LICENSE') 'LICENSE.pweb.txt' ''
 Stage (Join-Path $repoRoot 'build/webview-dist/LICENSE.webview') `
     'LICENSE.webview.txt' ''
 Stage (Join-Path $repoRoot 'build/webview-dist/LICENSE.webview2sdk') `

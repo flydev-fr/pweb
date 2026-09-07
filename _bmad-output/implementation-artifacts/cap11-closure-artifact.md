@@ -1,0 +1,346 @@
+# CAP-11 — phase closure: the full matrix, and a watcher that reports and nothing else
+
+**CAP-11 is CLOSED.** Two shards. CAP-11A made the four platform jobs one step
+sequence and measured that premise from the run itself. CAP-11B added the second
+half of the SPEC's acceptance — a separate watcher that compiles the binding
+against upstream head and reports an API diff **without changing the pinned
+version** — and closed the phase.
+
+The SPEC states CAP-11 as one intent and one success sentence:
+
+> **intent:** The Phase 1 CI grows into the full target matrix, and upstream `webview/webview` drift is caught before it reaches production. This phase *extends* CI; it does not introduce it.
+
+## 1. THE HOSTED RUNS
+
+| shard | commit | run | result |
+|---|---|---|---|
+| CAP-11A | `d63d7e3` | 34022414932 | six jobs green — the first run in which `.github/workflows/ci.yml` *is* the caller |
+| CAP-11B | `pending` | pending | pending |
+
+CAP-11A's closure run measured its own premise: four identical sequences of 196
+steps under digest `3b28ac8d…f4f5fe3a`, that digest equal to the digest of the
+sequence declared, and every leg running all of its legacy steps in order.
+CAP-11B's sequence is 200 steps — the same list plus four CAP-11B gate steps,
+added once and inherited by all four targets, which is exactly what the CAP-11A
+structure was built to make possible.
+
+## 2. WHAT CAP-11B ADDED
+
+`.github/workflows/upstream-watch.yml` is a standalone scheduled workflow that
+answers one question per target and acts on nothing. It never re-pins, never
+regenerates the binding into the tree, never commits, never fails the matrix,
+and its report is never an input to a build. `docs/watcher-contract.md` is the
+contract; the summary is:
+
+| | |
+|---|---|
+| triggers | `schedule` (weekly) + `workflow_dispatch` + `push` filtered to the watcher's own sources |
+| permissions | `contents: read`, workflow-level, no job grant, no secret, no token beyond the default |
+| targets | Windows x64, Linux x64, macOS x86_64, macOS arm64 |
+| output | one artifact per target (JSON + Markdown), retention 90 (records), plus a job summary |
+| conclusion | `success` whenever the watcher ran — the verdict lives inside the report |
+| verdicts | `unchanged \| compatible_additive \| patch_drift \| abi_break \| build_failed \| inconclusive` |
+
+**The diff is mechanical.** `test/cap11b/extract_api.ps1` parses the six public
+C headers `webview.lock` names into a canonical model — functions, callback
+typedefs, enums with resolved values, structs, `void*` typedefs, the
+`WEBVIEW_VERSION_*` macros — and a declaration it cannot read is a typed
+refusal, never a silent pass. Measured on the pin: **17 functions, 2 callbacks,
+3 enums, 2 structs, 1 typedef, 6 macros**, which is exactly the committed
+binding and exactly the "17 entry points" `docs/webview-upstream-semantics.md`
+scopes.
+
+**The projector is calibrated on every run, and that is the load-bearing part.**
+ChetCLI is a Windows-only Delphi tool at a hard-coded path that no runner has,
+so `test/cap11b/project_binding.ps1` reproduces its mapping for the closed set
+of constructs these headers use, taking the platform block verbatim from the
+committed unit and refusing any unmapped C type. Before anything touches head,
+the same projector runs over the **pinned** headers and `signature_pin` is
+compiled against the result. If that fails the tool is broken and the verdict is
+`inconclusive` — never `abi_break`.
+
+**The first real answer is `unchanged`, and that is a fact about upstream.**
+`tools/get-webview.ps1 -Ref HEAD` resolved `webview/webview`'s default branch to
+`cbbdee44afff22867de9fd88a9fc8350d9bdd399` (2026-03-09T07:51:25Z) — the commit
+`webview.lock` already pins. A full local Linux run produced verdict
+`unchanged`, an empty diff, 17 exports, and 36 paired ABI facts with exactly the
+two ratified signedness deltas. Which is why the other five verdicts are proved
+by seeded input rather than by waiting.
+
+### The seeded verdicts (offline, on all four legs)
+
+| case | seed | verdict | what the report has to name |
+|---|---|---|---|
+| W2 | head == the pin | `unchanged` | an empty diff |
+| W3 | one added prototype | `compatible_additive` | `webview_set_icon`, added |
+| W4 | one changed signature | `abi_break` | `webview_navigate`; `signature_pin` really fails to compile |
+| W5c | **control**: the unedited fixture | `unchanged` | patch outcome `clean` |
+| W5a | the patch's context moved | `patch_drift` | outcome `rejected`, with the hunk naming `win32_edge.hh` |
+| W5b | the patch's position moved | `patch_drift` | outcome `offset`, with git's own displacement |
+| W6 | the library build fails | `build_failed` | the log tail |
+| W7 | the fetch is refused | `inconclusive` | the cause, and *not* `unchanged` |
+
+W5c is the case that makes W5a and W5b mean anything, and it exists because the
+first version of them did not: CRLF fixtures made both go green on a context
+mismatch in a file neither of them touched.
+
+## 3. REF PARAMETERISATION / PINNED-PATH IDENTITY
+
+One optional input — `-Ref` / `--ref` — on `tools/get-webview.ps1`,
+`build-webview-dll.ps1`, `build-webview-so.sh` and `build-webview-dylib.sh`.
+Each also gained `--print-plan`, which resolves every path, flag and assertion
+mode, prints them, and exits 0 having touched nothing.
+
+| | pinned (no input) | ref |
+|---|---|---|
+| source | `deps/webview` | `deps/webview-watch` |
+| build / dist | `build/webview-build-cap4w`, `build/cap7l/…`, `build/cap7m/…` | `build/cap11b/…` |
+| header checksums | verified | not verified — they pin the *pinned* commit |
+| CAP-4W patch | applied by the build script | applied and **typed** by the watcher |
+| SONAME / dylib names | asserted | **observed** — a version bump is news, not a build failure |
+| engine, deployment target, SDK pin | asserted | asserted |
+
+`test/cap11b/pinned-plan.expected.txt` records the five pinned plans and
+`test/cap11b/check_ref_input.ps1` compares them **byte for byte** on every leg,
+then re-reads both lock digests. It also checks the mirror — that a *ref* plan
+never names a pinned directory — because a script that ignored its input
+entirely would pass the byte comparison perfectly.
+
+Adding an input necessarily changes the source of these scripts. What must not
+change is what they do when nobody passes one, and that is now a comparison
+rather than a claim — verified byte-identical on the Windows host and under WSL,
+which also proves the plans are host-independent.
+
+## 4. SUPERSESSIONS ACROSS CAP-11
+
+| what | before | after | why |
+|---|---|---|---|
+| the step sequence | 196 steps (CAP-11A) | **200** | four CAP-11B gate steps, added once, inherited by four targets |
+| `ci_sequence_digest` | `3b28ac8d…f4f5fe3a` | recomputed | the digest is over the declared list, which grew |
+| `sdk_own_license` | `undeclared` (absolute pin, CAP-11A) | **`declared`** | `<repo>/LICENSE` became tracked in `864fca7`; §6 |
+| `LICENSE_TABLE` | 4 rows | **5** | `LICENSE.pweb.txt`, `swAlways` |
+| `sdk_ship_table_digest` | CAP-10D2 value | recomputed | the licence table is inside the ship digest by construction |
+| `.github/` largest file | 54,143 B | **55,775 B** (85 % of the 64 KB bound) | four steps on `platform-leg.yml` |
+| `docs/index.md` | 12 documents | **13** | `watcher-contract.md` |
+
+Nothing in `webview.lock` or `mormot.lock` moved. `src/`, `sdk/`, `deps/`,
+`tools/setup/`, `examples/` and `webview.chet` are byte-untouched.
+
+## 5. THE PHASE LEDGER — 28 ENTRIES, 0 ORPHANS
+
+`test/cap11b/check_cap11_ledger.ps1` keys each entry as `<shard>-<ordinal>` plus
+the first eight hex of the SHA-256 of its own `summary` line, so an orphan, a
+stray, a count drift and a silent reword are four different failures with four
+different messages.
+
+| key | digest | disposition | reason |
+|---|---|---|---|
+| 11A-1 | 95839d39 | RESOLVED | `ci.yml` is a 15 KB caller over one 200-step sequence; the premise is measured from the run |
+| 11A-2 | 7008df19 | RESOLVED | no gate depends on an upload; the collection block is last and its failure is typed INFRASTRUCTURE |
+| 11A-3 | 8337ae0c | RESOLVED | the U3 drain reports before it measures; `u3_drain_before_measure` pinned true |
+| 11A-4 | 12530023 | RESOLVED | every pinned fetch is three bounded attempts with a row each; no ceiling got longer |
+| 11A-5 | e601b7cc | RECORDED-ONLY | the non-report cause is instrumented and its inference is stated; see §7 for its current state |
+| 11A-6 | f77c24c0 | RESOLVED | retention, concurrency, per-job timeouts and the 64 KB / 1,600-line bound are gated |
+| 11A-7 | 030c5240 | RESOLVED | superseded by 11B-6: `<repo>/LICENSE` is tracked and the SDK ships it |
+| 11A-8 | 3cd2c754 | RESOLVED | the schema-agreement gate compares the three hand-maintained lists on every leg |
+| 11A-9 | 1db27551 | RECORDED-ONLY | two review defects and their fixes, recorded so the reasoning is not re-derived |
+| 11A-10 | 53dc4526 | RECORDED-ONLY | the Int32 job-id cast and three siblings, recorded with their seeded payloads |
+| 11A-11 | 2a9178ef | RECORDED-ONLY | the shard's own non-blocking rule applied to itself, twice; recorded |
+| 11A-12 | c3d20ce7 | RESOLVED | the drain reports and does not refuse, which is what D1-16 asked for |
+| 11A-13 | dd6a17bb | RESOLVED | the fetch helper is bounded across mirrors; nine seeded cases, drift never retried |
+| 11A-14 | 71f39aa1 | RECORDED-ONLY | three rejected review findings, recorded so they are not re-litigated; finding (2) came true and §6 is the answer |
+| 11A-15 | 3ec2ff77 | RECORDED-ONLY | the non-report reached a fourth driver; instrumented, cause unchanged |
+| 11A-16 | 28293caf | RECORDED-ONLY | a separator defect caught under WSL before it was pushed; the lesson holds for CAP-11B, which used WSL the same way |
+| 11A-17 | 7f09472b | RESOLVED | CAP-11A closed on run 34022414932 |
+| 11A-18 | a9990833 | RECORDED-ONLY | what three twin runs cost, and why the two discarded ones were worth running |
+| 11B-1 | 2bf41240 | RESOLVED | the watcher exists, its contract is gated on four legs and `docs/watcher-contract.md` records it |
+| 11B-2 | 15baaea8 | RESOLVED | the projector is calibrated on the pinned headers on every run before head is judged |
+| 11B-3 | 40fd8675 | RECORDED-ONLY | no issue: `issues: write` cannot coexist with the ratified posture, and the title rule is self-cancelling |
+| 11B-4 | cdab7d4d | CAP-12 | the mORMot head watcher does not fit this shape; it needs its own instrument and its own budget |
+| 11B-5 | 726b4ebe | RESOLVED | the pinned plan is compared byte for byte with no ref input, on every leg |
+| 11B-6 | 0e94ead7 | RESOLVED | D2-8 closes: the owner tracked a licence, the SDK ships it, the pin reads `declared` |
+| 11B-7 | 952bf510 | RECORDED-ONLY | upstream head is the pinned commit at closure; a fact about upstream, not about the instrument |
+| 11B-8 | 1185f8d8 | RECORDED-ONLY | five defects found by running the shard's own code; each is now gated or commented at its site |
+| 11B-9 | 5038a385 | RECORDED-ONLY | the `push` trigger and the measurement that forces it; the trigger set is pinned |
+| 11B-10 | 74aab1a5 | RECORDED-ONLY | the dev host's i386 FPC cannot run the compile-based cases; a named refusal, never a skip |
+
+**Orphans: 0. Strays: 0. Rewords: 0.** Census: 14 RESOLVED, 13 RECORDED-ONLY,
+1 CAP-12.
+
+## 6. `sdk_own_license`, RE-MEASURED
+
+`git ls-files LICENSE` is **non-empty**: commit `864fca7` tracked
+`<repo>/LICENSE`, Mozilla Public License 2.0, 16,726 bytes. So the row reads
+**`declared`** on four targets, and it is a regression repair rather than a new
+decision.
+
+CAP-10D2 recorded the absence as a real gap in a distributable product and
+called it the owner's call. CAP-11A re-measured it, found `<repo>/LICENSE`
+absent and `<repo>/LICENSE.txt` untracked and ignored, pinned `undeclared`, and
+left D2-8 open with the human as its owner. Its review then recorded the
+consequence in as many words — *"that pin will turn all four legs red the day
+someone commits a LICENSE"* — and answered that this is the enforcement, not a
+side effect. The owner committed a licence; the pin moved in the open, beside
+it.
+
+What that took, and nothing more: `LICENSE_TABLE` in `tools/pweb/pwebsdk.pas`
+gains a fifth row (`LICENSE.pweb.txt`, `swAlways`); `test/cap10d2/build_cap10d2.{ps1,sh}`
+stage `<repo>/LICENSE` into `share/pweb/licenses/`;
+`docs/third-party-licenses.md` gains the row and says plainly that its table is
+the **shipped notice set**, of which one row is now not third-party;
+`docs/sdk-contract.md` matches; and the absolute pin reads `declared`. The two
+CAP-10D2 gates read both tables mechanically and require them to agree name for
+name and condition for condition, so the packager and the document cannot drift
+apart.
+
+## 7. THE THREE FLAKES, CURRENT STATE
+
+| flake | state | observed since instrumentation |
+|---|---|---|
+| the `state=0` non-report (B1-10, B2-16, D1-15, and the CAP-4 dual-mode driver) | instrumented; `smokeobserve.ps1` types four causes from engine-side observations, `undetermined` is legal, and the observer is wrapped in `try/catch` at every call site | **not observed firing since CAP-11A's closure run.** The instrumentation has had two green runs to fire on and has not; the disposition is unchanged — re-run the job, never re-ratify |
+| the CAP-6b4 U3 uninstall residue (D1-16) | instrumented; the drain runs scoped to the install directory *before* the uninstaller and writes pids, images and sweeps | **not observed since**; `u3_drain_before_measure` reads `true` on every run. The state of the U3 uninstall residue is therefore: instrumented, quiet |
+| the pinned-installer fetch stalls (C3-15) | instrumented; `tools/pwebfetch.ps1` gives every pinned fetch three attempts × 180 s with a row each, and a digest mismatch is refused on the first attempt and never retried | **not observed since**; `fetch_retry_max_attempts = 3`, `fetch_retry_bound_s = 180` |
+
+**KNOWN LIMITATION, restated:** the non-report's cause is *inferred* from
+engine-side observations, not reported by the page. `examples/` is frozen and a
+page-side progress report belongs to whichever shard may next touch it.
+
+## 8. THE SPEC'S CAP-11 ACCEPTANCE, LINE BY LINE
+
+| clause | verdict | evidence |
+|---|---|---|
+| A1 | MET | *"CI builds Windows x64, Linux x64, macOS x64, and macOS ARM64"* — one reusable `platform-leg.yml` called four times from `ci.yml`; run 34022414932, six jobs green, four identical sequences measured from the run |
+| A2 | MET | *"a separate watcher compiles the binding against upstream head"* — `.github/workflows/upstream-watch.yml`, four targets, `signature_pin` and the paired ABI probes compiled against a projection of head's headers, calibrated on the pinned headers first |
+| A3 | MET | *"and reports an API diff"* — one artifact and one job summary per target, the diff taken mechanically from the headers, six typed verdicts each demonstrated by a seeded case on every leg |
+| A4 | MET | *"without changing the pinned version"* — `contents: read`, no write to a lock, the pinned plan compared byte for byte with no ref input, and both lock digests re-read before and after every watch |
+| A5 | MET | *"This phase extends CI; it does not introduce it"* — the Phase 1 Windows gate still runs, inside the one sequence; 445 legacy steps mapped one-for-one and every leg observed running all of its legacy steps in order |
+| A6 | MET | *"Production pins an explicit upstream `webview/webview` version and never follows `master` automatically"* (SPEC constraint) — `webview.lock` is unchanged; the only floating ref in the repository is the watcher's, it can reach only `deps/webview-watch` and `build/cap11b/`, and the floating-upstream-ref guards still sweep every workflow file and every pinned fetch script |
+
+## 9. THE CAP-12 HANDOFF
+
+CAP-12 is the blob data plane. It is **off the critical path**: it does not gate
+Phase 5 and the MVP does not require it (`phase-plan.md`, Phase 4b).
+
+### What CAP-12 inherits verbatim — none of it is CAP-12's to renegotiate
+
+- **The seven frozen boundaries.** `IWebView`, `IWebViewBinding`,
+  `IInvocationBridge`, `IInvocationScheduler`, `IAssetStore`, `IBlobStore`,
+  `ICapabilityPolicy` — no platform or implementation type in their signatures,
+  no mORMot type name in `IInvocationBridge`'s.
+- **`pweb://app` and the CSP.** The privileged origin never changes; the
+  privileged WebView navigates only `pweb://app/...` and never to external
+  content. `https:`/`mailto:` reach the OS only through the capability-authorised
+  `pweb.openExternal` invocation, never a gesture.
+- **The JSON control plane.** Every caller travels source →
+  `IInvocationScheduler` → `IInvocationBridge` → `ICapabilityPolicy` → service.
+  Named JSON object arguments or `null`; the nine-code error taxonomy with `code`
+  as the sole normative discriminator; `PWEB_PROTOCOL_VERSION = 1`.
+- **The threading model.** The bind callback only enqueues; workers call
+  `webview_return()` directly; exactly-once completion through an idempotent
+  sink; cooperative cancellation tokens plus short handle-use leases; Pascal
+  exceptions never cross a C callback.
+- **Asset-path fail-closed rules**, exact case-sensitive matching on every
+  platform, and the kernel image-path reader (`src/security/pweb.imagepath.pas`)
+  as the one reader in shipped code.
+- **The CI matrix as it now stands**: one sequence in `platform-leg.yml`, four
+  calls, the collection block last, the retention classes, the 64 KB /
+  1,600-line bound, and the rule that a gate never depends on an upload. A CAP-12
+  gate is added **once** and all four targets get it.
+- **The watcher contract** (`docs/watcher-contract.md`). CAP-12 may read its
+  reports; nothing CAP-12 builds may consume one as an input.
+
+### What CAP-12 owns
+
+- **`IBlobStore` decoupled from `pweb://`.** Its concrete method sets — together
+  with `IBlobReader`/`IBlobWriter` — **ratify at Phase 4b entry, before any blob
+  implementation is written**, against the invariants already fixed in
+  `core-interfaces.md`: owner-scoped blobs, handle entropy, logical release with
+  reader refcounting, positioned reads, auto-release on principal teardown, and
+  the SDK's `native.blobs.release`.
+- **The blob data plane**: `pweb://blob/{token}` with `Range`,
+  `Content-Length` and `Content-Type` honoured without buffering the whole
+  payload; streaming; JS→native upload. A service returning a >40 MB PDF answers
+  with a `BlobHandle` envelope — no base64 bulk over the bridge.
+- **The WebKit / WebView2 / WKWebView differences, already measured** and not to
+  be re-measured from scratch: CAP-4 and CAP-4W for the Windows custom scheme,
+  CAP-7L for WebKitGTK 4.1 (`docs/webkitgtk-linux-semantics.md`), CAP-7M for
+  WKWebView (`docs/wkwebview-macos-semantics.md`). Those three documents are
+  CAP-12's starting point for what each engine does with a custom-scheme
+  response.
+
+### What CAP-12 must not touch
+
+- `webview.lock`, `mormot.lock` or any pin; `src/lib/` and `webview.chet`; the
+  seven interface signatures; `pweb.rpc.intf.pas`'s independence from every
+  `pweb.webview.*` unit.
+- The watcher: it is not CAP-12's to call, to gate on, or to make required.
+- The licence set: `LICENSE_TABLE` and `docs/third-party-licenses.md` move only
+  when a shipped component changes, which is a measurement, never a preference.
+- The `state=0` non-report instrumentation, unless CAP-12 is the shard that may
+  touch `examples/` — in which case a page-side progress report is the fix the
+  ledger has been asking for.
+
+## 10. KNOWN LIMITATIONS
+
+1. **The projector is a narrow translator, not a C compiler.** It handles the
+   closed set of constructs these six headers use and *refuses* anything else,
+   which types the run `inconclusive` rather than guessing. A future upstream
+   that introduced an unfamiliar construct would produce a refusal naming the
+   type, not a wrong answer — but it would need a human to extend the table.
+2. **The compile-based seeded cases cannot run on the development host.** Its
+   FPC targets `i386-win32` and the projected binding declares `LIB_WEBVIEW`
+   only for WIN64, DARWIN and LINUX. `check_cap11b_cases.ps1` refuses with a
+   named message rather than skipping; the four CI legs, which install the
+   pinned x86_64 FPC, do run them.
+3. **The macOS export rule is applied by the driver rather than delegated.**
+   `test/cap7m/check_webview_exports.sh` sources a harness that expects the
+   CAP-7M working tree, so the driver applies the same ratified rule itself and
+   the contract gate cross-checks the two entry-point lists so they cannot
+   drift. Windows and Linux delegate to their ratified gates unchanged.
+4. **`patch_drift` can only be measured on Windows.** It is the only target with
+   a declared platform patch; the other three report `not_applicable`, which the
+   two ratified "carries no patch" steps keep honest.
+5. **The watcher's first real answer is `unchanged` because upstream has not
+   moved.** Everything else about the instrument is proven by seeded input; the
+   day upstream does move, the first non-seeded `compatible_additive` will be
+   the first end-to-end demonstration of that path.
+
+## 11. FREEZE CHECK
+
+`git diff` against the CAP-11A closure, over the frozen surface:
+
+- `src/`, `sdk/`, `deps/`, `tools/setup/`, `examples/` — **no files changed**
+- every `*.lock` — **unchanged**
+- `webview.chet`, `src/lib/pweb.lib.webview.pas` and both view units — **unchanged**
+- `docs/kernel.md` and every contract document except the three the licence
+  regression required — **unchanged**
+
+What was permitted and used: `.github/workflows/upstream-watch.yml`;
+`platform-leg.yml` and `test/cap11a/step-applicability.tsv` (+4 steps, once, all
+four targets); the ref input and `--print-plan` on `tools/get-webview.ps1` and
+the three build scripts; `test/cap11b/**`; the CAP-7F emitters and aggregator
+for the new evidence rows; the D2 packager's declared licence table and its two
+staging scripts, forced by a tracked `LICENSE`; `docs/watcher-contract.md`,
+`docs/index.md`, `docs/third-party-licenses.md`, `docs/sdk-contract.md`;
+`deferred-work.md` and this artifact.
+
+## VERDICT
+
+The SPEC asked CAP-11 for two things. The matrix was the first and CAP-11A froze
+it. The second was a watcher that compiles the binding against upstream head and
+reports an API diff **without changing the pinned version**, and the load-bearing
+word there is *without*: the value of this shard is in what the watcher cannot
+do, and none of that is visible in a green run. So it is a source gate that runs
+on all four legs and proves it refuses — fourteen perturbations of the watcher's
+own sources, every one rejected — beside eight seeded cases that produce all six
+verdicts offline, with a real compile behind `abi_break` and a control case that
+makes the two drift cases mean something.
+
+The pinned path is unchanged by comparison rather than by assertion: five plans,
+byte-identical with no ref input, on every leg and on two different hosts. Both
+locks are digested before and after every watch. The phase ledger has 28 entries
+and no orphan. `sdk_own_license` reads `declared` because the owner declared one,
+and the pin moved in the open beside the licence, exactly as CAP-11A said it
+would have to.
+
+CAP-11B PASS — UPSTREAM WATCHER FROZEN, CAP-11 CLOSED

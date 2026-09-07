@@ -24,16 +24,48 @@
 #           libwebview.so           dev-only link-time name for FPC's -Fl
 #           LICENSE.webview
 #
-# Usage:  tools/build-webview-so.sh
+# Usage:  tools/build-webview-so.sh [--ref <ref>] [--print-plan]
+#
+# CAP-11B adds ONE optional input and the pinned path above is what runs when
+# it is absent. `--ref <ref>` builds the checkout tools/get-webview.ps1 -Ref
+# produced (deps/webview-watch) into build/cap11b/, for the upstream watcher.
+# In ref mode the LOCK'S NAME PINS BECOME OBSERVATIONS: an upstream version
+# bump legitimately changes the SONAME, and a watcher that died on it would
+# report `build_failed` for news rather than reporting the news. The lock is
+# never written by this script in either mode.
+#
+# `--print-plan` resolves every path, flag and assertion mode, prints them and
+# exits 0 having touched nothing. test/cap11b/check_ref_input.ps1 compares that
+# block byte-for-byte against the recorded pinned plan.
 #
 set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/.." && pwd)"
 
-src="${repo_root}/deps/webview"
-build_dir="${repo_root}/build/cap7l/webview-build"
-dist_dir="${repo_root}/build/cap7l/webview-dist"
+# --- CAP-11B: the one optional input, lifted out of the positional arguments --
+cap11b_ref=''
+cap11b_print_plan=0
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --ref)
+            [ "$#" -ge 2 ] || { printf '[CAP-7L] --ref needs a value\n' >&2; exit 1; }
+            cap11b_ref="$2"; shift 2 ;;
+        --ref=*) cap11b_ref="${1#--ref=}"; shift ;;
+        --print-plan) cap11b_print_plan=1; shift ;;
+        *) printf '[CAP-7L] unknown argument: %s\n' "$1" >&2; exit 1 ;;
+    esac
+done
+
+if [ -n "${cap11b_ref}" ]; then
+    src="${repo_root}/deps/webview-watch"
+    build_dir="${repo_root}/build/cap11b/webview-build"
+    dist_dir="${repo_root}/build/cap11b/webview-dist"
+else
+    src="${repo_root}/deps/webview"
+    build_dir="${repo_root}/build/cap7l/webview-build"
+    dist_dir="${repo_root}/build/cap7l/webview-dist"
+fi
 lock_file="${repo_root}/webview.lock"
 
 die() { printf '[CAP-7L] %s\n' "$*" >&2; exit 1; }
@@ -60,7 +92,6 @@ lock_get() {
 }
 
 [ -f "${lock_file}" ] || die "webview.lock missing: ${lock_file}"
-[ -f "${src}/CMakeLists.txt" ] || die 'deps/webview missing -- run tools/get-webview.ps1 first'
 
 pinned_commit="$(lock_get commit)"
 case "${pinned_commit}" in
@@ -75,12 +106,39 @@ soname="$(lock_get linux-soname)"
 # The ratified stack is a FACT of this capability, not a variable: a lock that
 # says something else is a deliberate re-ratification and must not be honoured
 # by a script that was reviewed against 4.1/3.0.
+#
+# The ENGINE pins hold in both modes - the watcher measures webview drift, not
+# a different WebKitGTK. Only the SONAME, which upstream's own version number
+# decides, becomes an observation under --ref.
 [ "${webkitgtk_api}" = '4.1' ] || die "unexpected WebKitGTK API pin '${webkitgtk_api}'"
 [ "${gtk_api}" = '3.0' ] || die "unexpected GTK API pin '${gtk_api}'"
-[ "${soname}" = 'libwebview.so.0.12' ] || die "unexpected soname pin '${soname}'"
+if [ -z "${cap11b_ref}" ]; then
+    [ "${soname}" = 'libwebview.so.0.12' ] || die "unexpected soname pin '${soname}'"
+fi
 
 expected_webkit_module="webkit2gtk-${webkitgtk_api}"
 expected_gtk_module="gtk+-${gtk_api}"
+
+# --- CAP-11B: the plan, printed before anything is inspected or built --------
+if [ "${cap11b_print_plan}" -eq 1 ]; then
+    rel() { printf '%s' "${1#"${repo_root}/"}"; }
+    printf 'script=tools/build-webview-so.sh\n'
+    printf 'mode=%s\n' "$( [ -n "${cap11b_ref}" ] && printf 'ref' || printf 'pinned' )"
+    printf 'source=%s\n' "$(rel "${src}")"
+    printf 'build_dir=%s\n' "$(rel "${build_dir}")"
+    printf 'dist_dir=%s\n' "$(rel "${dist_dir}")"
+    printf 'webkitgtk_api=%s\n' "${webkitgtk_api}"
+    printf 'gtk_api=%s\n' "${gtk_api}"
+    printf 'soname=%s\n' "${soname}"
+    printf 'assert_soname=%s\n' "$( [ -n "${cap11b_ref}" ] && printf 'false' || printf 'true' )"
+    printf 'generator=Ninja\n'
+    printf 'build_type=Release\n'
+    printf 'cmake_target=webview_core_shared\n'
+    printf 'cmake_args=-DWEBVIEW_WEBKITGTK_API=%s;-DWEBVIEW_BUILD_TESTS=OFF;-DWEBVIEW_BUILD_EXAMPLES=OFF;-DWEBVIEW_BUILD_DOCS=OFF;-DWEBVIEW_BUILD_STATIC_LIBRARY=OFF;-DWEBVIEW_BUILD_AMALGAMATION=OFF\n' "${webkitgtk_api}"
+    exit 0
+fi
+
+[ -f "${src}/CMakeLists.txt" ] || die "webview source missing: ${src} -- run tools/get-webview.ps1 first"
 
 # --- x86_64 only (Never: Linux ARM64 or i386) --------------------------------
 host_arch="$(uname -m)"
@@ -152,12 +210,33 @@ cmake --build "${build_dir}" --target webview_core_shared ||
 
 # Exact expected output path -- never a recursive first-match, which could
 # silently pick a stale artifact from an earlier configuration.
-real_lib="${build_dir}/core/${soname}.0"
+#
+# Under --ref the exact name is not knowable in advance: upstream's own
+# core/include/webview/version.h decides CMake's VERSION and SOVERSION, so a
+# version bump renames the file. The build directory was created fresh above,
+# so there is nothing stale to pick and the discovery is unambiguous - and a
+# discovery that finds none or more than one is still a refusal.
+if [ -n "${cap11b_ref}" ]; then
+    found_count="$(find "${build_dir}/core" -maxdepth 1 -type f -name 'libwebview.so.*' | wc -l)"
+    [ "${found_count}" -eq 1 ] ||
+        die "expected exactly one libwebview.so.* in ${build_dir}/core, found ${found_count}"
+    real_lib="$(find "${build_dir}/core" -maxdepth 1 -type f -name 'libwebview.so.*')"
+else
+    real_lib="${build_dir}/core/${soname}.0"
+fi
 [ -f "${real_lib}" ] || die "expected shared library not found: ${real_lib}"
 
 got_soname="$(readelf -d "${real_lib}" | sed -n 's/.*SONAME.*\[\(.*\)\].*/\1/p' | head -n 1)"
-[ "${got_soname}" = "${soname}" ] ||
-    die "built SONAME is '${got_soname}', expected the pinned '${soname}'"
+if [ -n "${cap11b_ref}" ]; then
+    # OBSERVED, not asserted. `soname` below is what this build produced, and
+    # the watcher reports it beside the pinned value.
+    [ -n "${got_soname}" ] || die "the built library records no SONAME: ${real_lib}"
+    printf '[CAP-11B] observed SONAME %s (pinned %s)\n' "${got_soname}" "${soname}"
+    soname="${got_soname}"
+else
+    [ "${got_soname}" = "${soname}" ] ||
+        die "built SONAME is '${got_soname}', expected the pinned '${soname}'"
+fi
 
 # --- stage --------------------------------------------------------------------
 rm -rf -- "${dist_dir}"

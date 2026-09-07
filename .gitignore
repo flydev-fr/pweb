@@ -98,6 +98,13 @@ _FOSSIL_
 # test/cap7m/run_cap7m_probes.sh dies with "vector list missing" on the
 # first macOS run - after the runner has already been paid for.
 !test/cap7m/uri_vectors.txt
+# CAP-11B: the recorded pinned build plan is a committed GATE INPUT, not an
+# artifact - it is what test/cap11b/check_ref_input.ps1 compares the four
+# scripts' `--print-plan` output against, byte for byte. Without this negation
+# `*.txt` above swallows it and the gate dies with "there is nothing to compare
+# the pinned plan against" on all four legs, after the runners have been paid
+# for. Exactly the case the CAP-7M0 negation above was written for.
+!test/cap11b/pinned-plan.expected.txt
 
 backup/
 .idea/
