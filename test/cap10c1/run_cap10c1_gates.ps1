@@ -548,11 +548,27 @@ $typingHostDir = if ($IsWindows) { 'C:\app' } else { '/app' }
 # array into a string, and `[0]` then indexed the STRING - the case built
 # `C:\app\m` and typed it `host`, which is a self-test passing itself.
 $typingEngine = @(Get-PWebEngineImageNames)[0]
+# THE RATIFIED ROOT COMES FROM THE RULE, NEVER FROM A LITERAL. The first
+# version of this case wrote `/usr/libexec` for every POSIX target. That IS a
+# ratified engine root on Linux and is nowhere near where macOS keeps WebKit's
+# XPC services, so both macOS legs typed the case `unknown` and refused a
+# classifier that was answering correctly - measured on run 34148361611. The
+# fixture now asks the rule itself where an engine is allowed to live and takes
+# the first root that is not the host's own directory, which keeps the two
+# `browser` cases distinct: one under a ratified ENGINE root, one beside the
+# application (a Fixed Runtime deployment).
+$typingRoots = @(@(Get-PWebEngineRoots -HostDir $typingHostDir) |
+    Where-Object { $_ -and ($_ -ne $typingHostDir) })
+Require ($typingRoots.Count -gt 0) `
+    'LT1: the rule declares no engine root beyond the host directory on this target'
+$typingRoot = if ($typingRoots.Count -gt 0) { $typingRoots[0] } else { $typingHostDir }
+# nested two levels below the root on purpose: containment, not equality
+$typingNested = Join-Path (Join-Path (Join-Path $typingRoot 'Application') '1') $typingEngine
 $typingCases = if ($IsWindows) {
     @(
         @('C:\app\demo.exe', 'host'),
         @('C:\app\sub\helper.exe', 'host'),
-        @("C:\Program Files (x86)\Microsoft\EdgeWebView\Application\1\$typingEngine", 'browser'),
+        @($typingNested, 'browser'),
         @("C:\app\$typingEngine", 'browser'),
         @("C:\temp\$typingEngine", 'unknown'),
         @('C:\Windows\System32\svchost.exe', 'unknown'),
@@ -562,7 +578,7 @@ $typingCases = if ($IsWindows) {
     @(
         @('/app/demo', 'host'),
         @('/app/sub/helper', 'host'),
-        @("/usr/libexec/$typingEngine", 'browser'),
+        @($typingNested, 'browser'),
         @("/app/$typingEngine", 'browser'),
         @("/tmp/$typingEngine", 'unknown'),
         @('/usr/bin/sshd', 'unknown'),

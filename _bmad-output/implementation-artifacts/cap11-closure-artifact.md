@@ -238,8 +238,9 @@ different messages.
 | 11B-18 | 1fa5488d | RESOLVED | the smoke auto-close window is sized from a measured 300 ms deadline x a stated 50, not from the lifetimes that do not discriminate |
 | 11B-19 | dd132977 | RECORDED-ONLY | close-on-report measured unavailable to every driver; what would make it possible is owed to whoever next touches `examples/` |
 | 11B-20 | d2ed8e15 | RESOLVED | the cause rule typed `ran_missed_window` on green runs; `not_applicable` now answers first, and one sentence of this artifact is corrected below |
+| 11B-21 | 85b94833 | RESOLVED | the owner-typing fixture hardcoded a Linux engine root and refused a correct classifier on both macOS legs; it now derives the root from the rule |
 
-**Orphans: 0. Strays: 0. Rewords: 0.** Census: 20 RESOLVED, 17 RECORDED-ONLY,
+**Orphans: 0. Strays: 0. Rewords: 0.** Census: 21 RESOLVED, 17 RECORDED-ONLY,
 1 CAP-12.
 
 ## 6. `sdk_own_license`, RE-MEASURED
