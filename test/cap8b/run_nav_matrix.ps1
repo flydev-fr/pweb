@@ -56,7 +56,7 @@ Write-Host "[CAP-8B] canonical pass marker: $passMarker"
 New-Item -ItemType Directory -Force build/cap8b/nav-fpc, build/cap8b/nav-bin | Out-Null
 fpc -Px86_64 -Twin64 -MObjFPC -Sh -B `
     -FUbuild/cap8b/nav-fpc -FEbuild/cap8b/nav-bin `
-    -Fusrc/lib -Fusrc/rpc -Fusrc/security -Fusrc/webview -Fusrc/assets `
+    -Fusrc/lib -Fusrc/rpc -Fusrc/security -Fusrc/webview -Fusrc/assets -Futest/core `
     -Fusrc/platform/windows `
     -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
     -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net `

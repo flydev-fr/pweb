@@ -84,7 +84,8 @@ uses
   pweb.platform.webview2
   {$endif LINUX}
   {$endif DARWIN}
-  ;
+  ,
+  pweb.test.reporoot;
 
 type
   { the same platform-alias mechanism the release host uses: one name per
@@ -441,24 +442,6 @@ begin
   // only ever runs the full bound when the window is genuinely wedged
   RTLEventWaitFor(WatchdogEvent, PtrInt(Param));
   RequestTerminate; // no-op when the handle was already cleared
-end;
-
-function RepoRootFromExecutable: TFileName;
-var
-  dir, parent: TFileName;
-  i: Integer;
-begin
-  dir := Executable.ProgramFilePath;
-  for i := 1 to 8 do
-  begin
-    if FileExists(dir + 'webview.lock') then
-      exit(dir);
-    parent := ExtractFilePath(ExcludeTrailingPathDelimiter(dir));
-    if (parent = '') or (parent = dir) then
-      break;
-    dir := parent;
-  end;
-  Result := '';
 end;
 
 function JsonSafeText(const AValue: RawUtf8): RawUtf8;

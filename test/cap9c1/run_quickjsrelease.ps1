@@ -81,7 +81,7 @@ $mormotUnits = @(
     '-Fudeps/mormot2/src/orm', '-Fudeps/mormot2/src/rest', '-Fudeps/mormot2/src/soa',
     '-Fudeps/mormot2/src/script'
 )
-$pwebUnits = @('-Fusrc/script', '-Fusrc/rpc', '-Fusrc/security', '-Fusrc/assets')
+$pwebUnits = @('-Fusrc/script', '-Fusrc/rpc', '-Fusrc/security', '-Fusrc/assets', '-Futest/core')
 
 # --- 0. STRUCTURAL browser invisibility -------------------------------------
 # The C22 rows prove dynamically that no pweb://app request reaches the

@@ -87,7 +87,7 @@ mormot_units=(
     -Fudeps/mormot2/src/orm -Fudeps/mormot2/src/rest -Fudeps/mormot2/src/soa
     -Fudeps/mormot2/src/script
 )
-pweb_units=(-Fusrc/script -Fusrc/rpc -Fusrc/security -Fusrc/assets)
+pweb_units=(-Fusrc/script -Fusrc/rpc -Fusrc/security -Fusrc/assets -Futest/core)
 
 # ONE compile entry point, defined per platform rather than assembled from
 # shared arrays. bash 3.2 (macOS /bin/bash) errors on expanding an EMPTY

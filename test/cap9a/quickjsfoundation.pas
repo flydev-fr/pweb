@@ -91,7 +91,8 @@ uses
   pweb.rpc.scheduler,
   pweb.rpc.mormot,
   pweb.capabilities.policy,
-  pweb.script.quickjs;
+  pweb.script.quickjs,
+  pweb.test.reporoot;
 
 const
   LOG_PREFIX = 'quickjsfoundation';
@@ -260,24 +261,6 @@ begin
   for i := 1 to Length(Result) do
     if (Result[i] = '"') or (Result[i] = '\') or (Result[i] < #$20) then
       Result[i] := '''';
-end;
-
-function RepoRootFromExecutable: TFileName;
-var
-  dir, parent: TFileName;
-  i: Integer;
-begin
-  dir := Executable.ProgramFilePath;
-  for i := 1 to 8 do
-  begin
-    if FileExists(dir + 'webview.lock') then
-      exit(dir);
-    parent := ExtractFilePath(ExcludeTrailingPathDelimiter(dir));
-    if (parent = '') or (parent = dir) then
-      break;
-    dir := parent;
-  end;
-  Result := '';
 end;
 
 { ---- dense-JSON field extractors (cap8c shapes) --------------------------- }

@@ -89,7 +89,8 @@ uses
   pweb.platform.webview2
   {$endif LINUX}
   {$endif DARWIN}
-  ;
+  ,
+  pweb.test.reporoot;
 
 type
   {$ifdef DARWIN}
@@ -986,21 +987,6 @@ begin
 end;
 
 { ---------------- arguments / evidence ---------------- }
-
-function RepoRootFromExecutable: TFileName;
-var
-  dir: TFileName;
-  i: Integer;
-begin
-  dir := Executable.ProgramFilePath;
-  for i := 1 to 8 do
-  begin
-    if FileExists(dir + 'webview.lock') then
-      exit(dir);
-    dir := ExpandFileName(dir + '..' + PathDelim);
-  end;
-  Result := '';
-end;
 
 procedure ParseArguments(out AVerdictFile, ACorpusFile: TFileName;
   out AAutoCloseMs: Integer);

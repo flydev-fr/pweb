@@ -80,7 +80,8 @@ uses
   pweb.script.quickjs,
   pweb.script.plugin,
   pweb.script.release,
-  pweb.script.startup;
+  pweb.script.startup,
+  pweb.test.reporoot;
 
 const
   LOG_PREFIX = 'quickjsrelease';
@@ -331,24 +332,6 @@ begin
     SysUtils.FindClose(sr);
   end;
   RemoveDir(Dir);
-end;
-
-function RepoRootFromExecutable: TFileName;
-var
-  dir, parent: TFileName;
-  i: Integer;
-begin
-  dir := Executable.ProgramFilePath;
-  for i := 1 to 8 do
-  begin
-    if FileExists(dir + 'webview.lock') then
-      exit(dir);
-    parent := ExtractFilePath(ExcludeTrailingPathDelimiter(dir));
-    if (parent = '') or (parent = dir) then
-      break;
-    dir := parent;
-  end;
-  Result := '';
 end;
 
 function NewWorkDir(const AName: RawUtf8): TFileName;

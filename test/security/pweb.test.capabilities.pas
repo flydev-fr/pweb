@@ -51,7 +51,8 @@ uses
   pweb.rpc.scheduler,
   pweb.rpc.bridge.dummy,
   pweb.capabilities.policy,
-  pweb.test.scheduler;
+  pweb.test.scheduler,
+  pweb.test.reporoot;
 
 type
   TTestCapabilityPolicy = class(TSynTestCase)
@@ -179,24 +180,6 @@ end;
   or three below it). Returns '' outside a checkout, in which case the
   digest falls back to the current directory - emitters are CI-side and
   always run inside the checkout. Trailing path delimiter included. }
-function RepoRootFromExecutable: TFileName;
-var
-  dir, parent: TFileName;
-  i: Integer;
-begin
-  dir := Executable.ProgramFilePath; // trailing delimiter guaranteed
-  for i := 1 to 8 do
-  begin
-    if FileExists(dir + 'webview.lock') then
-      exit(dir);
-    parent := ExtractFilePath(ExcludeTrailingPathDelimiter(dir));
-    if (parent = '') or (parent = dir) then
-      break;
-    dir := parent;
-  end;
-  Result := '';
-end;
-
 function CapsCsv(const ACaps: TPWebCapabilities): Utf8String;
 var
   i: Integer;

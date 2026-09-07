@@ -68,7 +68,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'CAP-8C CAP-3U re-apply failed' }
     fpc -Px86_64 -Twin64 -MObjFPC -Sh -B -Xm -dPWEB_CALLMETHOD_UNWIND_PROBE `
         -FUbuild/cap8c/mp-fpc -FEbuild/cap8c/mp-bin `
-        -Fusrc/lib -Fusrc/rpc -Fusrc/security -Fusrc/webview -Fusrc/assets `
+        -Fusrc/lib -Fusrc/rpc -Fusrc/security -Fusrc/webview -Fusrc/assets -Futest/core `
         -Fusrc/platform/windows `
         -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
         -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net -Fudeps/mormot2/src/db `

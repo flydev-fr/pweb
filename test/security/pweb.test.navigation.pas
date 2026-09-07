@@ -45,7 +45,8 @@ uses
   mormot.core.base,
   mormot.core.os,
   mormot.core.test,
-  pweb.navigation.policy;
+  pweb.navigation.policy,
+  pweb.test.reporoot;
 
 type
   TTestNavigationPolicy = class(TSynTestCase)
@@ -239,27 +240,6 @@ begin
     Result := 'allow'
   else
     Result := 'cancel';
-end;
-
-function RepoRootFromExecutable: TFileName;
-var
-  dir, parent: TFileName;
-  i: Integer;
-begin
-  // identical to the CAP-8A suite's: TSynTests runs with the CWD set to the
-  // executable's folder, which differs per target, so the corpus is anchored
-  // to the repository root by walking up to the webview.lock marker
-  dir := Executable.ProgramFilePath;
-  for i := 1 to 8 do
-  begin
-    if FileExists(dir + 'webview.lock') then
-      exit(dir);
-    parent := ExtractFilePath(ExcludeTrailingPathDelimiter(dir));
-    if (parent = '') or (parent = dir) then
-      break;
-    dir := parent;
-  end;
-  Result := '';
 end;
 
 function Decide(const AUri: RawUtf8; AKind: TPWebNavKind;

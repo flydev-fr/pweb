@@ -116,7 +116,7 @@ mormot_units=(
     -Fudeps/mormot2/src/script
 )
 host_units=(
-    -Fusrc/lib -Fusrc/rpc -Fusrc/security -Fusrc/webview -Fusrc/assets
+    -Fusrc/lib -Fusrc/rpc -Fusrc/security -Fusrc/webview -Fusrc/assets -Futest/core
     -Fusrc/script
 )
 
@@ -143,7 +143,7 @@ Linux)
     exe_rel='quickjsapp'
     compile_bundler() {
         fpc -MObjFPC -Sh -B -FU"${work}/bundler-fpc" -FE"${work}/bin" \
-            -Fusrc/assets -Fusrc/rpc "${mormot_units[@]}" \
+            -Fusrc/assets -Futest/core -Fusrc/rpc "${mormot_units[@]}" \
             -Fldeps/mormot2/static/x86_64-linux tools/bundler/pwebbundle.pas
     }
     compile_pas() {
@@ -199,7 +199,7 @@ Darwin)
     exe_rel='Contents/MacOS/quickjsapp'
     compile_bundler() {
         fpc -MObjFPC -Sh -B -FU"${work}/bundler-fpc" -FE"${work}/bin" \
-            -Fusrc/assets -Fusrc/rpc "${mormot_units[@]}" \
+            -Fusrc/assets -Futest/core -Fusrc/rpc "${mormot_units[@]}" \
             "${PWEB_MACOS_FPC_FLAGS[@]}" "${PWEB_MACOS_FPC_LINK_MORMOT[@]}" \
             tools/bundler/pwebbundle.pas
     }

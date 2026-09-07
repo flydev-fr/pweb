@@ -110,7 +110,8 @@ uses
   pweb.platform.webview2
   {$endif LINUX}
   {$endif DARWIN}
-  ;
+  ,
+  pweb.test.reporoot;
 
 type
   {$ifdef DARWIN}
@@ -702,24 +703,6 @@ begin
     Result := 'yes'
   else
     Result := 'no';
-end;
-
-function RepoRootFromExecutable: TFileName;
-var
-  dir, parent: TFileName;
-  i: Integer;
-begin
-  dir := Executable.ProgramFilePath;
-  for i := 1 to 8 do
-  begin
-    if FileExists(dir + 'webview.lock') then
-      exit(dir);
-    parent := ExtractFilePath(ExcludeTrailingPathDelimiter(dir));
-    if (parent = '') or (parent = dir) then
-      break;
-    dir := parent;
-  end;
-  Result := '';
 end;
 
 procedure TerminateOnGuiThread(w: webview_t; arg: Pointer); cdecl;

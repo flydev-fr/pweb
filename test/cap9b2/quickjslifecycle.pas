@@ -95,7 +95,8 @@ uses
   pweb.capabilities.policy,
   pweb.script.package,
   pweb.script.quickjs,
-  pweb.script.plugin;
+  pweb.script.plugin,
+  pweb.test.reporoot;
 
 const
   LOG_PREFIX = 'quickjslifecycle';
@@ -338,24 +339,6 @@ begin
     FindClose(sr);
   end;
   RemoveDir(Dir);
-end;
-
-function RepoRootFromExecutable: TFileName;
-var
-  dir, parent: TFileName;
-  i: Integer;
-begin
-  dir := Executable.ProgramFilePath;
-  for i := 1 to 8 do
-  begin
-    if FileExists(dir + 'webview.lock') then
-      exit(dir);
-    parent := ExtractFilePath(ExcludeTrailingPathDelimiter(dir));
-    if (parent = '') or (parent = dir) then
-      break;
-    dir := parent;
-  end;
-  Result := '';
 end;
 
 { ---- service, bridge, policy (CAP-9A/B1 shapes, unchanged) --------------- }

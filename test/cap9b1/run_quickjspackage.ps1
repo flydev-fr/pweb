@@ -65,7 +65,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'CAP-9B1 CAP-3U re-apply failed' }
     fpc -Px86_64 -Twin64 -MObjFPC -Sh -B -Xm `
         -FUbuild/cap9b1/qp-fpc -FEbuild/cap9b1/qp-bin `
-        -Fusrc/script -Fusrc/rpc -Fusrc/security -Fusrc/assets `
+        -Fusrc/script -Fusrc/rpc -Fusrc/security -Fusrc/assets -Futest/core `
         -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
         -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net -Fudeps/mormot2/src/db `
         -Fudeps/mormot2/src/orm -Fudeps/mormot2/src/rest -Fudeps/mormot2/src/soa `
