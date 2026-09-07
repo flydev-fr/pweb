@@ -1833,7 +1833,19 @@ watcher_in_matrix="$(cap11a_json build/cap11b/contract.json watcher_in_matrix)"
 watcher_verdict_vocabulary_digest="$(cap11a_json build/cap11b/contract.json watcher_verdict_vocabulary_digest)"
 watcher_pinned_path_byte_identical="$(cap11a_json build/cap11b/refinput.json watcher_pinned_path_byte_identical)"
 locks_unchanged_after_watch="$(cap11a_json build/cap11b/refinput.json locks_unchanged_after_watch)"
-watcher_seeded_verdicts="$(cap11a_json build/cap11b/cases.json seeded_verdicts_observed)"
+# THE ONE CAP-11B ROW THAT IS A LIST, AND THE SHARED READER CANNOT READ IT.
+# `cap11a_json` captures `[^",]*`, so it stops at the first COMMA - correct for
+# the single-value rows it was written for, and silently wrong for a list: this
+# field arrived at the aggregate as `abi_break` on all three POSIX legs while
+# the PowerShell emitter, which parses real JSON, sent the whole thing. The
+# absolute pin caught it (run 34118821940, three ABSOLUTE PIN VIOLATED rows) -
+# an equality comparison alone would have seen three targets agreeing perfectly
+# on the truncated value. This reader takes a QUOTED STRING whole.
+cap11b_json_str() {
+    # $1 = file, $2 = key. Quoted string values only; numbers keep cap11a_json.
+    sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$1" | head -n 1
+}
+watcher_seeded_verdicts="$(cap11b_json_str build/cap11b/cases.json seeded_verdicts_observed)"
 mormot_watcher="$(cap11a_json build/cap11b/ledger.json mormot_watcher)"
 cap11_ledger_entries="$(cap11a_json build/cap11b/ledger.json ledger_entries)"
 cap11_ledger_orphans="$(cap11a_json build/cap11b/ledger.json ledger_orphans)"

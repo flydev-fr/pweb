@@ -197,9 +197,11 @@ different messages.
 | 11B-10 | 74aab1a5 | RECORDED-ONLY | the dev host's i386 FPC cannot run the compile-based cases; a named refusal, never a skip |
 | 11B-11 | 787116f2 | RESOLVED | twelve review defects, every one patched in this commit; §9b names each and what it would have cost |
 | 11B-12 | df2373d6 | RECORDED-ONLY | the watcher builds an unreviewed commit and the bound on that is the permissions; branch protection is not in the tree |
+| 11B-13 | ee1b0fa6 | LATER | a fourth Windows flake class sighted in CAP-10C0's no-listener sampler; re-run, and the instrumentation belongs to whoever owns test/cap10c0/ |
+| 11B-14 | eb4cb087 | RESOLVED | the shell emitter's reader truncated the one list row at its first comma; an absolute pin caught what equality could not |
 
-**Orphans: 0. Strays: 0. Rewords: 0.** Census: 15 RESOLVED, 14 RECORDED-ONLY,
-1 CAP-12.
+**Orphans: 0. Strays: 0. Rewords: 0.** Census: 16 RESOLVED, 14 RECORDED-ONLY,
+1 CAP-12, 1 LATER.
 
 ## 6. `sdk_own_license`, RE-MEASURED
 
@@ -238,6 +240,21 @@ apart.
 **KNOWN LIMITATION, restated:** the non-report's cause is *inferred* from
 engine-side observations, not reported by the page. `examples/` is frozen and a
 page-side progress report belongs to whichever shard may next touch it.
+
+**A FOURTH CLASS WAS SIGHTED DURING THIS SHARD, and it is none of the three.**
+On run `34118821940` the Windows leg failed at `CAP-10C0 supervision suite +
+pweb run gates + evidence` with `GATE FAILURE: a tree member opened a listener`
+— thirty steps *before* anything CAP-11B adds, in a capability this shard did
+not touch, and green on the neighbouring runs `34107491800` and `34113334940`.
+The whole `pweb.cli` suite passed on that run (0 of 223 assertions failed) and
+both release hosts reached `42` and `clean exit`; R9's own stderr reads
+`pwebchild: no mode` / `exited 64`. Disposition: **re-run the job** — the same
+answer the three instrumented flakes get — and ledger it (11B-13) so the next
+occurrence is a second data point rather than a first. What would settle it is
+the instrumentation CAP-11A gave the others: have the sampler *name* the tree
+member and the port, so a real listener in a PWeb process is distinguishable
+from a PID the runner reused. That belongs to whoever next owns
+`test/cap10c0/`.
 
 ## 8. THE SPEC'S CAP-11 ACCEPTANCE, LINE BY LINE
 
@@ -338,6 +355,25 @@ were defects a reading of the code would not have found:
 Everything above is in this commit. The contract gate's own negative self-test
 grew from fourteen perturbations to **twenty-two**, one for each rule the review
 added, so none of them can stop working quietly.
+
+**Two more were found by the runs the review made possible, and both are the
+kind only a hosted run finds.** The Windows leg's ref-input gate died because
+`bash` on that runner is `C:\Windows\System32\bash.exe` — the WSL launcher,
+always ahead of Git's on PATH, which exits 1 with an empty stderr; the gate now
+resolves Git Bash by path and refuses the launcher by name. And the **control
+case W5c fired on Windows**, exactly as designed: `tools/build-webview-dll.ps1`
+leaves `deps/webview` patched, so a fixture copied from the working tree carried
+a patched `win32_edge.hh` and the pinned patch was rejected by its own output.
+Every fixture file now comes from `git show <pin>:<path>` — the blob, so it is
+the pin and it is LF, whatever the working tree happens to be. The control case
+has now caught two different false greens, which is two more than it would have
+caught if it had not been written.
+
+The last was found by an absolute pin: `watcher_seeded_verdicts` reached the
+aggregate as `abi_break` on all three POSIX legs, because the shell emitter's
+shared one-line JSON reader stops at the first **comma** and that row is the one
+list. Three targets agreeing perfectly on a truncated value is precisely what an
+equality comparison cannot see and what `$absolutePins` exists for (11B-14).
 
 ## 10. KNOWN LIMITATIONS
 
