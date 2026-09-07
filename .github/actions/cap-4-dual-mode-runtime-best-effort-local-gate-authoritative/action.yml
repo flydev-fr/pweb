@@ -13,7 +13,11 @@ runs:
       shell: pwsh
       run: |
         Copy-Item build/webview-dist/webview.dll build/cap4/example/
-        $env:PWEB_SMOKE_AUTOCLOSE_MS = '8000'
+        # CAP-11A: the one auto-close window, sized from a measurement rather
+        # than typed here. test/cap11a/smokewindow.ps1 carries the dev-host
+        # sweep it is a multiple of and the hosted run it answers.
+        . test/cap11a/smokewindow.ps1
+        [void](Set-PWebSmokeWindow)
         # CAP-11A: the non-report observer, wrapped so it can never fail this
         # gate. See test/cap11a/smokeobserve.ps1 for the rule and its limits.
         $obsLoaded = $false
@@ -41,7 +45,7 @@ runs:
           try {
             if ($obs) {
               Stop-PWebSmokeObserver -State $obs -Output $out -ExitCode $code `
-                -AutocloseMs 8000 | Out-Null
+                -AutocloseMs $PWebSmokeAutocloseMs | Out-Null
             }
           } catch { Write-Host "[cap11a] observer error: $($_.Exception.Message)" }
           Write-Host $out

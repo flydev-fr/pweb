@@ -23,6 +23,14 @@
 # UNDETERMINED IS A LEGAL ANSWER, and the honest one whenever the discriminating
 # observation is absent. This never guesses.
 #
+# NOT_APPLICABLE IS THE OTHER HONEST ANSWER, and it was missing. A cause rule
+# that runs on every smoke must first ask whether there IS a non-report to
+# explain: a green run prints its report, so the `report:` branch matched it and
+# every healthy Windows leg typed `ran_missed_window` five times over. The rule
+# now answers `not_applicable` when the host exited clean and never printed
+# `state=0`, which is what makes the aggregated `smoke_nonreport_cause` row
+# readable - `not_applicable|...` on a green leg, a named cause on a red one.
+#
 # THE SAMPLER IS ADDITIVE AND CANNOT FAIL A GATE. The verdict path of each driver
 # is untouched: the smoke still runs exactly as it did, and everything here is a
 # background observer whose own failure is swallowed and recorded as
@@ -119,6 +127,7 @@ function Stop-PWebSmokeObserver {
     }
     $profileTouched = 'unmeasured'
     $scriptCacheTouched = 'unmeasured'
+    $scriptCompiledMs = 'unmeasured'
     if ($State.UserDataDir) {
         if (Test-Path -LiteralPath $State.UserDataDir) {
             try {
@@ -134,19 +143,47 @@ function Stop-PWebSmokeObserver {
                 # the rule they exercise - measured under WSL before a push.
                 $js = @($after | Where-Object { $_.FullName -match '(?i)Code Cache[\\/]js' })
                 $scriptCacheTouched = if ($js.Count -gt 0) { 'true' } else { 'false' }
-            } catch { $profileTouched = 'observer_error'; $scriptCacheTouched = 'observer_error' }
+                # WHEN it compiled, not just THAT it did. The report line is
+                # invisible to a driver while the host runs - FPC buffers
+                # `Output` to exit - so this is the only timestamp anyone can
+                # take from OUTSIDE the process about the page actually
+                # running, and the window in `test/cap11a/smokewindow.ps1` is
+                # sized against a dev-host measurement for want of a hosted
+                # one. The next sizing should cite this row instead.
+                if ($js.Count -gt 0) {
+                    $first = ($js | Sort-Object LastWriteTimeUtc | Select-Object -First 1)
+                    $scriptCompiledMs =
+                        [string][int](($first.LastWriteTimeUtc - $State.StartUtc).TotalMilliseconds)
+                }
+            } catch {
+                $profileTouched = 'observer_error'; $scriptCacheTouched = 'observer_error'
+                $scriptCompiledMs = 'observer_error'
+            }
         } else {
             $profileTouched = 'absent'
             $scriptCacheTouched = 'absent'
+            $scriptCompiledMs = 'absent'
         }
     }
     $reportLine = if ($Output -match '(?m)report:') { 'true' } else { 'false' }
+    # the host's own words for the thing this rule exists to explain
+    $nonReport = if ($Output -match 'state=0') { 'true' } else { 'false' }
 
     # --- THE RULE, stated ------------------------------------------------------
     # Read top to bottom; the first line that applies is the answer. Every branch
     # names the observation it stands on, and the last one is the honest refusal.
     $cause = 'undetermined'
-    if ($reportLine -eq 'true') {
+    if (($ExitCode -eq 0) -and ($nonReport -eq 'false')) {
+        # NOTHING TO EXPLAIN, and this branch is why it is first. The rule below
+        # types a NON-REPORT; a smoke that reported and exited clean contains
+        # none. Without this, the very first branch - `report:` is in the
+        # output - matched every GREEN run too, because a successful smoke
+        # prints its report, and every healthy Windows leg emitted
+        # `cause=ran_missed_window` for each of its five smokes. That is how a
+        # closure artifact came to cite four `ran_missed_window` observations
+        # as evidence of a timing fault when three of the four had passed.
+        $cause = 'not_applicable'
+    } elseif ($reportLine -eq 'true') {
         # the host printed a report and still verdicted state=0: the report
         # arrived, but not inside the window the verdict was taken in
         $cause = 'ran_missed_window'
@@ -169,10 +206,12 @@ function Stop-PWebSmokeObserver {
     $obs = [ordered]@{
         cause                 = $cause
         report_line_seen      = $reportLine
+        non_report_seen       = $nonReport
         host_process_seen     = $hostSeen
         engine_processes_max  = $wv2Max
         profile_touched       = $profileTouched
         script_cache_touched  = $scriptCacheTouched
+        script_compiled_ms    = $scriptCompiledMs
         elapsed_ms            = $elapsedMs
         autoclose_ms          = $AutocloseMs
         exit_code             = $ExitCode
@@ -185,6 +224,9 @@ function Stop-PWebSmokeObserver {
     $lines += $rows
     [System.IO.File]::WriteAllText($State.OutFile, (($lines -join "`n") + "`n"),
         (New-Object System.Text.UTF8Encoding($false)))
-    Write-Host "[cap11a] smoke observation: cause=$cause engine_max=$wv2Max profile=$profileTouched script_cache=$scriptCacheTouched samples=$($rows.Count)"
+    Write-Host ("[cap11a] smoke observation: cause=$cause engine_max=$wv2Max " +
+        "profile=$profileTouched script_cache=$scriptCacheTouched " +
+        "script_compiled_ms=$scriptCompiledMs elapsed_ms=$elapsedMs " +
+        "autoclose_ms=$AutocloseMs samples=$($rows.Count)")
     return $obs
 }

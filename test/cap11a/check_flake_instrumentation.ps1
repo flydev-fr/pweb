@@ -27,7 +27,13 @@ function Read-Norm([string]$Path) {
 # FL1 - the state=0 non-report (B1-10, B2-16, D1-15)
 # ===========================================================================
 $obs = Read-Norm 'test/cap11a/smokeobserve.ps1'
-$CAUSES = @('page_never_loaded', 'loaded_script_never_ran', 'ran_missed_window', 'undetermined')
+# `not_applicable` joined the four after the fact that made it necessary was
+# measured: the rule ran on every smoke and typed a cause for green runs too,
+# because a successful smoke prints its report and the `report:` branch matched
+# it. A taxonomy that cannot say "there was no non-report here" makes the
+# aggregated row unreadable.
+$CAUSES = @('page_never_loaded', 'loaded_script_never_ran', 'ran_missed_window',
+            'undetermined', 'not_applicable')
 foreach ($c in $CAUSES) {
     if ($obs -notmatch [regex]::Escape("'$c'")) { Violation "the observer never types '$c'" }
 }
@@ -35,7 +41,85 @@ foreach ($c in $CAUSES) {
 # taxonomy nobody can compare across targets
 $typed = @([regex]::Matches($obs, "\`$cause = '([a-z_]+)'") | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
 foreach ($t in $typed) { if ($CAUSES -notcontains $t) { Violation "the observer types an unratified cause '$t'" } }
-Write-Host "[cap11a] FL1 the observer types $($typed.Count) of the 4 ratified causes"
+Write-Host "[cap11a] FL1 the observer types $($typed.Count) of the $($CAUSES.Count) ratified causes"
+
+# THE WINDOW IS READ, NEVER TYPED. `PWEB_SMOKE_AUTOCLOSE_MS` is a DEADLINE ON
+# THE PAGE - hosted run 34127608923 showed it expiring before the report - and
+# it used to be the literal 8000 in six places, none of which had measured
+# anything. `test/cap11a/smokewindow.ps1` carries the value, the dev-host sweep
+# that sized it and the margin; every other site reads it from there.
+#
+# SWEPT, NOT LISTED, which is the FL3 lesson below applied here: a hand-written
+# list of smoke sites goes stale the moment a seventh smoke appears, and this
+# gate would cheerfully report six of six.
+$WINDOW_OWNER = 'test/cap11a/smokewindow.ps1'
+$winSrc = Read-Norm $WINDOW_OWNER
+$declaredMs = 0; $measuredMs = 0; $windowMult = 0
+if ($winSrc -match '(?m)^\$PWebSmokeAutocloseMs\s*=\s*(\d+)\s*$') { $declaredMs = [int]$Matches[1] }
+else { Violation "$WINDOW_OWNER declares no `$PWebSmokeAutocloseMs" }
+if ($winSrc -match '(?m)^\$PWebSmokeMeasuredReportMs\s*=\s*(\d+)\s*$') { $measuredMs = [int]$Matches[1] }
+else { Violation "$WINDOW_OWNER declares no measured report deadline" }
+if ($winSrc -match '(?m)^\$PWebSmokeWindowMultiple\s*=\s*(\d+)\s*$') { $windowMult = [int]$Matches[1] }
+else { Violation "$WINDOW_OWNER declares no margin multiple" }
+# THE ARITHMETIC IS CHECKED, NOT TRUSTED. The header says the window is a stated
+# multiple of a measured deadline; a value edited without the measurement behind
+# it moving is exactly the "longer because it flaked" this shard refuses.
+if ($declaredMs -ne ($measuredMs * $windowMult)) {
+    Violation "the window ${declaredMs} ms is not $windowMult x the measured ${measuredMs} ms"
+}
+# every example host clamps at 60000, so a window above it is silently ignored
+if ($declaredMs -gt 60000) { Violation "the window ${declaredMs} ms exceeds the 60000 ms clamp every host applies" }
+
+# WHICH SITES, and why not simply "every file that sets the variable". A dozen
+# gates set `PWEB_SMOKE_AUTOCLOSE_MS` to a deliberate value that IS the thing
+# under test - 55000 in the host-argument gates, where the point is that argv
+# beats the environment; 45000 and 20000 in the supervision gates, where the
+# window has to outlive a supervised stop; 5000 in the CAP-6b4 profile matrix.
+# Forcing those onto the smoke window would break the tests that own them.
+#
+# The set this rule governs is the GUI SMOKE, identified by two properties
+# neither of which is a file name:
+#
+#   1. anything that STARTS the non-report observer is a GUI smoke by
+#      construction - that is what the observer watches;
+#   2. no CI step body may type the window at all, because a step body is where
+#      the six copies of 8000 lived and where a seventh would appear.
+$allFiles = @(Get-ChildItem -Path test, .github -Recurse -File -Force -Include *.ps1, *.yml |
+    ForEach-Object { $_.FullName.Substring($repoRoot.Length + 1) -replace '\\', '/' } |
+    Where-Object { $_ -ne $WINDOW_OWNER } | Sort-Object)
+if ($allFiles.Count -lt 100) { Violation "the window sweep enumerated only $($allFiles.Count) files" }
+
+# The machinery is not a smoke, and each exclusion is named with its reason and
+# must still exist - an exclusion that silently covers a renamed file is a hole.
+# `smokeobserve.ps1` DEFINES the observer; `apply_amendments.ps1` carries CI
+# bodies as search-and-replace data, window literal included; this gate quotes
+# both names it looks for.
+$MACHINERY = @('test/cap11a/smokeobserve.ps1', 'test/cap11a/apply_amendments.ps1',
+               'test/cap11a/check_flake_instrumentation.ps1')
+foreach ($m in $MACHINERY) { if ($allFiles -notcontains $m) { Violation "the excluded $m is gone" } }
+$smokeSites = @($allFiles | Where-Object { $MACHINERY -notcontains $_ } |
+    Where-Object { (Read-Norm $_) -match 'Start-PWebSmokeObserver' })
+if ($smokeSites.Count -lt 3) {
+    Violation "the sweep found $($smokeSites.Count) instrumented GUI smoke(s), fewer than the three that exist"
+}
+foreach ($s in $smokeSites) {
+    $t = Read-Norm $s
+    if ($t -match "PWEB_SMOKE_AUTOCLOSE_MS\s*=\s*'?\d") { Violation "$s types the auto-close window instead of reading it" }
+    if ($t -notmatch 'smokewindow\.ps1') { Violation "$s starts the observer without loading $WINDOW_OWNER" }
+    if ($t -notmatch 'Set-PWebSmokeWindow') { Violation "$s does not set the window through Set-PWebSmokeWindow" }
+    # the observation must record the window that was actually in force
+    if ($t -match '-AutocloseMs\s+\d') { Violation "$s records a typed window in its observation" }
+}
+
+$ciSites = @($allFiles | Where-Object { $_ -like '.github/*' })
+$ciTyped = @($ciSites | Where-Object { (Read-Norm $_) -match "PWEB_SMOKE_AUTOCLOSE_MS\s*=\s*'?\d" })
+foreach ($c in $ciTyped) { Violation "$c types the auto-close window into a CI step body" }
+$ciReaders = @($ciSites | Where-Object { (Read-Norm $_) -match 'Set-PWebSmokeWindow' })
+if ($ciReaders.Count -lt 4) {
+    Violation "only $($ciReaders.Count) CI step bodies read the window; four GUI smokes run in the matrix"
+}
+Write-Host ("[cap11a] FL1 the ${declaredMs} ms window ($windowMult x the measured ${measuredMs} ms) " +
+    "is read by $($smokeSites.Count) instrumented smoke(s) and $($ciReaders.Count) CI step body(ies)")
 
 # THREE DRIVERS, not two. The CAP-4 dual-mode smoke joined the list on evidence
 # rather than on the brief's enumeration: it produced the non-report during this

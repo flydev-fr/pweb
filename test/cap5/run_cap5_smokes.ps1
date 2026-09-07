@@ -17,7 +17,11 @@ foreach ($pre in 'build/webview-dist/webview.dll',
     }
 }
 Copy-Item build/webview-dist/webview.dll build/cap5/bin/ -Force
-$env:PWEB_SMOKE_AUTOCLOSE_MS = '8000'
+# CAP-11A: the one auto-close window, sized from a measurement rather than typed
+# here. See test/cap11a/smokewindow.ps1 for the dev-host sweep it is a multiple
+# of, the hosted run it answers, and why there is no close-on-report.
+. (Join-Path $PSScriptRoot '..\cap11a\smokewindow.ps1')
+[void](Set-PWebSmokeWindow)
 # CAP-11A (ledger B1-10, first sighted HERE against the Pas2JS smoke): a
 # `state=0` non-report has never said which of three things happened. The
 # observer watches from outside the process and types a cause afterwards; the
@@ -52,7 +56,7 @@ foreach ($case in @(
     try {
         if ($observer) {
             Stop-PWebSmokeObserver -State $observer -Output $out -ExitCode $code `
-                -AutocloseMs 8000 | Out-Null
+                -AutocloseMs $PWebSmokeAutocloseMs | Out-Null
         }
     } catch { Write-Host "[cap11a] observer error: $($_.Exception.Message)" }
     Write-Host $out

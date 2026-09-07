@@ -186,7 +186,7 @@ Write-Host 'C: the non-report cause rule'
 
 function Test-Cause {
     param([string]$Label, [string]$Profile, [string]$Script, [int]$Wv2Max,
-          [bool]$HostSeen, [string]$Output, [string]$Expect)
+          [bool]$HostSeen, [string]$Output, [string]$Expect, [int]$ExitCode = 1)
     $dir = Join-Path $work "prof-$Label"
     $state = [pscustomobject]@{
         OutFile = (Join-Path $work "obs-$Label.txt")
@@ -213,15 +213,29 @@ function Test-Cause {
     # the sample stream the background job would have produced, fed through the
     # production code path rather than a paraphrase of it
     $h = if ($HostSeen) { 1 } else { 0 }
-    $obs = Stop-PWebSmokeObserver -State $state -Output $Output -ExitCode 1 `
+    $obs = Stop-PWebSmokeObserver -State $state -Output $Output -ExitCode $ExitCode `
         -AutocloseMs 8000 -Samples @("t=0 host=$h wv2=$Wv2Max wv2_delta=$Wv2Max title=`"`"")
     Check "C $Label -> $Expect" ($obs.cause -eq $Expect) "got '$($obs.cause)'"
     return $obs
 }
 
-# a report line beats every other observation
+# NOTHING TO EXPLAIN comes first, and these two cases are why. A green smoke
+# prints its report, so the `report:` branch used to match it and every healthy
+# Windows leg typed `ran_missed_window` five times over - which is how four such
+# observations were once cited as evidence of a timing fault when three of them
+# had passed. The second case is the precedence proof: its observations alone
+# (`profile` written, no script compiled) would type `loaded_script_never_ran`.
+[void](Test-Cause -Label 'green' -Profile 'absent' -Script 'absent' -Wv2Max 2 `
+    -HostSeen $true -ExitCode 0 `
+    -Output "reactapp report: {`"ok`":true}`nreactapp: clean exit" -Expect 'not_applicable')
+[void](Test-Cause -Label 'greenbeforerule' -Profile 'true' -Script 'false' -Wv2Max 2 `
+    -HostSeen $true -ExitCode 0 -Output 'assetsapp[zip]: via IAssetStore PASS' `
+    -Expect 'not_applicable')
+# a report line beats every other observation - on a run that DID fail to report
 [void](Test-Cause -Label 'reported' -Profile 'absent' -Script 'absent' -Wv2Max 0 `
-    -HostSeen $true -Output "releaseapp report: {}`nFAIL" -Expect 'ran_missed_window')
+    -HostSeen $true `
+    -Output ("releaseapp report: {}`nFAIL: page/runtime verdict was not " +
+             'successful (state=0; 0=no report received)') -Expect 'ran_missed_window')
 # script was compiled: it ran
 [void](Test-Cause -Label 'compiled' -Profile 'true' -Script 'true' -Wv2Max 2 `
     -HostSeen $true -Output 'FAIL' -Expect 'ran_missed_window')
@@ -235,8 +249,43 @@ function Test-Cause {
 [void](Test-Cause -Label 'undetermined' -Profile 'absent' -Script 'absent' -Wv2Max 0 `
     -HostSeen $false -Output 'FAIL' -Expect 'undetermined')
 
+# ===========================================================================
+# The auto-close window's contract, exercised rather than read.
+# ===========================================================================
+# Six sites - two drivers and four CI step bodies - depend on dot-sourcing
+# `smokewindow.ps1` and calling one function to get both the environment
+# variable the hosts read and the value the observation records. Nothing proved
+# that function did either, and a window that silently failed to be set is a
+# smoke running with NO auto-close at all: on a headless runner that is a
+# windowed process nobody closes, and the step's timeout is what ends it.
+Write-Host 'W: the auto-close window contract'
+$savedWindow = $env:PWEB_SMOKE_AUTOCLOSE_MS
+try {
+    $env:PWEB_SMOKE_AUTOCLOSE_MS = ''
+    . (Join-Path $PSScriptRoot 'smokewindow.ps1')
+    $returned = Set-PWebSmokeWindow
+    Check 'W1 Set-PWebSmokeWindow returns the declared window' `
+        ($returned -eq $PWebSmokeAutocloseMs) "returned '$returned'"
+    Check 'W2 it sets the variable the hosts read' `
+        ($env:PWEB_SMOKE_AUTOCLOSE_MS -eq "$PWebSmokeAutocloseMs") `
+        "env is '$($env:PWEB_SMOKE_AUTOCLOSE_MS)'"
+    # THE MARGIN IS ARITHMETIC, not a story: the window is a stated multiple of
+    # a measured deadline, and a value edited without the measurement moving is
+    # the "longer because it flaked" this refuses.
+    Check 'W3 the window is the stated multiple of the measured deadline' `
+        ($PWebSmokeAutocloseMs -eq ($PWebSmokeMeasuredReportMs * $PWebSmokeWindowMultiple)) `
+        "$PWebSmokeAutocloseMs vs $PWebSmokeMeasuredReportMs x $PWebSmokeWindowMultiple"
+    # every example host clamps at 60000 and would silently ignore more
+    Check 'W4 the window is inside the clamp every host applies' `
+        (($PWebSmokeAutocloseMs -gt 0) -and ($PWebSmokeAutocloseMs -le 60000)) `
+        "$PWebSmokeAutocloseMs"
+} finally { $env:PWEB_SMOKE_AUTOCLOSE_MS = $savedWindow }
+
 New-Item -ItemType Directory -Force build/cap11a | Out-Null
-$out = [ordered]@{ schema = 1; sequence_cases = 7; cause_cases = 5; failures = $failures.Count }
+$out = [ordered]@{
+    schema = 1; sequence_cases = 7; cause_cases = 7; window_cases = 4
+    failures = $failures.Count
+}
 [System.IO.File]::WriteAllText((Join-Path $repoRoot 'build/cap11a/cases.json'),
     (($out | ConvertTo-Json -Depth 3) -replace "`r`n", "`n") + "`n",
     (New-Object System.Text.UTF8Encoding($false)))
@@ -247,5 +296,5 @@ if ($failures.Count -gt 0) {
     Write-Host "CAP-11A CASES FAILED ($($failures.Count))"
     exit 1
 }
-Write-Host 'CAP11A_CASES_PASS 7 sequence cases, 5 cause cases'
+Write-Host 'CAP11A_CASES_PASS 7 sequence cases, 7 cause cases, 4 window cases'
 exit 0

@@ -17,7 +17,12 @@ foreach ($pre in 'build/cap6/release/releaseapp.exe',
 
 $exe = (Resolve-Path build/cap6/release/releaseapp.exe).Path
 $marker = 'releaseapp: app.pwb -> pweb://app -> SDK -> mORMot -> 42 PASS'
-$env:PWEB_SMOKE_AUTOCLOSE_MS = '8000'
+# CAP-11A: the one auto-close window, sized from a measurement rather than typed
+# here. See test/cap11a/smokewindow.ps1 for the dev-host sweep it is a multiple
+# of - releaseapp is the host that measured 300 ms, the slowest of the three -
+# the hosted run it answers, and why there is no close-on-report.
+. (Join-Path $PSScriptRoot '..\cap11a\smokewindow.ps1')
+[void](Set-PWebSmokeWindow)
 # CAP-11A (ledger B1-10, B2-16, D1-15): a `state=0` non-report has never said
 # WHICH of three things happened. The observer watches from outside the process
 # and types a cause afterwards; the run below is byte-unchanged, and an observer
@@ -37,7 +42,7 @@ try {
 try {
     if ($observer) {
         Stop-PWebSmokeObserver -State $observer -Output $out -ExitCode $code `
-            -AutocloseMs 8000 | Out-Null
+            -AutocloseMs $PWebSmokeAutocloseMs | Out-Null
     }
 } catch { Write-Host "[cap11a] observer error: $($_.Exception.Message)" }
 Write-Host $out

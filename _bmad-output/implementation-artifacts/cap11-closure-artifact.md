@@ -235,8 +235,11 @@ different messages.
 | 11B-15 | 3a637757 | RESOLVED | 11B-13 answered: every sampled listener typed by owner image, must-PASS is host-owned = 0 |
 | 11B-16 | c8ea7d90 | RECORDED-ONLY | superseded meaning, same names and same pin: the four `*_listener_members_max` rows are host-owned |
 | 11B-17 | 0cd16a27 | RECORDED-ONLY | two more PowerShell array traps in the new sampler, both found by probing rather than reading |
+| 11B-18 | 1fa5488d | RESOLVED | the smoke auto-close window is sized from a measured 300 ms deadline x a stated 50, not from the lifetimes that do not discriminate |
+| 11B-19 | dd132977 | RECORDED-ONLY | close-on-report measured unavailable to every driver; what would make it possible is owed to whoever next touches `examples/` |
+| 11B-20 | d2ed8e15 | RESOLVED | the cause rule typed `ran_missed_window` on green runs; `not_applicable` now answers first, and one sentence of this artifact is corrected below |
 
-**Orphans: 0. Strays: 0. Rewords: 0.** Census: 18 RESOLVED, 16 RECORDED-ONLY,
+**Orphans: 0. Strays: 0. Rewords: 0.** Census: 20 RESOLVED, 17 RECORDED-ONLY,
 1 CAP-12.
 
 ## 6. `sdk_own_license`, RE-MEASURED
@@ -269,7 +272,7 @@ apart.
 
 | flake | state | observed since instrumentation |
 |---|---|---|
-| the `state=0` non-report (B1-10, B2-16, D1-15, and the CAP-4 dual-mode driver) | instrumented; `smokeobserve.ps1` types four causes from engine-side observations, `undetermined` is legal, and the observer is wrapped in `try/catch` at every call site | **OBSERVED, and this is the first post-instrumentation sighting.** On run `34127608923` the Windows leg failed at `CAP-5 runtime smokes` with the familiar `state=0` line — and this time the row was not a mystery: four observations, every one `cause=ran_missed_window`, with `profile=true` on all four and `script_cache=true` on three (`engine_max` 4–6, 32–40 samples). The engine came up, it wrote a user-data profile, and on three of four it compiled JavaScript into `Code Cache/js` — so the page ran and the driver's window closed before the report arrived. That is a *timing* answer, not "we do not know", and it is the first time this flake has had one. Disposition unchanged: re-run the job, never re-ratify |
+| the `state=0` non-report (B1-10, B2-16, D1-15, and the CAP-4 dual-mode driver) | instrumented; `smokeobserve.ps1` types five causes from engine-side observations — `not_applicable` and `undetermined` are both legal — and the observer is wrapped in `try/catch` at every call site. The window it measures against is now sized from a measurement (11B-18) | **OBSERVED, and this is the first post-instrumentation sighting.** On run `34127608923` the Windows leg failed at `CAP-5 runtime smokes` with the familiar `state=0` line, and the row was not a mystery: `pas2jsapp` reported `cause=ran_missed_window` with `profile=true`, `script_cache=true`, `engine_max=5`. The engine came up, wrote a user-data profile and compiled JavaScript into `Code Cache/js` — so the page ran and the window closed before the report arrived. **CORRECTION (11B-20):** this row first said *four* observations, every one `ran_missed_window`. Three of those four belonged to smokes that PASSED — the rule's first branch matched any output containing `report:`, which every green run prints, so it typed the flake on healthy runs too. One sighting, not four; the rule now answers `not_applicable` when there is no non-report to explain. Disposition unchanged: re-run the job, never re-ratify — and the deadline it missed is now 15000 ms, sized at 50 × a measured 300 ms (11B-18) |
 | the CAP-6b4 U3 uninstall residue (D1-16) | instrumented; the drain runs scoped to the install directory *before* the uninstaller and writes pids, images and sweeps | **not observed since**; `u3_drain_before_measure` reads `true` on every run. The state of the U3 uninstall residue is therefore: instrumented, quiet |
 | the pinned-installer fetch stalls (C3-15) | instrumented; `tools/pwebfetch.ps1` gives every pinned fetch three attempts × 180 s with a row each, and a digest mismatch is refused on the first attempt and never retried | **not observed since**; `fetch_retry_max_attempts = 3`, `fetch_retry_bound_s = 180` |
 

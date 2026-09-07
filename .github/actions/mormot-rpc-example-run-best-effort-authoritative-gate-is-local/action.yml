@@ -11,7 +11,10 @@ runs:
       shell: pwsh
       run: |
         $env:PWEB_WEBVIEW_DLL = (Resolve-Path build/webview-dist/webview.dll).Path
-        $env:PWEB_SMOKE_AUTOCLOSE_MS = '8000'
+        # CAP-11A: the one auto-close window, sized from a measurement rather
+        # than typed here - see test/cap11a/smokewindow.ps1.
+        . test/cap11a/smokewindow.ps1
+        [void](Set-PWebSmokeWindow)
         $out = & build/cap3/example/mormotrpc.exe 2>&1 | Out-String
         $code = $LASTEXITCODE
         Write-Host $out

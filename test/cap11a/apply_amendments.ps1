@@ -85,7 +85,11 @@ $old4 = @'
 '@
 $new4 = @'
         Copy-Item build/webview-dist/webview.dll build/cap4/example/
-        $env:PWEB_SMOKE_AUTOCLOSE_MS = '8000'
+        # CAP-11A: the one auto-close window, sized from a measurement rather
+        # than typed here. test/cap11a/smokewindow.ps1 carries the dev-host
+        # sweep it is a multiple of and the hosted run it answers.
+        . test/cap11a/smokewindow.ps1
+        [void](Set-PWebSmokeWindow)
         # CAP-11A: the non-report observer, wrapped so it can never fail this
         # gate. See test/cap11a/smokeobserve.ps1 for the rule and its limits.
         $obsLoaded = $false
@@ -113,11 +117,39 @@ $new4b = @'
           try {
             if ($obs) {
               Stop-PWebSmokeObserver -State $obs -Output $out -ExitCode $code `
-                -AutocloseMs 8000 | Out-Null
+                -AutocloseMs $PWebSmokeAutocloseMs | Out-Null
             }
           } catch { Write-Host "[cap11a] observer error: $($_.Exception.Message)" }
 '@
 Edit-File '.github/actions/cap-4-dual-mode-runtime-best-effort-local-gate-authoritative/action.yml' `
     $old4b $new4b 'the CAP-4 dual-mode smoke types a non-report cause'
+
+# --- 3. the auto-close window is read, not typed ---------------------------
+# The legacy bodies each carried the literal 8000, and so did the two smoke
+# drivers under test/ - six copies of a number nobody had measured. The window
+# is a DEADLINE ON THE PAGE, and hosted run 34127608923 showed it expiring
+# first; `test/cap11a/smokewindow.ps1` now carries the value, the dev-host
+# sweep that sized it and the margin, and every site reads it from there.
+# `check_flake_instrumentation.ps1` refuses a site that types a number again.
+#
+# The CAP-4 body is NOT here: its window travels inside amendment 2 above, so
+# that one stays a single replacement of the legacy text and this script keeps
+# the idempotence its header promises - an amendment whose `old` another
+# amendment has already rewritten would throw on the second run.
+$oldW = @'
+        $env:PWEB_SMOKE_AUTOCLOSE_MS = '8000'
+'@
+$newW = @'
+        # CAP-11A: the one auto-close window, sized from a measurement rather
+        # than typed here - see test/cap11a/smokewindow.ps1.
+        . test/cap11a/smokewindow.ps1
+        [void](Set-PWebSmokeWindow)
+'@
+Edit-File '.github/actions/js-binding-example-run-best-effort-authoritative-gate-is-local/action.yml' `
+    $oldW $newW 'the JS-binding example run reads the sized window'
+Edit-File '.github/actions/mormot-rpc-example-run-best-effort-authoritative-gate-is-local/action.yml' `
+    $oldW $newW 'the mORMot RPC example run reads the sized window'
+Edit-File '.github/actions/smoke-run-best-effort-authoritative-gate-is-local/action.yml' `
+    $oldW $newW 'the hello smoke run reads the sized window'
 
 Write-Host '[amend] done'
