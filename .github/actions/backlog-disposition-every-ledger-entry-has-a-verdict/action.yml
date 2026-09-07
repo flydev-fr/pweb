@@ -1,0 +1,26 @@
+name: 'Backlog disposition - every ledger entry has a verdict'
+description: 'CAP-11A: the body of the "Backlog disposition - every ledger entry has a verdict" step of the one platform-leg sequence.'
+runs:
+  using: composite
+  steps:
+    - name: windows
+      shell: pwsh
+      run: |
+        # WINDOWS ONLY, and it is a checkout property rather than a preference.
+        # The gate resolves every FIX_NOW row's closing commit and requires it to
+        # be an ancestor of HEAD, which needs the history: the `windows` leg is
+        # the one that checks out with `fetch-depth: 0` (for the freeze diff
+        # against the Phase-0 baseline), and the other three take the default
+        # shallow clone. On a shallow checkout the gate REFUSES rather than
+        # recording an unverified pass, so declaring it on four legs would have
+        # meant three red legs stating a fact about actions/checkout.
+        #
+        # The negative self-test (test/backlog/check_backlog_selftest.ps1) is
+        # deliberately NOT run here. It perturbs the working tree - the
+        # disposition table, this document, two gate scripts - and restores it in
+        # a `finally`; a job cancelled mid-leg would leave the tree perturbed for
+        # every step after it. A gate added by one shard may not raise the
+        # failure rate of a gate belonging to another (ledger 10E-5), so the
+        # self-test stays the instrument a human runs before a push.
+        pwsh -NoProfile -File test/backlog/check_backlog.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'Backlog disposition - every ledger entry has a verdict FAILED' }

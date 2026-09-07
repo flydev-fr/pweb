@@ -69,11 +69,46 @@ aggregator, where they also appear in the `$required` list, so it reported
 success for a field deleted from the equality list it was guarding. Only a leg
 that really deleted the line could show that.
 
-> The gate is a script, not a CI step. Wiring it into the CAP-11A sequence
-> means a new composite action, a row in `test/cap11a/step-applicability.tsv`
-> and a moved `ci_sequence_digest` — a declared post-migration amendment, which
-> is a change to what CI runs rather than a triage. It is named in the roadmap
-> below rather than smuggled in here.
+### It runs on every hosted leg
+
+The gate is step **179** of the one platform-leg sequence, `Backlog disposition
+- every ledger entry has a verdict`, and it was wired in as a **declared
+CAP-11A amendment** rather than slipped in: a composite action carrying the
+body, a row in `test/cap11a/step-applicability.tsv`, and a row in
+`test/cap11a/post-migration-amendments.tsv` recording what changed and why.
+
+`ci_sequence_digest` moves with it, which is the point of declaring it:
+
+| | steps | `ci_sequence_digest` |
+|---|---:|---|
+| before | 200 | `8b3c15bd247f0e86ad6116d1a8359fdfcb6425c4e4088c08470cd35760243a05` |
+| after | 201 | `3d74864bbf0488ef282f18973bc85d45768507b4d6bad7d4cd21e80d79df351a` |
+
+The digest is the SHA-256 of the declared step names, one per line — so it
+moves for exactly one reason, a step entering the sequence, and the aggregate
+compares it across four targets on every run.
+
+**Windows only, and that is a checkout property rather than a preference.** The
+gate resolves each `FIX_NOW` row's closing commit and requires it to be an
+ancestor of `HEAD`, which needs the history. The `windows` leg is the one that
+checks out with `fetch-depth: 0`, for the freeze diff against the Phase-0
+baseline; the other three take the default shallow clone, where the gate
+refuses rather than recording an unverified pass. Declaring it on four legs
+would have meant three red legs stating a fact about `actions/checkout`.
+
+The **self-test does not run in CI**, deliberately. It perturbs the working
+tree and restores it in a `finally`, so a job cancelled mid-leg would leave the
+tree perturbed for every step after it — and a gate added by one shard may not
+raise the failure rate of a gate belonging to another (`10E-5`). It stays the
+instrument a human runs before a push.
+
+Declaring the amendment also closed a hole in the machinery that received it:
+`check_migration_map.ps1` only ever *looked up* amendments by `job|name`, so a
+row naming a step the migration map does not carry — which is what a step
+**added** after the migration is — would have sat there being ignored, pinning
+nothing. Every declared row must now answer to either a legacy step or a step
+in today's sequence, and in the second case its body digest is measured against
+the same stripped-body rule the legacy comparison uses.
 
 ---
 

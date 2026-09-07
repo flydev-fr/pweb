@@ -949,6 +949,11 @@ jobs:
           pwsh -NoProfile -File test/cap11b/check_cap11_ledger.ps1
           if ($LASTEXITCODE -ne 0) { throw 'CAP-11B the CAP-11 phase ledger disposition (CL1) FAILED' }
 
+      - name: Backlog disposition - every ledger entry has a verdict
+        if: ${{ inputs.target == 'windows' }}
+        timeout-minutes: 5
+        uses: ./.github/actions/backlog-disposition-every-ledger-entry-has-a-verdict
+
       - name: CAP-7F emit the Windows evidence artifact
         if: ${{ inputs.target == 'windows' }}
         timeout-minutes: 10

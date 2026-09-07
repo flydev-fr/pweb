@@ -162,6 +162,55 @@ if (Test-Path -LiteralPath $amendFile) {
     }
 }
 Write-Host "[cap11a] $($AMEND.Count) declared post-migration amendment(s)"
+
+# AN AMENDMENT THAT MATCHES NOTHING IS A ROW NOBODY CHECKS. Every declaration
+# above is keyed `job|name`, and the loop below only ever LOOKS one up - so a
+# row naming a step that is not in the migration map (a step this repository
+# ADDED to the sequence after the migration, which is the other thing this
+# table has to be able to record) would sit here being ignored, and its digest
+# would assert nothing at all. Each row must therefore answer to one of two
+# things: a legacy step in the migration map, or a step that exists in the
+# sequence today - and in the second case its digest is measured here, against
+# the same stripped-body rule the legacy comparison uses.
+$mapKeys = @{}
+foreach ($m in $map) { $mapKeys["$($m.Job)|$($m.Name)"] = $true }
+$addedChecked = 0
+foreach ($k in @($AMEND.Keys)) {
+    if ($mapKeys.ContainsKey($k)) { continue }
+    $parts = $k -split '\|', 2
+    $aName = $parts[1]
+    if (-not $seq.ContainsKey($aName)) {
+        Violation ("declared amendment '$aName' ($($parts[0])) names neither a legacy step " +
+            'nor a step in the sequence today -- a declaration nothing answers to is a ' +
+            'digest that pins nothing')
+        continue
+    }
+    # the step is in the sequence and uses a composite action; measure the
+    # branch body exactly as the legacy comparison does
+    $aSlug = ($aName.ToLowerInvariant() -replace '[^a-z0-9]+', '-').Trim('-')
+    $af = ".github/actions/$aSlug/action.yml"
+    if (-not (Test-Path -LiteralPath $af)) {
+        Violation "declared amendment '$aName' names a missing action: $af"
+        continue
+    }
+    $alines = (Read-Norm $af) -split "`n"
+    $bstart = @()
+    for ($i = 0; $i -lt $alines.Count; $i++) {
+        if ($alines[$i] -match '^    - name: (.*)$') { $bstart += , @($i, $Matches[1]) }
+    }
+    if ($bstart.Count -eq 0) { Violation "$af declares no composite step"; continue }
+    $bEnd = if ($bstart.Count -gt 1) { $bstart[1][0] } else { $alines.Count }
+    $abody = @($alines[($bstart[0][0] + 1)..($bEnd - 1)] |
+        Where-Object { $_ -notmatch '^\s*if:\s*\$\{\{ inputs\.target' })
+    while ($abody.Count -gt 0 -and $abody[-1].Trim() -eq '') { $abody = $abody[0..($abody.Count - 2)] }
+    $agot = Get-Sha16 ((Remove-CommonIndent $abody) -join "`n")
+    if ($agot -ne $AMEND[$k]) {
+        Violation "added step '$aName' action body digest $agot != declared $($AMEND[$k]) in $af"
+    }
+    $addedChecked++
+}
+Write-Host "[cap11a] $addedChecked declared amendment(s) for steps ADDED after the migration"
+
 $amended = 0
 $checked = 0
 foreach ($m in @($map | Where-Object { $_.Disposition -eq 'action' -or $_.Disposition -eq 'inline' })) {
