@@ -21,6 +21,11 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/../.." && pwd)"
+
+# The ONE guarded recursive delete (deferred-work 7M0-6): every removal
+# below names its target AND the root that target must lie inside, and an
+# empty or escaping target is a refusal rather than a wipe.
+. "${repo_root}/tools/pwebrmtree.sh"
 cd -- "${repo_root}"
 
 die() { printf '[CAP-7L] %s\n' "$*" >&2; exit 1; }
@@ -88,7 +93,7 @@ printf '[CAP-7L] suite summary: %s\n' \
 # through /proc/self/fd, so prove both here against a real link.
 step 'POSIX folder store refuses a symlink escape'
 fixture="build/cap7l/folder-fixture"
-rm -rf -- "${fixture}"
+pweb_rm_tree "${fixture}" "${repo_root}/build"
 mkdir -p -- "${fixture}/root/assets" "${fixture}/outside"
 printf '<!doctype html>inside' > "${fixture}/root/index.html"
 printf 'body{margin:0}' > "${fixture}/root/assets/app.css"

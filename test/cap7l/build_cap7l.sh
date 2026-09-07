@@ -21,6 +21,11 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/../.." && pwd)"
+
+# The ONE guarded recursive delete (deferred-work 7M0-6): every removal
+# below names its target AND the root that target must lie inside, and an
+# empty or escaping target is a refusal rather than a wipe.
+. "${repo_root}/tools/pwebrmtree.sh"
 cd -- "${repo_root}"
 
 die() { printf '[CAP-7L] %s\n' "$*" >&2; exit 1; }
@@ -44,7 +49,9 @@ target_cpu="$(fpc -iTP | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
     die "CAP-7L is ratified for x86_64 only, FPC targets ${target_cpu}"
 printf '[CAP-7L] fpc %s targeting %s/%s\n' "$(fpc -iV)" "${target_os}" "${target_cpu}"
 
-rm -rf -- build/cap7l/iso build/cap7l/bin build/cap7l/ex build/cap7l/units
+for stale in iso bin ex units; do
+    pweb_rm_tree "build/cap7l/${stale}" "${repo_root}/build"
+done
 mkdir -p -- build/cap7l/iso build/cap7l/bin build/cap7l/ex build/cap7l/units
 
 mormot_units=(

@@ -28,6 +28,11 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/../.." && pwd)"
+
+# The ONE guarded recursive delete (deferred-work 7M0-6): every removal
+# below names its target AND the root that target must lie inside, and an
+# empty or escaping target is a refusal rather than a wipe.
+. "${repo_root}/tools/pwebrmtree.sh"
 cd -- "${repo_root}"
 
 die() { printf '[CAP-7L] %s\n' "$*" >&2; exit 1; }
@@ -49,7 +54,7 @@ export GDK_BACKEND=x11
 export PWEB_SMOKE_AUTOCLOSE_MS=8000
 
 mkdir -p -- "${logs}"
-rm -rf -- "${release}"
+pweb_rm_tree "${release}" "${repo_root}/dist"
 mkdir -p -- "${release}"
 
 cp -f -- "${repo_root}/build/cap7l/ex/releaseapp" "${release}/"

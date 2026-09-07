@@ -20,6 +20,11 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/../.." && pwd)"
+
+# The ONE guarded recursive delete (deferred-work 7M0-6): every removal
+# below names its target AND the root that target must lie inside, and an
+# empty or escaping target is a refusal rather than a wipe.
+. "${repo_root}/tools/pwebrmtree.sh"
 cd -- "${repo_root}"
 
 die() { printf '[CAP-7L] %s\n' "$*" >&2; exit 1; }
@@ -91,7 +96,7 @@ run_assetsapp zip build/cap7l/app.zip
 # L16-L19 are proven from an ISOLATED directory with the CWD elsewhere by
 # test/cap7l/run_release_layout.sh; this is the in-tree sanity run.
 step 'releaseapp over app.pwb, in-tree'
-rm -rf -- build/cap7l/gui-release
+pweb_rm_tree build/cap7l/gui-release "${repo_root}/build"
 mkdir -p -- build/cap7l/gui-release
 cp -f -- "${ex}/releaseapp" build/cap7l/gui-release/
 cp -f -- build/cap7l/app.pwb build/cap7l/gui-release/

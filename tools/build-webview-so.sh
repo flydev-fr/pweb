@@ -43,6 +43,11 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/.." && pwd)"
 
+# The ONE guarded recursive delete (deferred-work 7M0-6): every removal
+# below names its target AND the root that target must lie inside, and an
+# empty or escaping target is a refusal rather than a wipe.
+. "${repo_root}/tools/pwebrmtree.sh"
+
 # --- CAP-11B: the one optional input, lifted out of the positional arguments --
 cap11b_ref=''
 cap11b_print_plan=0
@@ -169,7 +174,7 @@ printf '[CAP-7L] engine: %s %s, %s %s\n' \
 # The same WEBVIEW_BUILD_* set tools/build-webview-dll.ps1 passes: only the
 # shared core is ever built, so no test, example, doc, static-library or
 # amalgamation target can pull an unreviewed dependency into this build.
-rm -rf -- "${build_dir}"
+pweb_rm_tree "${build_dir}" "${repo_root}/build"
 cmake -B "${build_dir}" -S "${src}" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     "-DWEBVIEW_WEBKITGTK_API=${webkitgtk_api}" \
@@ -246,7 +251,7 @@ else
 fi
 
 # --- stage --------------------------------------------------------------------
-rm -rf -- "${dist_dir}"
+pweb_rm_tree "${dist_dir}" "${repo_root}/build"
 mkdir -p -- "${dist_dir}"
 
 # The SONAME name is what DT_NEEDED records and therefore what the release
