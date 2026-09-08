@@ -58,8 +58,11 @@ runs:
         # THE EXCLUSION IS THIS REPOSITORY'S OWN .git, BY FULL PATH, and
         # not the name. MEASURED: `/XD .git` excludes every directory of
         # that name at any depth, which takes deps/mormot2/.git with it -
-        # and tools/patch-cap3u.ps1 needs mORMot to be a real git checkout,
-        # so the CAP-10C1 staging died with `mORMot checkout not found`.
+        # and the CAP-10C1 staging needs mORMot to be a real git checkout,
+        # so it died with `mORMot checkout not found`. (The measurement was
+        # made against tools/patch-cap3u.ps1, removed with the 2026-09-08
+        # pin move; the staging still reads the checkout's HEAD and diff to
+        # prove what it staged, so the exclusion still has to be by path.)
         # A name-based exclusion cannot say "the top-level one".
         robocopy . $spaced /E /NFL /NDL /NJH /NJS /NP `
           /XD (Join-Path $PWD '.git') | Out-Null

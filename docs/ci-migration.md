@@ -168,6 +168,7 @@ step is still pinned and an undeclared edit still trips
 | step | change | `ci_sequence_digest` |
 |---|---|---|
 | four legacy bodies (the floating-ref guard, three smoke drivers) | pointed at files the split created, and at the measured auto-close window | unchanged |
+| `CAP-10D0 L2b - the CAP-10 chain at a repository path with a space` | comment only — the robocopy-exclusion paragraph stopped citing a removed file | unchanged |
 | `Backlog disposition - every ledger entry has a verdict` | **added**, windows | `8b3c15bd…` (200) → `3d74864b…` (201) |
 | `CAP-3U - FPC 3.2.2 Win64 CallMethod unwind and Currency ABI` | body: the patch apply/restore window is gone with the 2026-09-08 mORMot pin move; the gates stayed and read the compiler's own output | unchanged |
 | `CAP-3U Currency return matrix (typed observation, four targets)` | **added**, all four legs | `3d74864b…` (201) → `7f7dc950…` (202) |

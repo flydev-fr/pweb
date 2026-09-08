@@ -176,9 +176,12 @@ SOFTWARE.
 The PWeb SDK ships mORMot 2's sources (`share/pweb/deps/mormot2/src`) and the
 static objects for its target (`share/pweb/deps/mormot2/static/<fpc-target>`,
 plus `static/delphi` on Windows, from which a Win64 build reaches two objects
-by a relative path). Every PWeb release links it. On Windows the shipped
-source is **CAP-3U-patched** — the patch is applied once at staging time,
-never on a user's machine — and travels with its `x64callmethod.obj`.
+by a relative path). Every PWeb release links it. What ships is the **pinned
+upstream source, byte for byte**, on every target — until the 2026-09-08 pin
+move the Windows copy was CAP-3U-patched and travelled with an
+`x64callmethod.obj`, which is no longer true and is no longer possible: the
+staging gate refuses a staged tree that differs from `deps/mormot2` or that
+carries that object.
 
 The framework is released under a disjunctive MPL 1.1 / GPL 2.0 / LGPL 2.1
 three-license, the LGPL branch carrying the FPC static-linking exception. The
