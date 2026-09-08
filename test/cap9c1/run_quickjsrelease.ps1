@@ -16,10 +16,11 @@
 #      executable-relative location rule is exercised for real;
 #   5. run the matrix from an unrelated working directory.
 #
-# The harness drives the real mORMot SOA bridge, so - exactly like the
-# CAP-9A/B1/B2 harnesses - it compiles INSIDE the CAP-3U window
-# (patch-cap3u.ps1 apply -> compile -> restore + verify pristine). The
-# packager does not: it builds no SOA interface.
+# The harness drives the real mORMot SOA bridge, so it exercises mORMot's
+# Win64 asm CallMethod. Until the 2026-09-08 pin move that needed a CAP-3U
+# window around the compile; the pin now carries upstream 896f1c1c and
+# 790154af, so it compiles against the PRISTINE dependency like the
+# CAP-9A/B1/B2 harnesses.
 #
 # QuickJS statics: deps/mormot2/static/x86_64-win64/quickjs.o from the
 # sha256-pinned mormot2static release; LIBQUICKJSSTATIC is auto-defined by
@@ -59,8 +60,7 @@ foreach ($pre in 'test/cap9c1/quickjsrelease.pas',
                  'src/script/pweb.script.quickjs.pas',
                  'deps/mormot2/res/static/libquickjs/quickjs.h',
                  'deps/mormot2/static/x86_64-win64/quickjs.o',
-                 'mormot.lock',
-                 'tools/patch-cap3u.ps1') {
+                 'mormot.lock') {
     if (-not (Test-Path $pre)) {
         throw "missing precondition: $pre"
     }
@@ -146,7 +146,7 @@ foreach ($h in @(Select-String -Path 'src/script/pweb.script.release.pas',
 if ($bad) { throw 'CAP-9C1 zero-network / zero-ambient source proof failed' }
 Write-Host '[CAP-9C1] source proof: no network transport, no CWD lookup, no argv or environment input'
 
-# --- 1. build the private packager (no CAP-3U window needed) ----------------
+# --- 1. build the private packager (it builds no SOA interface) --------------
 New-Item -ItemType Directory -Force build/cap9c1/pack-fpc, build/cap9c1/pack-bin | Out-Null
 fpc -Px86_64 -Twin64 -MObjFPC -Sh -B -Xm `
     -FUbuild/cap9c1/pack-fpc -FEbuild/cap9c1/pack-bin `
@@ -183,32 +183,16 @@ foreach ($required in 'plugins.zip', 'pweb.quickjs.registry.inc',
     }
 }
 
-# --- 3. compile the harness INSIDE the CAP-3U window ------------------------
+# --- 3. compile the harness against the PRISTINE dependency -----------------
 # -Fibuild/quickjs-release is how the GENERATED registry gets compiled into
 # the executable: that compile is itself an acceptance criterion.
 New-Item -ItemType Directory -Force build/cap9c1/rel-fpc, build/cap9c1/rel-bin | Out-Null
-try {
-    pwsh -NoProfile -File tools/patch-cap3u.ps1
-    if ($LASTEXITCODE -ne 0) { throw 'CAP-9C1 CAP-3U re-apply failed' }
-    fpc -Px86_64 -Twin64 -MObjFPC -Sh -B -Xm `
-        -FUbuild/cap9c1/rel-fpc -FEbuild/cap9c1/rel-bin `
-        @pwebUnits -Fibuild/quickjs-release @mormotUnits `
-        -Fldeps/mormot2/static/x86_64-win64 `
-        test/cap9c1/quickjsrelease.pas
-    if ($LASTEXITCODE -ne 0) { throw 'quickjsrelease.pas compile FAILED' }
-}
-finally {
-    $restoreFailures = @()
-    foreach ($attempt in 1..2) {
-        pwsh -NoProfile -File tools/patch-cap3u.ps1 -Restore
-        if ($LASTEXITCODE -ne 0) { $restoreFailures += $attempt }
-    }
-    if ($restoreFailures) {
-        throw "CAP-9C1 CAP-3U restore attempts failed: $($restoreFailures -join ', ')"
-    }
-}
-git -C deps/mormot2 diff --exit-code HEAD -- src/core/mormot.core.interfaces.pas
-if ($LASTEXITCODE -ne 0) { throw 'CAP-3U source is not pristine after CAP-9C1 restore' }
+fpc -Px86_64 -Twin64 -MObjFPC -Sh -B -Xm `
+    -FUbuild/cap9c1/rel-fpc -FEbuild/cap9c1/rel-bin `
+    @pwebUnits -Fibuild/quickjs-release @mormotUnits `
+    -Fldeps/mormot2/static/x86_64-win64 `
+    test/cap9c1/quickjsrelease.pas
+if ($LASTEXITCODE -ne 0) { throw 'quickjsrelease.pas compile FAILED' }
 
 $exe = (Resolve-Path build/cap9c1/rel-bin/quickjsrelease.exe).Path
 

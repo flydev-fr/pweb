@@ -92,11 +92,16 @@ directory naming (`x86_64-win64`, `x86_64-linux`, `x86_64-darwin`,
 `aarch64-darwin`). Two namings of one target is a fact about the dependency,
 and each is written down exactly once.
 
-**Windows ships a CAP-3U-patched mORMot.** `tools/patch-cap3u.ps1` needs MSVC's
-`ml64` and a mORMot *git checkout*, and it edits that checkout in place. The
-patch is therefore applied once at staging time and the patched source travels
-into the SDK root with its `x64callmethod.obj`; the build path has no patch
-window and never edits a framework checkout. `static/delphi` is staged on
+**Every target stages the pinned mORMot source, byte for byte.** Until the
+2026-09-08 pin move Windows was the exception: it shipped a CAP-3U-patched
+mORMot with an `x64callmethod.obj` beside it, because FPC 3.2.2 emitted no
+Win64 unwind metadata for mORMot's asm `CallMethod`. That made MSVC's `ml64` a
+requirement of *producing* an SDK root and left the staged tree impossible to
+reproduce from `mormot.lock` alone. The pin now carries upstream `896f1c1c`
+(the Win64 SEH unwind) and `790154af` (Currency in RAX); `ml64` is no longer
+required anywhere in staging, and `test/cap10c1/build_cap10c1` asserts that the
+staged `mormot.core.interfaces.pas` is byte-identical to `deps/mormot2` and
+that no `x64callmethod.obj` accompanies it. `static/delphi` is still staged on
 Windows only, because two objects a Win64 build links are reached from inside
 mORMot's own sources by a relative path.
 

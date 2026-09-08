@@ -1,5 +1,17 @@
 program cap3u_unwind;
 
+{ The Win64 CallMethod unwind matrix, run against the PRISTINE PINNED
+  dependency. Until the 2026-09-08 pin move this program compiled inside a
+  window opened by tools/patch-cap3u.ps1, and the two defines below selected
+  the patched trampoline or the deliberate pristine comparison. Upstream
+  896f1c1c makes the patch redundant, so there is no window, no define and no
+  choice of implementation left: this is the upstream stub or nothing, which
+  is exactly what a regression gate over an upstream fix should compile.
+
+  Either define is now a refusal rather than a no-op, because a build script
+  that still passes one is a build script that thinks it is preparing
+  something. }
+
 {$mode ObjFPC}{$H+}
 
 {$ifndef MSWINDOWS}
@@ -8,14 +20,11 @@ program cap3u_unwind;
 {$ifndef CPUX86_64}
   {$fatal CAP-3U requires the Windows x64 ABI}
 {$endif}
-{$ifndef PWEB_CALLMETHOD_UNWIND_PROBE}
-  {$ifndef CAP3U_PRISTINE_DIFFERENTIAL}
-    {$fatal CAP-3U requires PWEB_CALLMETHOD_UNWIND_PROBE; define CAP3U_PRISTINE_DIFFERENTIAL only for the intentional pristine comparison}
-  {$endif}
-{$else}
-  {$ifdef CAP3U_PRISTINE_DIFFERENTIAL}
-    {$fatal PWEB_CALLMETHOD_UNWIND_PROBE and CAP3U_PRISTINE_DIFFERENTIAL are mutually exclusive}
-  {$endif}
+{$ifdef PWEB_CALLMETHOD_UNWIND_PROBE}
+  {$fatal PWEB_CALLMETHOD_UNWIND_PROBE named the removed CAP-3U patch; the pin carries the upstream fix and nothing selects a trampoline any more}
+{$endif}
+{$ifdef CAP3U_PRISTINE_DIFFERENTIAL}
+  {$fatal CAP3U_PRISTINE_DIFFERENTIAL named the comparison against the removed CAP-3U patch; every build is the pristine build now}
 {$endif}
 
 uses

@@ -1,0 +1,45 @@
+# CAP-3U Currency return matrix - the declared expectation per target and case.
+#
+# `must_pass`  a PASS has been MEASURED on the toolchain that leg builds with;
+#              a FAIL fails the leg.
+# `observe`    the case is run and recorded, and fails nothing. It is the
+#              verdict for a case whose behaviour is a known upstream defect,
+#              and for a case nobody has yet measured on the leg's own
+#              compiler. Turning one into `must_pass` is a deliberate act.
+#
+# Windows is `must_pass` throughout because the 2026-09-08 pin move measured
+# 5/5 on FPC 3.2.2 x86_64-win64 - the exact toolchain `fpc.lock` pins for that
+# leg - against 0/5 at the previous pin unpatched.
+#
+# Linux is `observe` for a reason worth writing down: the same 5 cases were
+# measured 1/5 at this pin and 0/5 at the previous one, so four of them are a
+# known upstream defect on SysV x64 rather than anything this repository can
+# fix; and the one that passes was measured under FPC 3.2.3, while the hosted
+# leg builds with Ubuntu's 3.2.2. Declaring `must_pass` from a different
+# compiler would be a prediction, not a measurement.
+#
+# Both macOS rows are `observe` because they have never been measured at all.
+# macos-x86_64 shares ABISYSVX64 with Linux and macos-arm64 does not - AAPCS64
+# is a different ABI with its own CallMethod - so neither may be inferred from
+# the other, and the first hosted run of this gate is what will say.
+target	case	expectation
+windows-x86_64	cur-zero-arg	must_pass
+windows-x86_64	cur-one-int	must_pass
+windows-x86_64	cur-one-cur	must_pass
+windows-x86_64	cur-one-double	must_pass
+windows-x86_64	cur-two-int	must_pass
+linux-x86_64	cur-zero-arg	observe
+linux-x86_64	cur-one-int	observe
+linux-x86_64	cur-one-cur	observe
+linux-x86_64	cur-one-double	observe
+linux-x86_64	cur-two-int	observe
+macos-x86_64	cur-zero-arg	observe
+macos-x86_64	cur-one-int	observe
+macos-x86_64	cur-one-cur	observe
+macos-x86_64	cur-one-double	observe
+macos-x86_64	cur-two-int	observe
+macos-arm64	cur-zero-arg	observe
+macos-arm64	cur-one-int	observe
+macos-arm64	cur-one-cur	observe
+macos-arm64	cur-one-double	observe
+macos-arm64	cur-two-int	observe

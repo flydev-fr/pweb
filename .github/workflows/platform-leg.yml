@@ -633,6 +633,12 @@ jobs:
         timeout-minutes: 20
         uses: ./.github/actions/cap-8c-multi-principal-integration-harness-wkwebview
 
+      - name: CAP-3U Currency return matrix (typed observation, four targets)
+        timeout-minutes: 10
+        uses: ./.github/actions/cap-3u-currency-return-matrix-typed-observation-four-targets
+        with:
+          target: ${{ inputs.target }}
+
       - name: CAP-9A QuickJS invocation foundation harness
         timeout-minutes: 20
         uses: ./.github/actions/cap-9a-quickjs-invocation-foundation-harness

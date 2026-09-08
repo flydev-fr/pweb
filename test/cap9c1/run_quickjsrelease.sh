@@ -28,8 +28,9 @@
 #           (tools/build_quickjs_darwin.sh, which refuses a non-pinned
 #           checkout) and passes -dLIBQUICKJSSTATIC + -Fo itself.
 #
-# Unlike Windows, POSIX needs NO CAP-3U patch window: the mORMot x64
-# call-method trampoline is a Win64-only concern.
+# No patch window on any target since the 2026-09-08 mORMot pin move: the
+# Win64 call-method trampoline the CAP-3U patch used to supply now comes from
+# upstream 896f1c1c and 790154af.
 #
 # NOTE ON ARCHIVE BYTES: plugins.zip is deterministic per TOOLCHAIN, not
 # across them - CAP-6/CAP-7L measured that the mORMot static DEFLATE

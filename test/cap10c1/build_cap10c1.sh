@@ -7,10 +7,11 @@
 # identical order. Two things differ per platform and both are at the seam
 # rather than in the claim:
 #
-#   - there is NO CAP-3U window. That patch is Windows-only (it assembles a
-#     COFF object with MSVC's ml64), so a POSIX SDK stages the pinned mORMot
-#     source as it is, and static/delphi - which holds COFF objects reached
-#     from inside mORMot's Win64 sources by a relative path - is NOT staged;
+#   - static/delphi - which holds COFF objects reached from inside mORMot's
+#     Win64 sources by a relative path - is NOT staged. Until the 2026-09-08
+#     pin move a second difference sat here: Windows staged a CAP-3U-PATCHED
+#     mORMot, assembled with MSVC's ml64, while POSIX staged the pinned
+#     source as it is. Both now stage the pinned source as it is;
 #   - the platform artifact is the webview shared library of this target,
 #     plus, on macOS, the compiled production Cocoa bridge object.
 #

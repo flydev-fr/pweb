@@ -26,10 +26,10 @@
 #      previously verified local copy is reused ONLY after it re-passes
 #      sha256 + size + Authenticode against the lock at THIS build
 #      moment - the fetch is skipped, the verification never is
-#   4. compiles the fixed-runtime release host
-#      (-dPWEB_FIXED_RUNTIME, inside a re-applied CAP-3U window,
-#      restored and re-verified pristine afterwards) and the compiled
-#      pwebwv2fixed helper
+#   4. compiles the fixed-runtime release host (-dPWEB_FIXED_RUNTIME,
+#      against the PRISTINE pinned mORMot since the 2026-09-08 pin move
+#      retired the CAP-3U patch window) and the compiled pwebwv2fixed
+#      helper
 #   5. extracts the cabinet with `expand -F:*` STRAIGHT INTO the
 #      staging runtime folder, proves it yielded exactly the one
 #      ratified tree folder, drops the pinned-SDK loader beside it
@@ -233,40 +233,20 @@ try {
     Write-Host ("CAP-6b3 pin cross-check PASS (lock = Pascal constant = helper: " +
         "$FxVersion / $ExpectedTree)")
 
-    # --- 4b) the FIXED-RUNTIME release host, inside the CAP-3U window ---------
+    # --- 4b) the FIXED-RUNTIME release host, pristine dependency --------------
     New-Item -ItemType Directory -Force build/cap6b3/host-fpc | Out-Null
-    try {
-        pwsh -NoProfile -File tools/patch-cap3u.ps1
-        if ($LASTEXITCODE -ne 0) { throw 'CAP-6b3 CAP-3U re-apply failed' }
-        fpc -MObjFPC -Sh -B -Xm -dPWEB_CALLMETHOD_UNWIND_PROBE `
-            -dPWEB_FIXED_RUNTIME `
-            -FUbuild/cap6b3/host-fpc -FEbuild/cap6b3/bin `
-            -Fusrc/lib -Fusrc/rpc -Fusrc/security -Fusrc/webview `
-            -Fusrc/assets -Fusrc/platform/windows `
-            -Fideps/mormot2/src -Fudeps/mormot2/src/core `
-            -Fudeps/mormot2/src/lib -Fudeps/mormot2/src/crypt `
-            -Fudeps/mormot2/src/net -Fudeps/mormot2/src/db `
-            -Fudeps/mormot2/src/orm -Fudeps/mormot2/src/rest `
-            -Fudeps/mormot2/src/soa `
-            -Fldeps/mormot2/static/x86_64-win64 `
-            examples/08-release/releaseapp.pas
-        if ($LASTEXITCODE -ne 0) { throw 'CAP-6b3 fixed release host compile failed' }
-    }
-    finally {
-        $restoreFailures = @()
-        foreach ($attempt in 1..2) {
-            pwsh -NoProfile -File tools/patch-cap3u.ps1 -Restore
-            if ($LASTEXITCODE -ne 0) { $restoreFailures += $attempt }
-        }
-        if ($restoreFailures) {
-            throw "CAP-6b3 CAP-3U restore attempts failed: $($restoreFailures -join ', ')"
-        }
-    }
-    git -C deps/mormot2 diff --exit-code HEAD -- src/core/mormot.core.interfaces.pas
-    if ($LASTEXITCODE -ne 0) { throw 'CAP-3U source is not pristine after CAP-6b3 restore' }
-    if (Test-Path deps/mormot2/src/core/x64callmethod.obj) {
-        throw 'CAP-3U object survived CAP-6b3 restore'
-    }
+    fpc -MObjFPC -Sh -B -Xm -dPWEB_FIXED_RUNTIME `
+        -FUbuild/cap6b3/host-fpc -FEbuild/cap6b3/bin `
+        -Fusrc/lib -Fusrc/rpc -Fusrc/security -Fusrc/webview `
+        -Fusrc/assets -Fusrc/platform/windows `
+        -Fideps/mormot2/src -Fudeps/mormot2/src/core `
+        -Fudeps/mormot2/src/lib -Fudeps/mormot2/src/crypt `
+        -Fudeps/mormot2/src/net -Fudeps/mormot2/src/db `
+        -Fudeps/mormot2/src/orm -Fudeps/mormot2/src/rest `
+        -Fudeps/mormot2/src/soa `
+        -Fldeps/mormot2/static/x86_64-win64 `
+        examples/08-release/releaseapp.pas
+    if ($LASTEXITCODE -ne 0) { throw 'CAP-6b3 fixed release host compile failed' }
 
     # --- 5) extract the cabinet straight into the staging runtime folder ------
     # the staging dir is wiped WHOLE (subdirectories and hidden files

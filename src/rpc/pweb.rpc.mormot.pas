@@ -503,7 +503,8 @@ begin
     else
       Result := PWebDefaultErrorResult(pecInternalError);
   except
-    // CAP-3U allows service exceptions to unwind safely; no exception text,
+    // the pinned mORMot carries the Win64 unwind metadata that lets a service
+    // exception unwind safely (upstream 896f1c1c); no exception text,
     // class name, mORMot envelope, route or stack detail crosses this boundary.
     Result := PWebDefaultErrorResult(pecInternalError);
   end;

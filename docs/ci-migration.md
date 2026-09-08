@@ -156,6 +156,31 @@ for a file only one platform produces. The records class is therefore
 | `cap1-diagnostics` | diagnostics | `leg-diagnostics-<target>`, at each file's repository-relative path |
 | `cap7l-diagnostics` | diagnostics | `leg-diagnostics-<target>`, at each file's repository-relative path |
 
+## Changes after the migration
+
+The sentence above — *every step keeps its name, its body and its position* —
+describes the migration itself. Everything that has changed **since** is
+declared in `test/cap11a/post-migration-amendments.tsv`, which names the step,
+says why, and carries the body digest it is allowed to have, so an amended
+step is still pinned and an undeclared edit still trips
+`check_migration_map.ps1`.
+
+| step | change | `ci_sequence_digest` |
+|---|---|---|
+| four legacy bodies (the floating-ref guard, three smoke drivers) | pointed at files the split created, and at the measured auto-close window | unchanged |
+| `Backlog disposition - every ledger entry has a verdict` | **added**, windows | `8b3c15bd…` (200) → `3d74864b…` (201) |
+| `CAP-3U - FPC 3.2.2 Win64 CallMethod unwind and Currency ABI` | body: the patch apply/restore window is gone with the 2026-09-08 mORMot pin move; the gates stayed and read the compiler's own output | unchanged |
+| `CAP-3U Currency return matrix (typed observation, four targets)` | **added**, all four legs | `3d74864b…` (201) → `7f7dc950…` (202) |
+
+**Two step names now outlive what they describe.** `CAP-5 host examples
+compile (re-applied CAP-3U window)` and `CAP-6 compile bundler + release host
+(CAP-3U window)` open no window any more — the pin carries the upstream fix.
+They keep their names because the gates above require every legacy step name
+to remain, in order, in the sequence, and renaming them would mean editing
+`ci-legacy-inventory.tsv`, which records what the **legacy** workflow
+contained and is not ours to rewrite. The bodies are what changed, and the
+bodies are what is pinned.
+
 ## Every step
 
 | legacy step | legs | legacy lines | new location |

@@ -5,12 +5,14 @@
   TMormotInvocationBridge -> in-process TRestServer.Uri().
 
   Registration follows the existing mORMot-case discipline: the real
-  interface-service invocation path needs the prepared CAP-3U trampoline
-  on Win64 (PWEB_CALLMETHOD_UNWIND_PROBE), so on Windows these gates run
-  inside the CAP-3 headless runner (cap3tests) and in pwebtests only
-  when the define is active; on Linux/macOS no trampoline exists or is
-  needed and pwebtests registers them unconditionally - which is what
-  puts I1-I10 on all four CI targets.
+  interface-service invocation path needs the mORMot ORM/REST/SOA unit
+  paths, which the Windows pwebtests compile is deliberately not handed,
+  so on Windows these gates run inside the CAP-3 headless runner
+  (cap3tests) and on Linux/macOS inside pwebtests - which is what puts
+  I1-I10 on all four CI targets. Until the 2026-09-08 mORMot pin move the
+  Windows half of that sentence was about the CAP-3U trampoline instead;
+  the pin carries upstream 896f1c1c and 790154af and there is no
+  trampoline left to prepare.
 
   Evidence discipline: every deny asserts BOTH the canonical envelope
   and zero SOA activity via counting spies (the TUriProbe BeforeUri

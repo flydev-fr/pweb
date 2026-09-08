@@ -51,8 +51,8 @@ $passMarker = $passConst[0].Matches[0].Groups[1].Value
 Write-Host "[CAP-8B] canonical pass marker: $passMarker"
 
 # --- build navmatrix.exe (same unit-path set as the CAP-6 release host, but
-# WITHOUT the CAP-3U window: navmatrix uses a counting bridge, not the mORMot
-# SOA bridge, so it needs no interfaces patch) --------------------------------
+# but a counting bridge rather than the mORMot SOA one, so it never reaches
+# the Win64 asm CallMethod) ----------------------------------------------------
 New-Item -ItemType Directory -Force build/cap8b/nav-fpc, build/cap8b/nav-bin | Out-Null
 fpc -Px86_64 -Twin64 -MObjFPC -Sh -B `
     -FUbuild/cap8b/nav-fpc -FEbuild/cap8b/nav-bin `

@@ -15,15 +15,14 @@
 # path - so completing it in place leaves CAP-10A, CAP-10B1, CAP-10B2 and
 # CAP-10C0 exactly as they were.
 #
-# WHY THE STAGED mORMot IS CAP-3U-PATCHED. tools/patch-cap3u.ps1 needs MSVC's
-# ml64 and a mORMot GIT CHECKOUT and it edits that checkout in place. A
-# pipeline that ran it would mutate its own framework's working tree on every
-# build. So the patch is applied ONCE here, the patched source is copied into
-# the SDK root, and the checkout is restored - which is what a shipped SDK
-# has to do anyway, and which leaves the build path with no patch window at
-# all. The staged copy is then ASSERTED to differ from the pristine pinned
-# source and to carry x64callmethod.obj: a silently unpatched mORMot would
-# produce a binary that compiles and misbehaves.
+# THE STAGED mORMot IS THE PRISTINE PINNED SOURCE, on every target. Until the
+# 2026-09-08 pin move Windows was the exception: tools/patch-cap3u.ps1 needed
+# MSVC's ml64 and a mORMot GIT CHECKOUT and edited that checkout in place, so
+# the patch was applied ONCE here, the patched source copied into the SDK
+# root, and the checkout restored - which also meant an SDK consumer needed
+# ml64 to reproduce the tree. The pin now carries upstream 896f1c1c and
+# 790154af, so what is staged is what was fetched, byte for byte, and that is
+# asserted below rather than assumed.
 #
 # ONLY WHAT A PROJECT COMPILES AGAINST IS STAGED - the eight unit directories
 # named by pweb.cli.native's PWEB_MORMOT_UNIT_DIRS plus the include root's own
@@ -71,7 +70,7 @@ Write-Host "[CAP-10C1] fpc $((fpc -iV).Trim()) targeting $targetOs/$targetCpu"
 # --- 1. the frozen bundler, beside the CLI ---------------------------------
 Copy-Item -Force -LiteralPath $bundler -Destination (Join-Path $sdk 'bin')
 
-# --- 2. mORMot, patched, into the SDK root ---------------------------------
+# --- 2. mORMot, pristine, into the SDK root ---------------------------------
 $mormotOut = Join-Path $sdk 'share/pweb/deps/mormot2'
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $mormotOut
 New-Item -ItemType Directory -Force (Join-Path $mormotOut 'src') | Out-Null
@@ -79,42 +78,35 @@ New-Item -ItemType Directory -Force (Join-Path $mormotOut 'src') | Out-Null
 $unitDirs = @('core', 'lib', 'crypt', 'net', 'db', 'orm', 'rest', 'soa')
 $pristine = Get-FileHash -Algorithm SHA256 `
     -LiteralPath (Join-Path $repoRoot 'deps/mormot2/src/core/mormot.core.interfaces.pas')
-try {
-    pwsh -NoProfile -File tools/patch-cap3u.ps1
-    if ($LASTEXITCODE -ne 0) { throw 'CAP-3U apply FAILED' }
-    foreach ($d in $unitDirs) {
-        Copy-Item -Recurse -Force `
-            -LiteralPath (Join-Path $repoRoot "deps/mormot2/src/$d") `
-            -Destination (Join-Path $mormotOut 'src')
-    }
-    # the include root's OWN files: mormot.defines.inc, mormot.uses.inc, the
-    # commit stamps and the Windows manifest resources. -Fi names this
-    # directory and a missing .inc is a compile failure three stages later
-    Get-ChildItem -LiteralPath (Join-Path $repoRoot 'deps/mormot2/src') -File |
-        Copy-Item -Destination (Join-Path $mormotOut 'src') -Force
-    $stagedIntf = Join-Path $mormotOut 'src/core/mormot.core.interfaces.pas'
-    $stagedHash = Get-FileHash -Algorithm SHA256 -LiteralPath $stagedIntf
-    if ($stagedHash.Hash -eq $pristine.Hash) {
-        throw ('the staged mORMot is NOT CAP-3U patched: ' +
-            'mormot.core.interfaces.pas is byte-identical to the pristine source')
-    }
-    if (-not (Test-Path -LiteralPath (Join-Path $mormotOut 'src/core/x64callmethod.obj'))) {
-        throw 'the staged mORMot carries no x64callmethod.obj'
-    }
-    Write-Host '[CAP-10C1] staged mORMot is CAP-3U patched (source differs, obj present)'
+foreach ($d in $unitDirs) {
+    Copy-Item -Recurse -Force `
+        -LiteralPath (Join-Path $repoRoot "deps/mormot2/src/$d") `
+        -Destination (Join-Path $mormotOut 'src')
 }
-finally {
-    $restoreFailures = @()
-    foreach ($attempt in 1..2) {
-        pwsh -NoProfile -File tools/patch-cap3u.ps1 -Restore
-        if ($LASTEXITCODE -ne 0) { $restoreFailures += $attempt }
-    }
-    if ($restoreFailures) {
-        throw "CAP-3U restore attempts failed: $($restoreFailures -join ', ')"
-    }
+# the include root's OWN files: mormot.defines.inc, mormot.uses.inc, the
+# commit stamps and the Windows manifest resources. -Fi names this
+# directory and a missing .inc is a compile failure three stages later
+Get-ChildItem -LiteralPath (Join-Path $repoRoot 'deps/mormot2/src') -File |
+    Copy-Item -Destination (Join-Path $mormotOut 'src') -Force
+
+# THE ASSERTION THAT REPLACED "the staged source must DIFFER". It used to
+# prove the CAP-3U patch had been applied; it now proves the opposite claim,
+# which is the one this SDK makes: what a project compiles against is the
+# pinned upstream source, byte for byte, with no local edit and no companion
+# object. An SDK that staged a silently edited framework would be an SDK
+# nobody could reproduce from the lock.
+$stagedIntf = Join-Path $mormotOut 'src/core/mormot.core.interfaces.pas'
+$stagedHash = Get-FileHash -Algorithm SHA256 -LiteralPath $stagedIntf
+if ($stagedHash.Hash -ne $pristine.Hash) {
+    throw ('the staged mORMot is not the pinned source: ' +
+        'mormot.core.interfaces.pas differs from deps/mormot2')
+}
+if (Test-Path -LiteralPath (Join-Path $mormotOut 'src/core/x64callmethod.obj')) {
+    throw 'the staged mORMot carries an x64callmethod.obj: the removed CAP-3U patch is back'
 }
 git -C deps/mormot2 diff --exit-code HEAD -- src/core/mormot.core.interfaces.pas | Out-Null
-if ($LASTEXITCODE -ne 0) { throw 'CAP-3U source is not pristine after the restore' }
+if ($LASTEXITCODE -ne 0) { throw 'deps/mormot2 is not at its pinned source' }
+Write-Host '[CAP-10C1] staged mORMot is the pristine pinned source (no patch, no obj)'
 
 New-Item -ItemType Directory -Force (Join-Path $mormotOut 'static') | Out-Null
 # MEASURED, not guessed: two of the objects a Win64 build links are reached

@@ -78,7 +78,7 @@ lic_dir="${share}/licenses"
 rm -rf -- "${lic_dir}"
 mkdir -p -- "${lic_dir}"
 
-QUICKJS_NOTICE_SHA='8310e7a6c52cd3b45a0aedb5620ef79408c8c155594f37259ba801f6a2fbe2fc'
+QUICKJS_NOTICE_SHA='a1d491db9c87a750c2bb37d7d47b642ce4b94a0d56332640f1d14521233875bf'
 
 sha256_of() {
     if command -v sha256sum >/dev/null 2>&1; then

@@ -22,9 +22,10 @@
 #           (tools/build_quickjs_darwin.sh, which refuses a non-pinned
 #           checkout) and passes -dLIBQUICKJSSTATIC + -Fo itself.
 #
-# Unlike Windows, POSIX needs NO CAP-3U patch window: the mORMot x64
-# call-method trampoline is a Win64-only concern - the ps1 sibling compiles
-# inside the window, this runner compiles the SOA path directly.
+# No patch window on any target since the 2026-09-08 mORMot pin move: the
+# Win64 call-method trampoline the CAP-3U patch used to supply now comes from
+# upstream 896f1c1c and 790154af, so the ps1 sibling compiles the SOA path
+# directly too.
 #
 # Writes: build/cap9b1/quickjspackage-<target>.json (PASS|FAIL),
 #         build/cap9b1/quickjs-package-corpus.txt (the digest source), log.

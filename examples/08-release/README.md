@@ -17,8 +17,7 @@ the executable, never the current directory.
 
 Build the bundle from the CAP-5 React dist with the CAP-6 bundler
 (`tools/bundler/`, see its README for the manifest schema), then the
-host inside the CAP-3U window (`test/cap6/build_cap6.ps1` does both
-compiles):
+host (`test/cap6/build_cap6.ps1` does both compiles):
 
 ```powershell
 pwsh test/cap6/build_cap6.ps1

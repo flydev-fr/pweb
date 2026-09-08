@@ -57,7 +57,7 @@ Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $licDir
 New-Item -ItemType Directory -Force $licDir | Out-Null
 
 $QUICKJS_NOTICE_SHA =
-    '8310e7a6c52cd3b45a0aedb5620ef79408c8c155594f37259ba801f6a2fbe2fc'
+    'a1d491db9c87a750c2bb37d7d47b642ce4b94a0d56332640f1d14521233875bf'
 
 function Stage([string]$Source, [string]$Name, [string]$WantSha) {
     if (-not (Test-Path -LiteralPath $Source)) {

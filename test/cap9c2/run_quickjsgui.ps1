@@ -23,9 +23,11 @@
 #   8. assemble ONE corpus from the host rows, the hostile rows and the
 #      rows this runner measures itself, and hash it.
 #
-# The host drives the real mORMot SOA bridge, so it compiles INSIDE the
-# CAP-3U window (apply -> compile -> restore + verify pristine), exactly
-# like the CAP-6 release host and the CAP-8B/8C/9C1 harnesses.
+# The host drives the real mORMot SOA bridge, so it exercises mORMot's
+# Win64 asm CallMethod. Until the 2026-09-08 pin move that needed a CAP-3U
+# window around the compile; the pin now carries upstream 896f1c1c and
+# 790154af, so it compiles against the PRISTINE dependency exactly like the
+# CAP-6 release host and the CAP-8B/8C/9C1 harnesses.
 #
 # NO conditional SKIP: CAP-8B/8C already prove a real WebView opens on
 # the hosted Windows runner, so a failure here gates.
@@ -63,8 +65,7 @@ foreach ($pre in 'examples/07-quickjs/quickjsapp.pas',
                  'build/quickjs-release/plugins.zip',
                  'build/quickjs-release/pweb.quickjs.registry.inc',
                  'build/quickjs-release/LICENSE.quickjs',
-                 'tools/bundler/pwebbundle.pas',
-                 'tools/patch-cap3u.ps1') {
+                 'tools/bundler/pwebbundle.pas') {
     if (-not (Test-Path $pre)) {
         throw ("missing precondition: $pre -- the CAP-4W/CAP-9C1 gates and the " +
             'CAP-9C2 frontend build must have run in this workspace first')
@@ -180,33 +181,17 @@ $hits = @(Select-String -Path 'examples/07-quickjs/quickjsapp.pas',
     'test/cap9c2/quickjsgui.pas' -Pattern $discoveryRx)
 Add-Row 'no_plugin_discovery_or_watching' ($hits.Count -eq 0) "hits=$($hits.Count)"
 
-# --- 2. compile the host WITH the generated registry, inside CAP-3U --------
-try {
-    pwsh -NoProfile -File tools/patch-cap3u.ps1
-    if ($LASTEXITCODE -ne 0) { throw 'CAP-9C2 CAP-3U re-apply failed' }
-    fpc -Px86_64 -Twin64 -MObjFPC -Sh -B -Xm `
-        -FUbuild/cap9c2/app-fpc -FEbuild/cap9c2/app-bin `
-        @hostUnits -Fibuild/quickjs-release @mormotUnits `
-        -Fldeps/mormot2/static/x86_64-win64 examples/07-quickjs/quickjsapp.pas
-    if ($LASTEXITCODE -ne 0) { throw 'quickjsapp.pas compile FAILED' }
-    fpc -Px86_64 -Twin64 -MObjFPC -Sh -B -Xm `
-        -FUbuild/cap9c2/gui-fpc -FEbuild/cap9c2/gui-bin `
-        @hostUnits @mormotUnits `
-        -Fldeps/mormot2/static/x86_64-win64 test/cap9c2/quickjsgui.pas
-    if ($LASTEXITCODE -ne 0) { throw 'quickjsgui.pas compile FAILED' }
-}
-finally {
-    $restoreFailures = @()
-    foreach ($attempt in 1..2) {
-        pwsh -NoProfile -File tools/patch-cap3u.ps1 -Restore
-        if ($LASTEXITCODE -ne 0) { $restoreFailures += $attempt }
-    }
-    if ($restoreFailures) {
-        throw "CAP-9C2 CAP-3U restore attempts failed: $($restoreFailures -join ', ')"
-    }
-}
-git -C deps/mormot2 diff --exit-code HEAD -- src/core/mormot.core.interfaces.pas
-if ($LASTEXITCODE -ne 0) { throw 'CAP-3U source is not pristine after CAP-9C2 restore' }
+# --- 2. compile the host WITH the generated registry ------------------------
+fpc -Px86_64 -Twin64 -MObjFPC -Sh -B -Xm `
+    -FUbuild/cap9c2/app-fpc -FEbuild/cap9c2/app-bin `
+    @hostUnits -Fibuild/quickjs-release @mormotUnits `
+    -Fldeps/mormot2/static/x86_64-win64 examples/07-quickjs/quickjsapp.pas
+if ($LASTEXITCODE -ne 0) { throw 'quickjsapp.pas compile FAILED' }
+fpc -Px86_64 -Twin64 -MObjFPC -Sh -B -Xm `
+    -FUbuild/cap9c2/gui-fpc -FEbuild/cap9c2/gui-bin `
+    @hostUnits @mormotUnits `
+    -Fldeps/mormot2/static/x86_64-win64 test/cap9c2/quickjsgui.pas
+if ($LASTEXITCODE -ne 0) { throw 'quickjsgui.pas compile FAILED' }
 Add-Row 'registry_compiled_into_host' (Test-Path build/cap9c2/app-bin/quickjsapp.exe) ''
 
 # --- 3. assemble the EXACT release layout ----------------------------------
@@ -245,7 +230,7 @@ Add-Row 'registry_not_shipped' `
 # the frozen QuickJS licence, hash-pinned, present exactly once
 $licenseSha = (Get-FileHash (Join-Path $release 'LICENSE.quickjs') -Algorithm SHA256).Hash.ToLowerInvariant()
 Add-Row 'license_quickjs_sha256' `
-    ($licenseSha -ceq '8310e7a6c52cd3b45a0aedb5620ef79408c8c155594f37259ba801f6a2fbe2fc') `
+    ($licenseSha -ceq 'a1d491db9c87a750c2bb37d7d47b642ce4b94a0d56332640f1d14521233875bf') `
     "sha256=$licenseSha"
 $licenseCount = @($actualLayout | Where-Object { $_ -eq 'file:LICENSE.quickjs' }).Count
 Add-Row 'license_quickjs_once' ($licenseCount -eq 1) "count=$licenseCount"

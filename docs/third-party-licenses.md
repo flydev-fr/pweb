@@ -242,8 +242,22 @@ Windows and LF elsewhere and this file must be byte-identical on all four
 targets. It is:
 
 ```
-sha256 = 8310e7a6c52cd3b45a0aedb5620ef79408c8c155594f37259ba801f6a2fbe2fc
+sha256 = a1d491db9c87a750c2bb37d7d47b642ce4b94a0d56332640f1d14521233875bf
 ```
+
+**Superseded on 2026-09-08 from `8310e7a6c52cd3b45a0aedb5620ef79408c8c155594f37259ba801f6a2fbe2fc`,
+and the licence text did not move.** The mORMot pin move to `da7e1c2f`
+changed this digest because the provenance header names the pin, and the
+diff between the two artifacts is exactly one line — line 17,
+`mORMot2 commit  : …`. Both are 450 lines and 22 044 bytes; all seventeen
+per-file `sha256` lines are unchanged, because the candidate's
+`res/static/libquickjs` tree is byte-identical to the previous pin's; the
+fourteen MIT permission sentences are unchanged; and so are all eight
+copyright lines — Fabrice Bellard (2016-2017, 2017, 2017-2018, 2017-2020,
+2017-2021) and Charlie Gordon (2017-2018, 2018, 2017-2021). No year, no
+wording and no holder moved: it is the same MIT notice over the same bytes,
+carrying a different provenance line, which is the whole point of putting
+the pin in the header.
 
 That digest is verified against the pinned sources themselves by the
 CAP-9C1 gate (independently of the generator that produced it), pinned as

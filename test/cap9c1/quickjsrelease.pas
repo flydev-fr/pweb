@@ -1708,7 +1708,7 @@ begin
   Expect(PosEx(MIT_SENTENCE, RawUtf8(text), 1) > 0,
     'C30 the MIT permission sentence is missing');
   Emit('c30 mit_sentence=' + YesNo(PosEx(MIT_SENTENCE, RawUtf8(text), 1) > 0));
-  Expect(PosEx('mORMot2 commit  : b1a129b0', RawUtf8(text), 1) > 0,
+  Expect(PosEx('mORMot2 commit  : da7e1c2f', RawUtf8(text), 1) > 0,
     'C30 the license artifact does not record the mORMot pin');
   // every recorded digest must be the digest of the pinned file
   srcDir := root + 'deps' + PathDelim + 'mormot2' + PathDelim + 'res' +

@@ -11,13 +11,18 @@ program pwebtests;
 {$I mormot.defines.inc}
 
 { CAP-8A: the capability integration gates drive the REAL mORMot
-  interface-service path, which on Win64 requires the prepared CAP-3U
-  trampoline (PWEB_CALLMETHOD_UNWIND_PROBE) exactly as the existing
-  mORMot cases do - so on Windows they register only inside that window
-  (CI runs them through cap3tests), while on Linux/macOS no trampoline
-  exists or is needed and they register unconditionally. This is what
-  puts the I1-I10 gates on all four CI targets. }
-{$if defined(PWEB_CALLMETHOD_UNWIND_PROBE) or not defined(OSWINDOWS)}
+  interface-service path, so they need the mORMot ORM/REST/SOA unit paths.
+  The POSIX suites hand this program the full set and it registers them
+  here; the Windows compile deliberately does not, and runs them through
+  cap3tests instead, which the CAP-3U step asserts by name. That is what
+  puts the I1-I10 gates on all four CI targets.
+
+  Until the 2026-09-08 mORMot pin move this condition also carried
+  PWEB_CALLMETHOD_UNWIND_PROBE, which named the CAP-3U patch window. The
+  define was never set for THIS program on any target, so it contributed
+  nothing to the truth value; it is gone with the patch, and the condition
+  now says the one thing it actually means. }
+{$ifndef OSWINDOWS}
   {$define PWEB_CAP8A_INTEGRATION}
 {$endif}
 
@@ -55,12 +60,6 @@ uses
   ,
   pweb.test.cocoa
   {$endif DARWIN}
-  {$ifdef PWEB_CALLMETHOD_UNWIND_PROBE}
-  ,
-  pweb.test.mormot.bridge,
-  pweb.test.mormot.routing,
-  pweb.test.mormot.integration
-  {$endif PWEB_CALLMETHOD_UNWIND_PROBE}
   ;
 
 type
@@ -87,9 +86,6 @@ type
     {$ifdef DARWIN}
     procedure CocoaAdapter;
     {$endif DARWIN}
-    {$ifdef PWEB_CALLMETHOD_UNWIND_PROBE}
-    procedure MormotBridge;
-    {$endif PWEB_CALLMETHOD_UNWIND_PROBE}
   end;
 
 procedure TPWebTests.CoreBinding;
@@ -239,13 +235,6 @@ begin
     TTestSourceLifecycle, TTestBindingLifecycle]);
 end;
 
-{$ifdef PWEB_CALLMETHOD_UNWIND_PROBE}
-procedure TPWebTests.MormotBridge;
-begin
-  AddCase([TTestMormotBridge, TTestMormotRouting,
-    TTestMormotIntegration]);
-end;
-{$endif PWEB_CALLMETHOD_UNWIND_PROBE}
 
 begin
   // sets ExitCode = 1 on any failed assertion; pass /noenter switch in

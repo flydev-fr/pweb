@@ -22,7 +22,7 @@
 #   3  npm ci, typecheck, production build
 #   4  the frontend security sweeps, over SOURCE and over OUTPUT
 #   5  app.pwb, through the frozen CAP-6 bundler
-#   6  the generated Pascal program, inside the CAP-3U window
+#   6  the generated Pascal program, against the pristine pinned mORMot
 #   7  the smallest release layout, and a real GUI run from an unrelated CWD
 #   8  re-digest the project and require it unchanged
 #
@@ -270,45 +270,25 @@ $unitDir = Join-Path $work 'app-units'
 $binDir = Join-Path $work 'app-bin'
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $unitDir, $binDir
 New-Item -ItemType Directory -Force $unitDir, $binDir | Out-Null
-$nativeBuilt = $false
-try {
-    pwsh -NoProfile -File tools/patch-cap3u.ps1 2>&1 |
-        Tee-Object -FilePath $log -Append | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'CAP-3U re-apply FAILED' }
-    # every PWeb unit path names the STAGED SDK. If one of them silently
-    # resolved to this repository's src/ instead, the claim this step makes
-    # would be about the checkout rather than about an installation.
-    $sdkUnits = @('lib', 'rpc', 'security', 'webview', 'assets',
-                  'platform/windows') |
-        ForEach-Object { "-Fu$(Join-Path $sdkSrc $_)" }
-    fpc -Px86_64 -Twin64 -MObjFPC -Sh -B -Xm `
-        "-FU$unitDir" "-FE$binDir" "-Fu$(Join-Path $project 'src')" `
-        @sdkUnits `
-        -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
-        -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net `
-        -Fudeps/mormot2/src/db -Fudeps/mormot2/src/orm `
-        -Fudeps/mormot2/src/rest -Fudeps/mormot2/src/soa `
-        -Fldeps/mormot2/static/x86_64-win64 `
-        (Join-Path $project 'src/demo.lpr') 2>&1 |
-        Tee-Object -FilePath $log -Append | Out-Null
-    $nativeBuilt = $LASTEXITCODE -eq 0
-}
-finally {
-    $restoreFailures = @()
-    foreach ($attempt in 1..2) {
-        pwsh -NoProfile -File tools/patch-cap3u.ps1 -Restore 2>&1 |
-            Tee-Object -FilePath $log -Append | Out-Null
-        if ($LASTEXITCODE -ne 0) { $restoreFailures += $attempt }
-    }
-    if ($restoreFailures) {
-        throw "CAP-3U restore attempts failed: $($restoreFailures -join ', ')"
-    }
-}
+# every PWeb unit path names the STAGED SDK. If one of them silently
+# resolved to this repository's src/ instead, the claim this step makes
+# would be about the checkout rather than about an installation.
+$sdkUnits = @('lib', 'rpc', 'security', 'webview', 'assets',
+              'platform/windows') |
+    ForEach-Object { "-Fu$(Join-Path $sdkSrc $_)" }
+fpc -Px86_64 -Twin64 -MObjFPC -Sh -B -Xm `
+    "-FU$unitDir" "-FE$binDir" "-Fu$(Join-Path $project 'src')" `
+    @sdkUnits `
+    -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+    -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net `
+    -Fudeps/mormot2/src/db -Fudeps/mormot2/src/orm `
+    -Fudeps/mormot2/src/rest -Fudeps/mormot2/src/soa `
+    -Fldeps/mormot2/static/x86_64-win64 `
+    (Join-Path $project 'src/demo.lpr') 2>&1 |
+    Tee-Object -FilePath $log -Append | Out-Null
+$nativeBuilt = $LASTEXITCODE -eq 0
 Require $nativeBuilt 'the generated Pascal program does not compile'
 Row 'native_build' $(if ($nativeBuilt) { 'PASS' } else { 'FAIL' })
-git -C deps/mormot2 diff --exit-code HEAD -- src/core/mormot.core.interfaces.pas |
-    Out-Null
-Require ($LASTEXITCODE -eq 0) 'CAP-3U source is not pristine after the restore'
 
 # --- 7. the smallest release layout, and a real run ------------------------
 $release = Join-Path $work 'release'

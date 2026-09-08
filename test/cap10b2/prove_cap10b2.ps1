@@ -22,7 +22,7 @@
 #   3  compile the Pascal frontend into an EXTERNAL stage
 #   4  normalise, assemble the static output, sweep it
 #   5  app.pwb, through the frozen CAP-6 bundler
-#   6  the generated Pascal program, inside the CAP-3U window
+#   6  the generated Pascal program, against the pristine pinned mORMot
 #   7  the smallest release layout, and a real GUI run from an unrelated CWD
 #   8  re-digest the project and require it unchanged
 #   9  React/Pas2JS backend parity, against the CAP-10B1 proof record
@@ -342,56 +342,39 @@ $unitDir = Join-Path $work 'app-units'
 $binDir = Join-Path $work 'app-bin'
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $unitDir, $binDir
 New-Item -ItemType Directory -Force $unitDir, $binDir | Out-Null
-$nativeBuilt = $false
-try {
-    pwsh -NoProfile -File tools/patch-cap3u.ps1 2>&1 |
-        Tee-Object -FilePath $log -Append | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'CAP-3U re-apply FAILED' }
-    $sdkUnits = @('lib', 'rpc', 'security', 'webview', 'assets',
-                  'platform/windows') |
-        ForEach-Object { "-Fu$(Join-Path $sdkSrc $_)" }
-    # THE NATIVE HALF OF THE SDK-ROOT CLAIM, asserted rather than assumed.
-    # The Pas2JS compile above proves its one PWeb unit path names the staged
-    # SDK; the same has to be true of the six the FPC compile is handed, and
-    # nothing had ever measured it - which is exactly how the POSIX CAP-10B1
-    # proof kept a repo-relative platform path while its header claimed
-    # otherwise.
-    $checkoutSrc = Join-Path $repoRoot 'src'
-    $nativeFromSdk = $true
-    foreach ($u in $sdkUnits) {
-        if (-not $u.StartsWith("-Fu$sdkSrc")) {
-            $nativeFromSdk = $false
-            Require $false "the native compile's PWeb unit path is not staged: $u"
-        }
-        if ($u.StartsWith("-Fu$checkoutSrc")) {
-            $nativeFromSdk = $false
-            Require $false "the native compile names this repository's src/: $u"
-        }
+$sdkUnits = @('lib', 'rpc', 'security', 'webview', 'assets',
+              'platform/windows') |
+    ForEach-Object { "-Fu$(Join-Path $sdkSrc $_)" }
+# THE NATIVE HALF OF THE SDK-ROOT CLAIM, asserted rather than assumed.
+# The Pas2JS compile above proves its one PWeb unit path names the staged
+# SDK; the same has to be true of the six the FPC compile is handed, and
+# nothing had ever measured it - which is exactly how the POSIX CAP-10B1
+# proof kept a repo-relative platform path while its header claimed
+# otherwise.
+$checkoutSrc = Join-Path $repoRoot 'src'
+$nativeFromSdk = $true
+foreach ($u in $sdkUnits) {
+    if (-not $u.StartsWith("-Fu$sdkSrc")) {
+        $nativeFromSdk = $false
+        Require $false "the native compile's PWeb unit path is not staged: $u"
     }
-    Row 'pas2js_native_from_sdk_root' $(if ($nativeFromSdk) { 'PASS' } else { 'FAIL' })
-    fpc -Px86_64 -Twin64 -MObjFPC -Sh -B -Xm `
-        "-FU$unitDir" "-FE$binDir" "-Fu$(Join-Path $project 'src')" `
-        @sdkUnits `
-        -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
-        -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net `
-        -Fudeps/mormot2/src/db -Fudeps/mormot2/src/orm `
-        -Fudeps/mormot2/src/rest -Fudeps/mormot2/src/soa `
-        -Fldeps/mormot2/static/x86_64-win64 `
-        (Join-Path $project 'src/demo.lpr') 2>&1 |
-        Tee-Object -FilePath $log -Append | Out-Null
-    $nativeBuilt = $LASTEXITCODE -eq 0
-}
-finally {
-    $restoreFailures = @()
-    foreach ($attempt in 1..2) {
-        pwsh -NoProfile -File tools/patch-cap3u.ps1 -Restore 2>&1 |
-            Tee-Object -FilePath $log -Append | Out-Null
-        if ($LASTEXITCODE -ne 0) { $restoreFailures += $attempt }
-    }
-    if ($restoreFailures) {
-        throw "CAP-3U restore attempts failed: $($restoreFailures -join ', ')"
+    if ($u.StartsWith("-Fu$checkoutSrc")) {
+        $nativeFromSdk = $false
+        Require $false "the native compile names this repository's src/: $u"
     }
 }
+Row 'pas2js_native_from_sdk_root' $(if ($nativeFromSdk) { 'PASS' } else { 'FAIL' })
+fpc -Px86_64 -Twin64 -MObjFPC -Sh -B -Xm `
+    "-FU$unitDir" "-FE$binDir" "-Fu$(Join-Path $project 'src')" `
+    @sdkUnits `
+    -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+    -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net `
+    -Fudeps/mormot2/src/db -Fudeps/mormot2/src/orm `
+    -Fudeps/mormot2/src/rest -Fudeps/mormot2/src/soa `
+    -Fldeps/mormot2/static/x86_64-win64 `
+    (Join-Path $project 'src/demo.lpr') 2>&1 |
+    Tee-Object -FilePath $log -Append | Out-Null
+$nativeBuilt = $LASTEXITCODE -eq 0
 Require $nativeBuilt 'the generated Pascal program does not compile'
 Row 'pas2js_native_build' $(if ($nativeBuilt) { 'PASS' } else { 'FAIL' })
 # STOP HERE rather than crash below. Everything after this point handles an
@@ -402,9 +385,6 @@ if (-not (Test-Path -LiteralPath (Join-Path $binDir 'demo.exe'))) {
     foreach ($f in $failures) { Write-Host "GATE FAILURE: $f" }
     throw 'CAP-10B2 build proof FAILED: the generated program produced no executable'
 }
-git -C deps/mormot2 diff --exit-code HEAD -- src/core/mormot.core.interfaces.pas |
-    Out-Null
-Require ($LASTEXITCODE -eq 0) 'CAP-3U source is not pristine after the restore'
 
 # THE EXECUTABLE COMPARISON, MEASURED AND REPORTED RATHER THAN ASSERTED.
 # The two UI variants compile the same native source, so in principle they

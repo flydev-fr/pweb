@@ -6,9 +6,10 @@
 # headless P1-P40 matrix, which writes the canonical
 # build/cap9b1/quickjs-package-corpus.txt digest source.
 #
-# The real mORMot SOA bridge means this host, exactly like the CAP-9A
-# harness, compiles INSIDE the CAP-3U window (patch-cap3u.ps1 apply ->
-# compile -> restore + verify pristine).
+# The real mORMot SOA bridge means this host drives mORMot's Win64 asm
+# CallMethod. Until the 2026-09-08 pin move that needed a CAP-3U window
+# around the compile; the pin now carries upstream 896f1c1c and 790154af, so
+# it compiles against the PRISTINE dependency like the CAP-9A harness.
 #
 # QuickJS statics: deps/mormot2/static/x86_64-win64/quickjs.o from the
 # sha256-pinned mormot2static release; LIBQUICKJSSTATIC is auto-defined by
@@ -42,8 +43,7 @@ foreach ($pre in 'test/cap9b1/quickjspackage.pas',
                  'src/script/pweb.script.quickjs.pas',
                  'src/assets/pweb.assets.folder.pas',
                  'src/assets/pweb.assets.zip.pas',
-                 'deps/mormot2/static/x86_64-win64/quickjs.o',
-                 'tools/patch-cap3u.ps1') {
+                 'deps/mormot2/static/x86_64-win64/quickjs.o') {
     if (-not (Test-Path $pre)) {
         throw "missing precondition: $pre"
     }
@@ -58,34 +58,18 @@ if ($passConst.Count -ne 1) {
 $passMarker = $passConst[0].Matches[0].Groups[1].Value
 Write-Host "[CAP-9B1] canonical pass marker: $passMarker"
 
-# --- build quickjspackage.exe INSIDE the CAP-3U window ----------------------
+# --- build quickjspackage.exe against the PRISTINE dependency ---------------
 New-Item -ItemType Directory -Force build/cap9b1/qp-fpc, build/cap9b1/qp-bin | Out-Null
-try {
-    pwsh -NoProfile -File tools/patch-cap3u.ps1
-    if ($LASTEXITCODE -ne 0) { throw 'CAP-9B1 CAP-3U re-apply failed' }
-    fpc -Px86_64 -Twin64 -MObjFPC -Sh -B -Xm `
-        -FUbuild/cap9b1/qp-fpc -FEbuild/cap9b1/qp-bin `
-        -Fusrc/script -Fusrc/rpc -Fusrc/security -Fusrc/assets -Futest/security `
-        -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
-        -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net -Fudeps/mormot2/src/db `
-        -Fudeps/mormot2/src/orm -Fudeps/mormot2/src/rest -Fudeps/mormot2/src/soa `
-        -Fudeps/mormot2/src/script `
-        -Fldeps/mormot2/static/x86_64-win64 `
-        test/cap9b1/quickjspackage.pas
-    if ($LASTEXITCODE -ne 0) { throw 'quickjspackage.pas compile FAILED' }
-}
-finally {
-    $restoreFailures = @()
-    foreach ($attempt in 1..2) {
-        pwsh -NoProfile -File tools/patch-cap3u.ps1 -Restore
-        if ($LASTEXITCODE -ne 0) { $restoreFailures += $attempt }
-    }
-    if ($restoreFailures) {
-        throw "CAP-9B1 CAP-3U restore attempts failed: $($restoreFailures -join ', ')"
-    }
-}
-git -C deps/mormot2 diff --exit-code HEAD -- src/core/mormot.core.interfaces.pas
-if ($LASTEXITCODE -ne 0) { throw 'CAP-3U source is not pristine after CAP-9B1 restore' }
+fpc -Px86_64 -Twin64 -MObjFPC -Sh -B -Xm `
+    -FUbuild/cap9b1/qp-fpc -FEbuild/cap9b1/qp-bin `
+    -Fusrc/script -Fusrc/rpc -Fusrc/security -Fusrc/assets -Futest/security `
+    -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+    -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net -Fudeps/mormot2/src/db `
+    -Fudeps/mormot2/src/orm -Fudeps/mormot2/src/rest -Fudeps/mormot2/src/soa `
+    -Fudeps/mormot2/src/script `
+    -Fldeps/mormot2/static/x86_64-win64 `
+    test/cap9b1/quickjspackage.pas
+if ($LASTEXITCODE -ne 0) { throw 'quickjspackage.pas compile FAILED' }
 
 $exe = (Resolve-Path build/cap9b1/qp-bin/quickjspackage.exe).Path
 

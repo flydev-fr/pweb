@@ -18,8 +18,9 @@
 #   - the QuickJS static object: pinned in deps on Linux, built from the
 #     pinned in-tree sources on macOS (the mORMot release ships no
 #     darwin quickjs.o);
-#   - no CAP-3U window: the mORMot x64 call-method trampoline is a
-#     Win64-only concern;
+#   - no patch window on any target since the 2026-09-08 mORMot pin move:
+#     the Win64 call-method trampoline the CAP-3U patch used to supply now
+#     comes from upstream 896f1c1c and 790154af;
 #   - listening-socket sampling uses ss(8) on Linux and lsof(8) on macOS.
 #
 # Run Linux under a virtual display:  xvfb-run -a test/cap9c2/run_quickjsgui.sh
@@ -369,7 +370,7 @@ if [ "${os_name}" = 'Darwin' ]; then
 fi
 license_sha="$(sha256_of "${license_path}")"
 add_row 'license_quickjs_sha256' \
-    "$([ "${license_sha}" = '8310e7a6c52cd3b45a0aedb5620ef79408c8c155594f37259ba801f6a2fbe2fc' ] && echo 1 || echo 0)" \
+    "$([ "${license_sha}" = 'a1d491db9c87a750c2bb37d7d47b642ce4b94a0d56332640f1d14521233875bf' ] && echo 1 || echo 0)" \
     "sha256=${license_sha}"
 license_count="$(printf '%s\n' "${actual_layout}" | grep -c 'LICENSE\.quickjs$' || true)"
 add_row 'license_quickjs_once' \

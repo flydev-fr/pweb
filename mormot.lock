@@ -3,10 +3,38 @@
 # the layers around it (mormot.core.test suites today, apps later).
 # The whole tree is pinned by the commit SHA; fetched by tools/get-mormot.ps1
 # into the git-ignored deps/mormot2 checkout.
+#
+# MOVED 2026-09-08, from b1a129b09197b6b9fb67c6d4d2a13445987a3fe1 (2.4.16242,
+# 2026-08-05), for one reason: this commit range carries BOTH halves of the
+# CAP-3U finding upstream, so the patch PWeb had been re-applying around every
+# Windows compile since CAP-3 is now redundant and is gone.
+#
+#   790154afbfb004d31404c81e13e8a1bc90a04d32  2026-08-12 22:02:12Z
+#     "core: ensure imvCurrency is returned in rax on x86-64"
+#   896f1c1c66653c5c995ec9790117f0d6b8eeb427  2026-08-12 22:03:58Z
+#     "core: Win64 requires unwinding information for its asm stub"
+#
+# Both commit messages cite the report that produced them:
+#   https://github.com/flydev-fr/mormot-fpc-win64-callmethod-unwind
+#
+# MEASURED before the move, on a fresh checkout the patch had never touched:
+# FPC 3.2.2's internal PE-COFF writer honours the .seh_pushreg/.seh_setframe/
+# .seh_endprologue directives 896f1c1c adds, so CallMethod now carries a real
+# RUNTIME_FUNCTION (frame register rbp, SET_FPREG rbp offset 0, PUSH_NONVOL
+# r12, PUSH_NONVOL rbp) where the previous pin had no unwind entry at all; and
+# the Currency return matrix over arities 0/1/2 is 5/5 on Win64 unpatched,
+# against 0/5 at the previous pin unpatched. test/cap3u is the permanent gate
+# over both, against the pristine dependency, with no patch step.
 url = https://github.com/synopse/mORMot2.git
-commit = b1a129b09197b6b9fb67c6d4d2a13445987a3fe1
+commit = da7e1c2fabb17cc18279c7c8599b563d35845168
 # Static .o/.a files required by FPC builds (mORMot's documented install
 # step). Release assets are mutable in principle, so the archive integrity
 # rests on the sha256 below, not on the URL.
+#
+# UNCHANGED by the 2026-09-08 pin move, and that is a measurement rather than
+# an omission: the candidate's `static/` (dev.sha256 included) and `res/` trees
+# are byte-identical to the previous pin, 2.4-stable is still the newest
+# release, its asset was last modified 2026-01-12, and re-downloading it on
+# 2026-09-08 reproduced the sha256 below over all 33675498 bytes.
 statics-url = https://github.com/synopse/mORMot2/releases/download/2.4-stable/mormot2static.tgz
 statics-sha256 = ae2d8da212c5b4f2778370de7aee965f7fd82eef911da27eeb797d6db06db449

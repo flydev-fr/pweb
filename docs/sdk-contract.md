@@ -83,7 +83,7 @@ compiler.**
 | `share/pweb/pweb-templates.zip` | **ship** | the CAP-10B0 pack `pweb create` generates from |
 | `share/pweb/src/**` | **ship** | the framework a generated project compiles against |
 | `share/pweb/sdk/typescript`, `sdk/pas2js` | **ship** | the two frontend SDKs |
-| `share/pweb/deps/mormot2/{src,static/<fpc-target>}` | **ship** | CAP-3U-patched on Windows, with `x64callmethod.obj`; `static/delphi` on Windows only |
+| `share/pweb/deps/mormot2/{src,static/<fpc-target>}` | **ship** | the pinned upstream tree, byte for byte, on every target — until the 2026-09-08 pin move Windows shipped a CAP-3U-patched copy with an `x64callmethod.obj`; `static/delphi` on Windows only |
 | `share/pweb/lib/<os>-<arch>/**` | **ship** | the webview library and, on Windows, the WebView2 loader |
 | `share/pweb/pack/**` | **ship**, Windows only | the CAP-10D1 packaging kit and its two compiled CAP-13 helpers |
 | `share/pweb/licenses/**` | **ship** | every shipped component's notice, exactly once — the third-party ones that apply to this target and, since CAP-11B, PWeb's own `LICENSE` as `LICENSE.pweb.txt`. The set is the rows of [third-party-licenses.md](third-party-licenses.md) whose condition matches, never a count restated here |

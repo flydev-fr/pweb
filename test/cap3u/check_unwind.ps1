@@ -1,15 +1,58 @@
 param(
     [Parameter(Mandatory = $true)]
-    [string]$ObjectPath,
-    [Parameter(Mandatory = $true)]
     [string]$ExecutablePath,
     [Parameter(Mandatory = $true)]
     [string]$MapPath,
     [string]$DumpbinPath
 )
 
+# CAP-3U binary gate, over the PRISTINE PINNED DEPENDENCY.
+#
+# Until the 2026-09-08 mORMot pin move this gate measured a hand-written
+# ml64 object that tools/patch-cap3u.ps1 linked into mORMot's own source:
+# FPC 3.2.2 Win64 emitted NO unwind metadata for mORMot's private CallMethod
+# assembler, so an exception raised inside an interface-based service killed
+# the process instead of unwinding. Upstream fixed it in 896f1c1c
+# ("core: Win64 requires unwinding information for its asm stub"), citing the
+# report this repository filed, and the pin now carries that commit. The
+# patch, the ASM source and the generated OBJ are gone.
+#
+# WHAT REPLACES THEM IS THIS SAME GATE, ASKING THE SAME QUESTIONS OF THE
+# COMPILER'S OWN OUTPUT. A fix that lives upstream is a fix somebody can
+# revert upstream, and a `.seh_*` directive an assembler silently ignored
+# would look exactly like a fix that worked. So the five assertions the OBJ
+# had to satisfy are now made of the FPC-emitted function:
+#
+#   1  the link map contributes a non-empty `.text` section for
+#      mormot.core.interfaces' CallMethod, from mormot.core.interfaces.o
+#   2  it contributes the matching non-empty `.pdata` and `.xdata`, and the
+#      `$unwind$...CALLMETHOD...` symbol sits at the start of that `.xdata`
+#   3  the final PE carries EXACTLY ONE RUNTIME_FUNCTION over that exact
+#      code range
+#   4  its unwind info RVA is nonzero and lands INSIDE the mapped `.xdata`
+#   5  the unwind codes are the ones the prologue actually executes:
+#      frame register RBP, SET_FPREG rbp offset 0, PUSH_NONVOL rbp,
+#      PUSH_NONVOL r12
+#
+# and one refusal the OBJ era could not express: no `x64callmethod` symbol
+# may appear anywhere in the map. That name only ever came from the removed
+# patch, so a tree that grew it back fails here rather than passing quietly
+# with two implementations of the same stub.
+#
+# Requires the executable to be linked with -Xm. dumpbin comes from MSVC,
+# which the Windows leg already needs for the webview DLL build.
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# the FPC section/symbol names for mormot.core.interfaces' CallMethod. FPC
+# mangles a unit-private routine as <unit>_$$_<name>$<param types>, lower
+# case in section names and upper case in symbol names.
+$TextSection = '.text.n_mormot.core.interfaces_$$_callmethod$tcallmethodargs'
+$PdataSection = '.pdata.n_mormot.core.interfaces_$$_callmethod$tcallmethodargs'
+$XdataSection = '.xdata.n_mormot.core.interfaces_$$_callmethod$tcallmethodargs'
+$UnwindSymbol = '$unwind$MORMOT.CORE.INTERFACES_$$_CALLMETHOD$TCALLMETHODARGS'
+$UnitObject = 'mormot.core.interfaces.o'
 
 function Fail([string]$Message) {
     throw "[CAP-3U binary gate] $Message"
@@ -22,16 +65,6 @@ function Resolve-InputFile([string]$Path, [string]$Description) {
         Fail "$Description not found: $Path"
     }
     return $resolved.Path
-}
-
-function Normalize-MapObjectPath([string]$Path) {
-    $candidate = $Path.Trim().Trim('"')
-    try {
-        return [IO.Path]::GetFullPath($candidate)
-    }
-    catch {
-        Fail "invalid object path in final link map: $Path"
-    }
 }
 
 function Resolve-Dumpbin([string]$ExplicitPath) {
@@ -75,16 +108,6 @@ function Invoke-Dumpbin([string[]]$Arguments) {
     return $output
 }
 
-function Require-NonEmptyObjectSection([string]$Dump, [string]$Name) {
-    $escaped = [regex]::Escape($Name)
-    $match = [regex]::Match($Dump,
-        "(?ims)^SECTION HEADER #\d+\s*`r?`n\s*$escaped name\s*`r?`n(?:(?!^SECTION HEADER).)*?^\s*([0-9A-F]+) size of raw data")
-    if (-not $match.Success) { Fail "OBJ has no $Name section" }
-    if ([Convert]::ToUInt64($match.Groups[1].Value, 16) -eq 0) {
-        Fail "OBJ section $Name is empty"
-    }
-}
-
 if (-not $IsWindows) { Fail 'binary gate requires Windows' }
 if (([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne
         [Runtime.InteropServices.Architecture]::X64) -or
@@ -93,81 +116,113 @@ if (([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne
     Fail 'binary gate requires a native Windows x64 process'
 }
 
-$object = Resolve-InputFile $ObjectPath 'COFF object'
 $executable = Resolve-InputFile $ExecutablePath 'final executable'
 $map = Resolve-InputFile $MapPath 'final link map'
 $script:Dumpbin = Resolve-Dumpbin $DumpbinPath
 
-$objectDump = Invoke-Dumpbin @('/headers', '/symbols', $object)
-if ($objectDump -notmatch '(?im)^\s*8664 machine \(x64\)\s*$') {
-    Fail 'OBJ machine is not x64 (8664)'
+# --- 1/2. read the three contributions out of the link map ------------------
+# The map is tens of megabytes, so it is read ONCE, line by line, rather than
+# regex-scanned as a single string. GNU ld puts a long section name on its own
+# line and the address/size/object on the next; a short one shares the line.
+# Both shapes are accepted, and the object file is required to be the compiled
+# dependency unit rather than whatever else might have contributed a section
+# of that name.
+$wanted = @{
+    $TextSection  = 'text'
+    $PdataSection = 'pdata'
+    $XdataSection = 'xdata'
 }
-if ($objectDump -notmatch '(?im)^\s*[0-9A-F]+\s+[0-9A-F]+\s+SECT\d+\s+notype \(\)\s+External\s+\|\s+x64callmethod\s*$') {
-    Fail 'OBJ has no public x64callmethod symbol'
-}
-Require-NonEmptyObjectSection $objectDump '.pdata'
-Require-NonEmptyObjectSection $objectDump '.xdata'
+$found = @{}
+$symbolVa = @{}
+$sawX64CallMethod = $false
+$pending = ''
+foreach ($line in [IO.File]::ReadLines($map)) {
+    if ($line -cmatch 'x64callmethod') { $sawX64CallMethod = $true }
 
-$mapText = [IO.File]::ReadAllText($map)
-$objectBaseName = [IO.Path]::GetFileName($object)
-$objectName = [regex]::Escape($objectBaseName)
-$readObjectEntries = @([regex]::Matches($mapText,
-    '(?im)^READOBJECT\s+(.+?)\s*$') | ForEach-Object {
-        [pscustomobject]@{
-            Raw = $_.Groups[1].Value
-            Normalized = Normalize-MapObjectPath $_.Groups[1].Value
+    if ($pending) {
+        # the address/size/object line that belongs to the wrapped name above
+        if ($line -cmatch '^\s+0x([0-9a-fA-F]+)\s+0x([0-9a-fA-F]+)\s+(\S.*)$') {
+            $key = $wanted[$pending]
+            if ($found.ContainsKey($key)) {
+                Fail "the link map contributes $pending more than once"
+            }
+            $found[$key] = [pscustomobject]@{
+                Section = $pending
+                Va      = [Convert]::ToUInt64($Matches[1], 16)
+                Size    = [Convert]::ToUInt64($Matches[2], 16)
+                Object  = [IO.Path]::GetFileName($Matches[3].Trim())
+            }
         }
-    })
-$sameBaseReadObjects = @($readObjectEntries | Where-Object {
-    [IO.Path]::GetFileName($_.Normalized) -ieq $objectBaseName
-})
-$exactReadObjects = @($sameBaseReadObjects | Where-Object {
-    [string]::Equals($_.Normalized, $object,
-        [StringComparison]::OrdinalIgnoreCase)
-})
-if (($sameBaseReadObjects.Count -ne 1) -or
-    ($exactReadObjects.Count -ne 1)) {
-    Fail "expected exactly one normalized READOBJECT provenance for '$object', found exact=$($exactReadObjects.Count), same-basename=$($sameBaseReadObjects.Count)"
-}
-$sameBaseLoads = @([regex]::Matches($mapText,
-    '(?im)^LOAD\s+(.+?)\s*$') | Where-Object {
-        [IO.Path]::GetFileName(
-            (Normalize-MapObjectPath $_.Groups[1].Value)) -ieq $objectBaseName
-    })
-if ($sameBaseLoads.Count -ne 0) {
-    Fail 'external-linker LOAD provenance is forbidden for x64callmethod.obj'
-}
-
-$codeSection = [regex]::Escape('.text$mn')
-$code = [regex]::Match($mapText,
-    "(?im)^\s*$codeSection\s+0x([0-9A-F]+)\s+0x([0-9A-F]+)\s+.*$objectName\s*$")
-if (-not $code.Success) {
-    Fail 'final link map has no x64callmethod.obj code contribution'
-}
-$symbol = [regex]::Match($mapText,
-    '(?im)^\s*0x([0-9A-F]+)\s+x64callmethod\s*$')
-if (-not $symbol.Success) { Fail 'final link map has no x64callmethod symbol' }
-$startVa = [Convert]::ToUInt64($code.Groups[1].Value, 16)
-$codeSize = [Convert]::ToUInt64($code.Groups[2].Value, 16)
-$symbolVa = [Convert]::ToUInt64($symbol.Groups[1].Value, 16)
-if (($codeSize -eq 0) -or ($symbolVa -ne $startVa)) {
-    Fail 'mapped x64callmethod symbol does not start at its non-empty code contribution'
-}
-$sectionContributions = @{}
-foreach ($sectionName in @('.pdata', '.xdata')) {
-    $escapedSection = [regex]::Escape($sectionName)
-    $section = [regex]::Match($mapText,
-        "(?im)^\s*$escapedSection\s+0x([0-9A-F]+)\s+0x([0-9A-F]+)\s+.*$objectName\s*$")
-    if ((-not $section.Success) -or
-        ([Convert]::ToUInt64($section.Groups[2].Value, 16) -eq 0)) {
-        Fail "final link map did not retain non-empty $sectionName from x64callmethod.obj"
+        else {
+            Fail "the link map entry for $pending carries no address/size line"
+        }
+        $pending = ''
+        continue
     }
-    $sectionContributions[$sectionName] = [pscustomobject]@{
-        StartVa = [Convert]::ToUInt64($section.Groups[1].Value, 16)
-        Size = [Convert]::ToUInt64($section.Groups[2].Value, 16)
+
+    if ($line -cmatch '^\s\S') {
+        $trimmed = $line.TrimEnd()
+        # wrapped form: the section name alone on its line
+        if ($wanted.ContainsKey($trimmed.Trim())) {
+            $pending = $trimmed.Trim()
+            continue
+        }
+        # inline form: name, address, size, object on one line
+        if ($trimmed -cmatch '^\s(\S+)\s+0x([0-9a-fA-F]+)\s+0x([0-9a-fA-F]+)\s+(\S.*)$') {
+            $name = $Matches[1]
+            if ($wanted.ContainsKey($name)) {
+                $key = $wanted[$name]
+                if ($found.ContainsKey($key)) {
+                    Fail "the link map contributes $name more than once"
+                }
+                $found[$key] = [pscustomobject]@{
+                    Section = $name
+                    Va      = [Convert]::ToUInt64($Matches[2], 16)
+                    Size    = [Convert]::ToUInt64($Matches[3], 16)
+                    Object  = [IO.Path]::GetFileName($Matches[4].Trim())
+                }
+            }
+        }
+        continue
+    }
+
+    if ($line -cmatch '^\s+0x([0-9a-fA-F]+)\s+(\S+)\s*$') {
+        $name = $Matches[2]
+        if ($name -ceq $UnwindSymbol) {
+            if ($symbolVa.ContainsKey($name)) {
+                Fail "the link map declares $UnwindSymbol more than once"
+            }
+            $symbolVa[$name] = [Convert]::ToUInt64($Matches[1], 16)
+        }
     }
 }
+if ($pending) { Fail "truncated link map entry for $pending" }
 
+if ($sawX64CallMethod) {
+    Fail ('the link map names x64callmethod: the removed CAP-3U patch is back ' +
+        'in the dependency, and the upstream stub is no longer what runs')
+}
+foreach ($key in 'text', 'pdata', 'xdata') {
+    if (-not $found.ContainsKey($key)) {
+        Fail "the link map has no $key contribution for mormot.core.interfaces CallMethod"
+    }
+    if ($found[$key].Size -eq 0) {
+        Fail "the link map $key contribution for CallMethod is empty"
+    }
+    if ($found[$key].Object -cne $UnitObject) {
+        Fail ("the $key contribution for CallMethod came from " +
+            "'$($found[$key].Object)', not from $UnitObject")
+    }
+}
+if (-not $symbolVa.ContainsKey($UnwindSymbol)) {
+    Fail "the link map declares no $UnwindSymbol"
+}
+if ($symbolVa[$UnwindSymbol] -ne $found['xdata'].Va) {
+    Fail ("$UnwindSymbol is at 0x$($symbolVa[$UnwindSymbol].ToString('X')) but its " +
+        "mapped .xdata starts at 0x$($found['xdata'].Va.ToString('X'))")
+}
+
+# --- 3. the final PE ---------------------------------------------------------
 $headers = Invoke-Dumpbin @('/headers', $executable)
 if ($headers -notmatch '(?im)^\s*8664 machine \(x64\)\s*$') {
     Fail 'final executable machine is not x64 (8664)'
@@ -176,29 +231,45 @@ $imageBaseMatch = [regex]::Match($headers,
     '(?im)^\s*([0-9A-F]+) image base(?:\s+\([^\r\n]+\))?\s*$')
 if (-not $imageBaseMatch.Success) { Fail 'unable to read final PE image base' }
 $imageBase = [Convert]::ToUInt64($imageBaseMatch.Groups[1].Value, 16)
-if ($startVa -lt $imageBase) { Fail 'mapped code address precedes the PE image base' }
-$startRva = $startVa - $imageBase
-$endRva = $startRva + $codeSize
+foreach ($key in 'text', 'xdata') {
+    if ($found[$key].Va -lt $imageBase) {
+        Fail "the mapped $key address precedes the PE image base"
+    }
+}
+$startRva = $found['text'].Va - $imageBase
+$endRva = $startRva + $found['text'].Size
 
 $unwind = Invoke-Dumpbin @('/unwindinfo', $executable)
 $startHex = $startRva.ToString('X8')
-$endHex = $endRva.ToString('X8')
-$entryPattern = "(?im)^[ \t]*[0-9A-F]+[ \t]+$startHex[ \t]+$endHex[ \t]+([0-9A-F]+)[ \t\r]*$"
+# The entry must BEGIN at the mapped code start - that is what identifies it as
+# CallMethod's and not a neighbour's. Its end is checked against the section
+# rather than required to equal it: FPC pads a `.text` contribution to a 16-byte
+# boundary, so the mapped size (0x90 here) is the padded one and the
+# RUNTIME_FUNCTION covers the 0x8D bytes the function actually occupies. The
+# ml64 object this gate used to read happened to need no padding, which is why
+# the previous form could demand equality.
+$entryPattern = "(?im)^[ \t]*[0-9A-F]+[ \t]+$startHex[ \t]+([0-9A-F]+)[ \t]+([0-9A-F]+)[ \t\r]*$"
 $entries = [regex]::Matches($unwind, $entryPattern)
 if ($entries.Count -ne 1) {
-    Fail "expected one exact RUNTIME_FUNCTION $startHex..$endHex, found $($entries.Count)"
+    Fail ("expected one RUNTIME_FUNCTION starting at $startHex, found " +
+        "$($entries.Count) -- an FPC that ignored the .seh_* directives emits none")
 }
-$unwindRva = [Convert]::ToUInt64($entries[0].Groups[1].Value, 16)
-if ($unwindRva -eq 0) { Fail 'x64callmethod RUNTIME_FUNCTION has zero unwind info' }
-$xdata = $sectionContributions['.xdata']
-if ($xdata.StartVa -lt $imageBase) {
-    Fail 'mapped x64callmethod.obj .xdata precedes the PE image base'
+$entryEndRva = [Convert]::ToUInt64($entries[0].Groups[1].Value, 16)
+if (($entryEndRva -le $startRva) -or ($entryEndRva -gt $endRva)) {
+    Fail ("the RUNTIME_FUNCTION at $startHex ends at " +
+        "$($entryEndRva.ToString('X8')), outside its mapped code contribution " +
+        "$startHex..$($endRva.ToString('X8'))")
 }
-$xdataStartRva = $xdata.StartVa - $imageBase
-$xdataEndRva = $xdataStartRva + $xdata.Size
+$unwindRva = [Convert]::ToUInt64($entries[0].Groups[2].Value, 16)
+if ($unwindRva -eq 0) { Fail 'CallMethod RUNTIME_FUNCTION has zero unwind info' }
+$xdataStartRva = $found['xdata'].Va - $imageBase
+$xdataEndRva = $xdataStartRva + $found['xdata'].Size
 if (($unwindRva -lt $xdataStartRva) -or ($unwindRva -ge $xdataEndRva)) {
-    Fail "x64callmethod unwind info RVA $($unwindRva.ToString('X8')) is outside mapped .xdata $($xdataStartRva.ToString('X8'))..$($xdataEndRva.ToString('X8'))"
+    Fail ("CallMethod unwind info RVA $($unwindRva.ToString('X8')) is outside its " +
+        "mapped .xdata $($xdataStartRva.ToString('X8'))..$($xdataEndRva.ToString('X8'))")
 }
+
+# --- 4/5. the unwind codes ---------------------------------------------------
 $entryStart = $entries[0].Index
 $entryLineEnd = $unwind.IndexOf("`n", $entryStart)
 if ($entryLineEnd -lt 0) { Fail 'truncated dumpbin RUNTIME_FUNCTION entry' }
@@ -208,29 +279,33 @@ $tableEntryRegex = [regex]::new(
     [Text.RegularExpressions.RegexOptions]::Multiline)
 $nextEntry = $tableEntryRegex.Match($unwind, $entryLineEnd + 1)
 if ($nextEntry.Success) {
-    $entryText = $unwind.Substring($entryStart,
-        $nextEntry.Index - $entryStart)
+    $entryText = $unwind.Substring($entryStart, $nextEntry.Index - $entryStart)
 }
 else {
     $entryText = $unwind.Substring($entryStart)
 }
 if ($entryText -notmatch '(?im)^\s*Unwind version:\s*[1-9][0-9]*\s*$') {
-    Fail 'x64callmethod has no nonzero unwind version'
+    Fail 'CallMethod has no nonzero unwind version'
 }
 if ($entryText -notmatch '(?im)^\s*Frame register:\s*rbp\s*$') {
-    Fail 'x64callmethod unwind frame register is not RBP'
+    Fail 'CallMethod unwind frame register is not RBP'
 }
 if ($entryText -notmatch '(?im)SET_FPREG, register=rbp(?:, offset=0x0+)?\s*$') {
-    Fail 'x64callmethod unwind codes do not establish RBP with SET_FPREG'
+    Fail 'CallMethod unwind codes do not establish RBP with SET_FPREG'
 }
 if ($entryText -notmatch '(?im)PUSH_NONVOL, register=rbp\s*$') {
-    Fail 'x64callmethod unwind codes do not save RBP'
+    Fail 'CallMethod unwind codes do not save RBP'
 }
 if ($entryText -notmatch '(?im)PUSH_NONVOL, register=r12\s*$') {
-    Fail 'x64callmethod unwind codes do not save R12'
+    Fail 'CallMethod unwind codes do not save R12'
 }
 
-Write-Host "[CAP-3U binary gate] OBJ: x64 symbol + non-empty .pdata/.xdata"
-Write-Host "[CAP-3U binary gate] map: exact READOBJECT '$($exactReadObjects[0].Normalized)', code=$($code.Groups[2].Value), retained .pdata/.xdata"
-Write-Host "[CAP-3U binary gate] PE : exact RUNTIME_FUNCTION $startHex..$endHex, unwind RVA inside mapped .xdata, RBP SET_FPREG, saved RBP/R12"
+Write-Host ("[CAP-3U binary gate] map: $UnitObject contributes .text " +
+    "0x$($found['text'].Va.ToString('X')) size 0x$($found['text'].Size.ToString('X')), " +
+    ".pdata size 0x$($found['pdata'].Size.ToString('X')), " +
+    ".xdata size 0x$($found['xdata'].Size.ToString('X')) at the unwind symbol")
+Write-Host '[CAP-3U binary gate] map: no x64callmethod symbol -- the patch is gone'
+Write-Host ("[CAP-3U binary gate] PE : one RUNTIME_FUNCTION $startHex..$($entryEndRva.ToString('X8')) " +
+    "inside the mapped code $startHex..$($endRva.ToString('X8')), unwind RVA " +
+    "$($unwindRva.ToString('X8')) inside mapped .xdata, RBP SET_FPREG, saved RBP/R12")
 Write-Host '[CAP-3U binary gate] PASS'

@@ -6,9 +6,12 @@
 # sources) and runs the headless Q1-Q30 matrix, which writes the canonical
 # build/cap9a/quickjs-corpus.txt digest source.
 #
-# The real mORMot SOA bridge means this host, exactly like the CAP-6
-# release host and the CAP-8C harness, compiles INSIDE the CAP-3U window
-# (patch-cap3u.ps1 apply -> compile -> restore + verify pristine).
+# The real mORMot SOA bridge means this host drives mORMot's Win64 asm
+# CallMethod. Until the 2026-09-08 pin move that needed a CAP-3U window
+# around the compile (patch apply -> compile -> restore + verify pristine);
+# the pin now carries upstream 896f1c1c and 790154af, so it compiles against
+# the PRISTINE dependency like every other target. test/cap3u is the gate
+# that keeps the upstream fix honest.
 #
 # QuickJS statics: deps/mormot2/static/x86_64-win64/quickjs.o from the
 # sha256-pinned mormot2static release; LIBQUICKJSSTATIC is auto-defined by
@@ -46,8 +49,7 @@ foreach ($pre in 'test/cap9a/quickjsfoundation.pas',
                  'test/cap9a/abiprobe.c',
                  'src/script/pweb.script.quickjs.pas',
                  'deps/mormot2/static/x86_64-win64/quickjs.o',
-                 'deps/mormot2/res/static/libquickjs/quickjs.h',
-                 'tools/patch-cap3u.ps1') {
+                 'deps/mormot2/res/static/libquickjs/quickjs.h') {
     if (-not (Test-Path $pre)) {
         throw "missing precondition: $pre"
     }
@@ -62,35 +64,18 @@ if ($passConst.Count -ne 1) {
 $passMarker = $passConst[0].Matches[0].Groups[1].Value
 Write-Host "[CAP-9A] canonical pass marker: $passMarker"
 
-# --- build quickjsfoundation.exe INSIDE the CAP-3U window (this harness
-# drives the real mORMot SOA bridge) -----------------------------------------
+# --- build quickjsfoundation.exe against the PRISTINE dependency -------------
 New-Item -ItemType Directory -Force build/cap9a/qf-fpc, build/cap9a/qf-bin | Out-Null
-try {
-    pwsh -NoProfile -File tools/patch-cap3u.ps1
-    if ($LASTEXITCODE -ne 0) { throw 'CAP-9A CAP-3U re-apply failed' }
-    fpc -Px86_64 -Twin64 -MObjFPC -Sh -B -Xm `
-        -FUbuild/cap9a/qf-fpc -FEbuild/cap9a/qf-bin `
-        -Fusrc/script -Fusrc/rpc -Fusrc/security -Fusrc/assets -Futest/security `
-        -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
-        -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net -Fudeps/mormot2/src/db `
-        -Fudeps/mormot2/src/orm -Fudeps/mormot2/src/rest -Fudeps/mormot2/src/soa `
-        -Fudeps/mormot2/src/script `
-        -Fldeps/mormot2/static/x86_64-win64 `
-        test/cap9a/quickjsfoundation.pas
-    if ($LASTEXITCODE -ne 0) { throw 'quickjsfoundation.pas compile FAILED' }
-}
-finally {
-    $restoreFailures = @()
-    foreach ($attempt in 1..2) {
-        pwsh -NoProfile -File tools/patch-cap3u.ps1 -Restore
-        if ($LASTEXITCODE -ne 0) { $restoreFailures += $attempt }
-    }
-    if ($restoreFailures) {
-        throw "CAP-9A CAP-3U restore attempts failed: $($restoreFailures -join ', ')"
-    }
-}
-git -C deps/mormot2 diff --exit-code HEAD -- src/core/mormot.core.interfaces.pas
-if ($LASTEXITCODE -ne 0) { throw 'CAP-3U source is not pristine after CAP-9A restore' }
+fpc -Px86_64 -Twin64 -MObjFPC -Sh -B -Xm `
+    -FUbuild/cap9a/qf-fpc -FEbuild/cap9a/qf-bin `
+    -Fusrc/script -Fusrc/rpc -Fusrc/security -Fusrc/assets -Futest/security `
+    -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+    -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net -Fudeps/mormot2/src/db `
+    -Fudeps/mormot2/src/orm -Fudeps/mormot2/src/rest -Fudeps/mormot2/src/soa `
+    -Fudeps/mormot2/src/script `
+    -Fldeps/mormot2/static/x86_64-win64 `
+    test/cap9a/quickjsfoundation.pas
+if ($LASTEXITCODE -ne 0) { throw 'quickjsfoundation.pas compile FAILED' }
 
 $exe = (Resolve-Path build/cap9a/qf-bin/quickjsfoundation.exe).Path
 

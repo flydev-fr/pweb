@@ -18,8 +18,9 @@
 #   - the CLI compiles with NO webview unit path at all. `pweb doctor` can
 #     never open a window, because the units that could are not on its path.
 #
-# No CAP-3U window is needed or opened: the CLI drives no mORMot interface
-# service, so the Win64 CallMethod trampoline is irrelevant to it.
+# The CLI drives no mORMot interface service, so the Win64 asm CallMethod is
+# irrelevant to it - and since the 2026-09-08 pin move it is irrelevant to
+# every other build too: nothing patches the dependency any more.
 #
 # Usage: pwsh test/cap10a/build_cap10a.ps1
 $ErrorActionPreference = 'Stop'

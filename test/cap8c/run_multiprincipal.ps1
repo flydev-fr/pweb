@@ -10,9 +10,11 @@
 # same policy differentiates two real privileged principals under the full
 # CAP-8B guard, with the content-swap and the injected-opener evidence.
 #
-# The real mORMot SOA bridge means this host, exactly like the CAP-6 release
-# host, compiles INSIDE the CAP-3U window (patch-cap3u.ps1 apply -> compile
-# with -Xm -dPWEB_CALLMETHOD_UNWIND_PROBE -> restore + verify pristine).
+# The real mORMot SOA bridge means this host drives mORMot's Win64 asm
+# CallMethod. Until the 2026-09-08 pin move that needed a CAP-3U window
+# around the compile; the pin now carries upstream 896f1c1c and 790154af, so
+# it compiles against the PRISTINE dependency and test/cap3u is the gate that
+# keeps the upstream fix honest.
 #
 # CONDITIONAL HOSTED POLICY, mirrored from test/cap8b/run_nav_matrix.ps1: a
 # genuine failure gates (exit 1); only an absent WebView2 runtime / desktop
@@ -44,8 +46,7 @@ foreach ($pre in 'build/webview-dist/webview.dll',
                  'test/cap8c/multiprincipal.pas',
                  'test/cap8c/fixture/main.html',
                  'test/cap8c/fixture/login.html',
-                 'test/cap8c/fixture/assets/driver.js',
-                 'tools/patch-cap3u.ps1') {
+                 'test/cap8c/fixture/assets/driver.js') {
     if (-not (Test-Path $pre)) {
         throw "missing precondition: $pre"
     }
@@ -60,35 +61,20 @@ if ($passConst.Count -ne 1) {
 $passMarker = $passConst[0].Matches[0].Groups[1].Value
 Write-Host "[CAP-8C] canonical pass marker: $passMarker"
 
-# --- build multiprincipal.exe INSIDE the CAP-3U window (the release-host
-# unit-path set: this harness drives the real mORMot SOA bridge) -------------
+# --- build multiprincipal.exe against the PRISTINE dependency (the
+# release-host unit-path set: this harness drives the real mORMot SOA
+# bridge) --------------------------------------------------------------------
 New-Item -ItemType Directory -Force build/cap8c/mp-fpc, build/cap8c/mp-bin | Out-Null
-try {
-    pwsh -NoProfile -File tools/patch-cap3u.ps1
-    if ($LASTEXITCODE -ne 0) { throw 'CAP-8C CAP-3U re-apply failed' }
-    fpc -Px86_64 -Twin64 -MObjFPC -Sh -B -Xm -dPWEB_CALLMETHOD_UNWIND_PROBE `
-        -FUbuild/cap8c/mp-fpc -FEbuild/cap8c/mp-bin `
-        -Fusrc/lib -Fusrc/rpc -Fusrc/security -Fusrc/webview -Fusrc/assets -Futest/security `
-        -Fusrc/platform/windows `
-        -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
-        -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net -Fudeps/mormot2/src/db `
-        -Fudeps/mormot2/src/orm -Fudeps/mormot2/src/rest -Fudeps/mormot2/src/soa `
-        -Fldeps/mormot2/static/x86_64-win64 `
-        test/cap8c/multiprincipal.pas
-    if ($LASTEXITCODE -ne 0) { throw 'multiprincipal.pas compile FAILED' }
-}
-finally {
-    $restoreFailures = @()
-    foreach ($attempt in 1..2) {
-        pwsh -NoProfile -File tools/patch-cap3u.ps1 -Restore
-        if ($LASTEXITCODE -ne 0) { $restoreFailures += $attempt }
-    }
-    if ($restoreFailures) {
-        throw "CAP-8C CAP-3U restore attempts failed: $($restoreFailures -join ', ')"
-    }
-}
-git -C deps/mormot2 diff --exit-code HEAD -- src/core/mormot.core.interfaces.pas
-if ($LASTEXITCODE -ne 0) { throw 'CAP-3U source is not pristine after CAP-8C restore' }
+fpc -Px86_64 -Twin64 -MObjFPC -Sh -B -Xm `
+    -FUbuild/cap8c/mp-fpc -FEbuild/cap8c/mp-bin `
+    -Fusrc/lib -Fusrc/rpc -Fusrc/security -Fusrc/webview -Fusrc/assets -Futest/security `
+    -Fusrc/platform/windows `
+    -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib `
+    -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net -Fudeps/mormot2/src/db `
+    -Fudeps/mormot2/src/orm -Fudeps/mormot2/src/rest -Fudeps/mormot2/src/soa `
+    -Fldeps/mormot2/static/x86_64-win64 `
+    test/cap8c/multiprincipal.pas
+if ($LASTEXITCODE -ne 0) { throw 'multiprincipal.pas compile FAILED' }
 
 Copy-Item build/webview-dist/webview.dll build/cap8c/mp-bin/ -Force
 $env:PWEB_WEBVIEW_DLL = (Resolve-Path build/webview-dist/webview.dll).Path

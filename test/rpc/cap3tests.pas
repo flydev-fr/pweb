@@ -1,13 +1,23 @@
 program cap3tests;
 
-{ WebView-free CAP-3 headless gate. The same cases are conditionally
-  registered in pwebtests when the CAP-3U define is active; this runner keeps
-  CI independent of webview.dll and runs only the real mORMot bridge matrix. }
+{ WebView-free CAP-3 headless gate: the real mORMot bridge matrix, plus the
+  CAP-8A capability integration gates on Windows. It keeps CI independent of
+  webview.dll, and it is where the Windows leg registers the cases the POSIX
+  suites take through pwebtests.
+
+  Until the 2026-09-08 mORMot pin move this program refused to compile
+  without PWEB_CALLMETHOD_UNWIND_PROBE, the define that selected the CAP-3U
+  patched trampoline: a CAP-3 gate built against an unpatched Win64 mORMot
+  would have died mid-suite rather than reported. The pin now carries
+  upstream 896f1c1c and 790154af, there is no trampoline to select, and the
+  guard would only assert that a removed patch had been applied. What keeps
+  the property honest instead is test/cap3u, which measures the unwind
+  metadata and the Currency matrix directly. }
 
 {$I mormot.defines.inc}
 
-{$ifndef PWEB_CALLMETHOD_UNWIND_PROBE}
-  {$fatal CAP-3 headless tests require prepared CAP-3U}
+{$ifdef PWEB_CALLMETHOD_UNWIND_PROBE}
+  {$fatal PWEB_CALLMETHOD_UNWIND_PROBE named the removed CAP-3U patch; nothing selects a trampoline any more}
 {$endif}
 
 {$ifdef OSWINDOWS}
@@ -37,9 +47,10 @@ end;
 
 procedure TCap3Tests.CapabilityPolicyIntegration;
 begin
-  // CAP-8A gates I1-I10 on Windows: like every real-bridge case they
-  // run inside the prepared CAP-3U window this runner exists for; the
-  // POSIX targets run the same unit through pwebtests
+  // CAP-8A gates I1-I10 on Windows: this runner is where they register,
+  // because the Windows pwebtests compile is deliberately handed no
+  // mORMot ORM/REST/SOA unit paths; the POSIX targets run the same unit
+  // through pwebtests, which is handed the full set
   AddCase([TTestCapabilityPolicyIntegration]);
 end;
 

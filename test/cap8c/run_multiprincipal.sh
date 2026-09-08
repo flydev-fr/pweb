@@ -13,11 +13,11 @@
 # simultaneously live real WebViews with the content-swap + injected-opener
 # evidence.
 #
-# Unlike Windows, POSIX needs NO CAP-3U patch window: the mORMot x64
-# call-method trampoline is a Win64-only concern (the release host compiles
-# its SOA path directly on Linux and macOS, build_cap7l.sh / the CAP-7M
-# release build). This runner therefore mirrors run_nav_matrix.sh with the
-# full mORMot SOA unit set added.
+# No patch window on any target since the 2026-09-08 mORMot pin move: the
+# Win64 call-method trampoline the CAP-3U patch used to supply now comes from
+# upstream 896f1c1c and 790154af, and Windows compiles the SOA path directly
+# too. This runner mirrors run_nav_matrix.sh with the full mORMot SOA unit
+# set added.
 #
 # NO conditional SKIP: the Linux job runs under xvfb-run and the macOS runner
 # always has an Aqua session, so a real WebView opening is a PRECONDITION and

@@ -27,8 +27,8 @@ npm run typecheck
 npm run build   # -> dist/
 ```
 
-Build the host inside the CAP-3U window (`test/cap5/build_cap5_hosts.ps1`
-does exactly this for both CAP-5 hosts), stage `webview.dll` next to the
+Build the host with `test/cap5/build_cap5_hosts.ps1` (it compiles both CAP-5
+hosts against the pinned mORMot), stage `webview.dll` next to the
 executable, then run:
 
 ```powershell

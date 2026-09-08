@@ -1,0 +1,37 @@
+# CAP-3U Currency return matrix, on all four targets.
+#
+# A step this repository ADDED to the sequence with the 2026-09-08 mORMot pin
+# move, declared in test/cap11a/post-migration-amendments.tsv rather than
+# slipped in. It exists because upstream 790154af - the commit that fixed the
+# Win64 half of the CAP-3U finding and let the local patch go - edits an asm
+# block the WHOLE x64 ABI executes, and nothing measured what it did to the
+# other half.
+#
+# What was measured before the move landed: windows-x86_64 5/5 (0/5 at the
+# previous pin unpatched), linux-x86_64 1/5 (0/5 at the previous pin), both
+# macOS targets not measured at all. So Windows gates on all five cases and
+# every other row is a typed OBSERVATION - run, printed, written into
+# build/cap3u/currency-corpus.txt, and failing nothing. The declaration lives
+# in test/cap3u/currency-expectations.tsv, which the program refuses to run
+# without and which must cover all four targets.
+
+name: 'CAP-3U Currency return matrix (typed observation, four targets)'
+description: 'CAP-11A: the body of the "CAP-3U Currency return matrix (typed observation, four targets)" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: windows
+      if: ${{ inputs.target == 'windows' }}
+      shell: pwsh
+      run: |
+        pwsh -NoProfile -File test/cap3u/run_currency.ps1 2>&1 |
+          Tee-Object -FilePath build/cap3u-currency.log
+        if ($LASTEXITCODE -ne 0) { throw 'CAP-3U Currency matrix FAILED' }
+    - name: linux, macos-x64, macos-arm64
+      if: ${{ inputs.target != 'windows' }}
+      shell: bash
+      run: test/cap3u/run_currency.sh

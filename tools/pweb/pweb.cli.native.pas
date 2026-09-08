@@ -38,11 +38,12 @@
   ---------------------------------------------------------------------------
 
   Windows: -Px86_64 -Twin64 selects the target explicitly rather than
-  inheriting the compiler's default, and -Xm emits the link map the CAP-3U
-  work reads. The mORMot this compiles against is the SDK's, which on
-  Windows is the CAP-3U-PATCHED source staged at install time - so the
-  patch's semantics are preserved without this pipeline ever editing a
-  framework checkout (see pweb.cli.sdkroot).
+  inheriting the compiler's default, and -Xm emits a link map (which is also
+  what the CAP-3U unwind gate reads out of its own builds). The mORMot this
+  compiles against is the SDK's, which since the 2026-09-08 pin move is the
+  pinned upstream source on every target - Windows included, where it used
+  to be a CAP-3U-patched copy that needed MSVC's ml64 to produce (see
+  pweb.cli.sdkroot).
 
   Linux: -k'-rpath=$ORIGIN' makes the executable find libwebview beside
   itself rather than through a system path or the working directory, and

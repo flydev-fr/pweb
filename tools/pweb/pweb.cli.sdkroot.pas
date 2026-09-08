@@ -41,13 +41,15 @@
   where that limitation closes, and test/cap10c1/build_cap10c1 is what
   stages them.
 
-  WHY WINDOWS SHIPS A PATCHED mORMot. tools/patch-cap3u.ps1 needs MSVC's
-  ml64 and a mORMot GIT CHECKOUT, and it edits the checkout in place. A
-  pipeline that ran it would be mutating its own framework's working tree on
-  every build. The CAP-3U SEMANTICS are preserved by staging the patched
-  source and its x64callmethod.obj into the SDK root ONCE, at install time -
-  which is what a shipped SDK must do anyway - so the build path has no
-  patch window at all.
+  WHAT IS STAGED IS THE PINNED SOURCE, BYTE FOR BYTE, ON EVERY TARGET.
+  Until the 2026-09-08 mORMot pin move Windows was the exception: it shipped
+  a CAP-3U-PATCHED mORMot, because FPC 3.2.2 emitted no Win64 unwind metadata
+  for mORMot's asm CallMethod and the fix was a local ml64 object. That made
+  MSVC's ml64 a requirement of producing an SDK root, and the staged tree
+  something no consumer could reproduce from mormot.lock alone. The pin now
+  carries upstream 896f1c1c (the Win64 SEH unwind) and 790154af (Currency in
+  RAX), so there is no patch, no object, no ml64 - and what an installation
+  compiles against is exactly what the lock names.
 
   NOTHING HERE IS AN AMBIENT INPUT. There is no PWEB_SDK, no PWEB_HOME and
   no PWEB_MORMOT: the root is a parameter, resolved from the running image

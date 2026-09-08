@@ -27,8 +27,9 @@
 # leaked thread to end on its own bound), so this gate is slower than the
 # CAP-9B1 one by design.
 #
-# Unlike Windows, POSIX needs NO CAP-3U patch window: the mORMot x64
-# call-method trampoline is a Win64-only concern.
+# No patch window on any target since the 2026-09-08 mORMot pin move: the
+# Win64 call-method trampoline the CAP-3U patch used to supply now comes from
+# upstream 896f1c1c and 790154af.
 #
 # Writes: build/cap9b2/quickjslifecycle-<target>.json (PASS|FAIL),
 #         build/cap9b2/quickjs-lifecycle-corpus.txt (the digest source), log.

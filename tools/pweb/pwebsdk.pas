@@ -165,7 +165,7 @@ const
      Note: 'the PWeb Pas2JS SDK unit - this repository'),
     (Path: 'share/pweb/deps/mormot2/src'; Kind: skTree; When_: swAlways;
      ForceExec: False; SourceOnly: False;
-     Note: 'mORMot 2 sources, CAP-3U-patched on Windows - MPL/GPL/LGPL'),
+     Note: 'mORMot 2 sources, the pinned upstream tree - MPL/GPL/LGPL'),
     (Path: 'share/pweb/deps/mormot2/static/<fpctarget>'; Kind: skTree;
      When_: swAlways; ForceExec: False; SourceOnly: False;
      Note: 'mORMot 2 statics for this target - MPL/GPL/LGPL'),

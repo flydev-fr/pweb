@@ -120,83 +120,84 @@ ordinal	name	applies_to	conditionality
 119	CAP-7M0 zero-transport proof (M20)	macos-x64,macos-arm64	unconditional
 120	CAP-8B real-window navigation matrix (WKWebView)	macos-x64,macos-arm64	unconditional
 121	CAP-8C multi-principal integration harness (WKWebView)	macos-x64,macos-arm64	unconditional
-122	CAP-9A QuickJS invocation foundation harness	windows,linux,macos-x64,macos-arm64	unconditional
-123	CAP-9B1 QuickJS package and module-loader harness	windows,linux,macos-x64,macos-arm64	unconditional
-124	CAP-9B2 QuickJS plugin lifecycle and reload harness	windows,linux,macos-x64,macos-arm64	unconditional
-125	CAP-9C1 QuickJS release package and trusted loader harness	windows,linux,macos-x64,macos-arm64	unconditional
-126	CAP-9C2 plugin-enabled acceptance frontend build	windows,linux,macos-x64,macos-arm64	unconditional
-127	CAP-9C2 plugin-enabled release layout and real-GUI acceptance	windows,linux,macos-x64,macos-arm64	unconditional
-128	CAP-10B0 build the scaffold engine, the pack and the suite	windows,linux,macos-x64,macos-arm64	unconditional
-129	CAP-10B1 build the public pack, the CLI and the SDK root	windows,linux,macos-x64,macos-arm64	unconditional
-130	CAP-10A build the suite and the probe fixture	windows,linux,macos-x64,macos-arm64	unconditional
-131	CAP-10A contract cross-checks (pins, no shell, no network)	windows,linux,macos-x64,macos-arm64	unconditional
-132	CAP-10A development-trust gate	windows,linux,macos-x64,macos-arm64	unconditional
-133	CAP-10A CLI gates + evidence	windows,linux,macos-x64,macos-arm64	unconditional
-134	CAP-10B0 contract cross-checks (create linked, offline, limits)	windows,linux,macos-x64,macos-arm64	unconditional
-135	CAP-10B0 scaffold gates + evidence	windows,linux,macos-x64,macos-arm64	unconditional
-136	CAP-10B1 contract cross-checks (one UI, exact pins, no exec)	windows,linux,macos-x64,macos-arm64	unconditional
-137	CAP-10B1 create gates + evidence	windows,linux,macos-x64,macos-arm64	unconditional
-138	CAP-10B1 private build proof and real GUI run	windows,linux,macos-x64,macos-arm64	unconditional
-139	CAP-10B2 build the react-only CLI that proves template_unknown	windows,linux,macos-x64,macos-arm64	unconditional
-140	CAP-10B2 contract cross-checks (two UIs, one native app, no npm)	windows,linux,macos-x64,macos-arm64	unconditional
-141	CAP-10B2 pas2js create gates + evidence	windows,linux,macos-x64,macos-arm64	unconditional
-142	CAP-10B2 private build proof and real GUI run	windows,linux,macos-x64,macos-arm64	unconditional
-143	CAP-10C0 build the supervision suite and the fixture child	windows,linux,macos-x64,macos-arm64	unconditional
-144	CAP-10C0 contract cross-checks (bounds, no shell at the link, no name-kill, env, shutdown order)	windows,linux,macos-x64,macos-arm64	unconditional
-145	CAP-10C0 supervision suite + pweb run gates + evidence	windows,linux,macos-x64,macos-arm64	unconditional
-146	CAP-10C1 complete the SDK root and build the pipeline driver	windows,linux,macos-x64,macos-arm64	unconditional
-147	CAP-10C1 contract cross-checks (bounds, library names, linkage, no conditional, no env read)	windows,linux,macos-x64,macos-arm64	unconditional
-148	CAP-10C1 lifecycle pipeline gates + app.pwb parity + evidence	windows,linux,macos-x64,macos-arm64	unconditional
-149	CAP-10C2 build the development suite, the driver and both host binaries	windows,linux,macos-x64,macos-arm64	unconditional
-150	CAP-10C2 contract cross-checks (bounds, linkage, dev-free release, CSP, no transport)	windows,linux,macos-x64,macos-arm64	unconditional
-151	CAP-10C2 development-loop gates (DEV1-DEV14, T1-T5) + evidence	windows,linux,macos-x64,macos-arm64	unconditional
-152	CAP-10C3 build the pas2js development suite, the driver and both host binaries	windows,linux,macos-x64,macos-arm64	unconditional
-153	CAP-10C3 contract cross-checks (bounds, detector linkage, no watch API, pas2js CSP + dev-free release)	windows,linux,macos-x64,macos-arm64	unconditional
-154	CAP-10C3 the CAP-10C ledger disposition (CL2, CL3)	windows,linux,macos-x64,macos-arm64	unconditional
-155	CAP-10C3 pas2js development-loop gates (PD1-PD15, RD1, T1-T5, CL1-CL3) + evidence	windows,linux,macos-x64,macos-arm64	unconditional
-156	CAP-10D0 build the public-build suite and its driver	windows,linux,macos-x64,macos-arm64	unconditional
-157	CAP-10D0 contract cross-checks (one execution path, ten stages, five commands, gate quoting)	windows,linux,macos-x64,macos-arm64	unconditional
-158	CAP-10D0 public-build gates (B1-B12, L1-L3, R1-R2) + evidence	windows,linux,macos-x64,macos-arm64	unconditional
-159	CAP-10D1 contract cross-checks (pins vs locks, five engine callers, the anti-fork twins, no signing, no network)	windows,linux,macos-x64,macos-arm64	unconditional
-160	CAP-10D1 stage the packaging kit and build the suite and driver	windows,linux,macos-x64,macos-arm64	unconditional
-161	CAP-10D1 packaging gates + evidence	windows,linux,macos-x64,macos-arm64	unconditional
-162	CAP-10D0 L2b - the CAP-10 chain at a repository path with a space	windows	unconditional
-163	CAP-10D2 contract cross-checks (no network, no env root, the licence table, the tool rule)	windows,linux,macos-x64,macos-arm64	unconditional
-164	CAP-10D2 the phase-wide CAP-10 ledger disposition (CL1-CL4)	windows,linux,macos-x64,macos-arm64	unconditional
-165	CAP-10D2 stage the licence set and build the packager and suite	windows,linux,macos-x64,macos-arm64	unconditional
-166	CAP-10D2 SDK distribution gates (PK1-PK4, IN1-IN4, CM1-CM6, CL1-CL4) + evidence	windows,linux,macos-x64,macos-arm64	unconditional
-167	CAP-10E image-path source gate (zero ParamStr(0), zero ProgramFilePath, one reader)	windows,linux,macos-x64,macos-arm64	unconditional
-168	CAP-10E kernel image path - non-ASCII release host, junction, long path (E1/E2/E6/E7/E9)	windows	unconditional
-169	CAP-11A structure gate (sizes, retention, timeouts, concurrency, no artifact read)	windows,linux,macos-x64,macos-arm64	unconditional
-170	CAP-11A migration map - every legacy step accounted for	windows,linux,macos-x64,macos-arm64	unconditional
-171	CAP-7F evidence schema agreement (both emitters and the aggregator)	windows,linux,macos-x64,macos-arm64	unconditional
-172	CAP-11A bounded fetch retry - seeded transport, digest and exhaustion cases	windows,linux,macos-x64,macos-arm64	unconditional
-173	CAP-11A flake instrumentation (non-report cause, U3 drain order, fetch rows)	windows,linux,macos-x64,macos-arm64	unconditional
-174	CAP-11A seeded cases - the sequence gate and the non-report cause rule	windows,linux,macos-x64,macos-arm64	unconditional
-175	CAP-11B watcher contract gate (permissions, isolation, refusals)	windows,linux,macos-x64,macos-arm64	unconditional
-176	CAP-11B ref input - the pinned plan is byte-identical, the locks never move	windows,linux,macos-x64,macos-arm64	unconditional
-177	CAP-11B seeded verdicts - six typed outcomes, offline	windows,linux,macos-x64,macos-arm64	unconditional
-178	CAP-11B the CAP-11 phase ledger disposition (CL1)	windows,linux,macos-x64,macos-arm64	unconditional
-179	Backlog disposition - every ledger entry has a verdict	windows	unconditional
-180	CAP-7F emit the Windows evidence artifact	windows	unconditional
-181	CAP-10E kernel image path - non-ASCII release host and the symlink rule (E1/E2/E5/E9)	linux	unconditional
-182	CAP-7F emit the Linux evidence artifact	linux	unconditional
-183	CAP-10E kernel image path - non-ASCII (NFD) release host and the symlink rule (E1/E2/E5/E9)	macos-x64,macos-arm64	unconditional
-184	CAP-7F emit the macOS x64 evidence artifact	macos-x64	unconditional
-185	CAP-7F emit the macOS arm64 evidence artifact	macos-arm64	unconditional
-186	CAP-7M0 per-arch headline facts to the run summary	macos-x64,macos-arm64	unconditional
-187	CAP-11A stage the collection and measure it	windows,linux,macos-x64,macos-arm64	unconditional
-188	CAP-11A collect the leg evidence (attempt 1 of 3)	windows,linux,macos-x64,macos-arm64	unconditional
-189	CAP-11A collect the leg evidence (attempt 2 of 3)	windows,linux,macos-x64,macos-arm64	conditional
-190	CAP-11A collect the leg evidence (attempt 3 of 3)	windows,linux,macos-x64,macos-arm64	conditional
-191	CAP-11A collect the leg records (attempt 1 of 3)	windows,linux,macos-x64,macos-arm64	unconditional
-192	CAP-11A collect the leg records (attempt 2 of 3)	windows,linux,macos-x64,macos-arm64	conditional
-193	CAP-11A collect the leg records (attempt 3 of 3)	windows,linux,macos-x64,macos-arm64	conditional
-194	CAP-11A collect the leg release (attempt 1 of 3)	macos-x64,macos-arm64	unconditional
-195	CAP-11A collect the leg release (attempt 2 of 3)	macos-x64,macos-arm64	conditional
-196	CAP-11A collect the leg release (attempt 3 of 3)	macos-x64,macos-arm64	conditional
-197	CAP-11A collect the leg dist (attempt 1 of 3)	windows,linux,macos-x64,macos-arm64	unconditional
-198	CAP-11A collect the leg dist (attempt 2 of 3)	windows,linux,macos-x64,macos-arm64	conditional
-199	CAP-11A collect the leg dist (attempt 3 of 3)	windows,linux,macos-x64,macos-arm64	conditional
-200	CAP-11A collect the leg diagnostics (attempt 1 of 1)	windows,linux,macos-x64,macos-arm64	conditional
-201	CAP-11A type the collection outcome	windows,linux,macos-x64,macos-arm64	unconditional
+122	CAP-3U Currency return matrix (typed observation, four targets)	windows,linux,macos-x64,macos-arm64	unconditional
+123	CAP-9A QuickJS invocation foundation harness	windows,linux,macos-x64,macos-arm64	unconditional
+124	CAP-9B1 QuickJS package and module-loader harness	windows,linux,macos-x64,macos-arm64	unconditional
+125	CAP-9B2 QuickJS plugin lifecycle and reload harness	windows,linux,macos-x64,macos-arm64	unconditional
+126	CAP-9C1 QuickJS release package and trusted loader harness	windows,linux,macos-x64,macos-arm64	unconditional
+127	CAP-9C2 plugin-enabled acceptance frontend build	windows,linux,macos-x64,macos-arm64	unconditional
+128	CAP-9C2 plugin-enabled release layout and real-GUI acceptance	windows,linux,macos-x64,macos-arm64	unconditional
+129	CAP-10B0 build the scaffold engine, the pack and the suite	windows,linux,macos-x64,macos-arm64	unconditional
+130	CAP-10B1 build the public pack, the CLI and the SDK root	windows,linux,macos-x64,macos-arm64	unconditional
+131	CAP-10A build the suite and the probe fixture	windows,linux,macos-x64,macos-arm64	unconditional
+132	CAP-10A contract cross-checks (pins, no shell, no network)	windows,linux,macos-x64,macos-arm64	unconditional
+133	CAP-10A development-trust gate	windows,linux,macos-x64,macos-arm64	unconditional
+134	CAP-10A CLI gates + evidence	windows,linux,macos-x64,macos-arm64	unconditional
+135	CAP-10B0 contract cross-checks (create linked, offline, limits)	windows,linux,macos-x64,macos-arm64	unconditional
+136	CAP-10B0 scaffold gates + evidence	windows,linux,macos-x64,macos-arm64	unconditional
+137	CAP-10B1 contract cross-checks (one UI, exact pins, no exec)	windows,linux,macos-x64,macos-arm64	unconditional
+138	CAP-10B1 create gates + evidence	windows,linux,macos-x64,macos-arm64	unconditional
+139	CAP-10B1 private build proof and real GUI run	windows,linux,macos-x64,macos-arm64	unconditional
+140	CAP-10B2 build the react-only CLI that proves template_unknown	windows,linux,macos-x64,macos-arm64	unconditional
+141	CAP-10B2 contract cross-checks (two UIs, one native app, no npm)	windows,linux,macos-x64,macos-arm64	unconditional
+142	CAP-10B2 pas2js create gates + evidence	windows,linux,macos-x64,macos-arm64	unconditional
+143	CAP-10B2 private build proof and real GUI run	windows,linux,macos-x64,macos-arm64	unconditional
+144	CAP-10C0 build the supervision suite and the fixture child	windows,linux,macos-x64,macos-arm64	unconditional
+145	CAP-10C0 contract cross-checks (bounds, no shell at the link, no name-kill, env, shutdown order)	windows,linux,macos-x64,macos-arm64	unconditional
+146	CAP-10C0 supervision suite + pweb run gates + evidence	windows,linux,macos-x64,macos-arm64	unconditional
+147	CAP-10C1 complete the SDK root and build the pipeline driver	windows,linux,macos-x64,macos-arm64	unconditional
+148	CAP-10C1 contract cross-checks (bounds, library names, linkage, no conditional, no env read)	windows,linux,macos-x64,macos-arm64	unconditional
+149	CAP-10C1 lifecycle pipeline gates + app.pwb parity + evidence	windows,linux,macos-x64,macos-arm64	unconditional
+150	CAP-10C2 build the development suite, the driver and both host binaries	windows,linux,macos-x64,macos-arm64	unconditional
+151	CAP-10C2 contract cross-checks (bounds, linkage, dev-free release, CSP, no transport)	windows,linux,macos-x64,macos-arm64	unconditional
+152	CAP-10C2 development-loop gates (DEV1-DEV14, T1-T5) + evidence	windows,linux,macos-x64,macos-arm64	unconditional
+153	CAP-10C3 build the pas2js development suite, the driver and both host binaries	windows,linux,macos-x64,macos-arm64	unconditional
+154	CAP-10C3 contract cross-checks (bounds, detector linkage, no watch API, pas2js CSP + dev-free release)	windows,linux,macos-x64,macos-arm64	unconditional
+155	CAP-10C3 the CAP-10C ledger disposition (CL2, CL3)	windows,linux,macos-x64,macos-arm64	unconditional
+156	CAP-10C3 pas2js development-loop gates (PD1-PD15, RD1, T1-T5, CL1-CL3) + evidence	windows,linux,macos-x64,macos-arm64	unconditional
+157	CAP-10D0 build the public-build suite and its driver	windows,linux,macos-x64,macos-arm64	unconditional
+158	CAP-10D0 contract cross-checks (one execution path, ten stages, five commands, gate quoting)	windows,linux,macos-x64,macos-arm64	unconditional
+159	CAP-10D0 public-build gates (B1-B12, L1-L3, R1-R2) + evidence	windows,linux,macos-x64,macos-arm64	unconditional
+160	CAP-10D1 contract cross-checks (pins vs locks, five engine callers, the anti-fork twins, no signing, no network)	windows,linux,macos-x64,macos-arm64	unconditional
+161	CAP-10D1 stage the packaging kit and build the suite and driver	windows,linux,macos-x64,macos-arm64	unconditional
+162	CAP-10D1 packaging gates + evidence	windows,linux,macos-x64,macos-arm64	unconditional
+163	CAP-10D0 L2b - the CAP-10 chain at a repository path with a space	windows	unconditional
+164	CAP-10D2 contract cross-checks (no network, no env root, the licence table, the tool rule)	windows,linux,macos-x64,macos-arm64	unconditional
+165	CAP-10D2 the phase-wide CAP-10 ledger disposition (CL1-CL4)	windows,linux,macos-x64,macos-arm64	unconditional
+166	CAP-10D2 stage the licence set and build the packager and suite	windows,linux,macos-x64,macos-arm64	unconditional
+167	CAP-10D2 SDK distribution gates (PK1-PK4, IN1-IN4, CM1-CM6, CL1-CL4) + evidence	windows,linux,macos-x64,macos-arm64	unconditional
+168	CAP-10E image-path source gate (zero ParamStr(0), zero ProgramFilePath, one reader)	windows,linux,macos-x64,macos-arm64	unconditional
+169	CAP-10E kernel image path - non-ASCII release host, junction, long path (E1/E2/E6/E7/E9)	windows	unconditional
+170	CAP-11A structure gate (sizes, retention, timeouts, concurrency, no artifact read)	windows,linux,macos-x64,macos-arm64	unconditional
+171	CAP-11A migration map - every legacy step accounted for	windows,linux,macos-x64,macos-arm64	unconditional
+172	CAP-7F evidence schema agreement (both emitters and the aggregator)	windows,linux,macos-x64,macos-arm64	unconditional
+173	CAP-11A bounded fetch retry - seeded transport, digest and exhaustion cases	windows,linux,macos-x64,macos-arm64	unconditional
+174	CAP-11A flake instrumentation (non-report cause, U3 drain order, fetch rows)	windows,linux,macos-x64,macos-arm64	unconditional
+175	CAP-11A seeded cases - the sequence gate and the non-report cause rule	windows,linux,macos-x64,macos-arm64	unconditional
+176	CAP-11B watcher contract gate (permissions, isolation, refusals)	windows,linux,macos-x64,macos-arm64	unconditional
+177	CAP-11B ref input - the pinned plan is byte-identical, the locks never move	windows,linux,macos-x64,macos-arm64	unconditional
+178	CAP-11B seeded verdicts - six typed outcomes, offline	windows,linux,macos-x64,macos-arm64	unconditional
+179	CAP-11B the CAP-11 phase ledger disposition (CL1)	windows,linux,macos-x64,macos-arm64	unconditional
+180	Backlog disposition - every ledger entry has a verdict	windows	unconditional
+181	CAP-7F emit the Windows evidence artifact	windows	unconditional
+182	CAP-10E kernel image path - non-ASCII release host and the symlink rule (E1/E2/E5/E9)	linux	unconditional
+183	CAP-7F emit the Linux evidence artifact	linux	unconditional
+184	CAP-10E kernel image path - non-ASCII (NFD) release host and the symlink rule (E1/E2/E5/E9)	macos-x64,macos-arm64	unconditional
+185	CAP-7F emit the macOS x64 evidence artifact	macos-x64	unconditional
+186	CAP-7F emit the macOS arm64 evidence artifact	macos-arm64	unconditional
+187	CAP-7M0 per-arch headline facts to the run summary	macos-x64,macos-arm64	unconditional
+188	CAP-11A stage the collection and measure it	windows,linux,macos-x64,macos-arm64	unconditional
+189	CAP-11A collect the leg evidence (attempt 1 of 3)	windows,linux,macos-x64,macos-arm64	unconditional
+190	CAP-11A collect the leg evidence (attempt 2 of 3)	windows,linux,macos-x64,macos-arm64	conditional
+191	CAP-11A collect the leg evidence (attempt 3 of 3)	windows,linux,macos-x64,macos-arm64	conditional
+192	CAP-11A collect the leg records (attempt 1 of 3)	windows,linux,macos-x64,macos-arm64	unconditional
+193	CAP-11A collect the leg records (attempt 2 of 3)	windows,linux,macos-x64,macos-arm64	conditional
+194	CAP-11A collect the leg records (attempt 3 of 3)	windows,linux,macos-x64,macos-arm64	conditional
+195	CAP-11A collect the leg release (attempt 1 of 3)	macos-x64,macos-arm64	unconditional
+196	CAP-11A collect the leg release (attempt 2 of 3)	macos-x64,macos-arm64	conditional
+197	CAP-11A collect the leg release (attempt 3 of 3)	macos-x64,macos-arm64	conditional
+198	CAP-11A collect the leg dist (attempt 1 of 3)	windows,linux,macos-x64,macos-arm64	unconditional
+199	CAP-11A collect the leg dist (attempt 2 of 3)	windows,linux,macos-x64,macos-arm64	conditional
+200	CAP-11A collect the leg dist (attempt 3 of 3)	windows,linux,macos-x64,macos-arm64	conditional
+201	CAP-11A collect the leg diagnostics (attempt 1 of 1)	windows,linux,macos-x64,macos-arm64	conditional
+202	CAP-11A type the collection outcome	windows,linux,macos-x64,macos-arm64	unconditional

@@ -1762,7 +1762,7 @@ foreach ($t in $evidence.Keys) {
         }
         # the frozen QuickJS licence, byte-pinned, on every target
         if ("$($e.cap9c2_license_sha256)" -cne
-            '8310e7a6c52cd3b45a0aedb5620ef79408c8c155594f37259ba801f6a2fbe2fc') {
+            'a1d491db9c87a750c2bb37d7d47b642ce4b94a0d56332640f1d14521233875bf') {
             $failures.Add("CAP-9C2 LICENSE SHA: target=$t cap9c2_license_sha256='$($e.cap9c2_license_sha256)'")
         }
     }
