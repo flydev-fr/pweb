@@ -148,10 +148,42 @@ permission sentences and eight copyright lines (Fabrice Bellard 2016-2017,
 2017, 2017-2018, 2017-2020, 2017-2021; Charlie Gordon 2017-2018, 2018,
 2017-2021) are identical. See `RP-3`.
 
-## What this shard could not measure
+## What the first hosted run measured, and RP-4's closure
 
-The hosted macOS legs (`macos-x86_64` shares ABISYSVX64 with Linux;
-`macos-arm64` is AAPCS64 and has its own `CallMethod`) and the CAP-6b1–6b4
-installer profiles, whose payloads are hundreds of megabytes of network
-fetch. `RP-4` owns ratifying the macOS Currency rows once the first
-four-target run of this HEAD has measured them.
+Run **34241426338** on `c1955928390707c165e00f75ac29d4a3327996b8`, six jobs
+green, **202 steps** with `ci_sequence_digest`
+`7f7dc950d8bc7aa96856869421a8bbc8dbfebc469263a3a76a2d1b35d1ac527c` identical
+on all four legs and equal to the declared sequence — the amendment landed
+exactly as recorded.
+
+| target | compiler that leg builds with | Currency matrix |
+|---|---|---:|
+| windows-x86_64 | FPC 3.2.2 x86_64-win64 | **5 / 5** |
+| linux-x86_64 | `3.2.2+dfsg-32`, the Ubuntu 24.04 package | **1 / 5** |
+| macos-x86_64 | FPC 3.2.2 [2021/05/16] x86_64 | **1 / 5** |
+| macos-arm64 | FPC 3.2.2 [2021/05/16] aarch64 | **0 / 5** |
+
+`cur-zero-arg` is promoted to `must_pass` on linux-x86_64 and macos-x86_64;
+everything else stays `observe`. The hosted Linux 3.2.2 agrees with the
+dev-host 3.2.3, which was the check `RP-4` existed to make.
+
+**The two SysV x64 targets are identical**, 1/5 each — what sharing the
+non-`ABIWINX64` branch predicts. **macos-arm64 is a third and worse case**:
+AAPCS64 has its own `CallMethod`, untouched by `790154af`, and returns 0/5
+including the no-argument case, with the *same five values Win64 produced at
+the previous pin unpatched*. The result register is wrong on three ABIs, and
+on aarch64 apparently always was; `RP-2`'s report says so now.
+
+The same run cleared the other outstanding measurement: **all twenty-two
+CAP-6b0 → CAP-6b4 steps green**, with the release host compiled against the
+pristine dependency — the three installer profiles built and installed,
+CAP-6b3 staging 256 files / 689 841 950 bytes and observing runtime
+151.0.4129.78, and CAP-6b4's I1-I3, S1-S6, F1-F4, U1-U3 matrix passing over
+the three real setups.
+
+**One defect of this shard's own making, found and fixed here.** The
+Currency corpora were only in the `diagnostics` collection class, which
+uploads on a **red** leg, so `RP-4`'s own instruction — read the four
+`currency-corpus.txt` files — was impossible on a green run and the first
+ratification had to be taken from the job logs instead. They are now in the
+`records` class.

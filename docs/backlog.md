@@ -1,16 +1,16 @@
 # The backlog
 
 `_bmad-output/implementation-artifacts/deferred-work.md` is append-only and
-carries **342 entries** from Phase 0 to the post-MVP mORMot repin. It is a
+carries **343 entries** from Phase 0 to the post-MVP mORMot repin. It is a
 ledger: it records what was found, in the words of the shard that found it,
 and it never edits itself. That makes it excellent evidence and a poor
 worklist — a reader who wants to know *what is still owed* has to resolve
 every supersession chain by hand, and three phase-closure artifacts answer
 that question for CAP-10 and CAP-11 only.
 
-This document is the worklist. Every one of the 342 entries is disposed of
-exactly once, with one verdict, an owner and a reason. **Forty-seven are open,**
-**and those forty-seven are listed here in full**; the other 295 are in
+This document is the worklist. Every one of the 343 entries is disposed of
+exactly once, with one verdict, an owner and a reason. **Forty-six are open,**
+**and those forty-six are listed here in full**; the other 297 are in
 `test/backlog/dispositions.tsv`, which is the table this document is written
 from and the one the gate reads.
 
@@ -18,9 +18,9 @@ from and the one the gate reads.
 |---|---:|---|
 | `FIX_NOW` | 4 | closed by this triage, one commit each, cited below |
 | `UPSTREAM` | 3 | the defect belongs to a third-party project and a report is written; two of the three also carry a local workaround, and `RP-2` deliberately does not |
-| `ROADMAP` | 40 | real work, deferred, with a named owner |
-| `ACCEPTED` | 96 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
-| `CLOSED` | 199 | the thing the entry describes is done |
+| `ROADMAP` | 39 | real work, deferred, with a named owner |
+| `ACCEPTED` | 97 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
+| `CLOSED` | 200 | the thing the entry describes is done |
 
 `ACCEPTED` is not a synonym for ignored. It is the verdict for an entry whose
 honest answer is a measurement — that WebView2 raises no navigation event for a
@@ -385,9 +385,9 @@ than appended to an append-only ledger:
 
 ## The open work, in full
 
-Forty-seven rows: the four `FIX_NOW` items this triage closed, the three
-`UPSTREAM` reports, and the forty on the roadmap. Everything else — 96
-`ACCEPTED` and 199 `CLOSED` — is in `test/backlog/dispositions.tsv`.
+Forty-six rows: the four `FIX_NOW` items this triage closed, the three
+`UPSTREAM` reports, and the thirty-nine on the roadmap. Everything else — 97
+`ACCEPTED` and 200 `CLOSED` — is in `test/backlog/dispositions.tsv`.
 
 | key | verdict | owner | reason |
 |---|---|---|---|
@@ -397,7 +397,7 @@ Forty-seven rows: the four `FIX_NOW` items this triage closed, the three
 | `B2-15` | FIX_NOW · closed by `e90cc74` | this triage | the generated `.gitattributes` opened `* -text` and never opted `.cfg` back in, so `frontend/pas2js.cfg` was treated as binary in every generated Pas2JS project and a Windows edit could commit CRLF into a compiler configuration. The template parity gate made it a supersession rather than a one-line change, which is why it waited |
 | `9A-3` | UPSTREAM | synopse/mORMot2 | `mormot.lib.quickjs.pas` declares `JS_SetMaxStackSize(ctx: JSContext; ...)` where the pinned C takes `JSRuntime*`; calling the pinned binding was measured to corrupt the context. PWeb re-declares it correctly unit-local, so no PWeb path is affected. Report: `docs/upstream/mormot-quickjs-js-setmaxstacksize-signature.md` |
 | `9A-4` | UPSTREAM | synopse/mORMot2 | `mormot.lib.static.pas` declares `pas_malloc(size: cardinal)` and `pas_malloc_usable_size(...): integer` where the pinned QuickJS C calls them with `size_t`, truncating an over-4 GiB request to its low 32 bits on 64-bit targets. Unreachable in PWeb under the per-plugin memory ceiling. Report: `docs/upstream/mormot-static-pas-malloc-size-t.md` |
-| `RP-2` | UPSTREAM | synopse/mORMot2 | upstream `790154af` edits the `ABIX64` `CallMethod` block Win64 and SysV x64 SHARE, so removing the `imvCurrency` XMM0 read fixed Windows (0/5 to 5/5 over arities 0/1/2) and left Linux reading a leftover pointer out of RAX (0/5 to 1/5 — only the no-argument case is right). It predates the pin move and the pin move improves it. NOT worked around in the bridge, deliberately: a workaround would hide the defect from the report that should fix it. Report: `docs/upstream/mormot-imvcurrency-rax-sysv-x64.md` |
+| `RP-2` | UPSTREAM | synopse/mORMot2 | upstream `790154af` edits the `ABIX64` `CallMethod` block Win64 and SysV x64 SHARE, so removing the `imvCurrency` XMM0 read fixed Windows (0/5 to 5/5 over arities 0/1/2) and left Linux reading a leftover pointer out of RAX (0/5 to 1/5 — only the no-argument case is right). Hosted run 34241426338 widened it: macos-x86_64 is identical to Linux at 1/5, and macos-arm64 — a different ABI with its own CallMethod, untouched by that commit — is 0/5 with the same five values Win64 produced before it, so the result register is wrong on three ABIs and on aarch64 apparently always was. It predates the pin move and the pin move improves it. NOT worked around in the bridge, deliberately: a workaround would hide the defect from the report that should fix it. Report: `docs/upstream/mormot-imvcurrency-rax-sysv-x64.md` |
 | `P1-1` | ROADMAP | next webview pin review | upstream's cmake fetches the WebView2 SDK nuget by version with no URL_HASH, so the integrity of that build input rests on nuget version immutability alone. Vendoring it or hash-pinning it is PWeb's move, not upstream's, and it belongs with the next pin bump |
 | `P5-1` | ROADMAP | CI cost owner | the pinned pas2js archive is still fetched on every run with no cache; only the FPC disk image is cached. 11A-4 bounded the fetch, but CAP-11A's freeze forbade changing WHAT CI runs and 11A-14 sent caching to whoever next owns the matrix's cost |
 | `P6-2` | ROADMAP | long-path shard | the Ansi-argv half is closed by P6U-1. The unprefixed `FindFirstFileW` MAX_PATH bound in the bundler's directory walk stands; failures are loud build errors, never silent corruption. Same family as 6B3-4 |
@@ -437,4 +437,3 @@ Forty-seven rows: the four `FIX_NOW` items this triage closed, the three
 | `10E-4` | ROADMAP | CI owner | Pascal sources are not LF-pinned in `.gitattributes`, so `sed`-based marker extraction in several POSIX gates cannot run from a Windows checkout under WSL — the documented way of validating the Linux legs without spending a hosted run. Both candidate fixes are named, and the first is a checkout-behaviour change for every collaborator that should be decided rather than slipped in |
 | `11B-4` | ROADMAP | CAP-12 | the webview watcher's shape does not fit mORMot head — no C headers, no platform patch, no library build, no signature pin — and `mormot.lock` pins statics to a release asset, so `build_failed` would be the normal outcome rather than news. A mORMot watcher is a different instrument with its own budget |
 | `11B-19` | ROADMAP | CAP-12 | close-on-report is unavailable to every smoke driver, measured four ways. What remains owed is one of two host-side changes — flush the report line so a driver can see it, or close the window on the first report inside the host — either of which turns a 15-second floor into a 300-millisecond run. `examples/` and `src/` were frozen for CAP-11B |
-| `RP-4` | ROADMAP | the first four-target run of this HEAD | the macOS half of the CAP-3U Currency observation has never been measured on either ABI — `macos-x86_64` shares ABISYSVX64 with Linux, `macos-arm64` is AAPCS64 with its own `CallMethod` — and the Linux rows were measured under FPC 3.2.3 while that leg builds with the distro 3.2.2. So every non-Windows row in `test/cap3u/currency-expectations.tsv` reads `observe`, because declaring `must_pass` from another compiler is a prediction dressed up as a gate. Read the four `currency-corpus.txt` files from the first hosted run of this HEAD and ratify the rows that passed on their own leg's compiler; the same run is also the first to exercise the removed patch window on the CAP-6b1 to CAP-6b4 installer profiles, which this shard could not run locally |

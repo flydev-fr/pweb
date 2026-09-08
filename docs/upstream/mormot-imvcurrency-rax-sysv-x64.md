@@ -51,9 +51,13 @@ function CurTwoInt(A, B: Integer): Currency;       // A*100 + B + 0.25
 | target | before `790154af` | after `790154af` |
 |---|---:|---:|
 | Windows x86-64, FPC 3.2.2 | 0 / 5 | **5 / 5** |
-| Linux x86-64, FPC 3.2.3 | 0 / 5 | **1 / 5** |
+| Linux x86-64, FPC 3.2.2 (`3.2.2+dfsg-32`) | 0 / 5 | **1 / 5** |
+| macOS x86-64, FPC 3.2.2 | — | **1 / 5** |
+| macOS aarch64, FPC 3.2.2 | — | **0 / 5** |
 
-On Linux only `CurZero` — the no-argument case — is correct after the change.
+On both SysV x64 targets only `CurZero` — the no-argument case — is correct
+after the change, and the two agree exactly, which is what sharing
+`ABIWINX64`'s negation predicts.
 The four with arguments return values of the shape
 
 ```
@@ -95,11 +99,30 @@ the shape of
 
 except that the pre-`790154af` XMM0 read did not work on SysV either, so the
 correct convention wants measuring on FPC's side before it is encoded here.
-`aarch64` is untested by the reporter and uses a different `CallMethod`
-entirely.
 
-## Not covered by this report
+## aarch64 is a third case, and it is worse
 
-macOS on either architecture. `macos-x86_64` shares `ABISYSVX64` with Linux
-and is likely identical; `macos-arm64` is AAPCS64 and is a separate question.
-Neither was measured.
+`macos-arm64` scores **0 / 5**: `CurZero` returns `0`, so even the one case
+that works on SysV x64 does not work there. Its five results are
+
+```
+CurZero        -> 0                      (expected 1234.5678)
+CurOneInt      -> 122123.9552            (expected 41.5)
+CurOneCur      -> 0                      (expected 42.5)
+CurOneDouble   -> 469104505686851.584    (expected 42.5)
+CurTwoInt      -> 124921.5376            (expected 402.25)
+```
+
+which are the **same five values Win64 produced before `790154af`**, when it
+was still reading `imvCurrency` out of XMM0. AArch64 has its own `CallMethod`
+and is not touched by that commit at all, so this is a pre-existing defect
+rather than a consequence of it — but it points the same way: the
+`imvCurrency` result register is wrong on every ABI except Win64, and on
+aarch64 it has apparently always been.
+
+## How this was measured
+
+Four hosted legs of one CI run, each on the compiler that leg builds with:
+FPC 3.2.2 x86_64-win64; the Ubuntu 24.04 package `3.2.2+dfsg-32`; FPC 3.2.2
+[2021/05/16] for x86_64 and for aarch64 on macOS 15. No result here is
+inferred from another target.

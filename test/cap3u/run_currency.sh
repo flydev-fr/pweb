@@ -11,8 +11,9 @@
 # a Win64 fix applied to an asm block that SysV x64 also executes. Windows
 # measured 5/5 after the move against 0/5 before it; Linux measured 1/5 after
 # and 0/5 before, i.e. a defect that predates the move and that the move
-# improves. macOS was never measured at all, on either ABI. This gate is how
-# it gets measured, on the legs' own toolchains, instead of inferred.
+# improves. macOS was unmeasured until hosted run 34241426338, which measured
+# all four legs on their own compilers: 5/5, 1/5, 1/5 and 0/5. This gate is
+# what keeps measuring them.
 #
 # Writes: build/cap3u/currency-corpus.txt (written by the program) and a log.
 set -euo pipefail

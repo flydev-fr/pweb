@@ -3,37 +3,47 @@
 # `must_pass`  a PASS has been MEASURED on the toolchain that leg builds with;
 #              a FAIL fails the leg.
 # `observe`    the case is run and recorded, and fails nothing. It is the
-#              verdict for a case whose behaviour is a known upstream defect,
-#              and for a case nobody has yet measured on the leg's own
-#              compiler. Turning one into `must_pass` is a deliberate act.
+#              verdict for a case whose behaviour is a known upstream defect.
+#              Turning one into `must_pass` is a deliberate act.
 #
-# Windows is `must_pass` throughout because the 2026-09-08 pin move measured
-# 5/5 on FPC 3.2.2 x86_64-win64 - the exact toolchain `fpc.lock` pins for that
-# leg - against 0/5 at the previous pin unpatched.
+# RATIFIED FROM HOSTED RUN 34241426338 (commit c1955928390707c165e00f75ac29d4a3327996b8,
+# 2026-09-08, all four legs green). Every row below is now a measurement taken
+# on the leg's OWN compiler; nothing here is inferred from another target or
+# from the dev host. What the run measured:
 #
-# Linux is `observe` for a reason worth writing down: the same 5 cases were
-# measured 1/5 at this pin and 0/5 at the previous one, so four of them are a
-# known upstream defect on SysV x64 rather than anything this repository can
-# fix; and the one that passes was measured under FPC 3.2.3, while the hosted
-# leg builds with Ubuntu's 3.2.2. Declaring `must_pass` from a different
-# compiler would be a prediction, not a measurement.
+#   windows-x86_64  5/5   FPC 3.2.2 x86_64-win64
+#   linux-x86_64    1/5   FPC 3.2.2+dfsg-32, the Ubuntu 24.04 package
+#   macos-x86_64    1/5   FPC 3.2.2 [2021/05/16] x86_64
+#   macos-arm64     0/5   FPC 3.2.2 [2021/05/16] aarch64
 #
-# Both macOS rows are `observe` because they have never been measured at all.
-# macos-x86_64 shares ABISYSVX64 with Linux and macos-arm64 does not - AAPCS64
-# is a different ABI with its own CallMethod - so neither may be inferred from
-# the other, and the first hosted run of this gate is what will say.
+# So `cur-zero-arg` is promoted to `must_pass` on linux-x86_64 and
+# macos-x86_64. The dev-host Linux measurement that made this row `observe`
+# in the first place used FPC 3.2.3; the hosted leg's own 3.2.2 agrees with
+# it, which is the check that was owed.
+#
+# THE TWO SysV x64 TARGETS BEHAVE IDENTICALLY, as `ABISYSVX64` predicts:
+# 1/5 each, the no-argument case right and the four with arguments returning
+# a leftover pointer read out of RAX.
+#
+# macos-arm64 IS WORSE, AND IS ITS OWN STORY. AAPCS64 has its own CallMethod
+# and 0/5: even `cur-zero-arg` returns 0. Its four failing values
+# (0, 122123.9552, 0, 469104505686851.584, 124921.5376) are the SAME values
+# Win64 produced at the previous pin unpatched, which says the aarch64 path
+# still reads the result from a floating-point register. Nothing on this leg
+# may be promoted, and `RP-2`'s upstream report now covers three ABIs rather
+# than one.
 target	case	expectation
 windows-x86_64	cur-zero-arg	must_pass
 windows-x86_64	cur-one-int	must_pass
 windows-x86_64	cur-one-cur	must_pass
 windows-x86_64	cur-one-double	must_pass
 windows-x86_64	cur-two-int	must_pass
-linux-x86_64	cur-zero-arg	observe
+linux-x86_64	cur-zero-arg	must_pass
 linux-x86_64	cur-one-int	observe
 linux-x86_64	cur-one-cur	observe
 linux-x86_64	cur-one-double	observe
 linux-x86_64	cur-two-int	observe
-macos-x86_64	cur-zero-arg	observe
+macos-x86_64	cur-zero-arg	must_pass
 macos-x86_64	cur-one-int	observe
 macos-x86_64	cur-one-cur	observe
 macos-x86_64	cur-one-double	observe
