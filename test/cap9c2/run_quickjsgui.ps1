@@ -114,7 +114,7 @@ $mormotUnits = @(
     '-Fudeps/mormot2/src/script'
 )
 $hostUnits = @('-Fusrc/lib', '-Fusrc/rpc', '-Fusrc/security', '-Fusrc/webview',
-    '-Fusrc/assets', '-Futest/core', '-Fusrc/script', '-Fusrc/platform/windows')
+    '-Fusrc/assets', '-Futest/security', '-Fusrc/script', '-Fusrc/platform/windows')
 
 # --- 0. app.pwb carries NO plugin source, and plugins.zip NO frontend ------
 # The two archives are independent security domains, so the claim is
@@ -133,7 +133,7 @@ New-Item -ItemType Directory -Force build/cap9c2/bundler-fpc, build/cap9c2/bin,
     build/cap9c2/app-fpc, build/cap9c2/app-bin, build/cap9c2/gui-fpc,
     build/cap9c2/gui-bin | Out-Null
 fpc -Px86_64 -Twin64 -MObjFPC -Sh -B -FUbuild/cap9c2/bundler-fpc -FEbuild/cap9c2/bin `
-    -Fusrc/assets -Futest/core -Fusrc/rpc @mormotUnits `
+    -Fusrc/assets -Futest/security -Fusrc/rpc @mormotUnits `
     -Fldeps/mormot2/static/x86_64-win64 tools/bundler/pwebbundle.pas
 if ($LASTEXITCODE -ne 0) { throw 'CAP-9C2 bundler compile FAILED' }
 

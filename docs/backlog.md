@@ -222,12 +222,30 @@ iteration bound, where the other eight stop when the parent stops moving. That
 is the drift the entry predicted, in security-adjacent path resolution, arriving
 exactly as described.
 
-One unit, `test/core/pweb.test.reporoot.pas`, carrying the eight-copy majority
-algorithm and the reason the ninth is not equivalent. `test/core` was chosen
-because it is already on the unit path of the mORMot-core suite that builds two
-of the nine, so consolidating cost no CI step a new flag; the other seven hosts
-gained `-Futest/core` in both their `.ps1` and `.sh` twins. All seven host gates
-and the 2,502-assertion mORMot-core suite were re-run green on windows-x86_64.
+One unit, `test/security/pweb.test.reporoot.pas`, carrying the eight-copy
+majority algorithm and the reason the ninth is not equivalent. The other seven
+hosts name `-Futest/security` in both their `.ps1` and `.sh` twins.
+
+**Where it lives is a proof rather than a preference, and the first attempt got
+that wrong.** Two of the nine callers — `pweb.test.capabilities` and
+`pweb.test.navigation` — live in `test/security`, so *every* compile that can
+reach them already passes `-Futest/security`, and putting the helper beside
+them means every such compile finds it by construction rather than by anyone
+having enumerated the call sites correctly.
+
+The first draft put it in `test/core`, on the narrower observation that the
+mORMot-core suite's action passes `-Futest/core`. That was true and
+insufficient. `test/rpc/cap3tests.pas` uses `pweb.test.capabilities.integration`,
+which uses `pweb.test.capabilities` — and the CAP-3U action passes
+`-Futest/rpc -Futest/security` and no `test/core`. Hosted run **34168635047**
+died on the Windows leg at `Can't find unit pweb.test.reporoot used by
+pweb.test.capabilities`, two minutes in. Reading the top of a uses clause is
+not reading what it pulls in, and the fix is to make the question unnecessary
+instead of answering it again.
+
+All seven host gates and the 2,502-assertion mORMot-core suite were re-run
+green on windows-x86_64, and so was the CAP-3U compile with the action's own
+unit paths.
 
 ### `7M0-6` — every recursive delete names its target and its root · `b39e07c`
 
@@ -242,7 +260,7 @@ an accident is unlikely rather than impossible, in scripts CI runs as programs.
 rather than invented**: every refusal is `cap7m_rm_tree`'s, in its order — an
 empty target, a missing or explicitly empty allowed root, `/`, a `..` path
 *component* (matched against a slash-padded copy, so `report..old` stays a
-legitimate filename), an unusable basename, an unresolvable parent, a target
+legitimate filename), an unusable basename, a target
 outside the allowed root (a literal, trailing-slashed prefix strip on `pwd -P`
 output, so `/x/buildkit` can never pass as inside `/x/build`), and the root
 itself. One narrowing: **the allowed root is required**, not defaulted, because
@@ -255,10 +273,10 @@ the CAP-7L release layout the release-layout gate reads back and CAP-10D1's
 artifact rules point at — legitimately outside `build`, so the caller names the
 root it means instead of the guard quietly widening for everyone.
 
-`test/cap7l/check_rmtree.sh` drives all ten refusals **and both accepts**
+`test/cap7l/check_rmtree.sh` drives all nine refusals **and all four accepts**
 against a real filesystem — a guard that refused everything would pass a test
 that only ever asked it to refuse — and sweeps the six scripts for a bare
-delete returning. **13/13 under WSL**, with `bash -n` clean on all eight
+delete returning. **14/14 under WSL**, with `bash -n` clean on all eight
 touched scripts and `tools/build-webview-so.sh --print-plan` byte-identical to
 its pinned expectation, so the sourcing changed no build decision.
 
@@ -373,7 +391,7 @@ Forty-five rows: the four `FIX_NOW` items this triage closed, the two
 
 | key | verdict | owner | reason |
 |---|---|---|---|
-| `7M0-6` | FIX_NOW · closed by `b39e07c` | this triage | the seven bare recursive deletes are gone: every removal now goes through `tools/pwebrmtree.sh`, which refuses an empty target, a missing or explicitly empty allowed root, `/`, a `..` path component, an unusable basename, an unresolvable parent, a target outside the named root, and the root itself. The rule is lifted from the ratified `cap7m_rm_tree` with the allowed root made REQUIRED rather than defaulted, so no site can inherit a root its reader has to know. Six sites name `build`; `run_release_layout.sh` names `dist`, because the CAP-7L release layout is ratified at `dist/linux-x64/release` and is legitimately outside `build`. `test/cap7l/check_rmtree.sh` drives all ten refusals and both accepts against a real filesystem and sweeps the six scripts for a bare delete returning - 13/13 under WSL |
+| `7M0-6` | FIX_NOW · closed by `b39e07c` | this triage | the seven bare recursive deletes are gone: every removal now goes through `tools/pwebrmtree.sh`, which refuses an empty target, a missing or explicitly empty allowed root, `/`, a `..` path component, an unusable basename, a target outside the named root, and the root itself. The rule is lifted from the ratified `cap7m_rm_tree` with the allowed root made REQUIRED rather than defaulted, so no site can inherit a root its reader has to know. Six sites name `build`; `run_release_layout.sh` names `dist`, because the CAP-7L release layout is ratified at `dist/linux-x64/release` and is legitimately outside `build`. `test/cap7l/check_rmtree.sh` drives all nine refusals and all four accepts against a real filesystem and sweeps the six scripts for a bare delete returning - and requires the two ACCEPT cases too, because a guard that refused everything would pass a refusal-only test. 14/14 under WSL. One of those legs exists because the first version refused on a FRESH CHECKOUT: it resolved the target parent before asking whether there was anything to delete, and `build/cap7l` is made by the very step that removes `build/cap7l/webview-build`, so hosted run 34168635047 died with `its parent does not resolve` on a target that did not exist. The dev host had the directory from earlier runs, which is the local-harness-more-generous-than-CI shape this repository already names. An absent target is now a no-op, and a leg builds the fresh-checkout shape explicitly |
 | `8B-7` | FIX_NOW · closed by `0029fc5` | this triage | `RepoRootFromExecutable` was duplicated across the CAP-8A, CAP-8B and CAP-8C hosts and had since grown a fourth copy. It is security-adjacent path resolution and the copies could drift independently; they are now one shared test helper with a contract check that keeps them one |
 | `B1-8` | FIX_NOW · closed by `5656508` | this triage | `create_help_digest` differed between Windows and POSIX for a compile-time ASCII constant, and the ledger recorded that nobody knew why. The cause is now found and closed, and the field is compared across four targets again instead of being recorded per target |
 | `B2-15` | FIX_NOW · closed by `e90cc74` | this triage | the generated `.gitattributes` opened `* -text` and never opted `.cfg` back in, so `frontend/pas2js.cfg` was treated as binary in every generated Pas2JS project and a Windows edit could commit CRLF into a compiler configuration. The template parity gate made it a supersession rather than a one-line change, which is why it waited |

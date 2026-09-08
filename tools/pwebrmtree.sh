@@ -41,9 +41,11 @@
 # four red legs. It wants a macOS run of its own.
 #
 # THE REFUSALS, in order: an empty target; an empty or missing allowed root;
-# `/`; a `..` PATH COMPONENT; an unusable basename; a target whose parent does
-# not resolve; an allowed root that does not resolve; a target outside the
-# allowed root; and the allowed root itself.
+# `/`; a `..` PATH COMPONENT; an unusable basename; an allowed root that does
+# not resolve; a target outside the allowed root; and the allowed root itself.
+# An ABSENT target is not among them - it is a no-op, because every caller
+# deletes and immediately recreates, and on a fresh checkout there is nothing
+# there yet. See the comment at that early return; it cost a hosted Linux leg.
 #
 # Two details that are easy to get wrong, and the reason this is one function
 # rather than an inline test at each site:
@@ -83,13 +85,33 @@ pweb_rm_tree() {
         */../*) pweb_rmtree_die "refusing to delete: '..' path component in '${target}'" ;;
     esac
 
-    # The target may legitimately not exist yet, so resolve its PARENT and
-    # re-append the basename rather than requiring the target itself.
     base="$(basename -- "${target}")"
     case "${base}" in
         ''|'.'|'..'|'/')
             pweb_rmtree_die "refusing to delete: unusable basename in '${target}'" ;;
     esac
+
+    # THERE IS NOTHING TO DELETE, AND THAT IS NOT A REFUSAL. Every caller here
+    # deletes a tree and immediately recreates it, so on a fresh checkout the
+    # target is routinely absent - and so is its PARENT, because `build/cap7l`
+    # is itself made by the step that is about to run. Resolving the parent
+    # before establishing that there is any work to do turned the first hosted
+    # Linux leg red with `refusing to delete
+    # '.../build/cap7l/webview-build': its parent does not resolve`, on a
+    # target that did not exist.
+    #
+    # It went unseen locally for the reason this repository already has a name
+    # for: the dev host had `build/cap7l` from earlier runs, so the harness was
+    # more generous than the one under test. The shape refusals above are all
+    # string-level and still apply; returning here cannot delete the wrong
+    # thing, because it deletes nothing.
+    if [ ! -e "${target}" ] && [ ! -L "${target}" ]; then
+        return 0
+    fi
+
+    # The target exists, so its parent must resolve. This branch is therefore
+    # unreachable except by a race - the parent removed between the test above
+    # and the `cd` - and it is kept for that race rather than removed as dead.
     parent="$(cd -- "$(dirname -- "${target}")" 2>/dev/null && pwd -P)" ||
         pweb_rmtree_die "refusing to delete '${target}': its parent does not resolve"
     [ -n "${parent}" ] ||

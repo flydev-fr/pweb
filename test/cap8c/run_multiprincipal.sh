@@ -97,7 +97,7 @@ Linux)
 
     step 'compile multiprincipal (production runtime + real SOA bridge, Linux adapter)'
     fpc -MObjFPC -Sh -B -FU"${unitdir}" -FE"${outdir}" \
-        -Fusrc/lib -Fusrc/rpc -Fusrc/security -Fusrc/webview -Fusrc/assets -Futest/core \
+        -Fusrc/lib -Fusrc/rpc -Fusrc/security -Fusrc/webview -Fusrc/assets -Futest/security \
         -Fusrc/platform/linux "${mormot_units[@]}" \
         -Fldeps/mormot2/static/x86_64-linux "-Fl${dist}" -k'-rpath=$ORIGIN' \
         test/cap8c/multiprincipal.pas ||
@@ -126,7 +126,7 @@ Darwin)
 
     step 'compile multiprincipal (production runtime + real SOA bridge, Cocoa adapter)'
     fpc -MObjFPC -Sh -B -FU"${unitdir}" -FE"${outdir}" \
-        -Fusrc/lib -Fusrc/rpc -Fusrc/security -Fusrc/webview -Fusrc/assets -Futest/core \
+        -Fusrc/lib -Fusrc/rpc -Fusrc/security -Fusrc/webview -Fusrc/assets -Futest/security \
         -Fusrc/platform/macos "${mormot_units[@]}" \
         "${PWEB_MACOS_FPC_FLAGS[@]}" "${PWEB_MACOS_FPC_LINK_BRIDGE[@]}" \
         test/cap8c/multiprincipal.pas ||

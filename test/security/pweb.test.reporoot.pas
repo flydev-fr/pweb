@@ -4,9 +4,22 @@
 //   edited"; 8C-3 recorded a fourth. By the post-MVP triage there were
 //   NINE, and one of them had already drifted - which is the whole of what
 //   that entry predicted, arriving on schedule
-// - it lives under test/core rather than beside any one caller because that
-//   directory is already on the unit path of the mORMot-core suite that
-//   carries two of the nine, so consolidating cost no CI step a new flag
+// - IT LIVES UNDER test/security, AND THE REASON IS A PROOF RATHER THAN A
+//   PREFERENCE. Two of the nine callers are `pweb.test.capabilities` and
+//   `pweb.test.navigation`, which live in this directory - so EVERY compile
+//   that can reach them already passes `-Futest/security`, and putting the
+//   helper here means every such compile finds it by construction rather than
+//   by anyone having enumerated the call sites correctly.
+//   The first draft put it under test/core, on the narrower observation that
+//   the mORMot-core suite's action passes `-Futest/core`. That was true and
+//   insufficient: `test/rpc/cap3tests.pas` reaches
+//   `pweb.test.capabilities.integration`, which uses `pweb.test.capabilities`,
+//   and the CAP-3U action passes `-Futest/rpc -Futest/security` and no
+//   `test/core`. One hosted Windows leg died at
+//   `Can't find unit pweb.test.reporoot`. Checking the top of a uses clause
+//   is not checking what it pulls in.
+// - the seven remaining hosts name `-Futest/security` in both their .ps1 and
+//   .sh twins
 // - it is TEST SUPPORT and ships in nothing: no unit under src/ or tools/
 //   names it, and the CAP-9C1 packager assembles a declared set rather than
 //   a directory, so there is no path on which it could reach a distribution

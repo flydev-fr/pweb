@@ -27,9 +27,9 @@
 # is not in it would otherwise be dropped on the floor, which is exactly the
 # vacuous-pass shape this repository has measured and refused elsewhere.
 #
-# IT ALSO RE-MEASURES THE THREE FIX_NOW CLOSURES IN SOURCE. A backlog that only
+# IT ALSO RE-MEASURES THE FOUR FIX_NOW CLOSURES IN SOURCE. A backlog that only
 # records that something was fixed is a document; one that fails when the fix
-# is undone is a gate. The three checks are cheap, they read the tree rather
+# is undone is a gate. The four checks are cheap, they read the tree rather
 # than the table, and each names the row it protects.
 #
 # Checkout-only: no toolchain, no network, no display. Needs `git` and the
@@ -323,7 +323,7 @@ foreach ($claim in @(
 # 8B-7: ONE RepoRootFromExecutable, and it is the shared one. The entry this
 # closes recorded three copies and predicted drift; there were nine and one had
 # drifted, so the count is the whole of the claim.
-$rrHome = 'test/core/pweb.test.reporoot.pas'
+$rrHome = 'test/security/pweb.test.reporoot.pas'
 $rrSites = @()
 foreach ($d in 'src', 'tools', 'test', 'examples') {
     if (-not (Test-Path -LiteralPath $d)) { continue }

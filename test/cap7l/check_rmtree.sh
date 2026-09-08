@@ -57,7 +57,6 @@ guard "${root}/../outside/tree" "${root}" && bad "a '..' path component"      ||
 guard "${sandbox}/outside/tree" "${root}" && bad 'a target outside the root'  || ok 'a target outside the root'
 guard "${root}" "${root}"                 && bad 'the allowed root itself'    || ok 'the allowed root itself'
 guard "${root}/." "${root}"               && bad 'an unusable basename'       || ok 'an unusable basename'
-guard "${root}/nope/deeper" "${root}"     && bad 'an unresolvable parent'     || ok 'an unresolvable parent'
 # A LITERAL prefix strip, not a string prefix: /x/buildkit is not inside /x/build.
 guard "${sandbox}/buildkit" "${sandbox}/build" \
                                           && bad 'a sibling sharing a prefix' || ok 'a sibling sharing a prefix'
@@ -66,11 +65,35 @@ printf '[CAP-7L] the deletion guard: the deletes it must still perform\n'
 
 guard "${root}/tree" "${root}"
 if [ -e "${root}/tree" ]; then badd 'a real target inside the root'; else okd 'a real target inside the root'; fi
-# a target that does not exist yet is not an error - every caller deletes then
-# recreates, and the first run of a clean checkout has nothing to remove
+
+# A target that does not exist yet is not an error: every caller deletes and
+# immediately recreates, so the first run of a clean checkout has nothing to
+# remove.
 mkdir -p -- "${root}/tree"
-guard "${root}/absent" "${root}"
-if [ -e "${root}/absent" ]; then badd 'an absent target is a no-op'; else okd 'an absent target is a no-op'; fi
+if guard "${root}/absent" "${root}"; then okd 'an absent target is a no-op'
+else badd 'an absent target is a no-op'; fi
+
+# AND NEITHER IS A TARGET WHOSE PARENT DOES NOT EXIST, which is the leg that
+# was missing when the guard first shipped. `build/cap7l/webview-build` is
+# removed by the step that CREATES `build/cap7l`, so on a fresh checkout the
+# parent is absent too - and an earlier draft resolved the parent before
+# asking whether there was anything to delete, which refused and turned the
+# hosted Linux leg red. The dev host never saw it: `build/cap7l` was there
+# from previous runs, so the local harness was more generous than CI. The leg
+# below builds the fresh-checkout shape explicitly rather than trusting the
+# working tree not to have one.
+fresh="${sandbox}/fresh"
+mkdir -p -- "${fresh}"
+if guard "${fresh}/cap7l/webview-build" "${fresh}"; then
+    okd 'a target whose parent does not exist is a no-op'
+else
+    badd 'a target whose parent does not exist is a no-op'
+fi
+if [ -e "${fresh}/cap7l" ]; then
+    badd 'the no-op created nothing'
+else
+    okd 'the no-op created nothing'
+fi
 
 printf '[CAP-7L] the six protected scripts carry no bare rm -rf\n'
 bare=0

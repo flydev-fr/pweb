@@ -79,7 +79,7 @@ Linux)
 
     step 'compile navmatrix (production guard + opener over the Linux adapter)'
     fpc -MObjFPC -Sh -B -FU"${unitdir}" -FE"${outdir}" \
-        -Fusrc/lib -Fusrc/rpc -Fusrc/security -Fusrc/webview -Fusrc/assets -Futest/core \
+        -Fusrc/lib -Fusrc/rpc -Fusrc/security -Fusrc/webview -Fusrc/assets -Futest/security \
         -Fusrc/platform/linux \
         -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib \
         -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net \
@@ -113,7 +113,7 @@ Darwin)
 
     step 'compile navmatrix (production guard + opener over the Cocoa adapter)'
     fpc -MObjFPC -Sh -B -FU"${unitdir}" -FE"${outdir}" \
-        -Fusrc/lib -Fusrc/rpc -Fusrc/security -Fusrc/webview -Fusrc/assets -Futest/core \
+        -Fusrc/lib -Fusrc/rpc -Fusrc/security -Fusrc/webview -Fusrc/assets -Futest/security \
         -Fusrc/platform/macos \
         -Fideps/mormot2/src -Fudeps/mormot2/src/core -Fudeps/mormot2/src/lib \
         -Fudeps/mormot2/src/crypt -Fudeps/mormot2/src/net \
