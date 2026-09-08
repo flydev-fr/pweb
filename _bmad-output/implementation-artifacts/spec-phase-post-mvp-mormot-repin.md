@@ -114,12 +114,32 @@ are declared as amendments; the names are a residue, recorded here and in
 | `quickjsrelease.pas` expected pin | `mORMot2 commit  : b1a129b0` | `mORMot2 commit  : da7e1c2f` |
 | `sdk_ship_table_digest` | `8a4d9fa32ed02a5dcf6c11acd6bb73a151734dfdbceb80490c2e53e5ba9a0636` | `92f53b632cdd3f08bea4c5604a2867cbc6885f90e3b2a969c8ea309122c4e995` — the ship-table note stopped saying "CAP-3U-patched on Windows" |
 | `sdk_inventory_digest` (windows-x86_64) | `03158a82729daa7b715a0a2c004fa0769ac9fa3402d8272dceb7b3ef2a65ace7` | `a974b29fea9c091a8c3141a0d7d68a5f1f82a27c3e6470af9018742fc4d64b9a`, `sdk_files` 291, `sdk_bytes` 38656512 |
+| `sdk_inventory_digest` (linux-x86_64) | per target by construction | `735cd8406a3aeefdaa0f7bb11a5acae3b2e4138d4b0497e10f8a993d1e515362`, `sdk_files` 218 |
 | `sdk_digest` | `b33df77edacdffd9336bc6835635a010a0b0d48ec4c2256773592a008f82e9be` | **re-measured unchanged** |
 | `quickjs_corpus_digest` | `601b86ff…` | **re-measured unchanged** |
 | `quickjs_package_digest` | `4b01cf06…` | **re-measured unchanged** |
 | `quickjs_lifecycle_digest` | `6c8d0bd7…` | **re-measured unchanged** |
 | `quickjs_release_digest` | `04c2db17…` | **re-measured unchanged** |
 | `quickjs_gui_digest` | `1c88bda9…` | **re-measured unchanged**, Windows and Linux agreeing |
+
+All five CAP-9 corpora were re-measured on both platforms rather than assumed
+unchanged, and all ten digests are byte-identical to the recorded values —
+which is what "the QuickJS binding did not move" has to mean if it is to mean
+anything: `mormot.lib.quickjs.pas` and `res/static/libquickjs` are unchanged
+between the two pins.
+
+## What was run, and where
+
+Windows dev host, all green on the committed HEAD: the rewritten CAP-3U
+unwind gate and its 12/12 matrix, the new Currency matrix 5/5, CAP-3 bridge +
+`cap3tests` 193/193, `pwebtests` 2502/2502, CAP-5, CAP-6, CAP-8B, CAP-8C,
+CAP-9A/B1/B2/C1/C2, CAP-10A/B0/B1/B2/C0/C1/C2/C3/D0/D1/D2/E, CAP-7F
+divergence/schema/host-args, CAP-11A migration-map/structure/cases, CAP-11B
+ref-input/contract/cases/ledger, and the backlog gate.
+
+Linux under WSL (FPC 3.2.3, WebKitGTK 2.52.6, Xvfb), all green: the Currency
+matrix as a typed observation (1/5, nothing gated), CAP-7L, CAP-8B, CAP-8C,
+CAP-9A/B1/B2/C1/C2 and CAP-10A/B0/B1/B2/C0/C1/C2/C3/D0/D1/D2/E.
 
 The `LICENSE.quickjs` digest moved and **the licence text did not**: both
 artifacts are 450 lines and 22 044 bytes and differ on exactly one line — line
