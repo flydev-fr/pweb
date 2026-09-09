@@ -1625,6 +1625,41 @@ for f in sdk_corpus sdk_suite sdk_digest sdk_corpus_lines sdk_package_built \
     eval "${f}=\"\$(d2_str ${f})\""
 done
 
+# --- CAP-14A: what the native CSP will not run -------------------------------
+# build/cap14a/cli-<target>.json is ONE record: the six refusal causes and the
+# twelve accepted classes driven through the REAL bundler, every existing
+# corpus re-packed, the source digests four targets must agree on, and the two
+# pipeline seams measured on a REAL generated project - `pweb build` answering
+# 5 with no layout, and `pweb dev` keeping the previous generation live.
+#
+# This block exists in BOTH emitters, for the reason the CAP-10E block below
+# spells out: rows added to one and not the other cost a whole hosted run.
+c14_file="${repo_root}/build/cap14a/cli-${target}.json"
+[ -f "${c14_file}" ] ||
+    die "cap14a/cli-${target}.json missing -- the CAP-14A gates have not run in this workspace"
+c14_str() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+        "${c14_file}" | head -n 1
+}
+for f in csp_refusal_available csp_contracts csp_policy_callers \
+         csp_policy_unit_in_host bundle_refusal_classes bundle_refusal_count \
+         bundle_accept_classes bundle_accept_count \
+         bundle_accept_deterministic bundle_accept_sha256 \
+         bundle_one_round_complete bundle_refusal_preserves_previous \
+         bundle_refusal_ansi_seen bundle_corpora_pack bundle_corpora_packed \
+         bundle_corpora_refused bundle_corpus_vite_output \
+         bundle_corpus_pas2js_output bundle_option_surface \
+         bundle_override_options bundler_digest csp_policy_digest \
+         html_policy_digest html_policy_corpus_lines build_clean_exit \
+         build_refusal_exit build_refusal_stage \
+         build_refusal_cause_forwarded build_refusal_release_unchanged \
+         build_refusal_partial_layout dev_gen1_ready \
+         dev_refusal_cause_forwarded dev_previous_generation_live \
+         dev_refused_generation_published dev_host_pid_unchanged \
+         dev_recovered_after_fix cap14a_gates; do
+    eval "${f}=\"\$(c14_str ${f})\""
+done
+
 # --- CAP-10E: the kernel-resolved image path --------------------------------
 # TWO records, and both are required rather than optional: the RUNTIME one
 # (test/cap10e/run_cap10e_gates.sh) says what a real host at a real
@@ -2626,6 +2661,43 @@ cat > "${work}/evidence.json" <<EOF
   "mormot_watcher": "${mormot_watcher}",
   "cap11_ledger_entries": "${cap11_ledger_entries}",
   "cap11_ledger_orphans": "${cap11_ledger_orphans}",
+  "csp_refusal_available": "${csp_refusal_available}",
+  "csp_contracts": "${csp_contracts}",
+  "csp_policy_callers": "${csp_policy_callers}",
+  "csp_policy_unit_in_host": "${csp_policy_unit_in_host}",
+  "bundle_refusal_classes": "${bundle_refusal_classes}",
+  "bundle_refusal_count": "${bundle_refusal_count}",
+  "bundle_accept_classes": "${bundle_accept_classes}",
+  "bundle_accept_count": "${bundle_accept_count}",
+  "bundle_accept_deterministic": "${bundle_accept_deterministic}",
+  "bundle_accept_sha256": "${bundle_accept_sha256}",
+  "bundle_one_round_complete": "${bundle_one_round_complete}",
+  "bundle_refusal_preserves_previous": "${bundle_refusal_preserves_previous}",
+  "bundle_refusal_ansi_seen": "${bundle_refusal_ansi_seen}",
+  "bundle_corpora_pack": "${bundle_corpora_pack}",
+  "bundle_corpora_packed": "${bundle_corpora_packed}",
+  "bundle_corpora_refused": "${bundle_corpora_refused}",
+  "bundle_corpus_vite_output": "${bundle_corpus_vite_output}",
+  "bundle_corpus_pas2js_output": "${bundle_corpus_pas2js_output}",
+  "bundle_option_surface": "${bundle_option_surface}",
+  "bundle_override_options": "${bundle_override_options}",
+  "bundler_digest": "${bundler_digest}",
+  "csp_policy_digest": "${csp_policy_digest}",
+  "html_policy_digest": "${html_policy_digest}",
+  "html_policy_corpus_lines": "${html_policy_corpus_lines}",
+  "build_clean_exit": "${build_clean_exit}",
+  "build_refusal_exit": "${build_refusal_exit}",
+  "build_refusal_stage": "${build_refusal_stage}",
+  "build_refusal_cause_forwarded": "${build_refusal_cause_forwarded}",
+  "build_refusal_release_unchanged": "${build_refusal_release_unchanged}",
+  "build_refusal_partial_layout": "${build_refusal_partial_layout}",
+  "dev_gen1_ready": "${dev_gen1_ready}",
+  "dev_refusal_cause_forwarded": "${dev_refusal_cause_forwarded}",
+  "dev_previous_generation_live": "${dev_previous_generation_live}",
+  "dev_refused_generation_published": "${dev_refused_generation_published}",
+  "dev_host_pid_unchanged": "${dev_host_pid_unchanged}",
+  "dev_recovered_after_fix": "${dev_recovered_after_fix}",
+  "cap14a_gates": "${cap14a_gates}",
   "github_sha": "${github_sha}",
   "github_run_id": "${github_run_id}",
   "waivers": [${waivers}]

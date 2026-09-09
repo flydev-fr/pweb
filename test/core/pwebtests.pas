@@ -39,6 +39,7 @@ uses
   pweb.test.lifecycle,
   pweb.test.assets,
   pweb.test.bundle,
+  pweb.test.htmlpolicy,
   pweb.test.capabilities,
   pweb.test.command,
   pweb.test.navigation
@@ -69,6 +70,7 @@ type
     procedure InvocationPipeline;
     procedure AssetSystem;
     procedure BundleSystem;
+    procedure HtmlPolicy;
     procedure CapabilityPolicy;
     procedure NavigationPolicy;
     procedure RuntimeCommand;
@@ -108,6 +110,17 @@ begin
   // production app.pwb loader with typed refusals - no window, no
   // webview.dll and no WebView2 runtime required
   AddCase([TTestBundleSystem]);
+end;
+
+procedure TPWebTests.HtmlPolicy;
+begin
+  // CAP-14A, headless on every target: what the native CSP will not run.
+  // A pure scan of bytes - the four refusal classes, the accepted data
+  // blocks and inline style, and the adversarial tokenizer shapes that
+  // could hide an executable script from a naive scanner. Also emits the
+  // CAP-7F decision corpus (build/cap7f/html-policy.txt), whose digest
+  // four targets must agree on.
+  AddCase([TTestHtmlPolicy]);
 end;
 
 procedure TPWebTests.NavigationPolicy;

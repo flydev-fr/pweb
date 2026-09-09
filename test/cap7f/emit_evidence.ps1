@@ -1196,6 +1196,18 @@ if (-not (Test-Path $d2File)) {
 }
 $d2 = Get-Content $d2File -Raw | ConvertFrom-Json
 
+# --- CAP-14A: what the native CSP will not run -------------------------------
+# build/cap14a/cli-<target>.json is ONE record: the six refusal causes and the
+# twelve accepted classes driven through the REAL bundler, every existing
+# corpus re-packed, the source digests four targets must agree on, and the two
+# pipeline seams measured on a REAL generated project - `pweb build` answering
+# 5 with no layout, and `pweb dev` keeping the previous generation live.
+$c14File = Join-Path $repoRoot 'build/cap14a/cli-windows-x86_64.json'
+if (-not (Test-Path $c14File)) {
+    throw '[CAP-7F] cap14a/cli-windows-x86_64.json missing -- the CAP-14A gates have not run in this workspace'
+}
+$c14 = Get-Content $c14File -Raw | ConvertFrom-Json
+
 # --- CAP-10E: the kernel-resolved image path --------------------------------
 # TWO records, and both are required rather than optional: the RUNTIME one
 # (test/cap10e/run_cap10e_gates.ps1) says what a real host at a real
@@ -2079,6 +2091,57 @@ $evidence = [ordered]@{
     mormot_watcher                     = "$($cap11bLedger.mormot_watcher)"
     cap11_ledger_entries               = "$($cap11bLedger.ledger_entries)"
     cap11_ledger_orphans               = "$($cap11bLedger.ledger_orphans)"
+    # --- CAP-14A: the bundler refuses what the native CSP will not run ------
+    # COMPARED across four (in $equalityFields): the class sets, the option
+    # surface, the one caller and the three digests. Every one of them is a
+    # pure function of bytes four targets read identically, so a divergence
+    # means one leg is running a different rule rather than a different
+    # machine.
+    #
+    # PER-TARGET, required present and compared on none:
+    #   bundle_accept_sha256   deflate output is a property of the toolchain
+    #                          that built the bundler; the ACCEPT decision is
+    #                          what four targets agree about, not the bytes
+    #   bundle_corpora_packed  the count depends on which built dists this
+    #                          leg's earlier stages left in the workspace
+    #   bundle_corpus_vite_output, bundle_corpus_pas2js_output  the same
+    csp_refusal_available              = "$($c14.csp_refusal_available)"
+    csp_contracts                      = "$($c14.csp_contracts)"
+    csp_policy_callers                 = "$($c14.csp_policy_callers)"
+    csp_policy_unit_in_host            = "$($c14.csp_policy_unit_in_host)"
+    bundle_refusal_classes             = "$($c14.bundle_refusal_classes)"
+    bundle_refusal_count               = "$($c14.bundle_refusal_count)"
+    bundle_accept_classes              = "$($c14.bundle_accept_classes)"
+    bundle_accept_count                = "$($c14.bundle_accept_count)"
+    bundle_accept_deterministic        = "$($c14.bundle_accept_deterministic)"
+    bundle_accept_sha256               = "$($c14.bundle_accept_sha256)"
+    bundle_one_round_complete          = "$($c14.bundle_one_round_complete)"
+    bundle_refusal_preserves_previous  = "$($c14.bundle_refusal_preserves_previous)"
+    bundle_refusal_ansi_seen           = "$($c14.bundle_refusal_ansi_seen)"
+    bundle_corpora_pack                = "$($c14.bundle_corpora_pack)"
+    bundle_corpora_packed              = "$($c14.bundle_corpora_packed)"
+    bundle_corpora_refused             = "$($c14.bundle_corpora_refused)"
+    bundle_corpus_vite_output          = "$($c14.bundle_corpus_vite_output)"
+    bundle_corpus_pas2js_output        = "$($c14.bundle_corpus_pas2js_output)"
+    bundle_option_surface              = "$($c14.bundle_option_surface)"
+    bundle_override_options            = "$($c14.bundle_override_options)"
+    bundler_digest                     = "$($c14.bundler_digest)"
+    csp_policy_digest                  = "$($c14.csp_policy_digest)"
+    html_policy_digest                 = "$($c14.html_policy_digest)"
+    html_policy_corpus_lines           = "$($c14.html_policy_corpus_lines)"
+    build_clean_exit                   = "$($c14.build_clean_exit)"
+    build_refusal_exit                 = "$($c14.build_refusal_exit)"
+    build_refusal_stage                = "$($c14.build_refusal_stage)"
+    build_refusal_cause_forwarded      = "$($c14.build_refusal_cause_forwarded)"
+    build_refusal_release_unchanged    = "$($c14.build_refusal_release_unchanged)"
+    build_refusal_partial_layout       = "$($c14.build_refusal_partial_layout)"
+    dev_gen1_ready                     = "$($c14.dev_gen1_ready)"
+    dev_refusal_cause_forwarded        = "$($c14.dev_refusal_cause_forwarded)"
+    dev_previous_generation_live       = "$($c14.dev_previous_generation_live)"
+    dev_refused_generation_published   = "$($c14.dev_refused_generation_published)"
+    dev_host_pid_unchanged             = "$($c14.dev_host_pid_unchanged)"
+    dev_recovered_after_fix            = "$($c14.dev_recovered_after_fix)"
+    cap14a_gates                       = "$($c14.cap14a_gates)"
     github_sha                      = $sha
     github_run_id                   = "$runId"
     waivers                         = @(

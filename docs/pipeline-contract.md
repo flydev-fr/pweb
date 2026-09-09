@@ -125,6 +125,49 @@ stage's outputs on a disk — but **not resuming** at C1: every run does every
 stage of its UI. Resumption is a decision about staleness, and a build tool
 that guesses what is still fresh is a build tool that ships a stale artifact.
 
+### The pack stage refuses what the native CSP will not run (CAP-14A)
+
+`PWEB_NATIVE_CSP` carries `script-src 'self'` with no `'unsafe-inline'`, so
+four HTML constructs are **dead in a bundle and no engine says so**. Before
+CAP-14A a dist carrying one packed, `--verify`d, built and ran, and half of it
+silently did nothing — measured by an external reviewer on a real third-party
+static build, and reported by nothing at pack, build or run time.
+
+`pwebbundle` now reads every document `PWebAssetMimeType` types as `text/html`
+and refuses, naming the file and the line:
+
+| cause | what it is |
+|---|---|
+| `bundle_inline_script` | a `<script>` with no `src` and an executable type — absent, empty, `module`, `importmap`, or any of the sixteen JavaScript MIME essences, so `text/javascript; charset=utf-8` counts |
+| `bundle_external_script` | a `<script src=…>` whose URL is not same-origin-relative: it carries a scheme (`https:`, `data:`, `blob:`, and `pweb:` too) or begins `//` |
+| `bundle_inline_handler` | an attribute whose name begins `on` |
+| `bundle_javascript_url` | an attribute whose value is a `javascript:` URL, after the URL parser's own normalisation and one pass of character-reference decoding |
+| `bundle_html_encoding` | the document opens with a UTF-16 byte order mark — not a violation but a refusal to **judge**, because this is a UTF-8 scanner |
+| `bundle_html_unterminated` | a raw-text element that is never closed, so the rest of the document cannot be judged |
+
+**Accepted, and measured:** every non-executable `<script>` data block
+(`application/json`, `application/ld+json`, `text/template`, any other type the
+engines do not run), an inline `<style>` and a `style=` attribute — `style-src`
+carries `'unsafe-inline'` by ratified decision — a same-origin-relative `src`,
+and `type="module"` with such a `src`, which is Vite's real output.
+
+**There is no override.** No flag, no environment variable, no manifest field.
+The CSP decides what runs; a switch that packed it anyway would be a lie told
+at build time and paid for at run time.
+
+The refusal reaches the pipeline as **the pack stage's existing typed
+failure**: a nonzero pack child is `stage_exited`, which is `ppcStageFailed`,
+which is **exit 5** — §9 below, unchanged — and the layout stage never runs, so
+no release directory exists and the previous one is untouched. In `pweb dev`
+the same failure is the ratified "a build or a pack child fails" row of
+[dev-contract.md](dev-contract.md) §7: the generation is not published, the
+previous generation stays live, the bundler's cause lines are forwarded, and
+the loop keeps running. Neither the CLI nor the host changed for any of this;
+CAP-14A measures both seams rather than adding to them.
+
+The rule lives in `src/assets/pweb.assets.htmlpolicy.pas` and the bundler is
+its only caller, so no production host links it.
+
 ### Bounds
 
 Stated once in `tools/pweb/pweb.cli.toolchain.pas`; this table is

@@ -955,6 +955,12 @@ jobs:
           pwsh -NoProfile -File test/cap11b/check_cap11_ledger.ps1
           if ($LASTEXITCODE -ne 0) { throw 'CAP-11B the CAP-11 phase ledger disposition (CL1) FAILED' }
 
+      - name: CAP-14A bundler CSP refusal gates (C0-C9, B1, D1) + evidence
+        timeout-minutes: 60
+        uses: ./.github/actions/cap-14a-bundler-csp-refusal-gates-c0-c9-b1-d1-evidence
+        with:
+          target: ${{ inputs.target }}
+
       - name: Backlog disposition - every ledger entry has a verdict
         if: ${{ inputs.target == 'windows' }}
         timeout-minutes: 5

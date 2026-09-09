@@ -140,10 +140,21 @@ try {
         [System.IO.File]::WriteAllLines($p, $keep)
     } 'does not carry 1 open row'
 
+    # THE COUNT IS READ RATHER THAN TYPED, and that is a correction: this leg
+    # carried the literal `| `ROADMAP` | 39 |`, so the first shard to add a
+    # roadmap row (CAP-14A, which took it to 40) made the perturbation a
+    # no-op and the self-test reported a refusal that never fired. A fixture
+    # must be derived from the thing it perturbs - the same lesson
+    # `test/cap10c1` learned from a hardcoded `/usr/libexec` path.
     Leg 'a summary that disagrees with its own table' {
         $p = Join-Path $repoRoot 'docs/backlog.md'
         $t = [System.IO.File]::ReadAllText($p)
-        [System.IO.File]::WriteAllText($p, $t.Replace('| `ROADMAP` | 39 |', '| `ROADMAP` | 38 |'))
+        if ($t -notmatch '\| `ROADMAP` \| (\d+) \|') {
+            throw 'the backlog document states no ROADMAP count to perturb'
+        }
+        $n = [int]$Matches[1]
+        [System.IO.File]::WriteAllText($p,
+            $t.Replace("| ``ROADMAP`` | $n |", "| ``ROADMAP`` | $($n - 1) |"))
     } 'does not state the measured ROADMAP count'
 
     # --- the four FIX_NOW closures, each undone in the tree -----------------

@@ -136,6 +136,17 @@ another.
 | step 4 | the new release is in place; `.pweb-old.tmp` remains and is reported | 0 |
 | step 5 (`verify`) | the committed release is removed: no release, which `pweb run` answers `not_built` — a committed layout the run command would refuse is worse than none | 6 |
 
+**CAP-14A added no row here and no category.** A dist the native CSP would
+not run is refused by the pack stage — `bundle_inline_script`,
+`bundle_external_script`, `bundle_inline_handler`, `bundle_javascript_url`,
+and the two refusals to judge, `bundle_html_encoding` and
+`bundle_html_unterminated` — and that refusal reaches this table as the first
+row above: a stage-1–8 failure, the previous `release/` untouched, **exit 5**
+with the pack child's real typed status. The bundler's cause lines are
+forwarded to stdout with the `pack| ` prefix every stage child gets. There is
+no flag that packs it anyway; [pipeline-contract.md](pipeline-contract.md) §3
+is the rule.
+
 ### Racing a running application
 
 `pweb run` launches the application with the release directory as its

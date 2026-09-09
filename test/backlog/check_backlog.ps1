@@ -104,6 +104,7 @@ $shards = [ordered]@{
     'spec-phase-11-cap11a-ci-matrix.md'                    = '11A'
     'spec-phase-11-cap11b-upstream-watcher.md'             = '11B'
     'spec-phase-post-mvp-mormot-repin.md'                  = 'RP'
+    'spec-phase-14-cap14a-bundler-csp-refusal.md'          = '14A'
 }
 
 # THE CLOSED SET. `CLOSED` means the thing the entry describes is done;

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Signage — accept corpus</title>
+<!-- inline <style> is ACCEPTED: style-src carries 'unsafe-inline' by
+     ratified decision, and this comment also holds a <script>alert(1)</script>
+     that must never be read as markup -->
+<style>
+  html, body { margin: 0; height: 100%; background: #101418; color: #e8eef4 }
+  .panel { display: flex; height: 100%; align-items: center }
+</style>
+<link rel="stylesheet" href="/assets/app.css">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"WebSite","name":"Signage"}
+</script>
+</head>
+<body>
+<main class="panel" style="justify-content: center">
+  <section data-caption="width > height" id="stage">
+    <h1 id="headline">loading</h1>
+    <p class="hint" data-range="1 > 0">rotating every 30 s</p>
+  </section>
+  <img src="/assets/logo.svg" alt="logo" width="96" height="96">
+</main>
+
+<noscript><img src="/assets/logo.svg" onerror="fallback()" alt=""></noscript>
+
+<svg width="0" height="0" aria-hidden="true"><style><![CDATA[
+  .icon { fill: currentColor }
+]]></style></svg>
+
+<script type="application/json" id="config">
+{"rotateMs":30000,"note":"a </scr ipt sequence and a > live in this block"}
+</script>
+
+<script type="text/template" id="slide">
+  <article class="slide" onclick="never()"><h2>{{title}}</h2></article>
+</script>
+
+<SCRIPT SRC="/assets/app.js"></SCRIPT>
+<script type="module" crossorigin src="./assets/boot.js"></script>
+</body>
+</html>

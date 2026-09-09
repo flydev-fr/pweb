@@ -1,16 +1,16 @@
 # The backlog
 
 `_bmad-output/implementation-artifacts/deferred-work.md` is append-only and
-carries **343 entries** from Phase 0 to the post-MVP mORMot repin. It is a
+carries **349 entries** from Phase 0 to CAP-14A. It is a
 ledger: it records what was found, in the words of the shard that found it,
 and it never edits itself. That makes it excellent evidence and a poor
 worklist — a reader who wants to know *what is still owed* has to resolve
 every supersession chain by hand, and three phase-closure artifacts answer
 that question for CAP-10 and CAP-11 only.
 
-This document is the worklist. Every one of the 343 entries is disposed of
-exactly once, with one verdict, an owner and a reason. **Forty-six are open,**
-**and those forty-six are listed here in full**; the other 297 are in
+This document is the worklist. Every one of the 349 entries is disposed of
+exactly once, with one verdict, an owner and a reason. **Forty-seven are open,**
+**and those forty-seven are listed here in full**; the other 302 are in
 `test/backlog/dispositions.tsv`, which is the table this document is written
 from and the one the gate reads.
 
@@ -18,9 +18,9 @@ from and the one the gate reads.
 |---|---:|---|
 | `FIX_NOW` | 4 | closed by this triage, one commit each, cited below |
 | `UPSTREAM` | 3 | the defect belongs to a third-party project and a report is written; two of the three also carry a local workaround, and `RP-2` deliberately does not |
-| `ROADMAP` | 39 | real work, deferred, with a named owner |
-| `ACCEPTED` | 97 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
-| `CLOSED` | 200 | the thing the entry describes is done |
+| `ROADMAP` | 40 | real work, deferred, with a named owner |
+| `ACCEPTED` | 101 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
+| `CLOSED` | 201 | the thing the entry describes is done |
 
 `ACCEPTED` is not a synonym for ignored. It is the verdict for an entry whose
 honest answer is a measurement — that WebView2 raises no navigation event for a
@@ -71,10 +71,10 @@ that really deleted the line could show that.
 
 ### It runs on every hosted leg
 
-The gate is step **179** of the one platform-leg sequence, `Backlog disposition
-- every ledger entry has a verdict`, and it was wired in as a **declared
-CAP-11A amendment** rather than slipped in: a composite action carrying the
-body, a row in `test/cap11a/step-applicability.tsv`, and a row in
+The gate is a step of the one platform-leg sequence, `Backlog disposition -
+every ledger entry has a verdict`, and it was wired in as a **declared CAP-11A
+amendment** rather than slipped in: a composite action carrying the body, a row
+in `test/cap11a/step-applicability.tsv`, and a row in
 `test/cap11a/post-migration-amendments.tsv` recording what changed and why.
 
 `ci_sequence_digest` moves with it, which is the point of declaring it:
@@ -87,6 +87,14 @@ body, a row in `test/cap11a/step-applicability.tsv`, and a row in
 The digest is the SHA-256 of the declared step names, one per line — so it
 moves for exactly one reason, a step entering the sequence, and the aggregate
 compares it across four targets on every run.
+
+Two shards have since entered the sequence the same way and moved it again, and
+this row is where the arithmetic is kept honest rather than in a step number
+that goes stale the moment anybody inserts anything: the mORMot repin's
+Currency matrix took it to `7f7dc950…` (202), and CAP-14A's bundler CSP refusal
+takes it to `412b21b257dd6945ad2bd95313d584bab67c0ef5d9cebde85cd92db9a77586d1`
+(203). This gate now sits at ordinal **181**, immediately after CAP-14A's, and
+`test/cap11a/step-applicability.tsv` is the record of where every step is.
 
 **Windows only, and that is a checkout property rather than a preference.** The
 gate resolves each `FIX_NOW` row's closing commit and requires it to be an
@@ -385,9 +393,9 @@ than appended to an append-only ledger:
 
 ## The open work, in full
 
-Forty-six rows: the four `FIX_NOW` items this triage closed, the three
-`UPSTREAM` reports, and the thirty-nine on the roadmap. Everything else — 97
-`ACCEPTED` and 200 `CLOSED` — is in `test/backlog/dispositions.tsv`.
+Forty-seven rows: the four `FIX_NOW` items this triage closed, the three
+`UPSTREAM` reports, and the forty on the roadmap. Everything else — 101
+`ACCEPTED` and 201 `CLOSED` — is in `test/backlog/dispositions.tsv`.
 
 | key | verdict | owner | reason |
 |---|---|---|---|
@@ -437,3 +445,4 @@ Forty-six rows: the four `FIX_NOW` items this triage closed, the three
 | `10E-4` | ROADMAP | CI owner | Pascal sources are not LF-pinned in `.gitattributes`, so `sed`-based marker extraction in several POSIX gates cannot run from a Windows checkout under WSL — the documented way of validating the Linux legs without spending a hosted run. Both candidate fixes are named, and the first is a checkout-behaviour change for every collaborator that should be decided rather than slipped in |
 | `11B-4` | ROADMAP | CAP-12 | the webview watcher's shape does not fit mORMot head — no C headers, no platform patch, no library build, no signature pin — and `mormot.lock` pins statics to a release asset, so `build_failed` would be the normal outcome rather than news. A mORMot watcher is a different instrument with its own budget |
 | `11B-19` | ROADMAP | CAP-12 | close-on-report is unavailable to every smoke driver, measured four ways. What remains owed is one of two host-side changes — flush the report line so a driver can see it, or close the window on the first report inside the host — either of which turns a 15-second floor into a 300-millisecond run. `examples/` and `src/` were frozen for CAP-11B |
+| `14A-3` | ROADMAP | a shard that ratifies whether an SVG in a bundle is an image, a document, or both | `.svg` is not scanned by the CAP-14A CSP refusal, and the reason is sound for the common case: an SVG referenced as an image has scripting disabled by the image context, so a handler inside one is inert by design rather than by CSP and refusing it would refuse a working dist. The narrow case left open is an application that NAVIGATES to one — `PWebClassifyNavigation` permits any `pweb://app/...` top-level navigation — because that SVG is then a real document whose inline script `script-src 'self'` blocks with exactly the silence CAP-14A exists to end. No shipped corpus does it. Closing it is a decision about what an SVG in a bundle is, and only then a question of whether an XML tokenizer is a second scanner or a mode of the existing one |

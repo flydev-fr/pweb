@@ -13,7 +13,22 @@ program pwebbundle;
   path/name only (ratified D3): secret/dev artifacts are hard errors,
   *.map is excluded by default with a logged skip unless
   --include-sourcemaps opts in, and a root manifest.json in the input
-  is refused - the bundler owns that entry. The manifest stamps
+  is refused - the bundler owns that entry.
+
+  CAP-14A adds ONE further refusal, and it is the only one that reads
+  content: every HTML document is scanned for what the native CSP would
+  not execute - an inline <script>, a <script src> that is not
+  same-origin, an on*= handler, a javascript: URL. Those constructs are
+  dead in a bundle and NO ENGINE SAYS SO, so before this pass a dist
+  carrying one packed, verified, built and ran while half of it silently
+  did nothing. The rule lives in pweb.assets.htmlpolicy and is walk-time
+  policy owned by this CLI, exactly as the sourcemap exclusion is; the
+  writer is untouched, so no production host links it.
+
+  THERE IS NO OVERRIDE. The CSP will not run it, so a flag that packed
+  it anyway would be a lie told at build time and paid for at run time.
+
+  The manifest stamps
   protocol from PWEB_PROTOCOL_VERSION and minRuntime from
   PWEB_RUNTIME_VERSION unless --min-runtime overrides it. All
   validation, determinism, self-validation and the atomic replace live
@@ -47,6 +62,7 @@ uses
   pweb.rpc.support,  // PWEB_RUNTIME_VERSION
   pweb.assets.intf,
   pweb.assets.support,
+  pweb.assets.htmlpolicy,  // CAP-14A: what the native CSP will not run
   pweb.assets.bundle;
 
 type
@@ -343,6 +359,44 @@ var
   content: RawByteString;
   manifest: TPWebBundleManifest;
   err: RawUtf8;
+  // the four CSP violation classes, and the two refusals to JUDGE -
+  // counted apart because they earn a different closing sentence: one
+  // says no option can help, the other says fix the document
+  csp, unjudged: Integer;
+
+  // CAP-14A: one document, scanned once. True when the native CSP would
+  // run everything in it. Every finding is printed - cause, logical path
+  // and line - before anything fails, and the printed path is the
+  // LOGICAL one, so a forwarded pack line carries no absolute path
+  function ScanDocument(const Logical: RawUtf8;
+    const Native: TFileName): Boolean;
+  var
+    doc: RawByteString;
+    v: TPWebHtmlViolations;
+    truncated: Boolean;
+    k: PtrInt;
+  begin
+    doc := StringFromFile(Native);
+    // an unreadable file yields '' here and is caught by the size check
+    // in the entries loop below, which is where that refusal already
+    // lives - this pass never invents a second diagnostic for it
+    Result := PWebHtmlScan(doc, v, truncated);
+    for k := 0 to High(v) do
+    begin
+      WriteLn(StdErr, 'pwebbundle: ',
+        PWebHtmlRefusalCause(v[k].Refusal), ': ', Logical, ':', v[k].Line,
+        ': ', PWebHtmlRefusalText(v[k].Refusal), ' [', v[k].Detail, ']');
+      if v[k].Refusal in [phrHtmlEncoding, phrHtmlUnterminated] then
+        Inc(unjudged)
+      else
+        Inc(csp);
+    end;
+    if truncated then
+      WriteLn(StdErr, 'pwebbundle: ', Logical, ': more than ',
+        PWEB_HTML_MAX_VIOLATIONS,
+        ' findings - the report stops here, the refusal does not');
+  end;
+
 begin
   distDir := '';
   outFile := '';
@@ -418,6 +472,8 @@ begin
   // ratified D3 classification pass, by name only - report EVERY
   // offender before failing, so a broken dist is fixed in one round
   bad := 0;
+  csp := 0;
+  unjudged := 0;
   for i := 0 to High(inputs) do
     case PWebBundleClassifyName(inputs[i].Logical) of
       pbcSecret:
@@ -434,6 +490,29 @@ begin
           Inc(bad);
         end;
     end;
+  // CAP-14A: the ONLY pass that reads content, and it reads exactly the
+  // documents PWebAssetMimeType resolves to text/html. It runs in the
+  // same round as D3 above so one broken dist is fixed in one round; the
+  // few kilobytes of HTML are read a second time in the entries loop
+  // below, which is the price of keeping this pass beside the refusal it
+  // belongs with rather than inside the loop that builds the archive.
+  for i := 0 to High(inputs) do
+  begin
+    if PWebBundleClassifyName(inputs[i].Logical) <> pbcAsset then
+      continue;
+    if not PWebHtmlIsDocument(inputs[i].Logical) then
+      continue;
+    if not ScanDocument(inputs[i].Logical, inputs[i].Native) then
+      Inc(bad);
+  end;
+  if csp > 0 then
+    WriteLn(StdErr, 'pwebbundle: the native CSP (script-src ''self'', ',
+      'no ''unsafe-inline'') will not run those ', csp, ' construct(s); ',
+      'there is no option that packs them anyway');
+  if unjudged > 0 then
+    WriteLn(StdErr, 'pwebbundle: ', unjudged, ' document(s) could not be ',
+      'read well enough to certify - fix the document, the refusal is ',
+      'not about its content');
   if bad > 0 then
     raise Exception.CreateFmt(
       '%d refused input file(s) - nothing was written', [bad]);

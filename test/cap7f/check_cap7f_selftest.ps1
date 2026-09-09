@@ -2769,6 +2769,52 @@ foreach ($case in @(
     Invoke-AggExpectFail $case.n $case.f
 }
 
+# --- CAP-14A: the bundler refuses what the native CSP will not run ----------
+# (x1) one leg's refusal CLASS SET diverged. COMPARED, not pinned: the classes
+# are a pure function of bytes, so a leg that reported five of six is a leg
+# running a different rule than its neighbours.
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.bundle_refusal_classes = 'bundle_inline_script'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap14a-refusal-classes-diverged' 'bundle_refusal_classes'
+
+# (x2) one leg read a different policy unit. The digest is LF-normalised, so
+# a line-ending difference can never explain this one - only a different rule
+# can.
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.csp_policy_digest = ('0' * 64)
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap14a-policy-digest-diverged' 'csp_policy_digest'
+
+# (x3-x10) the absolute pins, IN UNISON on all four legs. Every one of them is
+# the shape this shard exists for: a bundle that half-works reports nothing, so
+# four targets could agree perfectly that the refusal has stopped firing, that
+# an override flag has appeared, that a refused build now commits a layout, or
+# that the development loop now publishes a generation the CSP cannot run.
+foreach ($case in @(
+        @{ n = 'cap14a-refusal-stopped';   f = 'bundle_refusal_count';       v = '5' },
+        @{ n = 'cap14a-corpus-broken';     f = 'bundle_corpora_pack';        v = 'false' },
+        @{ n = 'cap14a-override-appeared'; f = 'bundle_override_options';    v = '1' },
+        @{ n = 'cap14a-second-caller';     f = 'csp_policy_callers';
+           v = 'tools/bundler/pwebbundle.pas,src/webview/pweb.webview.host.pas' },
+        @{ n = 'cap14a-policy-in-host';    f = 'csp_policy_unit_in_host';    v = 'true' },
+        @{ n = 'cap14a-build-category';    f = 'build_refusal_exit';         v = '1' },
+        @{ n = 'cap14a-release-clobbered'; f = 'build_refusal_release_unchanged'; v = 'false' },
+        @{ n = 'cap14a-dev-published';     f = 'dev_refused_generation_published'; v = 'true' })) {
+    Reset-Fixture
+    foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+        $f = Join-Path $fx "ev/$leg/evidence.json"
+        $e = Get-Content $f -Raw | ConvertFrom-Json
+        $e.($case.f) = $case.v
+        $e | ConvertTo-Json -Depth 4 | Set-Content $f
+    }
+    Invoke-AggExpectFail $case.n $case.f
+}
+
 Remove-Item -Force -ErrorAction SilentlyContinue $matrix
 # a floor, so a leg that silently stops running is caught. It is deliberately
 # NOT an equality: adding a refusal branch is normal and should not require
@@ -2786,7 +2832,9 @@ Remove-Item -Force -ErrorAction SilentlyContinue $matrix
 # absolute pin and one for the compared vocabulary digest - for the same reason
 # again. Four of nine would have exempted the other five from the one check
 # that notices a leg quietly ceasing to run.
-if ($script:AggRefusals -lt 230) {
+# CAP-14A raised it from 230 to 240 with its ten legs - two compared digests
+# and eight absolute pins - for the same reason a fourth time.
+if ($script:AggRefusals -lt 240) {
     throw ("selftest: only $($script:AggRefusals) aggregator refusals fired, " +
         'expected at least 230 -- a negative leg stopped running')
 }

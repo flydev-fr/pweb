@@ -44,6 +44,36 @@ through the **production loader** (raw stored-name byte compare
 included), then atomically replaces the previous bundle — which
 survives intact on any failure.
 
+## What the native CSP will not run (CAP-14A)
+
+One further refusal, and the only one that reads content. `PWEB_NATIVE_CSP`
+carries `script-src 'self'` with no `'unsafe-inline'`, so an inline `<script>`,
+a cross-origin script `src`, an `on*=` handler and a `javascript:` URL are all
+**dead in a bundle, and no engine reports it**. Every document the MIME
+resolver types as `text/html` is scanned, and a violation refuses the build
+naming the file and the line:
+
+| cause | what it is |
+|---|---|
+| `bundle_inline_script` | `<script>` with no `src` and an executable type (absent, empty, `module`, `importmap`, or a JavaScript MIME essence — `text/javascript; charset=utf-8` included) |
+| `bundle_external_script` | `<script src=…>` that is not same-origin-relative: any scheme, or a `//` prefix |
+| `bundle_inline_handler` | an attribute whose name begins `on` |
+| `bundle_javascript_url` | an attribute value that is a `javascript:` URL |
+| `bundle_html_encoding` | a UTF-16 byte order mark: this is a UTF-8 scanner and will not certify what it cannot read |
+| `bundle_html_unterminated` | a raw-text element that is never closed |
+
+Accepted: every non-executable `<script>` data block (`application/json`,
+`application/ld+json`, `text/template`, anything else the engines do not run),
+an inline `<style>` and a `style=` attribute (`style-src` carries
+`'unsafe-inline'` by ratified decision), a same-origin-relative `src`, and
+`type="module"` with such a `src` — Vite's real output. `.svg` is deliberately
+not scanned: an SVG referenced as an image has scripting disabled by the image
+context, so a handler inside one is inert by design rather than by CSP.
+
+**There is no option that packs it anyway.** The rule lives in
+`src/assets/pweb.assets.htmlpolicy.pas`; this CLI is its only caller, so no
+production host links it. `docs/pipeline-contract.md` §3 is the contract.
+
 `--verify` re-opens an existing bundle through the production loader
 with this runtime's facts and reads `index.html` + `manifest.json`;
 the optional iteration count repeats the cycle for observational

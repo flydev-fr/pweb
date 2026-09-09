@@ -5,10 +5,23 @@
 # host is additionally banned from every development fallback: no
 # folder store, no fixture archive, no injected HTML, and no CWD
 # lookup (the bundle lives beside the executable, never the CWD).
+#
+# CAP-14A joins the CSP policy unit to the swept set: it decides what a
+# bundle may carry and has no more business naming a transport than the
+# writer beside it does.
+#
+# `test/assets/pweb.test.htmlpolicy.pas` is DELIBERATELY NOT SWEPT, and
+# the exclusion is the point rather than an omission: that suite's whole
+# job is to prove a cross-origin `https://` script src is refused, so it
+# has to spell one. A sweep that forbade the fixture would forbid the
+# proof, and a fixture spelled `'htt' + 'ps://'` to dodge a gate is a
+# gate that has stopped meaning anything. The unit under test is swept;
+# the corpus that attacks it is not.
 $ErrorActionPreference = 'Stop'
 
 $cap6Files = @(
     'src/assets/pweb.assets.bundle.pas',
+    'src/assets/pweb.assets.htmlpolicy.pas',
     'tools/bundler/pwebbundle.pas',
     'examples/08-release/releaseapp.pas',
     'test/assets/pweb.test.bundle.pas'

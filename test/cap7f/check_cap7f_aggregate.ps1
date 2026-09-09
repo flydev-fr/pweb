@@ -465,6 +465,43 @@ $required = @(
     'watcher_verdict_vocabulary_digest', 'watcher_pinned_path_byte_identical',
     'locks_unchanged_after_watch', 'watcher_seeded_verdicts',
     'mormot_watcher', 'cap11_ledger_entries', 'cap11_ledger_orphans',
+    # CAP-14A: the bundler refuses what the native CSP will not run.
+    #
+    # COMPARED (below, in $equalityFields): bundle_refusal_classes,
+    # bundle_accept_classes, bundle_option_surface, csp_policy_callers,
+    # bundler_digest, csp_policy_digest, html_policy_digest,
+    # html_policy_corpus_lines - every one of them a pure function of bytes
+    # four targets read identically, so a disagreement means one leg is
+    # running a different rule rather than a different machine.
+    #
+    # PINNED ABSOLUTELY (in $absolutePins): the six causes, the twelve accept
+    # classes, the zero override options, the exit-5 seam and the development
+    # loop's four properties. Four targets could agree perfectly that a
+    # refusal now packs, which is exactly what an absolute pin is for.
+    #
+    # PER-TARGET, required present and compared on none:
+    #   bundle_accept_sha256   deflate output is a property of the toolchain
+    #                          that built the bundler; the ACCEPT decision is
+    #                          what four targets agree about, not the bytes
+    #   bundle_corpora_packed, bundle_corpus_vite_output,
+    #   bundle_corpus_pas2js_output   each depends on which built dists this
+    #                          leg's earlier stages left in the workspace
+    'csp_refusal_available', 'csp_contracts', 'csp_policy_callers',
+    'csp_policy_unit_in_host', 'bundle_refusal_classes',
+    'bundle_refusal_count', 'bundle_accept_classes', 'bundle_accept_count',
+    'bundle_accept_deterministic', 'bundle_accept_sha256',
+    'bundle_one_round_complete', 'bundle_refusal_preserves_previous',
+    'bundle_refusal_ansi_seen', 'bundle_corpora_pack',
+    'bundle_corpora_packed', 'bundle_corpora_refused',
+    'bundle_corpus_vite_output', 'bundle_corpus_pas2js_output',
+    'bundle_option_surface', 'bundle_override_options', 'bundler_digest',
+    'csp_policy_digest', 'html_policy_digest', 'html_policy_corpus_lines',
+    'build_clean_exit', 'build_refusal_exit', 'build_refusal_stage',
+    'build_refusal_cause_forwarded', 'build_refusal_release_unchanged',
+    'build_refusal_partial_layout', 'dev_gen1_ready',
+    'dev_refusal_cause_forwarded', 'dev_previous_generation_live',
+    'dev_refused_generation_published', 'dev_host_pid_unchanged',
+    'dev_recovered_after_fix', 'cap14a_gates',
     'github_sha', 'github_run_id', 'waivers'
 )
 # absolute pins: equality across targets is not enough - four targets that
@@ -1001,6 +1038,52 @@ $absolutePins = @{
     # one later moves this pin in the same commit.
     mormot_watcher                     = 'ledgered'
     cap11_ledger_orphans               = '0'
+    # CAP-14A: the facts four targets could agree on and still be wrong
+    # about. This shard exists because a bundle that half-works reports
+    # nothing, so a green matrix in which the refusal quietly stopped firing
+    # is exactly the state an absolute pin is for.
+    #
+    # THE SIX CAUSES AND THE TWELVE ACCEPT CLASSES, spelled out in one
+    # canonical bytewise order: a build that lost a class or grew one is
+    # refused here rather than merely disagreeing with its neighbours.
+    csp_refusal_available              = 'true'
+    csp_contracts                      = 'PASS'
+    csp_policy_unit_in_host            = 'false'
+    bundle_refusal_classes             =
+        'bundle_external_script,bundle_html_encoding,bundle_html_unterminated,bundle_inline_handler,bundle_inline_script,bundle_javascript_url'
+    bundle_refusal_count               = '6'
+    bundle_accept_classes              =
+        'cdata_section,comment_holding_script,data_block_json,data_block_ldjson,data_block_template,gt_inside_attribute,inline_style_element,module_with_src,raw_text_noscript,same_origin_src,style_attribute,svg_asset_not_scanned'
+    bundle_accept_count                = '12'
+    bundle_accept_deterministic        = 'true'
+    bundle_one_round_complete          = 'true'
+    bundle_refusal_preserves_previous  = 'true'
+    bundle_refusal_ansi_seen           = 'false'
+    bundle_corpora_pack                = 'true'
+    bundle_corpora_refused             = '0'
+    # THE OPTION SURFACE IS THE WHOLE OF IT. There is no override, and a
+    # flag that packed an inline script anyway would be a lie told at build
+    # time and paid for at run time - so the absence is pinned, not promised.
+    bundle_option_surface              =
+        '--include-sourcemaps,--max-asset-bytes,--min-runtime,--verify'
+    bundle_override_options            = '0'
+    csp_policy_callers                 = 'tools/bundler/pwebbundle.pas'
+    # the two pipeline seams, measured on a REAL generated project. Neither
+    # the CLI nor the host changed for either of them: CAP-14A measures what
+    # CAP-10C1 and CAP-10C3 already ratified, with a new cause travelling
+    # through it.
+    build_clean_exit                   = '0'
+    build_refusal_exit                 = '5'
+    build_refusal_stage                = 'stage_exited'
+    build_refusal_cause_forwarded      = 'true'
+    build_refusal_release_unchanged    = 'true'
+    build_refusal_partial_layout       = 'false'
+    dev_gen1_ready                     = 'true'
+    dev_refusal_cause_forwarded        = 'true'
+    dev_previous_generation_live       = 'true'
+    dev_refused_generation_published   = 'false'
+    dev_host_pid_unchanged             = 'true'
+    dev_recovered_after_fix            = 'true'
 }
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
 $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
@@ -1079,7 +1162,11 @@ $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
     # and a shard that broke the second while shipping the first must be
     # refused by name
     'dev_pas2js_corpus', 'dev_pas2js_suite', 'dev_pas2js_option_matrix',
-    'rd1_dev_suite')
+    'rd1_dev_suite',
+    # CAP-14A: the shard's own verdict and the contract cross-checks behind
+    # it. A pin says what a value must be; this says that a target which
+    # measured the refusal and found it broken cannot report anything else.
+    'cap14a_gates', 'csp_contracts')
 # fields that must agree, value-for-value, across all four targets
 # (capability_policy_digest is the CAP-8A structured policy-decision corpus and
 # navigation_policy_digest the CAP-8B one: four targets, one byte-identical
@@ -1455,7 +1542,18 @@ $equalityFields = @(
     # ran the same contract and not merely the same six words in some order.
     # The ledger entry count is over one committed file: four targets that
     # disagreed about it would be reading different repositories.
-    'watcher_verdict_vocabulary_digest', 'cap11_ledger_entries'
+    'watcher_verdict_vocabulary_digest', 'cap11_ledger_entries',
+    # CAP-14A: what the native CSP will not run. The class sets, the option
+    # surface, the one caller and the three digests are pure functions of
+    # bytes four targets read identically - the source digests are taken
+    # LF-normalised for exactly that reason, because Pascal sources are not
+    # LF-pinned in .gitattributes (ledger 10E-4) - so a disagreement here
+    # means one leg is running a different rule rather than a different
+    # machine. `html_policy_corpus_lines` travels with its digest: a corpus
+    # that lost rows would still hash consistently across four targets.
+    'bundle_refusal_classes', 'bundle_accept_classes', 'bundle_option_surface',
+    'csp_policy_callers', 'bundler_digest', 'csp_policy_digest',
+    'html_policy_digest', 'html_policy_corpus_lines'
 )
 # the CAP-9C2 semantic gate names, carried in ONE place across the two
 # emitters and this aggregator (see test/cap7f/emit_evidence.ps1)
@@ -2143,6 +2241,27 @@ $matrix = [ordered]@{
         mormot_watcher                 = $first.mormot_watcher
         cap11_ledger_entries           = $first.cap11_ledger_entries
         cap11_ledger_orphans           = $first.cap11_ledger_orphans
+        # CAP-14A: what the native CSP will not run, as four legs measured it.
+        # The class sets and the digests belong in the closure record beside
+        # everything else four targets had to agree about; the per-target
+        # facts (the archive bytes, the corpus counts) deliberately do not.
+        csp_refusal_available          = $first.csp_refusal_available
+        csp_contracts                  = $first.csp_contracts
+        csp_policy_callers             = $first.csp_policy_callers
+        csp_policy_unit_in_host        = $first.csp_policy_unit_in_host
+        bundle_refusal_classes         = $first.bundle_refusal_classes
+        bundle_accept_classes          = $first.bundle_accept_classes
+        bundle_option_surface          = $first.bundle_option_surface
+        bundle_override_options        = $first.bundle_override_options
+        bundle_corpora_pack            = $first.bundle_corpora_pack
+        bundler_digest                 = $first.bundler_digest
+        csp_policy_digest              = $first.csp_policy_digest
+        html_policy_digest             = $first.html_policy_digest
+        build_refusal_exit             = $first.build_refusal_exit
+        build_refusal_stage            = $first.build_refusal_stage
+        dev_previous_generation_live   = $first.dev_previous_generation_live
+        dev_refused_generation_published = $first.dev_refused_generation_published
+        cap14a_gates                   = $first.cap14a_gates
     }
     targets    = [ordered]@{}
 }

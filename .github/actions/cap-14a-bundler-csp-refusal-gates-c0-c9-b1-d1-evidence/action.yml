@@ -1,0 +1,37 @@
+name: 'CAP-14A bundler CSP refusal gates (C0-C9, B1, D1) + evidence'
+description: 'CAP-11A: the body of the "CAP-14A bundler CSP refusal gates (C0-C9, B1, D1) + evidence" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: windows, macos-x64, macos-arm64
+      if: ${{ inputs.target != 'linux' }}
+      shell: bash
+      run: |
+        # The contract cross-checks first, and in the SAME step: the gate
+        # reads their record back, so a leg that ran one without the other
+        # would report `unmeasured` for the source-level half rather than
+        # failing. One step, two scripts, one verdict.
+        pwsh -NoProfile -File test/cap14a/check_cap14a_contracts.ps1 2>&1 |
+          tee build/cap14a-contracts.log
+        test "${PIPESTATUS[0]}" -eq 0
+        pwsh -NoProfile -File test/cap14a/run_cap14a_gates.ps1 2>&1 |
+          tee build/cap14a-gates.log
+        test "${PIPESTATUS[0]}" -eq 0
+    - name: linux
+      if: ${{ inputs.target == 'linux' }}
+      shell: bash
+      run: |
+        # xvfb for the D1 leg only, and for the reason every other Linux
+        # gate needs it: `pweb dev` starts a real development host with a
+        # real window, and the refusal this shard measures is one the loop
+        # survives rather than one it reports without running.
+        pwsh -NoProfile -File test/cap14a/check_cap14a_contracts.ps1 2>&1 |
+          tee build/cap14a-contracts.log
+        test "${PIPESTATUS[0]}" -eq 0
+        xvfb-run -a pwsh -NoProfile -File test/cap14a/run_cap14a_gates.ps1 2>&1 |
+          tee build/cap14a-gates.log
+        test "${PIPESTATUS[0]}" -eq 0

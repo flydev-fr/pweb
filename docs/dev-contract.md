@@ -505,6 +505,19 @@ exactly the scope `pwebpipe`'s header already records for a build.
 | the input set becomes unwalkable mid-session (pas2js) | **the loop does not stop** — it is reported once and the previous generation stays live. At start-up the same fact is a refusal, exit 3 |
 | a descendant survives the drain | exit 6, whatever the members' own statuses were |
 
+**CAP-14A changed nothing here and measured all of it.** A document the native
+CSP would not run makes the pack child fail, which is the fourth row above:
+the generation is **not** published, the previous generation stays live, the
+bundler's typed cause (`bundle_inline_script` and its five siblings) is
+forwarded with the `pack: ` prefix, and the loop keeps running until the
+document is fixed — at which point the next generation publishes normally. At
+start-up the same failure is a start-up stage failure and `dev` exits 5. The
+rule is [pipeline-contract.md](pipeline-contract.md) §3;
+`test/cap14a/run_cap14a_gates.ps1` drives a real session on a real generated
+project and pins the host pid across the refusal, because "the previous
+generation stays live" and "the host was restarted with the previous
+generation" look identical from the outside.
+
 "It died" and "we stopped it" are told apart at the one instant they can be:
 each supervisor thread records whether anybody had asked the set to stop
 **before** it sets the flag itself.

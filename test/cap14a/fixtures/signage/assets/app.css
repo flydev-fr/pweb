@@ -1,0 +1,5 @@
+/* style-src carries 'unsafe-inline', so neither this file nor the inline
+   <style> in index.html is a CSP question. It is here so the accept
+   corpus is a realistic dist rather than one document. */
+.slide { font: 600 4vw/1.1 system-ui, sans-serif }
+.hint  { opacity: .6 }
