@@ -25,6 +25,36 @@ It is not twenty lines, and the reason is the whole of this shard: a rule that
 finds `<script>alert(1)</script>` is easy, and a rule an executable script
 cannot slip past is not.
 
+## How this shard was reviewed
+
+**The adversarial pass was run by hand, because the review subagents stalled.**
+The workflow's three reviewers — blind hunter, edge-case hunter, verification-gap
+— were launched together against the diff and all three stopped without
+returning a single finding; two hit the stream watchdog at 600 s and the third
+never delivered. The review was therefore conducted directly against the diff in
+the main session rather than skipped, and this paragraph is here because a
+reader deciding how much to trust the corpus needs to know which of the two
+happened. **No automated review layer contributed a finding to this shard.**
+
+What the manual pass produced, all of it in the commit:
+
+- the **numeric-reference clamp** — an unclamped accumulator wrapped
+  `&#x10000006A;` to `$6A` and read a `j` no engine produces; a disagreement
+  with the engines, closed and pinned by a corpus row;
+- **seven further corpus rows** — `<template>`, `<base>`, a NUL in a tag name,
+  an unquoted `javascript:` URL, spaces around `=`, a whitespace-only `src`, and
+  the out-of-range reference;
+- **two verification-gap fixes in this shard's own gate.** The first matters
+  most: the twelve accept classes were a *hand-written list beside a fixture*,
+  one deletion away from asserting that a construct was accepted after somebody
+  removed it. Each class now names the bytes in the fixture that carry it, so a
+  class whose construct is gone fails the gate instead of passing it. The second
+  is a floor on the corpus count, because "zero refused" is also what a leg that
+  packed nothing would report.
+
+The hosted four-target run is the other half of the review, and the verdict at
+the foot of this document stands only on it.
+
 ## TOKENIZER
 
 `src/assets/pweb.assets.htmlpolicy.pas` — one forward pass over the bytes. No
@@ -225,21 +255,6 @@ Green locally, before any push:
 | `test/backlog/check_backlog.ps1` | PASS — 349 entries, 0 orphans, 47 open |
 | `test/backlog/check_backlog_selftest.ps1` | 14/14 legs refused, tree restored |
 
-**The adversarial pass changed four things, and it is worth saying that it was
-run by hand.** The workflow's three review subagents were launched and all three
-stalled without returning a finding, so the review was done directly against the
-diff rather than skipped. It produced: the numeric-reference clamp above (a
-disagreement with the engines, closed and pinned); seven further corpus rows —
-`<template>`, `<base>`, a NUL in a tag name, an unquoted `javascript:` URL,
-spaces around `=`, a whitespace-only `src`, and the out-of-range reference; and
-two verification-gap fixes in this shard's own gate. The first of those matters
-most: the twelve accept classes were a **hand-written list beside a fixture**,
-which is one deletion away from asserting that a construct was accepted after
-somebody removed it. Each class now names the bytes in the fixture that carry
-it, so a class whose construct is gone fails the gate instead of passing it. The
-second is a floor on the corpus count, because "zero refused" is also what a leg
-that packed nothing would report.
-
 **The self-test found one of its own defects on the way through.** Its
 "summary that disagrees with its own table" leg replaced the literal
 `| ROADMAP | 39 |`; CAP-14A's roadmap row made that string absent, the
@@ -278,7 +293,20 @@ scanner or a mode of this one.
 
 **CAP-14A PASS — BUNDLER REFUSES WHAT THE CSP WILL NOT RUN**
 
-pending the hosted four-target run, which owes the macOS legs, the POSIX halves
-of the `pweb build` and `pweb dev` seams, and the four-target equality of
-`bundle_refusal_classes`, `bundle_accept_classes`, `html_policy_digest`,
-`bundler_digest` and `csp_policy_digest`.
+**The verdict stands only on the hosted four-target run**, and until that run is
+green it is a claim rather than a record. What the local measurements cannot
+reach, and what that run owes:
+
+- **the macOS legs**, both architectures, in full — WSL covers Linux and nothing
+  covers Darwin;
+- **the POSIX halves of the two pipeline seams** — `pweb build` answering 5 with
+  no layout, and `pweb dev` keeping the previous generation live, were measured
+  on windows-x86_64 only;
+- **the four-target equality** of `bundle_refusal_classes`,
+  `bundle_accept_classes`, `bundle_option_surface`, `csp_policy_callers`,
+  `html_policy_digest`, `html_policy_corpus_lines`, `bundler_digest` and
+  `csp_policy_digest` — measured equal on two of four locally (Windows and
+  Linux), asserted on four by the aggregate.
+
+A green run is what turns this document into the closure record; anything less
+and the verdict above is withdrawn rather than qualified.
