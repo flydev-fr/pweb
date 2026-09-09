@@ -236,6 +236,17 @@ fixture, unrelated) · CAP-15B contracts and gates PASS on Windows and Linux.
    chain cannot come from a local server, because TLS validation is not
    disableable anywhere in this product.
 
+## A NOTE ON THIS DOCUMENT'S SIZE
+
+The repository's documentation-budget hook flags this artifact and
+`cap15b-checkpoint1.md` against a 20 KB "story" threshold. Both are kept
+whole, deliberately: they are **records** rather than stories — a closure
+artifact is what a future shard reads to learn what was frozen, and a
+checkpoint record is only useful beside the measurements that justify its
+findings. Splitting either would scatter a finding from its evidence. The
+override is written here rather than taken silently, because a flagged hook
+that nobody wrote a decision against reads as an ignored gate.
+
 ## VERDICT
 
 ```
