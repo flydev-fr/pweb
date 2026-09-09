@@ -148,12 +148,17 @@ if (Test-Path -LiteralPath $contractsFile) {
     $contracts = Get-Content -Raw -LiteralPath $contractsFile | ConvertFrom-Json
     Row 'csp_contracts' "$($contracts.verdict)"
     Row 'csp_policy_callers' "$($contracts.policy_callers)"
-    Row 'csp_policy_unit_in_host' (Bool ($contracts.policy_unit_in_host -eq $true))
+    # `false` where a DEDICATED host unit directory exists to read, and
+    # `not_applicable` where the leg's -FU directories are shared between the
+    # bundler and the host - see check_cap14a_contracts.ps1. The four-target
+    # invariant is csp_policy_callers, which is pinned and compared; this row
+    # is the corroboration and is per-target by construction.
+    Row 'csp_policy_unit_in_host' "$($contracts.policy_unit_in_host)"
     Require ("$($contracts.verdict)" -ceq 'PASS') `
         'the CAP-14A contract cross-checks did not PASS'
     Require ("$($contracts.policy_callers)" -ceq 'tools/bundler/pwebbundle.pas') `
         "the policy unit has callers other than the bundler: $($contracts.policy_callers)"
-    Require ($contracts.policy_unit_in_host -ne $true) `
+    Require ("$($contracts.policy_unit_in_host)" -cne 'true') `
         'a compiled release host links the policy unit'
 } else {
     Row 'csp_contracts' 'unmeasured'

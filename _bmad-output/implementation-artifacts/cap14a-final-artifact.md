@@ -1,11 +1,59 @@
 # CAP-14A — the bundler refuses what the native CSP will not run
 
 Shard record, 2026-09-09, branch `phase/cap-14/a-bundler-csp-refusal`, baseline
-`958ff45f13488dad6be4b8b08f1f5cafd2772a7f`. **The hosted four-target run is
-outstanding**; everything below was measured on the Windows dev host (FPC 3.2.3
-x86_64-win64) and, where it can be, under WSL Ubuntu-24.04 (FPC 3.2.3
-x86_64-linux). The macOS legs and the POSIX halves of the two pipeline seams are
-the hosted run's to confirm.
+`958ff45f13488dad6be4b8b08f1f5cafd2772a7f`. **The first hosted run failed and
+its cause is recorded below; a second is owed.** Everything else was measured on
+the Windows dev host (FPC 3.2.3 x86_64-win64) and, where it can be, under WSL
+Ubuntu-24.04 (FPC 3.2.3 x86_64-linux). The macOS legs and the POSIX halves of
+the two pipeline seams are the hosted run's to confirm.
+
+## The first hosted run, and what it found
+
+**Run `34316904346`, commit `15f5d933`: windows-x86_64 green, the three POSIX
+legs red at step 181, the aggregate red four times over.** The cause was one
+line, and it was this shard's own check rather than the product:
+
+```
+CONTRACT VIOLATION: the release host unit set in build/cap7l/units
+                    links the policy unit
+```
+
+The corroborating observation in `check_cap14a_contracts.ps1` looked for
+`pweb.assets.htmlpolicy.ppu` in a list of candidate `-FU` directories, and **two
+of the three are shared**: `test/cap7l/build_cap7l.sh` compiles `signature_pin`,
+`pwebtests`, `mkappzip`, **the bundler** (line 156) and the release host (line
+168) into `build/cap7l/units`, and the CAP-7M build does the same. The bundler's
+own unit therefore sat in the directory the check read as the host's. A `.ppu`
+says which binary links a unit only when the directory belongs to exactly *one*
+program, and this repository has exactly one such directory —
+`build/cap6/host-fpc`, because `build_cap6.ps1` gives each of its three binaries
+its own `-FU`.
+
+The check now reads only that one; requires the marker unit the host really
+carries (`pweb.assets.bundle`, **not** `pweb.webview.host` — the CAP-6 release
+example composes its runtime by hand, ledger `B1-5`) before it reports anything;
+and answers `not_applicable` where no dedicated directory exists, rather than
+reporting an unmeasured `false`. `csp_policy_unit_in_host` moved out of the
+absolute pins into required-present-and-compared-on-none, where a per-target
+measurement belongs. **The four-target invariant was never the ppu reading** —
+it is `csp_policy_callers`, the source-level proof that exactly one unit in
+`src`, `tools` and `examples` names the policy unit, and it passed on all four
+legs including the three that went red.
+
+The run taught a second, smaller thing. The step ran its two scripts with a
+status check between them, so the contracts failure aborted the leg **before the
+gate wrote `build/cap14a/cli-<target>.json`** — and the aggregate could then only
+say `TARGET ARTIFACT ABSENT … LEG RED: the leg failed at [CAP-14A …]`, which
+names the step and not the field. Both scripts now run and the step fails
+afterwards on either status, so a red leg still ships the record that says which
+row was wrong. That is the same family as the ratified CAP-11A rule that no gate
+may depend on an upload having succeeded: a diagnostic produced only on the
+happy path is absent exactly when it is needed. The declared amendment's body
+digest moves `fb0dcca69379cb24` → `201aac1883c0e6d1`.
+
+Ledger `14A-7` and `14A-8`. Nothing in `src/`, `tools/bundler/` or the corpus
+moved for either: the bundler, the scanner and every decision below are byte-for-byte
+what run `34316904346` measured green on windows-x86_64.
 
 ## The defect
 
@@ -294,8 +342,10 @@ scanner or a mode of this one.
 **CAP-14A PASS — BUNDLER REFUSES WHAT THE CSP WILL NOT RUN**
 
 **The verdict stands only on the hosted four-target run**, and until that run is
-green it is a claim rather than a record. What the local measurements cannot
-reach, and what that run owes:
+green it is a claim rather than a record. The first attempt — `34316904346` —
+was red for a defect in this shard's own contract check, recorded above and
+fixed; a second run is owed. What the local measurements cannot reach, and what
+that run owes:
 
 - **the macOS legs**, both architectures, in full — WSL covers Linux and nothing
   covers Darwin;

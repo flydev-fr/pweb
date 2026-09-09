@@ -2801,7 +2801,7 @@ foreach ($case in @(
         @{ n = 'cap14a-override-appeared'; f = 'bundle_override_options';    v = '1' },
         @{ n = 'cap14a-second-caller';     f = 'csp_policy_callers';
            v = 'tools/bundler/pwebbundle.pas,src/webview/pweb.webview.host.pas' },
-        @{ n = 'cap14a-policy-in-host';    f = 'csp_policy_unit_in_host';    v = 'true' },
+        @{ n = 'cap14a-accept-class-lost'; f = 'bundle_accept_count';        v = '11' },
         @{ n = 'cap14a-build-category';    f = 'build_refusal_exit';         v = '1' },
         @{ n = 'cap14a-release-clobbered'; f = 'build_refusal_release_unchanged'; v = 'false' },
         @{ n = 'cap14a-dev-published';     f = 'dev_refused_generation_published'; v = 'true' })) {

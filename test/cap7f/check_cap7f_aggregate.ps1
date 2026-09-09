@@ -486,6 +486,18 @@ $required = @(
     #   bundle_corpora_packed, bundle_corpus_vite_output,
     #   bundle_corpus_pas2js_output   each depends on which built dists this
     #                          leg's earlier stages left in the workspace
+    #   csp_policy_unit_in_host  `false` only where a DEDICATED host unit
+    #                          directory exists to read - build/cap6/host-fpc
+    #                          on Windows - and `not_applicable` where the
+    #                          leg compiles the bundler and the host into ONE
+    #                          -FU directory, which is what the CAP-7L and
+    #                          CAP-7M builds do. MEASURED on hosted run
+    #                          34316904346, where pinning it `false` turned
+    #                          three POSIX legs red for a claim about a
+    #                          directory rather than about a binary. The
+    #                          four-target invariant is csp_policy_callers,
+    #                          which is pinned and compared below; this row
+    #                          is its corroboration where one is available
     'csp_refusal_available', 'csp_contracts', 'csp_policy_callers',
     'csp_policy_unit_in_host', 'bundle_refusal_classes',
     'bundle_refusal_count', 'bundle_accept_classes', 'bundle_accept_count',
@@ -1048,7 +1060,6 @@ $absolutePins = @{
     # refused here rather than merely disagreeing with its neighbours.
     csp_refusal_available              = 'true'
     csp_contracts                      = 'PASS'
-    csp_policy_unit_in_host            = 'false'
     bundle_refusal_classes             =
         'bundle_external_script,bundle_html_encoding,bundle_html_unterminated,bundle_inline_handler,bundle_inline_script,bundle_javascript_url'
     bundle_refusal_count               = '6'

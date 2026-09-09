@@ -162,17 +162,59 @@ if (-not (Test-Path -LiteralPath $policySrc)) {
     }
 }
 
-# --- the observation: a compiled host's unit set ----------------------------
-$hostUnitDirs = @('build/cap6/host-fpc', 'build/cap7l/units',
-    'build/cap7m/units') |
-    Where-Object { Test-Path -LiteralPath (Join-Path $repoRoot $_) }
-$policyInHost = $false
+# --- the observation: a DEDICATED host unit set -----------------------------
+# T1 above is the gate, and this corroborates it where it can be corroborated
+# honestly. A `.ppu` in an `-FU` directory only says which binary links a unit
+# when that directory belongs to exactly ONE program, and in this repository
+# exactly one such directory exists:
+#
+#   build/cap6/host-fpc   test/cap6/build_cap6.ps1 gives each of its three
+#                         binaries its own -FU (assets-fpc, bundler-fpc,
+#                         host-fpc), so a unit found here was linked by the
+#                         release host and nothing else.
+#
+# MEASURED, on hosted run 34316904346: the first version of this check also
+# read `build/cap7l/units` and `build/cap7m/units`, and both are SHARED - the
+# CAP-7L build compiles signature_pin, pwebtests, mkappzip, THE BUNDLER and
+# the release host into the one directory (test/cap7l/build_cap7l.sh:122-168),
+# so the bundler's own pweb.assets.htmlpolicy.ppu sat there and this check
+# reported that the host linked it. Three POSIX legs went red for a claim
+# about a directory rather than about a binary. A shared unit directory is
+# recorded as shared and answers `not_applicable`, because reporting `false`
+# from a place that cannot see the answer is the unmeasured pass this
+# repository refuses everywhere else.
+$DEDICATED_HOST_UNITS = 'build/cap6/host-fpc'
+$SHARED_UNIT_DIRS = @('build/cap7l/units', 'build/cap7m/units')
+$policyInHost = 'not_applicable'
 $hostDirsRead = 0
-foreach ($d in $hostUnitDirs) {
-    $hostDirsRead++
-    if (Test-Path -LiteralPath (Join-Path $repoRoot "$d/pweb.assets.htmlpolicy.ppu")) {
-        $policyInHost = $true
-        Violation "the release host unit set in $d links the policy unit"
+if (Test-Path -LiteralPath (Join-Path $repoRoot $DEDICATED_HOST_UNITS)) {
+    $hostDirsRead = 1
+    $ppu = Join-Path $repoRoot "$DEDICATED_HOST_UNITS/pweb.assets.htmlpolicy.ppu"
+    if (Test-Path -LiteralPath $ppu) {
+        $policyInHost = 'true'
+        Violation ("the release host unit set in $DEDICATED_HOST_UNITS links " +
+            'the policy unit')
+    } else {
+        # The corroboration is only worth recording if the directory really
+        # holds a host: an empty or absent unit set proves nothing. The marker
+        # is `pweb.assets.bundle` - the writer/loader unit the release host
+        # DOES link - and not `pweb.webview.host`, because the CAP-6 release
+        # example composes its runtime by hand rather than through that unit
+        # (ledger B1-5). Asking for the unit the host actually carries is what
+        # makes the absence of the one beside it mean something.
+        if (Test-Path -LiteralPath (Join-Path $repoRoot "$DEDICATED_HOST_UNITS/pweb.assets.bundle.ppu")) {
+            $policyInHost = 'false'
+        } else {
+            Write-Host ("[cap14a] $DEDICATED_HOST_UNITS carries no host unit " +
+                'set; the ppu corroboration is not_applicable on this leg')
+        }
+    }
+}
+foreach ($d in $SHARED_UNIT_DIRS) {
+    if (Test-Path -LiteralPath (Join-Path $repoRoot $d)) {
+        Write-Host ("[cap14a] $d is a SHARED -FU directory (the bundler and " +
+            'the release host compile into it), so a .ppu there says nothing ' +
+            'about which binary links it')
     }
 }
 
@@ -184,6 +226,8 @@ $out = [ordered]@{
     causes             = ($causes -join ',')
     second_policy      = $second.Count
     host_unit_dirs     = $hostDirsRead
+    # `true` / `false` / `not_applicable` - the third is what a leg with no
+    # DEDICATED host unit directory honestly answers
     policy_unit_in_host = $policyInHost
     violations         = $failures.Count
     verdict            = $(if ($failures.Count -eq 0) { 'PASS' } else { 'FAIL' })

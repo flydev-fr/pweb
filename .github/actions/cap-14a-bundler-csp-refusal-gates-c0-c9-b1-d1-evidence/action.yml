@@ -11,16 +11,22 @@ runs:
       if: ${{ inputs.target != 'linux' }}
       shell: bash
       run: |
-        # The contract cross-checks first, and in the SAME step: the gate
-        # reads their record back, so a leg that ran one without the other
-        # would report `unmeasured` for the source-level half rather than
-        # failing. One step, two scripts, one verdict.
+        # BOTH SCRIPTS RUN, AND THE STEP FAILS AFTERWARDS. The contract
+        # cross-checks come first because the gate reads their record back,
+        # but an `&&` between them would mean a contracts failure aborts the
+        # step before the gate writes build/cap14a/cli-<target>.json - and
+        # then the aggregate can only report "artifact absent" for a leg
+        # whose real cause was one named field. MEASURED on hosted run
+        # 34316904346, where exactly that happened on three POSIX legs.
+        set +e
         pwsh -NoProfile -File test/cap14a/check_cap14a_contracts.ps1 2>&1 |
           tee build/cap14a-contracts.log
-        test "${PIPESTATUS[0]}" -eq 0
+        c=${PIPESTATUS[0]}
         pwsh -NoProfile -File test/cap14a/run_cap14a_gates.ps1 2>&1 |
           tee build/cap14a-gates.log
-        test "${PIPESTATUS[0]}" -eq 0
+        g=${PIPESTATUS[0]}
+        set -e
+        test "$c" -eq 0 -a "$g" -eq 0
     - name: linux
       if: ${{ inputs.target == 'linux' }}
       shell: bash
@@ -29,9 +35,12 @@ runs:
         # gate needs it: `pweb dev` starts a real development host with a
         # real window, and the refusal this shard measures is one the loop
         # survives rather than one it reports without running.
+        set +e
         pwsh -NoProfile -File test/cap14a/check_cap14a_contracts.ps1 2>&1 |
           tee build/cap14a-contracts.log
-        test "${PIPESTATUS[0]}" -eq 0
+        c=${PIPESTATUS[0]}
         xvfb-run -a pwsh -NoProfile -File test/cap14a/run_cap14a_gates.ps1 2>&1 |
           tee build/cap14a-gates.log
-        test "${PIPESTATUS[0]}" -eq 0
+        g=${PIPESTATUS[0]}
+        set -e
+        test "$c" -eq 0 -a "$g" -eq 0
