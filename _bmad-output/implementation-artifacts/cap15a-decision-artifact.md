@@ -1,5 +1,46 @@
 # CAP-15A — outbound network: measured, then decided
 
+```
+CAP-15A PASS — THE NATIVE NETWORK DOOR, RATIFIED
+hosted run 34390332097, all six jobs green, on commit 5977969
+```
+
+**Closed 2026-09-09.** Option A is ratified, the four rulings are folded into
+the CAP-15B contract below, and `docs/cli-contract.md` §5 carries the decision
+publicly with door B's three reopening conditions. The hosted four-target run
+is green, and its substance is checked rather than its badge:
+
+- **`PWEB_NATIVE_CSP` did not move, and the run proves it rather than the
+  prose.** `navigation_policy_digest`
+  `360d69f282e9d8b053d1ef8a5052f76860875c723b9e6512b0d38685f0c7212e` is equal on
+  all four targets *and* byte-identical to the pre-shard run 34358696931 on
+  commit `50bac33`. So is CAP-8A's `capability_policy_digest`
+  `23b87da524b158f4b1a8ca53057ad794f485086257997534b426b28334bddb2f`. The
+  shard's strongest claim — that door A changes nothing in the frontend's
+  security policy — is measured, not assumed.
+- **No CI step entered the sequence.** `CAP11A_SEQUENCE_PASS steps=204
+  digest=e0d2e3f229122197f433392d91ed62307c7a867a6a649b877bac6d0ba8fb9f40`,
+  identical to the pre-shard run. `test/cap15a` is committed and run by nothing,
+  which is the ratified disposition and is now also a mechanical fact.
+- **The five new assertions really ran** on the Windows leg rather than
+  silently skipping: `cap15a_bare_delete false`, `cap15a_ps_parse_errors 0`,
+  `cap15a_named_in_ci ""`, `cap15a_shim_needle_hits 1`, and
+  `[backlog] PASS — 377 ledger entries, 0 orphans, 57 open`.
+- **CAP-7F aggregate PASS**, four targets, field-by-field, every earlier frozen
+  digest unchanged. `macos-x86_64` still reports `rtti extras 8` — the
+  pre-existing asymmetry recorded by earlier shards, untouched here and named
+  so this closure does not read cleaner than the run was.
+- **`[CAP-10A] dev trust PASS` on all four targets**, so the production profile
+  still carries no HMR allowance and no loopback term.
+
+One red run preceded it, 34381384774 on commit `82560a0`, and the cause is
+ledger `15A-16`: the shell runner was committed `100644` where every committed
+`.sh` here must be `100755`, because the Linux leg invokes its gates as
+programs. A Windows working tree has no executable bit, so no local check could
+see it; the checkout-only sweep that can is written into that ledger entry.
+
+---
+
 TODO.txt #1, in the reviewer's words: `PWEB_NATIVE_CSP` says
 `connect-src 'self'`, so a frontend cannot reach a remote server. That makes
 PWeb a platform for self-contained applications. **Is it an application
@@ -590,7 +631,8 @@ without building anything.
 ## VERDICT
 
 ```
-CAP-15A RATIFIED  —  option A, native fetch
+CAP-15A PASS — THE NATIVE NETWORK DOOR, RATIFIED
+hosted run 34390332097, all six jobs green, on commit 5977969
 ```
 
 PWeb **is** an application platform, and the door is **A — native fetch**:
@@ -603,10 +645,16 @@ engines that could be measured — and it works *differently* on each of them, i
 the one place a threat model cannot tolerate ambiguity. Door A does not touch an
 engine at all, and it is already faster than the engine's own `fetch`.
 
-**Ratified on 2026-09-09**, with four rulings folded into the CAP-15B contract
-above: schema 2's `network.origins` required and permitted to be empty (§2, §3);
-loopback `http` as a `PWEB_DEV`-only exception pinned absent from the release
-image (§2, §7, §8); `NSURLSession` as the Darwin transport behind the injected
-seam (§10); and the macOS coverage gap belonging to door B alone (Coverage).
+**Ratified and closed on 2026-09-09**, with four rulings folded into the
+CAP-15B contract above: schema 2's `network.origins` required and permitted to
+be empty (§2, §3); loopback `http` as a `PWEB_DEV`-only exception pinned absent
+from the release image (§2, §7, §8); `NSURLSession` as the Darwin transport
+behind the injected seam (§10); and the macOS coverage gap belonging to door B
+alone (Coverage).
+
+Hosted run **34390332097** is green on commit **5977969**, with
+`navigation_policy_digest` byte-identical to the pre-shard run — which is the
+whole of what a decision shard owes the tree: it decided something and moved
+nothing.
 
 CAP-15B is **not** begun.
