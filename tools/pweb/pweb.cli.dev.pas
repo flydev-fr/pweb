@@ -670,10 +670,20 @@ var
 begin
   s := PDevShared(Opaque);
   // THE ACKNOWLEDGEMENT, read from the engine's own line sink and from
-  // nowhere else. The host writes nothing to a disk to report a switch
-  if PWebCliDevParseAck(Line, gen) then
-    if gen > s^.Acked then
-      s^.Acked := gen;
+  // nowhere else. The host writes nothing to a disk to report a switch.
+  //
+  // ON STDOUT ONLY, since CAP-14B. The ratified line is written to stdout by
+  // the dev host and always has been, while the CAP-14B console surface
+  // carries bytes a PAGE authored on stderr. PWebCliDevParseAck matches
+  // `: generation <N> loaded` ANYWHERE in a line, so a page logging
+  // `x: generation 999 loaded` would otherwise advance this counter and
+  // drive the bounded generation cleanup below it. Two independent barriers
+  // close that: the channel is stderr, and this parse is stdout - either
+  // alone is one edit away from being lost
+  if Stream = pcsStdOut then
+    if PWebCliDevParseAck(Line, gen) then
+      if gen > s^.Acked then
+        s^.Acked := gen;
   DevForward(s, 'app: ', Line, Truncated);
 end;
 

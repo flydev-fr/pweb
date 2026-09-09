@@ -514,6 +514,75 @@ $required = @(
     'dev_refusal_cause_forwarded', 'dev_previous_generation_live',
     'dev_refused_generation_published', 'dev_host_pid_unchanged',
     'dev_recovered_after_fix', 'cap14a_gates',
+    # CAP-14B: the development console surface.
+    #
+    # COMPARED (below, in $equalityFields): console_mechanism, console_levels,
+    # console_shim_sha256, console_uses_count, console_line_headroom - every
+    # one of them a property of the SOURCE that four targets read identically,
+    # so a disagreement means one leg is running a different channel.
+    #
+    # PINNED ABSOLUTELY (in $absolutePins): the release binary carries no
+    # channel and no development argument, the development one carries both,
+    # the CSP is the same bytes in each, both error kinds arrive with a
+    # position, the bound holds, the forged acknowledgement is ignored, the
+    # host is not restarted, no ANSI escapes, zero listeners, and the release
+    # host's object is unchanged. Four targets could agree perfectly that a
+    # release now links the channel, which is what an absolute pin is for.
+    #
+    # PER-TARGET, required present and compared on none:
+    #   release_host_object_sha256    an object is a property of the toolchain
+    #                                 that built it
+    #   release_host_object_unchanged `not_applicable` where that target's
+    #                                 toolchain could not compile the host's
+    #                                 own platform body at all. The CAP-14A
+    #                                 lesson from hosted run 34316904346:
+    #                                 pinning a claim a leg cannot make turns
+    #                                 the leg red for the wrong reason. The
+    #                                 four-target invariant is
+    #                                 `console_host_markers_outside_dev`,
+    #                                 which is pinned below and is a SOURCE
+    #                                 property every leg can read with no
+    #                                 toolchain at all; this row is its
+    #                                 corroboration where a compiler answers
+    #   console_host_compile_target   the fpc triple the two compiles used
+    #   console_uncaught_position, console_rejection_position   real line and
+    #                                 column numbers of a real build
+    #   console_burst_emitted, console_page_dropped, console_direct_emitted,
+    #   console_host_dropped, console_host_ring_engaged
+    #                                 how much of a flood got through before
+    #                                 a bound closed depends on the machine's
+    #                                 timing. MEASURED: windows-x86_64
+    #                                 dropped ~30 700 of 32 000 records at the
+    #                                 host ring while linux-x86_64 dropped 24,
+    #                                 because the writer thread's drain and
+    #                                 the GUI thread's dispatches race. The
+    #                                 PAGE bound is deterministic and pinned
+    #                                 (`console_bound_enforced`); the ring is
+    #                                 pinned where it is deterministic, in the
+    #                                 headless `RingBound` case
+    #   react_leg, react_console_levels_seen, react_console_error_position
+    #                                 the React leg needs the node toolchain
+    #                                 and records `skipped_no_node` where
+    #                                 there is none rather than inventing one
+    'console_surface_available', 'console_mechanism', 'console_contracts',
+    'console_levels', 'console_line_headroom', 'console_uses_count',
+    'console_shim_sha256', 'console_host_dev_lines_removed',
+    'console_host_markers_outside_dev',
+    'console_host_compile_target', 'release_host_object_unchanged',
+    'release_host_object_sha256', 'console_armed', 'console_levels_seen',
+    'console_method_named', 'console_object_rendered',
+    'console_uncaught_position', 'console_rejection_position',
+    'console_error_position', 'console_forged_ack_printed',
+    'console_forged_ack_ignored', 'console_survives_generation_switch',
+    'console_burst_offered', 'console_burst_emitted', 'console_page_dropped',
+    'console_direct_emitted', 'console_host_dropped',
+    'console_host_ring_engaged',
+    'console_bound_enforced', 'console_host_pid_unchanged',
+    'console_ansi_seen', 'console_listener_members_seen',
+    'console_listener_members_max', 'release_console_channel',
+    'dev_console_channel', 'release_dev_argument', 'dev_csp_equals_release',
+    'react_leg', 'react_console_levels_seen', 'react_console_error_position',
+    'cap14b_gates',
     'github_sha', 'github_run_id', 'waivers'
 )
 # absolute pins: equality across targets is not enough - four targets that
@@ -1095,6 +1164,52 @@ $absolutePins = @{
     dev_refused_generation_published   = 'false'
     dev_host_pid_unchanged             = 'true'
     dev_recovered_after_fix            = 'true'
+    # CAP-14B: the facts four targets could agree on and still be wrong
+    # about. A channel that silently stopped delivering looks exactly like a
+    # page that logged nothing, and a channel that quietly reached a release
+    # binary looks exactly like a channel that did not - which is what these
+    # pins are for.
+    console_surface_available          = 'true'
+    console_contracts                  = 'PASS'
+    console_mechanism                  = 'webview_init_user_script+webview_bind'
+    console_levels                     =
+        'log,info,warn,error,debug,uncaught,rejection,dropped'
+    console_levels_seen                = 'log,info,warn,error,debug'
+    console_armed                      = 'true'
+    console_method_named               = 'true'
+    console_object_rendered            = 'true'
+    # BOTH ERROR KINDS ARRIVE WITH A POSITION. This is the row the whole
+    # shard is for: a stack trace with no file and no line is a probe that
+    # still costs an iteration.
+    console_error_position             = 'true'
+    # THE BOUND HOLDS, AND SAYS SO. A page can produce about 170 000 lines a
+    # second (measured); a green matrix in which the bound quietly stopped
+    # firing is exactly the state an absolute pin is for.
+    console_bound_enforced             = 'true'
+    console_burst_offered              = '10000'
+    console_forged_ack_printed         = 'true'
+    # A PAGE CANNOT MOVE THE SUPERVISOR. It logs a line of the
+    # acknowledgement's own shape and the CLI's generation counter does not
+    # move - two independent barriers, either of which alone is one edit from
+    # being lost.
+    console_forged_ack_ignored         = 'true'
+    console_survives_generation_switch = 'true'
+    console_host_pid_unchanged         = 'true'
+    console_ansi_seen                  = 'false'
+    console_listener_members_max       = '0'
+    # THE CHANNEL IS DEVELOPMENT-ONLY. The release binary carries neither
+    # marker and the development one carries both; and EVERY byte this shard
+    # adds to the shared host sits inside a PWEB_DEV conditional, which is a
+    # source property every leg reads with no toolchain at all. The object
+    # comparison that corroborates it is per-target and required present
+    # rather than pinned, for the reason the comment on the required set
+    # gives.
+    release_console_channel            = 'absent'
+    release_dev_argument               = 'absent'
+    dev_console_channel                = 'present'
+    console_host_markers_outside_dev   = '0'
+    dev_csp_equals_release             = 'true'
+    cap14b_gates                       = 'PASS'
 }
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
 $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
@@ -1564,7 +1679,17 @@ $equalityFields = @(
     # that lost rows would still hash consistently across four targets.
     'bundle_refusal_classes', 'bundle_accept_classes', 'bundle_option_surface',
     'csp_policy_callers', 'bundler_digest', 'csp_policy_digest',
-    'html_policy_digest', 'html_policy_corpus_lines'
+    'html_policy_digest', 'html_policy_corpus_lines',
+    # CAP-14B: the console surface. The mechanism, the level table, the
+    # emitted shim's digest, the closed unit list and the line headroom are
+    # all properties of the SOURCE that four targets read identically, so a
+    # disagreement means one leg is running a different channel rather than a
+    # different machine. The shim is ASCII by construction for exactly that
+    # reason, and the number of PWEB_DEV lines the stripper removes travels
+    # with them: a leg whose host lost the seam would still compile.
+    'console_mechanism', 'console_levels', 'console_shim_sha256',
+    'console_uses_count', 'console_line_headroom',
+    'console_host_dev_lines_removed'
 )
 # the CAP-9C2 semantic gate names, carried in ONE place across the two
 # emitters and this aggregator (see test/cap7f/emit_evidence.ps1)
@@ -2273,6 +2398,16 @@ $matrix = [ordered]@{
         dev_previous_generation_live   = $first.dev_previous_generation_live
         dev_refused_generation_published = $first.dev_refused_generation_published
         cap14a_gates                   = $first.cap14a_gates
+        console_mechanism              = $first.console_mechanism
+        console_levels                 = $first.console_levels
+        console_levels_seen            = $first.console_levels_seen
+        console_error_position         = $first.console_error_position
+        console_bound_enforced         = $first.console_bound_enforced
+        console_shim_sha256            = $first.console_shim_sha256
+        release_console_channel        = $first.release_console_channel
+        release_host_object_unchanged  = $first.release_host_object_unchanged
+        dev_csp_equals_release         = $first.dev_csp_equals_release
+        cap14b_gates                   = $first.cap14b_gates
     }
     targets    = [ordered]@{}
 }

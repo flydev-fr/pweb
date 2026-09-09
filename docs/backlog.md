@@ -18,9 +18,9 @@ from and the one the gate reads.
 |---|---:|---|
 | `FIX_NOW` | 4 | closed by this triage, one commit each, cited below |
 | `UPSTREAM` | 3 | the defect belongs to a third-party project and a report is written; two of the three also carry a local workaround, and `RP-2` deliberately does not |
-| `ROADMAP` | 40 | real work, deferred, with a named owner |
-| `ACCEPTED` | 101 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
-| `CLOSED` | 203 | the thing the entry describes is done |
+| `ROADMAP` | 41 | real work, deferred, with a named owner |
+| `ACCEPTED` | 107 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
+| `CLOSED` | 206 | the thing the entry describes is done |
 
 `ACCEPTED` is not a synonym for ignored. It is the verdict for an entry whose
 honest answer is a measurement — that WebView2 raises no navigation event for a
@@ -446,3 +446,4 @@ Forty-seven rows: the four `FIX_NOW` items this triage closed, the three
 | `11B-4` | ROADMAP | CAP-12 | the webview watcher's shape does not fit mORMot head — no C headers, no platform patch, no library build, no signature pin — and `mormot.lock` pins statics to a release asset, so `build_failed` would be the normal outcome rather than news. A mORMot watcher is a different instrument with its own budget |
 | `11B-19` | ROADMAP | CAP-12 | close-on-report is unavailable to every smoke driver, measured four ways. What remains owed is one of two host-side changes — flush the report line so a driver can see it, or close the window on the first report inside the host — either of which turns a 15-second floor into a 300-millisecond run. `examples/` and `src/` were frozen for CAP-11B |
 | `14A-3` | ROADMAP | a shard that ratifies whether an SVG in a bundle is an image, a document, or both | `.svg` is not scanned by the CAP-14A CSP refusal, and the reason is sound for the common case: an SVG referenced as an image has scripting disabled by the image context, so a handler inside one is inert by design rather than by CSP and refusing it would refuse a working dist. The narrow case left open is an application that NAVIGATES to one — `PWebClassifyNavigation` permits any `pweb://app/...` top-level navigation — because that SVG is then a real document whose inline script `script-src 'self'` blocks with exactly the silence CAP-14A exists to end. No shipped corpus does it. Closing it is a decision about what an SVG in a bundle is, and only then a question of whether an XML tokenizer is a second scanner or a mode of the existing one |
+| `14B-5` | ROADMAP | the shard that relaxes `worker-src` | a Worker's console is not covered by the CAP-14B development console surface, and today that costs nothing: `PWEB_NATIVE_CSP` carries `worker-src 'none'`, so a bundle cannot start a Worker and there is no second realm for `console` to exist in. The shim wraps the top frame's console and listens on `window`. The day that CSP term is relaxed, the console goes quiet for exactly the code most likely to need it, in exactly the silent way CAP-14B exists to end |

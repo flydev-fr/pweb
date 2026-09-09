@@ -51,7 +51,8 @@ Write-Host "[CAP-10C3] fpc $((fpc -iV).Trim()) targeting $targetOs/$targetCpu"
 # missing unit rather than a stale installation.
 Copy-Item -Recurse -Force (Join-Path $repoRoot 'src') `
     (Join-Path $share 'src')
-foreach ($u in 'pweb.webview.host.pas', 'pweb.webview.devhost.pas') {
+foreach ($u in 'pweb.webview.host.pas', 'pweb.webview.devhost.pas',
+                 'pweb.webview.devconsole.pas') {
     if (-not (Test-Path -LiteralPath (Join-Path $share "src/webview/$u"))) {
         throw "the staged SDK root does not carry src/webview/$u"
     }
@@ -153,12 +154,15 @@ foreach ($artifact in 'build/cap10c3/bin/c3tests.exe',
                       'build/cap10c3/bin/pwebp2jdrv.exe',
                       'build/cap10c3/probe/release-host/demo.exe',
                       'build/cap10c3/probe/dev-host/demo.exe',
-                      'build/cap10c3/dev-units/pweb.webview.devhost.ppu') {
+                      'build/cap10c3/dev-units/pweb.webview.devhost.ppu',
+                      'build/cap10c3/dev-units/pweb.webview.devconsole.ppu') {
     if (-not (Test-Path $artifact)) { throw "expected $artifact" }
 }
-if (Test-Path 'build/cap10c3/release-units/pweb.webview.devhost.ppu') {
-    throw ('the PAS2JS RELEASE unit set carries pweb.webview.devhost -- the ' +
-        'development composition must be unreachable from a release build')
+foreach ($u in 'pweb.webview.devhost', 'pweb.webview.devconsole') {
+    if (Test-Path "build/cap10c3/release-units/$u.ppu") {
+        throw ("the PAS2JS RELEASE unit set carries $u -- the development " +
+            'composition must be unreachable from a release build')
+    }
 }
 Write-Host ('[CAP-10C3] suite + driver + both pas2js host binaries built; ' +
     'layering compiles clean')

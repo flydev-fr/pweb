@@ -166,9 +166,15 @@ if (Test-Path $releaseUnits) {
     $facts['release_units_measured'] = $true
     $facts['release_unit_count'] = $rel.Count
     $facts['release_dev_unit_absent'] = ($rel -notcontains 'pweb.webview.devhost.ppu')
-    if ($rel -contains 'pweb.webview.devhost.ppu') {
-        Violation ('the RELEASE host links pweb.webview.devhost: the ' +
-            'development composition must not exist in a release unit set')
+    # CAP-14B: the console surface is the SECOND development-only unit, and
+    # it is measured by the same listing rather than by a second rule
+    $facts['release_console_unit_absent'] =
+        ($rel -notcontains 'pweb.webview.devconsole.ppu')
+    foreach ($u in 'pweb.webview.devhost', 'pweb.webview.devconsole') {
+        if ($rel -contains "$u.ppu") {
+            Violation ("the RELEASE host links ${u}: a development-only unit " +
+                'must not exist in a release unit set')
+        }
     }
     if ($rel.Count -lt 5) {
         Violation "$releaseUnits holds no compiled unit set"
@@ -181,14 +187,24 @@ if (Test-Path $devUnitsDir) {
         ForEach-Object { $_.Name })
     $facts['dev_units_measured'] = $true
     $facts['dev_host_unit_present'] = ($dv -contains 'pweb.webview.devhost.ppu')
-    if ($dv -notcontains 'pweb.webview.devhost.ppu') {
-        Violation ('the DEVELOPMENT host does not link pweb.webview.devhost: ' +
-            'the -dPWEB_DEV compile did not select the development composition')
+    $facts['dev_console_unit_present'] =
+        ($dv -contains 'pweb.webview.devconsole.ppu')
+    foreach ($u in 'pweb.webview.devhost', 'pweb.webview.devconsole') {
+        if ($dv -notcontains "$u.ppu") {
+            Violation ("the DEVELOPMENT host does not link ${u}: the " +
+                '-dPWEB_DEV compile did not select the development composition')
+        }
     }
 }
 
-# the byte scan. The marker is the dev-only argument, which exists in
-# exactly one unit and cannot be reached without it
+# the byte scan. TWO markers now, one per development-only unit: the dev-only
+# argument (CAP-10C2) and the console channel's bind name (CAP-14B). Each
+# exists in exactly one unit and cannot be reached without it, so a binary
+# carrying either is a binary that links that unit whatever a listing says
+$markers = [ordered]@{
+    dev_marker = '--pweb-dev-root='
+    console_marker = '__pweb_dev_console'
+}
 $marker = [System.Text.Encoding]::ASCII.GetBytes('--pweb-dev-root=')
 function Test-BytesContain([string]$Path, [byte[]]$Needle) {
     $bytes = [System.IO.File]::ReadAllBytes($Path)
@@ -211,16 +227,20 @@ foreach ($pair in @(
         ($_.Extension -eq '.exe') -or ($_.Extension -eq '') } |
         Select-Object -First 1)
     if ($exe.Count -eq 0) { continue }
-    $has = Test-BytesContain $exe[0].FullName $marker
-    $key = if ($pair[1]) { 'dev_marker_in_dev_binary' }
-           else { 'dev_marker_in_release_binary' }
-    $facts[$key] = $has
-    if ($has -ne $pair[1]) {
-        if ($pair[1]) {
-            Violation "$($pair[2]) does not carry the development argument string"
-        } else {
-            Violation ("$($pair[2]) CARRIES the development argument string: " +
-                'a release binary must not contain --pweb-dev-root=')
+    foreach ($name in $markers.Keys) {
+        $needle = [System.Text.Encoding]::ASCII.GetBytes($markers[$name])
+        $has = Test-BytesContain $exe[0].FullName $needle
+        $key = if ($pair[1]) { "${name}_in_dev_binary" }
+               else { "${name}_in_release_binary" }
+        $facts[$key] = $has
+        if ($has -ne $pair[1]) {
+            if ($pair[1]) {
+                Violation ("$($pair[2]) does not carry $($markers[$name]) -- " +
+                    'the development binary must carry both markers')
+            } else {
+                Violation ("$($pair[2]) CARRIES $($markers[$name]): a release " +
+                    'binary must contain neither development marker')
+            }
         }
     }
 }
@@ -263,6 +283,7 @@ if (-not $cspMatch.Success) {
 # exist is the transport as DATA - or as a call that would open one.
 $shardFiles = @(
     'src/webview/pweb.webview.devhost.pas',
+    'src/webview/pweb.webview.devconsole.pas',
     'tools/pweb/pweb.cli.dev.pas',
     'tools/pweb/pweb.cli.devlayout.pas',
     'tools/templates/react/frontend/vite.config.ts',
@@ -309,7 +330,11 @@ $conditionals = 0
 $envReads = 0
 foreach ($f in @('tools/pweb/pweb.cli.dev.pas',
                  'tools/pweb/pweb.cli.devlayout.pas',
-                 'src/webview/pweb.webview.devhost.pas')) {
+                 'src/webview/pweb.webview.devhost.pas',
+                 # CAP-14B: the console surface joins the same sweep, and
+                 # pweb.webview.host stays the ONE allowlisted file in
+                 # src/webview
+                 'src/webview/pweb.webview.devconsole.pas')) {
     if (-not (Test-Path $f)) { continue }
     $lineNo = 0
     foreach ($line in [System.IO.File]::ReadLines($f)) {

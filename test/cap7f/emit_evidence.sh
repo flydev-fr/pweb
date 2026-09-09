@@ -1660,6 +1660,48 @@ for f in csp_refusal_available csp_contracts csp_policy_callers \
     eval "${f}=\"\$(c14_str ${f})\""
 done
 
+# --- CAP-14B: the development console surface -------------------------------
+# build/cap14b/cli-<target>.json is ONE record: the channel driven on a REAL
+# `pweb dev` session over real generated Pas2JS and React projects - the five
+# levels, both error kinds with a source position, the bounded burst, the
+# forged acknowledgement the CLI ignores - plus the two claims a running
+# session cannot make about itself: the release binary carries none of it,
+# and the release host's emitted object is unchanged.
+#
+# This block exists in BOTH emitters, for the reason the CAP-10E block below
+# spells out: rows added to one and not the other cost a whole hosted run.
+c14b_file="${repo_root}/build/cap14b/cli-${target}.json"
+[ -f "${c14b_file}" ] ||
+    die "cap14b/cli-${target}.json missing -- the CAP-14B gates have not run in this workspace"
+c14b_str() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+        "${c14b_file}" | head -n 1
+}
+for f in console_surface_available console_mechanism console_contracts \
+         console_levels console_line_headroom console_uses_count \
+         console_shim_sha256 host_pweb_dev_lines_removed \
+         console_host_markers_outside_dev \
+         host_compile_target release_host_object_unchanged \
+         release_host_object_sha256 console_armed console_levels_seen \
+         console_method_named console_object_rendered \
+         console_uncaught_position console_rejection_position \
+         console_error_position console_forged_ack_printed \
+         console_forged_ack_ignored console_survives_generation_switch \
+         console_burst_offered console_burst_emitted console_page_dropped \
+         console_direct_emitted console_host_dropped console_host_ring_engaged \
+         console_bound_enforced \
+         console_host_pid_unchanged console_ansi_seen \
+         console_listener_members_seen console_listener_members_max \
+         release_console_channel dev_console_channel release_dev_argument \
+         dev_csp_equals_release react_leg react_console_levels_seen \
+         react_console_error_position cap14b_gates; do
+    eval "${f}=\"\$(c14b_str ${f})\""
+done
+# the two rows the evidence renames, because `host_` alone would read as the
+# APPLICATION host everywhere else in this file
+console_host_dev_lines_removed="${host_pweb_dev_lines_removed}"
+console_host_compile_target="${host_compile_target}"
+
 # --- CAP-10E: the kernel-resolved image path --------------------------------
 # TWO records, and both are required rather than optional: the RUNTIME one
 # (test/cap10e/run_cap10e_gates.sh) says what a real host at a real
@@ -2698,6 +2740,47 @@ cat > "${work}/evidence.json" <<EOF
   "dev_host_pid_unchanged": "${dev_host_pid_unchanged}",
   "dev_recovered_after_fix": "${dev_recovered_after_fix}",
   "cap14a_gates": "${cap14a_gates}",
+  "console_surface_available": "${console_surface_available}",
+  "console_mechanism": "${console_mechanism}",
+  "console_contracts": "${console_contracts}",
+  "console_levels": "${console_levels}",
+  "console_line_headroom": "${console_line_headroom}",
+  "console_uses_count": "${console_uses_count}",
+  "console_shim_sha256": "${console_shim_sha256}",
+  "console_host_dev_lines_removed": "${console_host_dev_lines_removed}",
+  "console_host_markers_outside_dev": "${console_host_markers_outside_dev}",
+  "console_host_compile_target": "${console_host_compile_target}",
+  "release_host_object_unchanged": "${release_host_object_unchanged}",
+  "release_host_object_sha256": "${release_host_object_sha256}",
+  "console_armed": "${console_armed}",
+  "console_levels_seen": "${console_levels_seen}",
+  "console_method_named": "${console_method_named}",
+  "console_object_rendered": "${console_object_rendered}",
+  "console_uncaught_position": "${console_uncaught_position}",
+  "console_rejection_position": "${console_rejection_position}",
+  "console_error_position": "${console_error_position}",
+  "console_forged_ack_printed": "${console_forged_ack_printed}",
+  "console_forged_ack_ignored": "${console_forged_ack_ignored}",
+  "console_survives_generation_switch": "${console_survives_generation_switch}",
+  "console_burst_offered": "${console_burst_offered}",
+  "console_burst_emitted": "${console_burst_emitted}",
+  "console_page_dropped": "${console_page_dropped}",
+  "console_direct_emitted": "${console_direct_emitted}",
+  "console_host_dropped": "${console_host_dropped}",
+  "console_host_ring_engaged": "${console_host_ring_engaged}",
+  "console_bound_enforced": "${console_bound_enforced}",
+  "console_host_pid_unchanged": "${console_host_pid_unchanged}",
+  "console_ansi_seen": "${console_ansi_seen}",
+  "console_listener_members_seen": "${console_listener_members_seen}",
+  "console_listener_members_max": "${console_listener_members_max}",
+  "release_console_channel": "${release_console_channel}",
+  "dev_console_channel": "${dev_console_channel}",
+  "release_dev_argument": "${release_dev_argument}",
+  "dev_csp_equals_release": "${dev_csp_equals_release}",
+  "react_leg": "${react_leg}",
+  "react_console_levels_seen": "${react_console_levels_seen}",
+  "react_console_error_position": "${react_console_error_position}",
+  "cap14b_gates": "${cap14b_gates}",
   "github_sha": "${github_sha}",
   "github_run_id": "${github_run_id}",
   "waivers": [${waivers}]

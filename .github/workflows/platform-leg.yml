@@ -961,6 +961,12 @@ jobs:
         with:
           target: ${{ inputs.target }}
 
+      - name: CAP-14B development console surface gates (C0, R1, D1-D6, B1-B2) + evidence
+        timeout-minutes: 90
+        uses: ./.github/actions/cap-14b-development-console-surface-gates-c0-r1-d1-d6-b1-b2-evidence
+        with:
+          target: ${{ inputs.target }}
+
       - name: Backlog disposition - every ledger entry has a verdict
         if: ${{ inputs.target == 'windows' }}
         timeout-minutes: 5

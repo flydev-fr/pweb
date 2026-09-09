@@ -410,6 +410,7 @@ the previous generation live and lets the loop continue.
 | `pweb.cli.devlayout` | the development layout, the generation, the publish-by-rename and the bounded cleanup — a pure plan plus file operations, no spawn |
 | `pweb.cli.devinputs` | the Pas2JS input set, the bounded content-fingerprint walk and its typed refusals — a pure plan plus file operations, no spawn, and it reaches no webview unit, no process unit and no pipeline unit |
 | `pweb.webview.devhost` | the swapping store, the `--pweb-dev-root=` parse and refusal, the poller, the reload, the one acknowledgement line |
+| `pweb.webview.devconsole` | the console surface (§7b): the page shim, the eight levels, the three bounds, the wire decode, the sanitiser and the writer thread |
 
 `pweb.cli.devlayout`, `pweb.cli.devinputs` and `pweb.webview.devhost` carry
 **zero** platform conditionals and zero environment reads: the target arrives
@@ -524,6 +525,99 @@ each supervisor thread records whether anybody had asked the set to stop
 
 ---
 
+## 7b. The console surface (CAP-14B)
+
+A frontend under `pweb dev` used to have no voice: every `console.*` call,
+every uncaught throw and every unhandled rejection died inside the engine
+while the supervisor forwarded the host's own lines and nothing else. Since
+CAP-14B the **development host** — and only the development host — carries a
+console channel, and its lines reach the supervisor through the CAP-10C0
+engine like any other host line.
+
+```
+app: <prefix>: console <level>: <text>
+app: <prefix>: console <level> @<source>:<line>:<col>: <text>
+app: <prefix>: console dropped: <n> (page)
+app: <prefix>: console dropped: <n> (host)
+app: <prefix>: console armed
+app: <prefix>: console unavailable: <cause>
+```
+
+**Eight levels, and no others** — `log,info,warn,error,debug,uncaught,rejection,dropped`.
+The first five are console methods, mapped by a fixed table with `log` as the
+default, so a method whose name is not its level (`trace`, `table`, `dir`,
+`assert`) is named in the text instead. `uncaught` is `window.onerror` and
+`rejection` is `unhandledrejection`; both carry the position the engine gave.
+A record naming any other level is **dropped and counted**, never printed.
+
+### The mechanism, one on four targets
+
+A dev-only document-start user script through `webview_init`, delivering
+through one dev-only `webview_bind` channel. It is a **one-way diagnostic
+sink**: it carries no method, no arguments and no result, it reaches no
+service — `pweb.webview.devconsole`'s unit list is closed and names no rpc
+unit, no scheduler, no bridge and no capability policy — and the only effect
+of a message is one bounded line on the host's stderr.
+
+The three engine-native alternatives were **measured and refused**, and the
+measurements are in the unit's own header: WebKitGTK's
+`enable-write-console-messages-to-stdout` (no position for a rejection,
+written by the web process, unbounded, and it lands on the stream the
+acknowledgement protocol is read from), WebKitGTK's `console-message-sent`
+(reachable only from a web-process extension library), and WebView2's
+DevTools protocol (`Runtime.consoleAPICalled` hands the native side
+`RemoteObject` previews to interpret, and the pinned `ICoreWebView2` vtables
+live in a release-linked unit). WKWebView has no public console API at all,
+so the shim is the only route there — and one mechanism everywhere is one
+line shape, one bound and one gate.
+
+### It is a development binary and nothing else
+
+`pweb.webview.devconsole` is selected by `pweb.webview.devhost` and by
+nothing else, and the ONE thing the shared host contributes — a proc type, an
+option field and one call between the invocation bind and the first
+navigation — is inside `{$ifdef PWEB_DEV}`. So a release compile sees an
+identical token stream, and **the release host's emitted object is
+byte-identical to one built from the pre-shard sources**, measured rather
+than asserted. `test/cap10c2` adds the console unit to its release-unit
+listing and `__pweb_dev_console` to its release byte scan.
+
+### Bounded three times, and it says so
+
+A page loop issuing 10 000 `console.log` calls was **measured at 59 ms** —
+about 170 000 lines a second — so nothing downstream survives it unbounded.
+
+- **In the page**: at most `PWEB_DEV_CONSOLE_MAX_BATCH` records every
+  `PWEB_DEV_CONSOLE_FLUSH_MS`, over a pending queue of
+  `PWEB_DEV_CONSOLE_MAX_PENDING`. Overflow drops, counts, and the count
+  travels as a `dropped` record.
+- **On the wire**: `PWEB_DEV_CONSOLE_MAX_PAYLOAD` base64 bytes per call,
+  refused before a decode is attempted.
+- **In the host**: `PWEB_DEV_CONSOLE_MAX_BATCHES` queued batches — the
+  authoritative bound, because a page can call the binding directly and skip
+  its own.
+
+The GUI thread never writes to a pipe: the callback decodes, enqueues
+non-blocking and returns, and one writer thread emits whole lines with a
+single write to stderr.
+
+### What a page cannot do
+
+- **It cannot forge the acknowledgement.** `PWebCliDevParseAck` matches
+  `: generation <N> loaded` anywhere in a line, so two independent barriers
+  close it: the channel writes to **stderr**, and `pweb.cli.dev` parses the
+  acknowledgement on **stdout** only.
+- **It cannot produce a second line.** LF frames records, so an embedded one
+  splits the record and the tail — carrying no separators — is refused; and
+  every remaining byte below `$20` is replaced natively.
+- **It cannot be interpreted.** One binding call carries base64 of a batch;
+  the native side decodes, splits on two separators, looks the level up in
+  the fixed table and sanitises. No general parser meets page bytes. The ONE
+  digit it reads is a `dropped` count, and the `(page)`/`(host)` attribution
+  beside it is written natively.
+- **It cannot reach a service, or exist in a release.** Both are measured:
+  the unit list, and the release binary's own bytes.
+
 ## 8. Exit codes
 
 The CAP-10C0 mapping, with the two additions this shard ratifies.
@@ -574,6 +668,26 @@ pipeline's bounds:
 | `PWEB_CLI_DEV_INPUT_FILE_MAX` | 4194304 |
 | `PWEB_CLI_DEV_INPUT_PATH_MAX` | 512 |
 
+CAP-14B adds nine, all of them bounds on the console surface, all of them in
+`src/webview/pweb.webview.devconsole.pas`, and each sized from the measured
+170 000 lines a second a page can produce:
+
+| constant | value |
+|---|---|
+| `PWEB_DEV_CONSOLE_MAX_TEXT` | 1024 |
+| `PWEB_DEV_CONSOLE_MAX_ORIGIN` | 512 |
+| `PWEB_DEV_CONSOLE_MAX_METHOD` | 32 |
+| `PWEB_DEV_CONSOLE_MAX_BATCH` | 32 |
+| `PWEB_DEV_CONSOLE_FLUSH_MS` | 50 |
+| `PWEB_DEV_CONSOLE_MAX_PENDING` | 256 |
+| `PWEB_DEV_CONSOLE_MAX_PAYLOAD` | 98304 |
+| `PWEB_DEV_CONSOLE_MAX_BATCHES` | 64 |
+| `PWEB_DEV_CONSOLE_LINE_MAX` | 3072 |
+
+`PWEB_DEV_CONSOLE_LINE_MAX` is deliberately 1024 bytes under the
+supervisor's own `PWEB_CLI_RUN_LINE_MAX` of 4096, which is the room the
+`app: ` prefix it prepends and the ` [truncated]` marker it may append need.
+
 The start-up stages reuse the CAP-10C1 bounds unchanged
 (`PWEB_CLI_PIPE_NPM_MS`, `_TSC_MS`, `_BUILD_MS`, `_PACK_MS`, `_FPC_MS`), and
 the Pas2JS generation compile is bounded by `PWEB_CLI_PIPE_BUILD_MS` — the
@@ -621,7 +735,17 @@ reparse point inside the input set; writes nothing into
 `dev/`; lets no frontend file select a security policy, a CSP, an origin or a
 mode; publishes no generation packed from a `dist/` the watcher may have been
 writing, nor one whose inputs moved across its own compile and assembly; and
-injects no JavaScript and calls no `location.reload()` to switch one.
+calls no `location.reload()` and injects no JavaScript **to switch a
+generation** — the switch is a native re-navigation and always was.
+
+**CAP-14B amended exactly one clause of that list, and only that one.** The
+development host injects one document-start script: the console shim of §7b.
+It switches no generation, reaches no service, is selected by the development
+composition alone, and exists in no release binary — which is measured three
+ways (the release unit listing, a byte scan of the release executable for
+`__pweb_dev_console`, and the release host's emitted object compared against
+one built from the pre-shard sources). The **release** host still injects no
+JavaScript at all.
 
 Each of those is a property of what these units do not link or do not write,
 and each is measured rather than promised.

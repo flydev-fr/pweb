@@ -172,6 +172,8 @@ step is still pinned and an undeclared edit still trips
 | `Backlog disposition - every ledger entry has a verdict` | **added**, windows | `8b3c15bd…` (200) → `3d74864b…` (201) |
 | `CAP-3U - FPC 3.2.2 Win64 CallMethod unwind and Currency ABI` | body: the patch apply/restore window is gone with the 2026-09-08 mORMot pin move; the gates stayed and read the compiler's own output | unchanged |
 | `CAP-3U Currency return matrix (typed observation, four targets)` | **added**, all four legs | `3d74864b…` (201) → `7f7dc950…` (202) |
+| `CAP-14A bundler CSP refusal gates (C0-C9, B1, D1) + evidence` | **added**, all four legs | `7f7dc950…` (202) → `412b21b2…` (203) |
+| `CAP-14B development console surface gates (C0, R1, D1-D6, B1-B2) + evidence` | **added**, all four legs | `412b21b2…` (203) → `e0d2e3f2…` (204) |
 
 **Two step names now outlive what they describe.** `CAP-5 host examples
 compile (re-applied CAP-3U window)` and `CAP-6 compile bundler + release host

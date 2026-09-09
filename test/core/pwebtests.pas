@@ -40,6 +40,7 @@ uses
   pweb.test.assets,
   pweb.test.bundle,
   pweb.test.htmlpolicy,
+  pweb.test.devconsole,
   pweb.test.capabilities,
   pweb.test.command,
   pweb.test.navigation
@@ -71,6 +72,7 @@ type
     procedure AssetSystem;
     procedure BundleSystem;
     procedure HtmlPolicy;
+    procedure DevConsole;
     procedure CapabilityPolicy;
     procedure NavigationPolicy;
     procedure RuntimeCommand;
@@ -121,6 +123,17 @@ begin
   // CAP-7F decision corpus (build/cap7f/html-policy.txt), whose digest
   // four targets must agree on.
   AddCase([TTestHtmlPolicy]);
+end;
+
+procedure TPWebTests.DevConsole;
+begin
+  // CAP-14B, headless on every target: the development console surface
+  // below the engine. The parameter decode, the record grammar, the level
+  // table, the sanitiser that keeps one record to one line, the two
+  // truncations, and the AUTHORITATIVE ring bound driven through the real
+  // ring and the real writer path. Also emits the CAP-7F decision corpus
+  // (build/cap7f/dev-console.txt), whose digest four targets must agree on.
+  AddCase([TTestDevConsole]);
 end;
 
 procedure TPWebTests.NavigationPolicy;

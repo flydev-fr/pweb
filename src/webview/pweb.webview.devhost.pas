@@ -18,11 +18,19 @@
   WHAT DEVELOPMENT CHANGES, AND WHAT IT DOES NOT
   ---------------------------------------------------------------------------
 
-  It changes exactly one thing: WHERE THE ASSET STORE COMES FROM, and how
-  often it is replaced. Everything else is the production host, called
-  through the production entry point with the production policy, the
-  production bridge, the production platform handler, the production
-  navigation guard and the production CSP.
+  It changes WHERE THE ASSET STORE COMES FROM, and how often it is replaced.
+  Everything else is the production host, called through the production entry
+  point with the production policy, the production bridge, the production
+  platform handler, the production navigation guard and the production CSP.
+
+  CAP-14B added the ONE other thing a development host has that a release
+  host does not: a console surface (pweb.webview.devconsole). It is a
+  DEV-ONLY, ONE-WAY DIAGNOSTIC SINK - a document-start user script and one
+  bound name, whose only effect is a bounded line on this process's stderr.
+  It reaches no service, carries no method, routes nothing and grants
+  nothing, and it exists in no release binary. See that unit's header for
+  the mechanism, the three bounds and the two barriers that stop a page
+  forging the acknowledgement line below.
 
   It does NOT change:
 
@@ -107,6 +115,7 @@ uses
   pweb.capabilities.policy,
   pweb.assets.intf,
   pweb.assets.bundle,
+  pweb.webview.devconsole,
   pweb.webview.host;
 
 const
@@ -451,6 +460,12 @@ begin
     // production host's refusal of every other argument is unchanged
     SetLength(opts.ConsumedArgs, 1);
     opts.ConsumedArgs[0] := argv;
+    // CAP-14B: the development console surface. It is a DEV-ONLY, ONE-WAY
+    // diagnostic sink - it reaches no service, carries no method and routes
+    // nothing - and it exists because a frontend under `pweb dev` otherwise
+    // has no voice at all. The prefix is set before the seam can fire
+    PWebDevConsoleConfigure(Options.LogPrefix);
+    opts.DevViewReady := @PWebDevConsoleInstall;
     // THE PRODUCTION ENTRY POINT, with the production policy, the
     // production bridge and a store this composition opened through the
     // production loader
@@ -466,6 +481,11 @@ begin
           ': FAIL the generation poller did not terminate');
       CloseThread(pollHandle);
     end;
+    // CAP-14B: the console channel comes down here, AFTER PWebHostRun has
+    // returned. The GUI loop is gone by then, so no further binding callback
+    // can fire, and the writer thread makes one last pass so a message
+    // enqueued during the teardown is still said rather than dropped
+    PWebDevConsoleShutdown;
     // only after the join: the poller holds a reference to the event until
     // it returns
     FreeAndNil(DevStop);

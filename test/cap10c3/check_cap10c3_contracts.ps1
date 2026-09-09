@@ -154,9 +154,14 @@ if (Test-Path $releaseUnits) {
     $facts['release_unit_count'] = $rel.Count
     $facts['release_dev_unit_absent'] =
         ($rel -notcontains 'pweb.webview.devhost.ppu')
-    if ($rel -contains 'pweb.webview.devhost.ppu') {
-        Violation ('the PAS2JS RELEASE host links pweb.webview.devhost: the ' +
-            'development composition must not exist in a release unit set')
+    # CAP-14B: the console surface is the second development-only unit
+    $facts['release_console_unit_absent'] =
+        ($rel -notcontains 'pweb.webview.devconsole.ppu')
+    foreach ($u in 'pweb.webview.devhost', 'pweb.webview.devconsole') {
+        if ($rel -contains "$u.ppu") {
+            Violation ("the PAS2JS RELEASE host links ${u}: a " +
+                'development-only unit must not exist in a release unit set')
+        }
     }
     if ($rel.Count -lt 5) { Violation "$releaseUnits holds no compiled unit set" }
 }
@@ -165,10 +170,13 @@ if (Test-Path $devUnitsDir) {
     $dv = @(Get-ChildItem $devUnitsDir -File -Filter '*.ppu' |
         ForEach-Object { $_.Name })
     $facts['dev_host_unit_present'] = ($dv -contains 'pweb.webview.devhost.ppu')
-    if ($dv -notcontains 'pweb.webview.devhost.ppu') {
-        Violation ('the PAS2JS DEVELOPMENT host does not link ' +
-            'pweb.webview.devhost: -dPWEB_DEV did not select the development ' +
-            'composition')
+    $facts['dev_console_unit_present'] =
+        ($dv -contains 'pweb.webview.devconsole.ppu')
+    foreach ($u in 'pweb.webview.devhost', 'pweb.webview.devconsole') {
+        if ($dv -notcontains "$u.ppu") {
+            Violation ("the PAS2JS DEVELOPMENT host does not link ${u}: " +
+                '-dPWEB_DEV did not select the development composition')
+        }
     }
 }
 

@@ -1,0 +1,45 @@
+name: 'CAP-14B development console surface gates (C0, R1, D1-D6, B1-B2) + evidence'
+description: 'CAP-11A: the body of the "CAP-14B development console surface gates (C0, R1, D1-D6, B1-B2) + evidence" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: windows, macos-x64, macos-arm64
+      if: ${{ inputs.target != 'linux' }}
+      shell: bash
+      run: |
+        # BOTH SCRIPTS RUN, AND THE STEP FAILS AFTERWARDS - the CAP-14A rule,
+        # kept for the CAP-14A reason. The contract cross-checks come first
+        # because the gate reads their record back, but an `&&` between them
+        # would mean a contracts failure aborts the step before the gate
+        # writes build/cap14b/cli-<target>.json, and the aggregate could then
+        # only report "artifact absent" for a leg whose real cause was one
+        # named field.
+        set +e
+        pwsh -NoProfile -File test/cap14b/check_cap14b_contracts.ps1 2>&1 |
+          tee build/cap14b-contracts.log
+        c=${PIPESTATUS[0]}
+        pwsh -NoProfile -File test/cap14b/run_cap14b_gates.ps1 2>&1 |
+          tee build/cap14b-gates.log
+        g=${PIPESTATUS[0]}
+        set -e
+        test "$c" -eq 0 -a "$g" -eq 0
+    - name: linux
+      if: ${{ inputs.target == 'linux' }}
+      shell: bash
+      run: |
+        # xvfb, and not only for one leg: EVERY console line this gate reads
+        # comes out of a real development host with a real window, running a
+        # real page. There is nothing here to measure headlessly.
+        set +e
+        pwsh -NoProfile -File test/cap14b/check_cap14b_contracts.ps1 2>&1 |
+          tee build/cap14b-contracts.log
+        c=${PIPESTATUS[0]}
+        xvfb-run -a pwsh -NoProfile -File test/cap14b/run_cap14b_gates.ps1 2>&1 |
+          tee build/cap14b-gates.log
+        g=${PIPESTATUS[0]}
+        set -e
+        test "$c" -eq 0 -a "$g" -eq 0

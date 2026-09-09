@@ -70,7 +70,7 @@ printf '[CAP-10C3] fpc %s targeting %s/%s (%s)\n' "$(fpc -iV)" \
 step 'the SDK root src/, refreshed for the development composition'
 rm -rf -- "${share}/src"
 cp -R -- "${repo_root}/src" "${share}/src"
-for u in pweb.webview.host.pas pweb.webview.devhost.pas; do
+for u in pweb.webview.host.pas pweb.webview.devhost.pas pweb.webview.devconsole.pas; do
     [ -f "${share}/src/webview/${u}" ] ||
         die "the staged SDK root does not carry src/webview/${u}"
 done
@@ -183,10 +183,13 @@ done
 for artifact in build/cap10c3/bin/c3tests build/cap10c3/bin/pwebp2jdrv \
                 build/cap10c3/probe/release-host/demo \
                 build/cap10c3/probe/dev-host/demo \
-                build/cap10c3/dev-units/pweb.webview.devhost.ppu; do
+                build/cap10c3/dev-units/pweb.webview.devhost.ppu \
+                build/cap10c3/dev-units/pweb.webview.devconsole.ppu; do
     [ -e "${artifact}" ] || die "expected ${artifact}"
 done
-if [ -e 'build/cap10c3/release-units/pweb.webview.devhost.ppu' ]; then
-    die 'the PAS2JS RELEASE unit set carries pweb.webview.devhost -- the development composition must be unreachable from a release build'
-fi
+for u in pweb.webview.devhost pweb.webview.devconsole; do
+    if [ -e "build/cap10c3/release-units/${u}.ppu" ]; then
+        die "the PAS2JS RELEASE unit set carries ${u} -- the development composition must be unreachable from a release build"
+    fi
+done
 printf '[CAP-10C3] suite + driver + both pas2js host binaries built; layering compiles clean\n'

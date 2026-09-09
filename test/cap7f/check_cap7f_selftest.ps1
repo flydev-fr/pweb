@@ -2815,6 +2815,43 @@ foreach ($case in @(
     Invoke-AggExpectFail $case.n $case.f
 }
 
+# --- CAP-14B: the development console surface -------------------------------
+# (y1) one leg emitted a different shim. COMPARED, not pinned: the shim is
+# ASCII by construction and is generated from the unit's own constants, so a
+# leg whose digest differs is a leg running a different channel.
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-x64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.console_shim_sha256 = ('0' * 64)
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap14b-shim-diverged' 'console_shim_sha256'
+
+# (y2-y8) the absolute pins, IN UNISON on all four legs. Every one of them is
+# the shape THIS shard exists for: a channel that silently stopped delivering
+# looks exactly like a page that logged nothing, and a channel that quietly
+# reached a release binary looks exactly like one that did not - so four
+# targets could agree perfectly that the console has gone, that a page can now
+# move the supervisor's generation counter, that the flood bound has stopped
+# firing, or that the release host is no longer byte-untouched.
+foreach ($case in @(
+        @{ n = 'cap14b-channel-in-release'; f = 'release_console_channel'; v = 'present' },
+        @{ n = 'cap14b-seam-escaped-dev';   f = 'console_host_markers_outside_dev'; v = '1' },
+        @{ n = 'cap14b-position-lost';      f = 'console_error_position';    v = 'false' },
+        @{ n = 'cap14b-bound-stopped';      f = 'console_bound_enforced';    v = 'false' },
+        @{ n = 'cap14b-ack-forged';         f = 'console_forged_ack_ignored'; v = 'false' },
+        @{ n = 'cap14b-level-lost';         f = 'console_levels_seen';
+           v = 'log,info,warn,error' },
+        @{ n = 'cap14b-csp-diverged';       f = 'dev_csp_equals_release';    v = 'false' })) {
+    Reset-Fixture
+    foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+        $f = Join-Path $fx "ev/$leg/evidence.json"
+        $e = Get-Content $f -Raw | ConvertFrom-Json
+        $e.($case.f) = $case.v
+        $e | ConvertTo-Json -Depth 4 | Set-Content $f
+    }
+    Invoke-AggExpectFail $case.n $case.f
+}
+
 Remove-Item -Force -ErrorAction SilentlyContinue $matrix
 # a floor, so a leg that silently stops running is caught. It is deliberately
 # NOT an equality: adding a refusal branch is normal and should not require
@@ -2834,9 +2871,11 @@ Remove-Item -Force -ErrorAction SilentlyContinue $matrix
 # that notices a leg quietly ceasing to run.
 # CAP-14A raised it from 230 to 240 with its ten legs - two compared digests
 # and eight absolute pins - for the same reason a fourth time.
-if ($script:AggRefusals -lt 240) {
+# CAP-14B raised it from 240 to 248 with its eight legs - one compared digest
+# and seven absolute pins - for the same reason a fifth time.
+if ($script:AggRefusals -lt 248) {
     throw ("selftest: only $($script:AggRefusals) aggregator refusals fired, " +
-        'expected at least 230 -- a negative leg stopped running')
+        'expected at least 248 -- a negative leg stopped running')
 }
 if ($script:SweepRefusals -lt 2) {
     throw ("selftest: only $($script:SweepRefusals) divergence refusals fired, " +

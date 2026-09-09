@@ -1208,6 +1208,19 @@ if (-not (Test-Path $c14File)) {
 }
 $c14 = Get-Content $c14File -Raw | ConvertFrom-Json
 
+# --- CAP-14B: the development console surface -------------------------------
+# build/cap14b/cli-<target>.json is ONE record: the channel driven on a REAL
+# `pweb dev` session over real generated Pas2JS and React projects - the five
+# levels, both error kinds with a source position, the bounded burst, the
+# forged acknowledgement the CLI ignores - plus the two claims a running
+# session cannot make about itself: the release binary carries none of it,
+# and the release host's emitted object is unchanged.
+$c14bFile = Join-Path $repoRoot 'build/cap14b/cli-windows-x86_64.json'
+if (-not (Test-Path $c14bFile)) {
+    throw '[CAP-7F] cap14b/cli-windows-x86_64.json missing -- the CAP-14B gates have not run in this workspace'
+}
+$c14b = Get-Content $c14bFile -Raw | ConvertFrom-Json
+
 # --- CAP-10E: the kernel-resolved image path --------------------------------
 # TWO records, and both are required rather than optional: the RUNTIME one
 # (test/cap10e/run_cap10e_gates.ps1) says what a real host at a real
@@ -2142,6 +2155,47 @@ $evidence = [ordered]@{
     dev_host_pid_unchanged             = "$($c14.dev_host_pid_unchanged)"
     dev_recovered_after_fix            = "$($c14.dev_recovered_after_fix)"
     cap14a_gates                       = "$($c14.cap14a_gates)"
+    console_surface_available          = "$($c14b.console_surface_available)"
+    console_mechanism                  = "$($c14b.console_mechanism)"
+    console_contracts                  = "$($c14b.console_contracts)"
+    console_levels                     = "$($c14b.console_levels)"
+    console_line_headroom              = "$($c14b.console_line_headroom)"
+    console_uses_count                 = "$($c14b.console_uses_count)"
+    console_shim_sha256                = "$($c14b.console_shim_sha256)"
+    console_host_dev_lines_removed     = "$($c14b.host_pweb_dev_lines_removed)"
+    console_host_markers_outside_dev   = "$($c14b.console_host_markers_outside_dev)"
+    console_host_compile_target        = "$($c14b.host_compile_target)"
+    release_host_object_unchanged      = "$($c14b.release_host_object_unchanged)"
+    release_host_object_sha256         = "$($c14b.release_host_object_sha256)"
+    console_armed                      = "$($c14b.console_armed)"
+    console_levels_seen                = "$($c14b.console_levels_seen)"
+    console_method_named               = "$($c14b.console_method_named)"
+    console_object_rendered            = "$($c14b.console_object_rendered)"
+    console_uncaught_position          = "$($c14b.console_uncaught_position)"
+    console_rejection_position         = "$($c14b.console_rejection_position)"
+    console_error_position             = "$($c14b.console_error_position)"
+    console_forged_ack_printed         = "$($c14b.console_forged_ack_printed)"
+    console_forged_ack_ignored         = "$($c14b.console_forged_ack_ignored)"
+    console_survives_generation_switch = "$($c14b.console_survives_generation_switch)"
+    console_burst_offered              = "$($c14b.console_burst_offered)"
+    console_burst_emitted              = "$($c14b.console_burst_emitted)"
+    console_page_dropped               = "$($c14b.console_page_dropped)"
+    console_direct_emitted             = "$($c14b.console_direct_emitted)"
+    console_host_dropped               = "$($c14b.console_host_dropped)"
+    console_host_ring_engaged          = "$($c14b.console_host_ring_engaged)"
+    console_bound_enforced             = "$($c14b.console_bound_enforced)"
+    console_host_pid_unchanged         = "$($c14b.console_host_pid_unchanged)"
+    console_ansi_seen                  = "$($c14b.console_ansi_seen)"
+    console_listener_members_seen      = "$($c14b.console_listener_members_seen)"
+    console_listener_members_max       = "$($c14b.console_listener_members_max)"
+    release_console_channel            = "$($c14b.release_console_channel)"
+    dev_console_channel                = "$($c14b.dev_console_channel)"
+    release_dev_argument               = "$($c14b.release_dev_argument)"
+    dev_csp_equals_release             = "$($c14b.dev_csp_equals_release)"
+    react_leg                          = "$($c14b.react_leg)"
+    react_console_levels_seen          = "$($c14b.react_console_levels_seen)"
+    react_console_error_position       = "$($c14b.react_console_error_position)"
+    cap14b_gates                       = "$($c14b.cap14b_gates)"
     github_sha                      = $sha
     github_run_id                   = "$runId"
     waivers                         = @(

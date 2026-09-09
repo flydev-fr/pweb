@@ -155,11 +155,14 @@ foreach ($phrase in 'pweb://app', 'ws://127.0.0.1', 'never an origin exception',
 # unused WebSocket allowance is still ratified, still unused, and still
 # absent from every profile.
 $devHost = 'src/webview/pweb.webview.devhost.pas'
+# CAP-14B: the console surface is part of the development trust surface, so
+# it is required present and swept exactly as the rest of it is
+$devConsole = 'src/webview/pweb.webview.devconsole.pas'
 $devLoop = 'tools/pweb/pweb.cli.dev.pas'
 $devLayout = 'tools/pweb/pweb.cli.devlayout.pas'
 $devInputs = 'tools/pweb/pweb.cli.devinputs.pas'
 $devContract = 'docs/dev-contract.md'
-foreach ($f in $devHost, $devLoop, $devLayout, $devInputs, $devContract) {
+foreach ($f in $devHost, $devConsole, $devLoop, $devLayout, $devInputs, $devContract) {
     if (-not (Test-Path $f)) {
         $violations.Add("CAP-10C development surface is missing: $f")
     }
@@ -188,6 +191,30 @@ if (Test-Path $devHost) {
         if ($devHostText.Contains($banned)) {
             $violations.Add("the development host reaches a FOLDER store: $banned")
         }
+    }
+}
+# CAP-14B: THE CONSOLE SURFACE IS A ONE-WAY DIAGNOSTIC SINK, and the whole of
+# that claim is what it cannot name. It reaches no service, opens nothing and
+# navigates nowhere; a future edit that reached for the bridge, the scheduler
+# or a second destination would have to change THIS list first.
+if (Test-Path $devConsole) {
+    $devConsoleText = [System.IO.File]::ReadAllText($devConsole)
+    foreach ($banned in 'pweb.rpc', 'IInvocationBridge', 'IInvocationScheduler',
+                        'ICapabilityPolicy', 'pweb.capabilities',
+                        'pweb.assets', 'webview_navigate', 'webview_eval',
+                        'TFolderAssetStore') {
+        if ($devConsoleText.Contains($banned)) {
+            $violations.Add(("the development console surface names ${banned}: " +
+                'it is a ONE-WAY diagnostic sink and reaches no service, no ' +
+                'store and no destination'))
+        }
+    }
+    # and it is a DEVELOPMENT unit: nothing outside the development
+    # composition may select it
+    if (-not $devHostText.Contains('pweb.webview.devconsole')) {
+        $violations.Add(('the development host does not select ' +
+            'pweb.webview.devconsole: the console surface has exactly one ' +
+            'caller and it is the development composition'))
     }
 }
 # THE MODE IS NATIVE-CONTROLLED. PWEB_DEV reaches a compiler from the CLI's

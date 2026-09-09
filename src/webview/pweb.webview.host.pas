@@ -157,6 +157,16 @@ const
   PWEB_HOST_VERDICT_OK = 'ok';
 
 type
+  {$ifdef PWEB_DEV}
+  /// CAP-14B: the DEV-ONLY view seam
+  // - called ONCE, on the GUI thread, after the invocation binding is bound
+  // and BEFORE the first navigation, with the live native view handle
+  // - it exists only under the development define, so a release compile sees
+  // neither this type nor the option field below nor the call site, and the
+  // release binary's bytes are measured unchanged rather than asserted
+  TPWebHostDevViewProc = procedure(AView: Pointer);
+  {$endif PWEB_DEV}
+
   /// everything a host needs that is not a service, a policy or a bridge
   // - Title, Width and Height are the window; WindowId and PrincipalId are
   // the native trust identity the binding stamps into every context and
@@ -182,6 +192,13 @@ type
     // the argv strings it actually saw, never a shape a future argument
     // might also match
     ConsumedArgs: TRawUtf8DynArray;
+    {$ifdef PWEB_DEV}
+    /// CAP-14B: the DEV composition's one view seam, or nil
+    // - a development composition sets it to install its console channel;
+    // there is no production caller because in a release build the field
+    // does not exist
+    DevViewReady: TPWebHostDevViewProc;
+    {$endif PWEB_DEV}
   end;
 
 /// the ratified defaults: one 900x650 window, principal `window:main`,
@@ -961,6 +978,16 @@ begin
       binding := TWebViewBinding.Create(w, source, opts);
       binding.Bind('__pweb_invoke', TPWebHostPolicyContext.Create(
         TPWebEnvelopeHandler.Create(source), Policy));
+      {$ifdef PWEB_DEV}
+      // CAP-14B: THE ONE DEV SEAM, and the whole of what this file
+      // contributes to the development console surface. It runs after the
+      // invocation binding above - so a composition that adds one of its own
+      // cannot re-order this one away - and before the first navigation, so
+      // the very first document is already covered. A release compile does
+      // not see this block at all
+      if Assigned(Options.DevViewReady) then
+        Options.DevViewReady(Pointer(w));
+      {$endif PWEB_DEV}
       WebViewCheck(webview_set_title(w,
         PAnsiChar(AnsiString(Options.Title))), 'webview_set_title');
       WebViewCheck(webview_set_size(w, Options.Width, Options.Height,
