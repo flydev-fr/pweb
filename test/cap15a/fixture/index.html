@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>PWeb CAP-15A outbound-network probe</title>
+</head>
+<body>
+  <h1>PWeb CAP-15A — what a page over pweb://app can reach</h1>
+  <p id="status">measuring...</p>
+  <div id="sink" hidden></div>
+  <!-- the driver is a bundled file over pweb://app, so script-src 'self'
+       needs no relaxation: every probe it performs is the measurement, and
+       the page itself is trusted content exactly as a real application's is. -->
+  <script src="/assets/probe.js"></script>
+</body>
+</html>

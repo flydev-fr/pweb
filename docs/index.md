@@ -22,7 +22,7 @@ every companion in its frontmatter.
 
 | document | what it freezes | shard |
 |---|---|---|
-| [cli-contract.md](cli-contract.md) | the public command surface, `pweb.json` schema 1, the `doctor` report, the six exit codes, the reusable runtime-command layer, and §5 the development-trust decision | CAP-10A, 10B1, 10B2, 10C0, 10C2, 10C3 |
+| [cli-contract.md](cli-contract.md) | the public command surface, `pweb.json` schema 1, the `doctor` report, the six exit codes, the reusable runtime-command layer, and §5 the development-trust decision together with the CAP-15A outbound-network decision | CAP-10A, 10B1, 10B2, 10C0, 10C2, 10C3, 15A |
 | [template-contract.md](template-contract.md) | the scaffold engine, the trusted template pack, the identity mapping, the placeholder model and the atomic creation transaction | CAP-10B0 |
 | [supervision-contract.md](supervision-contract.md) | the one child-process engine: exact path, argument vector, explicit working directory, no shell, graceful-then-forced, drained by membership | CAP-10C0 |
 | [pipeline-contract.md](pipeline-contract.md) | the ten-stage lifecycle pipeline, the SDK root, the project-mutation set, the network policy and the Pas2JS assembly | CAP-10C1 |

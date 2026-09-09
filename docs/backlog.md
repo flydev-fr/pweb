@@ -1,16 +1,16 @@
 # The backlog
 
 `_bmad-output/implementation-artifacts/deferred-work.md` is append-only and
-carries **351 entries** from Phase 0 to CAP-14A. It is a
+carries **376 entries** from Phase 0 to CAP-15A. It is a
 ledger: it records what was found, in the words of the shard that found it,
 and it never edits itself. That makes it excellent evidence and a poor
 worklist — a reader who wants to know *what is still owed* has to resolve
 every supersession chain by hand, and three phase-closure artifacts answer
 that question for CAP-10 and CAP-11 only.
 
-This document is the worklist. Every one of the 351 entries is disposed of
-exactly once, with one verdict, an owner and a reason. **Forty-seven are open,**
-**and those forty-seven are listed here in full**; the other 304 are in
+This document is the worklist. Every one of the 376 entries is disposed of
+exactly once, with one verdict, an owner and a reason. **Fifty-seven are open,**
+**and those fifty-seven are listed here in full**; the other 319 are in
 `test/backlog/dispositions.tsv`, which is the table this document is written
 from and the one the gate reads.
 
@@ -18,9 +18,9 @@ from and the one the gate reads.
 |---|---:|---|
 | `FIX_NOW` | 4 | closed by this triage, one commit each, cited below |
 | `UPSTREAM` | 3 | the defect belongs to a third-party project and a report is written; two of the three also carry a local workaround, and `RP-2` deliberately does not |
-| `ROADMAP` | 41 | real work, deferred, with a named owner |
-| `ACCEPTED` | 107 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
-| `CLOSED` | 206 | the thing the entry describes is done |
+| `ROADMAP` | 50 | real work, deferred, with a named owner |
+| `ACCEPTED` | 110 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
+| `CLOSED` | 209 | the thing the entry describes is done |
 
 `ACCEPTED` is not a synonym for ignored. It is the verdict for an entry whose
 honest answer is a measurement — that WebView2 raises no navigation event for a
@@ -393,9 +393,9 @@ than appended to an append-only ledger:
 
 ## The open work, in full
 
-Forty-seven rows: the four `FIX_NOW` items this triage closed, the three
-`UPSTREAM` reports, and the forty on the roadmap. Everything else — 101
-`ACCEPTED` and 203 `CLOSED` — is in `test/backlog/dispositions.tsv`.
+Fifty-seven rows: the four `FIX_NOW` items this triage closed, the three
+`UPSTREAM` reports, and the fifty on the roadmap. Everything else — 110
+`ACCEPTED` and 209 `CLOSED` — is in `test/backlog/dispositions.tsv`.
 
 | key | verdict | owner | reason |
 |---|---|---|---|
@@ -447,3 +447,12 @@ Forty-seven rows: the four `FIX_NOW` items this triage closed, the three
 | `11B-19` | ROADMAP | CAP-12 | close-on-report is unavailable to every smoke driver, measured four ways. What remains owed is one of two host-side changes — flush the report line so a driver can see it, or close the window on the first report inside the host — either of which turns a 15-second floor into a 300-millisecond run. `examples/` and `src/` were frozen for CAP-11B |
 | `14A-3` | ROADMAP | a shard that ratifies whether an SVG in a bundle is an image, a document, or both | `.svg` is not scanned by the CAP-14A CSP refusal, and the reason is sound for the common case: an SVG referenced as an image has scripting disabled by the image context, so a handler inside one is inert by design rather than by CSP and refusing it would refuse a working dist. The narrow case left open is an application that NAVIGATES to one — `PWebClassifyNavigation` permits any `pweb://app/...` top-level navigation — because that SVG is then a real document whose inline script `script-src 'self'` blocks with exactly the silence CAP-14A exists to end. No shipped corpus does it. Closing it is a decision about what an SVG in a bundle is, and only then a question of whether an XML tokenizer is a second scanner or a mode of the existing one |
 | `14B-5` | ROADMAP | the shard that relaxes `worker-src` | a Worker's console is not covered by the CAP-14B development console surface, and today that costs nothing: `PWEB_NATIVE_CSP` carries `worker-src 'none'`, so a bundle cannot start a Worker and there is no second realm for `console` to exist in. The shim wraps the top frame's console and listens on `window`. The day that CSP term is relaxed, the console goes quiet for exactly the code most likely to need it, in exactly the silent way CAP-14B exists to end |
+| `15A-2` | ROADMAP | a door-B reopening shard | the macOS/WKWebView rows of the CAP-15A matrix are owed only if door B reopens, and they are not a baseline gap: CAP-8B measured on all four targets that `connect-src 'self'` refuses every external connection and every `wss://` (ratification R-B), which is what the shipped product rests on. What the missing rows would add is WIDENED-mode behaviour on WKWebView — how that engine treats a named origin, its cookies and its `no-cors` shapes — and only door B needs it. The Darwin branch of `test/cap15a/run_cap15a.sh` is written and mirrors the proven CAP-8B recipe line for line, so one run per macOS architecture clears the row |
+| `15A-3` | ROADMAP | a door-B reopening shard | `wss://` under a WIDENED `connect-src` is unmeasured on all four targets. The baseline is not in question — CAP-8B recorded `'self'` refusing every `wss://` everywhere and CAP-15A reproduced the refusal at the wire on two engines — but nobody has measured whether widening the directive also opens a WebSocket, and with which credentials. Only a door-B contract has to answer it, so it is owed together with reopening condition 1 rather than before it |
+| `15A-4` | ROADMAP | CAP-15B | mORMot re-sends a failed request by itself: one `pweb.fetch` call that timed out was measured arriving TWICE at the probe server, which turns a non-idempotent POST into two. No code review finds this — it is visible only in a server-side wire log — which is why it is a contract row rather than a note. CAP-15B's transport suppresses the retry (`AsRetry := true`, or `RequestInternal` directly) and its contract says retries are NONE |
+| `15A-5` | ROADMAP | CAP-15B | a socket timeout is not a deadline: the spike asked for 800 ms and the call returned at 1609 ms, because mORMot's timeout is per-READ and a response that dribbles resets it on every read. CAP-15B owns a wall-clock TOTAL-REQUEST deadline in the runtime — default 10 s, maximum 30 s, completing as `cancelled` and honouring the cancellation token — rather than delegating the bound to the transport |
+| `15A-6` | ROADMAP | CAP-15B | the response bound was enforced AFTER the read: a 32 MiB body was pulled whole into memory and only then refused against the 8 MiB limit, which makes the bound a memory amplifier rather than a defence. CAP-15B enforces it on `Content-Length` AND on the running total DURING the read, so a lying or absent length cannot buy an allocation nobody authorised |
+| `15A-7` | ROADMAP | CAP-15B | mORMot's convenient client entry points inherit the SYSTEM proxy, so a native door meaning to talk to one declared origin would hand its bytes to whatever a machine policy or an environment variable had configured. CAP-15B's transport passes an explicit no-proxy and never inherits one: the origin allowlist is about who receives the request, and a proxy is a receiver nobody declared |
+| `15A-8` | ROADMAP | CAP-15B | TLS on Darwin is DECIDED — an `NSURLSession` transport behind the injected seam, in the adapter layer, on the system trust store, to be measured at CAP-15B's Checkpoint 1, with bundled OpenSSL and a macOS scope-out both refused. What remains owed is the implementation itself and the Linux side: OpenSSL 3.0.13 was measured working and is a runtime dependency the product does not currently have, so it owes a `docs/third-party-licenses.md` row and a `doctor` `platform.tls` line naming the provider this target resolves |
+| `15A-10` | ROADMAP | CAP-15B | the six zero-transport source sweeps — `test/cap7l/check_cap7l_nonetwork.sh`, `test/cap7m/check_cap7m_nonetwork.sh`, `test/cap5`, `test/cap6`, `test/cap9c1` and the CAP-4 composite action — forbid `mormot.net.(server|client|http)` and `socket` across a named file list, and a native outbound door makes that claim false as written. They are RE-SCOPED, never deleted: "no listening socket, no server, no second RPC path, and the only outbound client in the image is `pweb.rpc.fetch.mormot`, reachable only through `network.fetch`". The runtime half — this process owns no listening TCP socket — is unchanged and was always the load-bearing half |
+| `15A-12` | ROADMAP | CAP-15B | `test/cap15a` is kept until CAP-15B closes and is NEVER a CI step, because a run compiles a binary whose `connect-src` has been widened by one generated token and a gate that compiles a widened CSP is a gate that can normalise one. It is committed so the measurement can be re-run and audited rather than believed. At closure it reduces to `probe_server.js` and the `pweb.fetch` rows of the driver, as the seed of a headless transport test with no socket at all |

@@ -195,6 +195,11 @@ accepted by a new CLI and refused by an old one while both call themselves
 schema 1 — a silent change of meaning. Growth happens by bumping `schema`, and
 a bump is a visible, reviewable act.
 
+The first such bump is ratified and not yet implemented: **schema 2** adds a
+required `network.origins`, and §5's outbound-network decision is the whole of
+what it means. A schema-1 descriptor stays valid and reads as an empty origin
+list, so nothing in this section changes for an existing project.
+
 The descriptor is **developer-controlled build metadata**, at the trust level
 of the developer's own source tree. It is never read from `app.pwb`,
 `plugins.zip`, browser storage, JavaScript or a build output, and it carries no
@@ -588,6 +593,80 @@ CAP-10C is closed. The consolidated evidence — the four hosted green runs,
 every recorded digest supersession, a disposition for every deferred item and
 the CAP-10D handoff — is
 `_bmad-output/implementation-artifacts/cap10c-closure-artifact.md`.
+
+### The outbound-network decision (ratified at CAP-15A, implemented at CAP-15B)
+
+**PWeb is an application platform, and the door is native.** An application
+reaches a remote server through `pweb.fetch` — a runtime-owned method behind the
+`network.fetch` capability and a native, per-application origin allowlist
+compiled into the host. **`PWEB_NATIVE_CSP` does not change**: `connect-src`
+stays `'self'`, byte for byte, in development and production, on all four
+targets. The frontend never opens a socket; the runtime does, per invocation,
+under the capability policy that is already in the path.
+
+The alternative — widening `connect-src` per application, "door B" — was built,
+run and **refused on measurements**, not on taste. CAP-15A ran the same probe
+page in both modes on Windows/WebView2 and Linux/WebKitGTK with a server-side
+wire log as the witness, and three rows decided it: the two engines **disagree
+about cookies** (WebKitGTK stores and re-sends the remote origin's, WebView2
+sends none), a named origin is a complete **uninspectable exfiltration
+channel** (`no-cors` POST and `sendBeacon` deliver arbitrary bytes to a server
+sending no CORS headers at all, with no per-call gate and no native record),
+and a widened `connect-src` reaches only servers taught to allowlist the literal
+`Origin: pweb://app` — which is the case the native door already serves, with a
+better threat model. `pweb.navigation.policy` exists to hold *one* decision
+shared by every engine; door B would put a measured per-engine security
+difference inside it. The decision and every measured row are
+`_bmad-output/implementation-artifacts/cap15a-decision-artifact.md` and
+`cap15a-measurements.md`.
+
+**Door B is dispositioned, not forgotten.** It reopens when, and only when, all
+three are true:
+
+1. the CAP-15A runner has been run on `macos-arm64` and `macos-x86_64` and the
+   WKWebView rows are on record — the script is written, and this is the *only*
+   thing the missing macOS rows gate: the baseline that `connect-src 'self'`
+   refuses every external connection was measured on all four targets at CAP-8B
+   (ratification R-B) and is not in question;
+2. an engine-independent answer exists for the cookie divergence — either every
+   engine can be made to send none, or the product accepts and documents a
+   different credential model per platform. The divergence is re-measured first,
+   over `https` with a correctly formed cross-site cookie: CAP-15A set
+   `SameSite=None` without `Secure` over plaintext loopback, so *that* a
+   divergence exists is measured, but *which* divergence it is — a cookie jar or
+   a `SameSite` rule — is not yet settled;
+3. a named application needs something the native door structurally cannot
+   give: a third-party JS SDK that performs its own `fetch`, or live push that
+   CAP-12's streaming work does not cover.
+
+**The native door inherits the development-trust model above, unchanged in
+spirit.** Production origins are `https` only, with no wildcards and at most
+eight of them. Loopback `http` — `http://127.0.0.1:<port>` or
+`http://localhost:<port>`, an explicit port, never a wildcard — is accepted
+**only** by a host compiled with the development define, and is pinned absent
+from the release binary exactly as the `ws://127.0.0.1` allowance is. The
+descriptor accepts such an origin, `doctor` reports it by name, and a **release
+build refuses it** rather than dropping it — an origin that vanished between
+`pweb dev` and `pweb build` would be a behaviour change with no message
+anywhere. It is a development transport exception and **never an origin
+exception**: the privileged origin is still `pweb://app`, no frontend field
+selects it, and **no production build** carries it in any form.
+
+Two further rulings, so CAP-15B implements what was agreed: `pweb.json` grows a
+**schema 2** whose `network.origins` is required and *may* be empty, where `[]`
+means the door is absent by construction — the decorator is not installed and
+the capability is never granted — and where a schema-1 project stays valid and
+reads as `[]`, so no existing project gains a network door by being rebuilt;
+and the Darwin transport is `NSURLSession` behind the same injected seam, in the
+adapter layer, on the system trust store, to be measured at CAP-15B's first
+checkpoint. Bundling OpenSSL into a `.app` and scoping macOS out of network
+support were both refused.
+
+**This is a ratification, not an implementation.** No `pweb` command reads
+`network`, no `pweb.fetch` exists, and `doctor` reports no network row today.
+CAP-15B owns all of it, and a reader must be able to tell the two apart — which
+is the same distinction the `ws://127.0.0.1` allowance has carried since
+CAP-10A.
 
 ---
 

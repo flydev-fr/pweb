@@ -106,6 +106,7 @@ $shards = [ordered]@{
     'spec-phase-post-mvp-mormot-repin.md'                  = 'RP'
     'spec-phase-14-cap14a-bundler-csp-refusal.md'          = '14A'
     'spec-phase-14-cap14b-dev-console-surface.md'          = '14B'
+    'spec-phase-15-cap15a-network-door-ratification.md'    = '15A'
 }
 
 # THE CLOSED SET. `CLOSED` means the thing the entry describes is done;
@@ -436,6 +437,123 @@ if ($bareDeletes.Count -gt 0) {
 }
 if ($unsourced.Count -gt 0) {
     Violation ('7M0-6 REGRESSED: ' + ($unsourced -join ', ') + " no longer source $rmGuard")
+}
+
+# --- 5b. the three CAP-15A claims, re-measured in the tree --------------------
+# CAP-15A closes 15A-13 in source and asserts two things about test/cap15a in
+# four documents. Section 5 above exists because "a backlog that only records
+# that something was fixed is a document; one that fails when the fix is undone
+# is a gate" - and that argument does not stop applying at the row this shard
+# added. These live in their own section, keyed to 15A, rather than widening
+# 7M0-6's $rmProtected list: that list is the exact claim a ratified FIX_NOW
+# row makes, and growing it would re-word a closure instead of pinning a new
+# one.
+#
+# All three are text reads. No toolchain, no compile, no run - which is what
+# lets them sit here at all: 15A-12's ratified reason for keeping the
+# instrument out of CI is that a RUN compiles a binary with a widened
+# connect-src, and nothing below runs, builds or widens anything.
+$cap15aRunner = 'test/cap15a/run_cap15a.sh'
+$cap15aRunnerPs = 'test/cap15a/run_cap15a.ps1'
+
+# 15A-13: the kept fixture does not carry the shape 7M0-6 closed. Same two
+# assertions section 5 makes for its six files, on the file this shard added.
+if (-not (Test-Path -LiteralPath $cap15aRunner)) {
+    Violation "15A-13: $cap15aRunner is missing"
+}
+else {
+    $c15 = [System.IO.File]::ReadAllText($cap15aRunner)
+    # THE SWEEP IS LINE-AWARE, and that is a correction this check earned on
+    # its first run: the runner's own comment explains which shape it replaced
+    # and quotes it, so a whole-text regex reported a bare delete in a file
+    # that has none. A line whose first non-space character is `#` is prose -
+    # the rule the B1-8 check above already uses, for the same reason. The
+    # needle is still built by concatenation, so this gate's text cannot
+    # satisfy the sweep it performs.
+    $needle15 = '(^|[^\w])rm\s+-' + 'rf'
+    $bare15 = $false
+    foreach ($ln in ($c15 -split "`r?`n")) {
+        if ($ln -match '^\s*#') { continue }
+        if ($ln -match $needle15) { $bare15 = $true; break }
+    }
+    $facts['cap15a_bare_delete'] = $bare15
+    if ($bare15) {
+        Violation ('15A-13 REGRESSED: a bare recursive delete is back in ' +
+            "$cap15aRunner -- the kept fixture deletes through pweb" + "rmtree.sh")
+    }
+    if ($c15 -notmatch 'pweb' + 'rmtree\.sh') {
+        Violation "15A-13 REGRESSED: $cap15aRunner no longer sources $rmGuard"
+    }
+}
+
+# 15A-13, the Windows half: the sibling validates its delete target against an
+# allowed root before removing it. The repository has no PowerShell equivalent
+# of pwebrmtree.sh and thirty other test scripts delete unguarded, so this is
+# not a repository-wide rule - it is the claim THIS fixture makes about itself.
+if (-not (Test-Path -LiteralPath $cap15aRunnerPs)) {
+    Violation "15A-13: $cap15aRunnerPs is missing"
+}
+else {
+    $c15ps = [System.IO.File]::ReadAllText($cap15aRunnerPs)
+    if ($c15ps -notmatch 'Assert-' + 'UnderBuildRoot') {
+        Violation ("15A-13 REGRESSED: $cap15aRunnerPs no longer validates its " +
+            'delete target against an allowed root before removing it')
+    }
+    # and it still parses, which is the cheap half of "the runner is written"
+    $errs = $null
+    $null = [System.Management.Automation.Language.Parser]::ParseFile(
+        (Resolve-Path -LiteralPath $cap15aRunnerPs).Path, [ref]$null, [ref]$errs)
+    $facts['cap15a_ps_parse_errors'] = $(if ($null -eq $errs) { 0 } else { $errs.Count })
+    if ($facts['cap15a_ps_parse_errors'] -gt 0) {
+        Violation ("15A-13: $cap15aRunnerPs does not parse -- " +
+            $errs[0].Message)
+    }
+}
+
+# 15A-12: NEVER A CI STEP. The artifact's FREEZE, test/cap15a/README.md, the
+# ledger row and its disposition all say a run compiles a widened CSP and must
+# not be a gate. Four documents asserting it and nothing enforcing it is the
+# shape this repository refuses everywhere else, so the claim is pinned: no
+# workflow, composite action or CI input names the directory.
+$ciNamers = @()
+if (Test-Path -LiteralPath '.github') {
+    foreach ($f in (Get-ChildItem -Path '.github' -Recurse -File -ErrorAction SilentlyContinue)) {
+        if ([System.IO.File]::ReadAllText($f.FullName) -match ('test/cap' + '15a')) {
+            $ciNamers += $f.FullName.Substring($repoRoot.Length + 1).Replace('\', '/')
+        }
+    }
+}
+$facts['cap15a_named_in_ci'] = ($ciNamers -join ',')
+if ($ciNamers.Count -gt 0) {
+    Violation ('15A-12 REGRESSED: ' + ($ciNamers -join ', ') + ' names ' +
+        'test/cap15a -- a run of that instrument compiles a binary whose ' +
+        'connect-src has been widened, and a gate that compiles a widened CSP ' +
+        'is a gate that can normalise one')
+}
+
+# reopening condition 1 of the public network decision costs "one run per macOS
+# architecture", and that estimate is only true while the instrument still
+# fits the tree it reads. The shim rule is the one coupling a CAP-15B commit
+# can silently break: both runners substitute the literal connect-src term in
+# the shipped policy and assert it occurs EXACTLY ONCE. Reformat or re-space
+# that constant and the assertion dies on a macOS host, after the runner has
+# been paid for - the CAP-7M0 lesson, met from the other side.
+$cspNeedle = "'connect-src ''self''; "
+$policySrc = 'src/security/pweb.navigation.policy.pas'
+if (-not (Test-Path -LiteralPath $policySrc)) {
+    Violation "15A-12: $policySrc is missing"
+}
+else {
+    $pt = [System.IO.File]::ReadAllText($policySrc)
+    $hits = 0; $at = 0
+    while (($at = $pt.IndexOf($cspNeedle, $at)) -ge 0) { $hits++; $at += $cspNeedle.Length }
+    $facts['cap15a_shim_needle_hits'] = $hits
+    if ($hits -ne 1) {
+        Violation ("15A-12: the CAP-15A shim needle occurs $hits time(s) in " +
+            "$policySrc, not once -- both runners die on that assertion, so " +
+            'the "one run per macOS architecture" cost in reopening condition 1 ' +
+            'has quietly become "repair the instrument first"')
+    }
 }
 
 # --- 6. verdict ---------------------------------------------------------------

@@ -1,4 +1,4 @@
-# THE BACKLOG GATE'S NEGATIVE SELF-TEST: fourteen perturbations, each of which
+# THE BACKLOG GATE'S NEGATIVE SELF-TEST: nineteen perturbations, each of which
 # check_backlog.ps1 must refuse, and each of which is byte-restored afterwards.
 #
 # A gate that has only ever been seen to PASS has an unproven failure path, and
@@ -33,6 +33,10 @@ $targets = [ordered]@{
     abi     = 'test/cap7l/check_abi.sh'
     b1      = 'test/cap10b1/run_cap10b1_gates.ps1'
     agg     = 'test/cap7f/check_cap7f_aggregate.ps1'
+    c15sh   = 'test/cap15a/run_cap15a.sh'
+    c15ps   = 'test/cap15a/run_cap15a.ps1'
+    policy  = 'src/security/pweb.navigation.policy.pas'
+    ciwf    = '.github/workflows/ci.yml'
 }
 $backup = @{}
 foreach ($k in $targets.Keys) {
@@ -71,7 +75,7 @@ try {
         throw ('the gate does not pass on the unperturbed tree, so no leg below ' +
             'would mean anything; fix that first')
     }
-    Write-Host '[backlog] baseline PASS; fourteen perturbations follow'
+    Write-Host '[backlog] baseline PASS; nineteen perturbations follow'
 
     # Rewrite one row of the disposition table, addressed by its key, so a leg
     # says what it changes rather than depending on a substring that could
@@ -189,6 +193,52 @@ try {
                 $t.Replace("    'create_help_digest', 'create_help_bytes'," + $eol, ''))
         }
     } 'no longer in the four-target equality list'
+
+    # --- the five CAP-15A claims section 5b re-measures ----------------------
+    # 15A-13 is a closure this shard made in source, and 15A-12's two assertions
+    # about the instrument are stated in four documents. A closure nothing can
+    # fail on is a document, which is the argument section 5 already makes; the
+    # legs below are what make section 5b a gate rather than a second document.
+    Leg '15A-13 undone: the kept fixture deletes bare again' {
+        $p = Join-Path $repoRoot 'test/cap15a/run_cap15a.sh'
+        $t = [System.IO.File]::ReadAllText($p)
+        [System.IO.File]::WriteAllText($p, $t.Replace(
+            'pweb_rm_tree "${unitdir}" "${repo_root}/build"',
+            ('rm -' + 'rf -- "${unitdir}"')))
+    } '15A-13 REGRESSED'
+
+    Leg '15A-13 undone: the fixture stops sourcing the delete guard' {
+        $p = Join-Path $repoRoot 'test/cap15a/run_cap15a.sh'
+        $t = [System.IO.File]::ReadAllText($p)
+        [System.IO.File]::WriteAllText($p, $t.Replace(
+            '. "${repo_root}/tools/pweb' + 'rmtree.sh"', ':'))
+    } '15A-13 REGRESSED'
+
+    Leg '15A-13 undone: the Windows sibling deletes without an allowed root' {
+        $p = Join-Path $repoRoot 'test/cap15a/run_cap15a.ps1'
+        $t = [System.IO.File]::ReadAllText($p)
+        [System.IO.File]::WriteAllText($p,
+            $t.Replace('Assert-' + 'UnderBuildRoot', 'Get-FullPathAnywhere'))
+    } '15A-13 REGRESSED'
+
+    Leg '15A-12 undone: a workflow names the widened-CSP instrument' {
+        $p = Join-Path $repoRoot '.github/workflows/ci.yml'
+        $t = [System.IO.File]::ReadAllText($p)
+        [System.IO.File]::WriteAllText($p,
+            $t + "`n# pwsh test/cap" + "15a/run_cap15a.ps1`n")
+    } '15A-12 REGRESSED'
+
+    # The needle is what BOTH runners substitute, so a reformat of the shipped
+    # constant turns reopening condition 1's "one run per macOS architecture"
+    # into "repair the instrument first" - on a macOS host, after the runner
+    # has been paid for. Perturbing the SPACING is the realistic shape: nobody
+    # deletes that constant, somebody re-wraps it.
+    Leg 'the CAP-15A shim needle no longer matches the shipped CSP' {
+        $p = Join-Path $repoRoot 'src/security/pweb.navigation.policy.pas'
+        $t = [System.IO.File]::ReadAllText($p)
+        [System.IO.File]::WriteAllText($p,
+            $t.Replace("'connect-src ''self''; ", "'connect-src  ''self''; "))
+    } 'the CAP-15A shim needle occurs'
 }
 finally { Restore }
 
