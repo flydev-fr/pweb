@@ -546,6 +546,7 @@ redesign, which is why §1 splits the two units.
 | 15A-13 | the fixture's own bare recursive delete, on both runners | **CLOSED at ratification** — each runner now validates a delete target against `build` before removing it, and section 5b of `test/backlog/check_backlog.ps1` re-measures that, plus the "never a CI step" claim and the shim needle, on every hosted Windows leg |
 | 15A-14 | seven further bounds on the measurements, found by reviewing the instrument after it ran | **RECORDED, not repaired** — the code is what produced the numbers, so the bounds go in `cap15a-measurements.md`. The cookie row is load-bearing: it narrows *which* divergence was measured and sharpens reopening condition 2, without moving the decision |
 | 15A-15 | the runners would have failed on the macOS host 15A-2 owes | **CLOSED at ratification** — bash 3.2 aborts on an empty array expansion under `set -u`, so the Darwin leg died before compiling anything; fixed with option validation, a flushed wire log, and the widened shim removed at the end of a run. No measurement semantics moved |
+| 15A-16 | the shell runner was committed `100644` | **CLOSED, having cost one hosted run** — every committed `.sh` here must be `100755` because the Linux leg invokes its gates as programs. A Windows checkout has no executable bit, so only git's index carries the truth and no local check I ran could see it. Same family as `10E-4`; the sweep that does see it is checkout-only and free |
 
 ---
 

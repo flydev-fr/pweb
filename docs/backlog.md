@@ -1,16 +1,16 @@
 # The backlog
 
 `_bmad-output/implementation-artifacts/deferred-work.md` is append-only and
-carries **376 entries** from Phase 0 to CAP-15A. It is a
+carries **377 entries** from Phase 0 to CAP-15A. It is a
 ledger: it records what was found, in the words of the shard that found it,
 and it never edits itself. That makes it excellent evidence and a poor
 worklist — a reader who wants to know *what is still owed* has to resolve
 every supersession chain by hand, and three phase-closure artifacts answer
 that question for CAP-10 and CAP-11 only.
 
-This document is the worklist. Every one of the 376 entries is disposed of
+This document is the worklist. Every one of the 377 entries is disposed of
 exactly once, with one verdict, an owner and a reason. **Fifty-seven are open,**
-**and those fifty-seven are listed here in full**; the other 319 are in
+**and those fifty-seven are listed here in full**; the other 320 are in
 `test/backlog/dispositions.tsv`, which is the table this document is written
 from and the one the gate reads.
 
@@ -20,7 +20,7 @@ from and the one the gate reads.
 | `UPSTREAM` | 3 | the defect belongs to a third-party project and a report is written; two of the three also carry a local workaround, and `RP-2` deliberately does not |
 | `ROADMAP` | 50 | real work, deferred, with a named owner |
 | `ACCEPTED` | 110 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
-| `CLOSED` | 209 | the thing the entry describes is done |
+| `CLOSED` | 210 | the thing the entry describes is done |
 
 `ACCEPTED` is not a synonym for ignored. It is the verdict for an entry whose
 honest answer is a measurement — that WebView2 raises no navigation event for a
@@ -395,7 +395,7 @@ than appended to an append-only ledger:
 
 Fifty-seven rows: the four `FIX_NOW` items this triage closed, the three
 `UPSTREAM` reports, and the fifty on the roadmap. Everything else — 110
-`ACCEPTED` and 209 `CLOSED` — is in `test/backlog/dispositions.tsv`.
+`ACCEPTED` and 210 `CLOSED` — is in `test/backlog/dispositions.tsv`.
 
 | key | verdict | owner | reason |
 |---|---|---|---|
