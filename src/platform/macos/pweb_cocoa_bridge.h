@@ -509,6 +509,125 @@ void pweb_cocoa_stub_task_deliver_again(uint64_t task);
 /* Read what the stub actually observed. `out` must not be NULL. */
 void pweb_cocoa_stub_task_outcome(uint64_t task, pweb_cocoa_stub_outcome_t *out);
 
+/* ======================================================================== *
+ *  CAP-15B: THE DARWIN OUTBOUND TRANSPORT                                  *
+ *                                                                          *
+ *  macOS ships no libssl in a default install, and CAP-15A refused both     *
+ *  bundling OpenSSL into the .app (a bundled cryptographic library and a    *
+ *  second trust store to keep current, inside a product whose whole claim   *
+ *  is that it bundles no engine) and scoping macOS out of network support   *
+ *  (a `platform.tls` row saying the product does not work on a target it    *
+ *  ships on is a hole, not a limitation). So the Darwin transport is        *
+ *  NSURLSession, on the SYSTEM trust store, behind the SAME injected seam   *
+ *  the mORMot transport fills - which is why this is one platform file and  *
+ *  not a redesign, and why "exactly one file in src/** names               *
+ *  mormot.net.client" survives a second platform unchanged.                 *
+ *                                                                          *
+ *  NOTHING HERE DECIDES ANYTHING. The URL was parsed, the origin matched,   *
+ *  the method and headers allowlisted, the body bounded and the deadline    *
+ *  chosen by src/rpc/pweb.rpc.fetch.pas before this seam is reached, and    *
+ *  the response envelope is built there afterwards. This file adapts an     *
+ *  ASYNCHRONOUS, delegate-driven API to ONE bounded synchronous call on a   *
+ *  scheduler worker thread, and that adaptation is the whole of its job:    *
+ *                                                                          *
+ *    - a PRIVATE serial NSOperationQueue takes the delegate callbacks, so   *
+ *      the calling thread needs no run loop and simply blocks;              *
+ *    - the calling thread waits on a dispatch semaphore IN SLICES, checking *
+ *      the wall-clock deadline and the caller's cancellation predicate      *
+ *      between them, so the deadline is observable DURING the transfer and  *
+ *      not only before it;                                                  *
+ *    - willPerformHTTPRedirection: is answered with nil, which is the       *
+ *      documented way to make the session deliver the 3xx response instead  *
+ *      of following it - the RedirectMax = 0 equivalent;                    *
+ *    - didReceiveResponse: refuses on expectedContentLength and             *
+ *      didReceiveData: cancels at the delivery that crosses the bound, so   *
+ *      the response ceiling is enforced DURING the read;                    *
+ *    - the ambient cookie jar is turned OFF rather than merely unused:      *
+ *      HTTPCookieStorage nil, HTTPShouldSetCookies NO and an accept policy  *
+ *      of Never, together. An ephemeral configuration alone would give a    *
+ *      PRIVATE jar, and the contract says NO jar;                           *
+ *    - URLCache and URLCredentialStorage are nil for the same reason: no    *
+ *      ambient state of any kind travels with a request;                    *
+ *    - connectionProxyDictionary is an EMPTY dictionary, so the system      *
+ *      proxy configuration is overridden rather than inherited;             *
+ *    - there is NO didReceiveChallenge: implementation anywhere in this     *
+ *      file, which is the strongest possible form of "TLS validation cannot *
+ *      be turned off by any input at any layer": there is no code path to   *
+ *      reach. Default handling is full system trust evaluation.             *
+ * ======================================================================== */
+
+/* Outcomes, ORDINAL FOR ORDINAL with TPWebFetchOutcome in
+   src/rpc/pweb.rpc.fetch.pas. A value outside this set is a Pascal-side
+   transport failure, never a guess. */
+#define PWEB_COCOA_FETCH_OK 0
+#define PWEB_COCOA_FETCH_TIMEDOUT 1
+#define PWEB_COCOA_FETCH_CANCELLED 2
+#define PWEB_COCOA_FETCH_TOOLARGE 3
+#define PWEB_COCOA_FETCH_TRANSPORT 4
+
+/* The caller's cancellation predicate, polled between wait slices: non-zero
+   means the invocation was cancelled. It MUST NOT block and MUST NOT raise. */
+typedef int (*pweb_cocoa_cancel_fn)(void *opaque);
+
+/* One request, already validated by the shared decorator.
+
+   url          : the exact absolute request target, NUL-terminated.
+   method       : GET POST PUT PATCH DELETE HEAD, exact case.
+   headers      : CRLF-separated `Name: Value` lines, or NULL. Already
+                  allowlisted and already checked for control bytes.
+   content_type : the Content-Type value, or NULL.
+   body/body_length : the request body; body may be NULL when length is 0.
+   deadline_ms  : the WALL-CLOCK total-request deadline.
+   max_response_bytes : the ceiling to enforce DURING the read. */
+typedef struct pweb_cocoa_fetch_request {
+  const char *url;
+  const char *method;
+  const char *headers;
+  const char *content_type;
+  const void *body;
+  int64_t body_length;
+  int64_t deadline_ms;
+  int64_t max_response_bytes;
+} pweb_cocoa_fetch_request_t;
+
+/* One response. `headers` and `body` are pweb_cocoa_alloc blocks the CALLER
+   owns from the moment pweb_cocoa_fetch returns, whatever it returned, and
+   releases exactly once through pweb_cocoa_fetch_release.
+
+   The four diagnostic fields exist because CAP-15B's Checkpoint 1 owes a
+   MEASUREMENT of this adaptation rather than a description of it. They are
+   evidence, never a decision:
+
+     deliveries        how many didReceiveData: callbacks arrived
+     peak_bytes        the largest running total the read reached, which is
+                       what says whether the bound overshot by one delivery
+     redirects_offered willPerformHTTPRedirection: arrivals, all refused
+     proxy_dict_empty  1 when connectionProxyDictionary really was set to an
+                       empty dictionary on the configuration this call used */
+typedef struct pweb_cocoa_fetch_response {
+  int status;
+  int32_t ms;
+  int64_t bytes;
+  void *headers;
+  void *body;
+  int64_t body_length;
+  int32_t deliveries;
+  int64_t peak_bytes;
+  int32_t redirects_offered;
+  int32_t proxy_dict_empty;
+} pweb_cocoa_fetch_response_t;
+
+/* Perform ONE bounded exchange, synchronously, on the calling thread.
+   Returns one of PWEB_COCOA_FETCH_*. Never raises: an NSException at any
+   seam entry is caught here and reported as a transport failure. */
+int pweb_cocoa_fetch(const pweb_cocoa_fetch_request_t *request,
+                     pweb_cocoa_cancel_fn cancel, void *cancel_opaque,
+                     pweb_cocoa_fetch_response_t *out);
+
+/* Release the two blocks a response owns. Idempotent; safe on a zeroed
+   struct, which is what every failure path leaves. */
+void pweb_cocoa_fetch_release(pweb_cocoa_fetch_response_t *out);
+
 #ifdef __cplusplus
 }
 #endif

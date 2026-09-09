@@ -514,6 +514,42 @@ $required = @(
     'dev_refusal_cause_forwarded', 'dev_previous_generation_live',
     'dev_refused_generation_published', 'dev_host_pid_unchanged',
     'dev_recovered_after_fix', 'cap14a_gates',
+    # CAP-15B: the native outbound network door.
+    #
+    # COMPARED (below, in $equalityFields): every DECISION - the corpus
+    # digest, the origin match rule, the schema the CLI emits, the four
+    # image proofs and the three "the door is absent by construction" rows.
+    # Four targets read the same grammar and the same descriptor, so a
+    # disagreement means one leg is running a different door.
+    #
+    # PINNED ABSOLUTELY (in $absolutePins): no relaxation in a release
+    # image, the sweep proven to FIRE on a dev image, declared == compiled,
+    # no redirect followed, no retry, no cookie jar, the deadline observed
+    # mid-transfer, the response bound enforced during the read, and zero
+    # gate failures. Four targets could agree perfectly that a release now
+    # carries a loopback origin, which is what an absolute pin is for.
+    #
+    # PER-TARGET, required present and compared on none:
+    #   tls_provider              schannel on Windows, openssl on Linux,
+    #                             nsurlsession on macOS - the contract types
+    #                             it PER TARGET and comparing it would be
+    #                             comparing the platforms
+    #   mormot_net_client_files   1 on Windows and Linux, 0 on Darwin, where
+    #                             the seam is filled by the adapter instead.
+    #                             That asymmetry IS the design
+    #   fetch_live_status         a real exchange against a local server
+    'tls_provider', 'mormot_net_client_files', 'fetch_live_status',
+    'fetch_suite', 'fetch_corpus_digest', 'fetch_door_available',
+    'schema_version_emitted', 'origin_match_rule',
+    'allowlist_digest_declared_equals_compiled',
+    'release_relaxation_literals', 'relaxation_sweep_discriminates',
+    'retries', 'redirects_followed', 'cookie_jar',
+    'deadline_observed_mid_transfer', 'response_bound_enforced_during_read',
+    'response_bound_enforced_on_content_length',
+    'schema1_project_gains_door', 'empty_origins_links_decorator',
+    'loopback_dev_accepted', 'loopback_release_refused',
+    'malformed_origin_refused_at_load', 'bundler_refuses_network',
+    'cap15b_failures',
     # CAP-14B: the development console surface.
     #
     # COMPARED (below, in $equalityFields): console_mechanism, console_levels,
@@ -1209,6 +1245,33 @@ $absolutePins = @{
     dev_console_channel                = 'present'
     console_host_markers_outside_dev   = '0'
     dev_csp_equals_release             = 'true'
+    # CAP-15B: the native outbound door. Four targets agreeing is not
+    # enough for any of these - they could all agree that a release carries
+    # a loopback origin.
+    fetch_suite                        = 'PASS'
+    fetch_door_available               = 'true'
+    schema_version_emitted             = '2'
+    allowlist_digest_declared_equals_compiled = 'true'
+    release_relaxation_literals        = '0'
+    # THE SWEEP MUST FIRE. A negative check whose firing was never observed
+    # is the vacuous-gate class this repository has caught three times, so
+    # the identical sweep runs over a DEV image that carries the loopback
+    # origin by design and is required to find it.
+    relaxation_sweep_discriminates     = 'true'
+    loopback_dev_accepted              = 'true'
+    loopback_release_refused           = 'true'
+    malformed_origin_refused_at_load   = 'true'
+    schema1_project_gains_door         = 'false'
+    empty_origins_links_decorator      = 'false'
+    retries                            = '0'
+    redirects_followed                 = '0'
+    cookie_jar                         = 'absent'
+    deadline_observed_mid_transfer     = 'true'
+    response_bound_enforced_during_read = 'true'
+    response_bound_enforced_on_content_length = 'true'
+    fetch_live_status                  = '200'
+    bundler_refuses_network            = 'true'
+    cap15b_failures                    = '0'
     cap14b_gates                       = 'PASS'
 }
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
@@ -1566,6 +1629,21 @@ $equalityFields = @(
     # about - the corpus digest, the ship-table digest, the determinism
     # verdicts, every typed refusal cause, the clean-machine 42s, and the
     # phase-closure counts.
+    # CAP-15B: the native outbound door. What four targets MUST agree about
+    # is the DECISION - the same grammar, the same bounds, the same schema,
+    # the same four image proofs - and never the provider, which the
+    # contract types per target on purpose.
+    'fetch_suite', 'fetch_corpus_digest', 'fetch_door_available',
+    'schema_version_emitted', 'origin_match_rule',
+    'allowlist_digest_declared_equals_compiled',
+    'release_relaxation_literals', 'relaxation_sweep_discriminates',
+    'retries', 'redirects_followed', 'cookie_jar',
+    'deadline_observed_mid_transfer', 'response_bound_enforced_during_read',
+    'response_bound_enforced_on_content_length',
+    'schema1_project_gains_door', 'empty_origins_links_decorator',
+    'loopback_dev_accepted', 'loopback_release_refused',
+    'malformed_origin_refused_at_load', 'bundler_refuses_network',
+    'cap15b_failures',
     'sdk_corpus', 'sdk_suite', 'sdk_digest', 'sdk_corpus_lines',
     'sdk_package_built', 'sdk_manifest_deterministic',
     'sdk_archive_deterministic', 'sdk_inventory_deterministic',

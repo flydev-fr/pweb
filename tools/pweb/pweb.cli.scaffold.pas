@@ -558,9 +558,15 @@ begin
   // canonical by construction: fixed key order, two-space indent, LF, one
   // trailing newline. Every value here has already passed its grammar, so
   // none of them can carry a character JSON would have to escape
+  // CAP-15B: `pweb create` emits SCHEMA 2, with an EMPTY origin set. `[]`
+  // is not "a door with nothing behind it": it means network.fetch is
+  // absent by construction - the build defines no network region, so the
+  // decorator is never compiled and the capability is never granted. A
+  // developer opens a door by naming an origin here, which is one visible
+  // act in one file, exactly as publishing a service method is
   Result :=
     '{' + #10 +
-    '  "schema": 1,' + #10 +
+    '  "schema": ' + RawUtf8(IntToStr(PWEB_CLI_SCHEMA_CREATE)) + ',' + #10 +
     '  "name": "' + Identity.ProjectName + '",' + #10 +
     '  "version": "' + Identity.ProjectVersion + '",' + #10 +
     '  "bundleId": "' + Identity.BundleId + '",' + #10 +
@@ -568,7 +574,8 @@ begin
     '  "native": { "program": "' + Tpl.NativeDir + '/' +
       Identity.PascalProgram + '.' + Tpl.NativeExt + '" },' + #10 +
     '  "frontend": { "root": "' + Tpl.FrontendRoot + '" },' + #10 +
-    '  "output": "' + Tpl.OutputDir + '"' + #10 +
+    '  "output": "' + Tpl.OutputDir + '",' + #10 +
+    '  "network": { "origins": [] }' + #10 +
     '}' + #10;
 end;
 

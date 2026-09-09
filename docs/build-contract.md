@@ -228,11 +228,38 @@ is that measurement: it spawns the real `pweb build` with its own console
 and delivers a real interrupt through `test/cap10c0/pwebchild`, so the
 claim now exists on all four targets.
 
+## 6b. The outbound origin allowlist (CAP-15B)
+
+A schema-2 project's `network.origins` are read at BUILD time and never at
+runtime: the canonicalized, sorted set and its sha256 digest are generated
+into `<output>/<os>-<arch>/gen/app.network.inc` and compiled into the host as
+Pascal literals, so `app.pwb` cannot enlarge them and `AppMaximum` stays a
+native trust anchor.
+
+**A release build REFUSES the development loopback origin, by name.**
+`http://127.0.0.1:<port>` and `http://localhost:<port>` are accepted by the
+descriptor — a developer really does run their API on loopback — and `pweb
+dev` compiles them in, but `pweb build` stops at the **open** stage with
+`network_origin_loopback_release` and the offending origin as its detail,
+before the read-only tree is even digested and therefore before any write.
+
+It does not silently drop it, and that is the point: an origin that vanished
+between `pweb dev` and `pweb build` would be a behaviour difference with no
+message anywhere, which is exactly the failure class CAP-14A and CAP-14B
+exist to end. `pweb doctor` warns on the same origin, by name, long before a
+build refuses on it.
+
+**A project that declared no origins compiles no network region at all.** The
+`-dPWEB_NET` define and the `-Fi` that finds the generated include are pushed
+**iff** the set is non-empty, so an empty-origins project — which is every
+schema-1 project — produces a compiler argument vector byte-identical to the
+one this pipeline has always produced.
+
 ## 7. What a build does not do
 
 It starts no watcher, no development server, no proxy, no HMR transport and
-no listener; it opens no socket and binds no port; it changes no CSP and no
-privileged origin; it modifies no generated **source** file; it vendors
+no listener; it opens no listening socket and binds no port; it changes no CSP
+and no privileged origin; it modifies no generated **source** file; it vendors
 neither PWeb nor mORMot into a project; it writes nothing outside the four
 ratified writable prefixes and `<output>`; it reads no `.env` and injects no
 environment variable into any child; and it produces no installer, archive,

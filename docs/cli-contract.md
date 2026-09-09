@@ -662,11 +662,56 @@ adapter layer, on the system trust store, to be measured at CAP-15B's first
 checkpoint. Bundling OpenSSL into a `.app` and scoping macOS out of network
 support were both refused.
 
-**This is a ratification, not an implementation.** No `pweb` command reads
-`network`, no `pweb.fetch` exists, and `doctor` reports no network row today.
-CAP-15B owns all of it, and a reader must be able to tell the two apart — which
-is the same distinction the `ws://127.0.0.1` allowance has carried since
-CAP-10A.
+**IMPLEMENTED AT CAP-15B.** `pweb.fetch` is one `IInvocationBridge` decorator
+(`src/rpc/pweb.rpc.fetch.pas`) over an **injected** transport — mORMot on
+Windows and Linux (`src/rpc/pweb.rpc.fetch.mormot.pas`, the only file in
+`src/**` permitted to name `mormot.net.client`), `NSURLSession` on macOS
+(`src/platform/macos/pweb.platform.cocoa.fetch.pas`, which names no
+`mormot.net.*` unit at all). The decorator carries no compiler conditional and
+names no operating system, which is what lets a headless test drive the whole
+door with no socket.
+
+**The door is installed iff origins were declared, and that is a property of
+the compiled unit set rather than of a runtime test.** `pweb build` and
+`pweb dev` push `-dPWEB_NET` and generate
+`<output>/<target>/gen/app.network.inc` — the canonicalized origin array and
+its sha256 digest, as Pascal literals — **only** when `network.origins` is
+non-empty. A project with `[]` does not compile `pweb.rpc.fetch` at all, so it
+does not merely fail to install the door: the door is not in its image.
+
+**What the build proves about the production artifact.** `PWEB_NATIVE_CSP` in
+the built host is byte-identical to the shipped constant; the compiled
+allowlist digest, recomputed by the host from the array it actually carries,
+equals the digest computed from `pweb.json`; the release image carries no
+loopback origin, no wildcard and no TLS-relaxation identifier — and **the same
+sweep is run against a development image that carries the loopback origin by
+design and is required to fire**, because a negative check whose firing was
+never observed proves nothing. `app.pwb` is refused by the bundler if a
+root-level JSON document carries a `network`, `origins`, `connect` or `csp`
+field, with its own typed cause `network_field_in_bundle`.
+
+**The request contract**, in one paragraph: an absolute `https` URL whose
+origin equals a declared one *by parsed components*; the URL byte-checked for
+CR, LF, NUL, non-ASCII and userinfo *before* parsing; `GET POST PUT PATCH
+DELETE HEAD` compared case-sensitively; an allowlist of request headers
+(`accept`, `accept-language`, `authorization`, `content-type`, `if-match`,
+`if-none-match`, `if-modified-since` and `x-`-prefixed), at most 16, no
+repeats, no control bytes; a body ≤ 1 MiB, refused on a bodyless method; a
+**wall-clock total-request deadline**, 10 s by default and 30 s at most,
+refused rather than clamped when larger, and observed *during* the transfer;
+**no retry, no redirect followed, no proxy inherited, no cookie jar**, and TLS
+validation that no descriptor, environment variable, argument or line of
+Pascal can disable. The response is bounded at 8 MiB *during the read*,
+inlined as text up to 1 MiB or as base64 up to 768 KiB, and anything between
+an inline cap and the ceiling is a typed `service_error` —
+`response_too_large_to_inline` — never a success with a null body. Response
+headers are an allowlist too, `location` included and **`set-cookie` never**.
+
+Frontends reach it through `httpFetch` in `@pweb/runtime` and `PWebFetch` in
+the Pas2JS SDK. Neither constructs a URL, supplies a default origin, adds a
+header, follows a redirect, keeps a cookie or retries: every one of those is a
+native decision, and an SDK that supplied one would be a second answer to a
+settled question.
 
 ---
 

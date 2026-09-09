@@ -27,6 +27,28 @@ line, the bounds and the exit codes may not, except by a version bump.
 
 ---
 
+## The development unit directory is scoped by the network define (CAP-15B)
+
+`pweb dev` compiles into `<output>/<target>/dev/units` and deliberately omits
+`-B`, so units persist across runs and a development start does not rebuild
+the whole mORMot surface before a window can open. FPC does **not** recompile
+a unit merely because a conditional define changed, so a developer who added
+their first `network.origins` entry would otherwise link yesterday's
+`app.services.ppu` — the one compiled without the capability — and meet
+`forbidden` from a door the descriptor says exists.
+
+The unit directory therefore carries a `-net` suffix when the network region
+is on: `dev/units` without declared origins, `dev/units-net` with them. Two
+directories cost one rebuild on the run that changes the answer, and make "the
+define never varies within one unit directory" a property rather than a hope.
+The object directory is unchanged: a program is recompiled on every run
+anyway.
+
+The generated allowlist include is written into `<dev>/gen/app.network.inc`,
+beside it, from the same production function a release build uses. A
+development host may carry the ratified loopback origin; a release build
+refuses it by name (`docs/build-contract.md` §6b).
+
 ## 1. The command
 
 ```

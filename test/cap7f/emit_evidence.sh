@@ -1702,6 +1702,41 @@ done
 console_host_dev_lines_removed="${host_pweb_dev_lines_removed}"
 console_host_compile_target="${host_compile_target}"
 
+# --- CAP-15B: the native outbound network door ------------------------------
+# build/cap15b/cli-<target>.json is ONE record: the whole §4/§5 decision driven
+# through the INJECTED transport with the transport entry count asserted on
+# every refusal, the SHIPPED transport measured against a real local server
+# whose JSONL log is the witness, the schema-2 descriptor reader, and four
+# claims that are properties of a BUILT IMAGE - the CSP did not move, the
+# compiled allowlist digest equals the declared one, the release image carries
+# no relaxation (with the same sweep REQUIRED to fire on a dev image that
+# carries one by design), and a project that declared no origins links neither
+# the decorator nor mormot.net.client.
+#
+# This block exists in BOTH emitters, for the reason the CAP-10E block spells
+# out: rows added to one and not the other cost a whole hosted run.
+c15b_file="${repo_root}/build/cap15b/cli-${target}.json"
+[ -f "${c15b_file}" ] ||
+    die "cap15b/cli-${target}.json missing -- the CAP-15B gates have not run in this workspace"
+c15b_str() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+        "${c15b_file}" | head -n 1
+}
+for f in fetch_suite fetch_corpus_digest fetch_door_available \
+        schema_version_emitted origin_match_rule \
+        allowlist_digest_declared_equals_compiled \
+        release_relaxation_literals relaxation_sweep_discriminates \
+        mormot_net_client_files tls_provider retries \
+        redirects_followed cookie_jar deadline_observed_mid_transfer \
+        response_bound_enforced_during_read \
+        response_bound_enforced_on_content_length fetch_live_status \
+        schema1_project_gains_door empty_origins_links_decorator \
+        loopback_dev_accepted loopback_release_refused \
+        malformed_origin_refused_at_load bundler_refuses_network \
+        cap15b_failures; do
+    eval "${f}=\"\$(c15b_str ${f})\""
+done
+
 # --- CAP-10E: the kernel-resolved image path --------------------------------
 # TWO records, and both are required rather than optional: the RUNTIME one
 # (test/cap10e/run_cap10e_gates.sh) says what a real host at a real
@@ -2781,6 +2816,30 @@ cat > "${work}/evidence.json" <<EOF
   "react_console_levels_seen": "${react_console_levels_seen}",
   "react_console_error_position": "${react_console_error_position}",
   "cap14b_gates": "${cap14b_gates}",
+  "fetch_suite": "${fetch_suite}",
+  "fetch_corpus_digest": "${fetch_corpus_digest}",
+  "fetch_door_available": "${fetch_door_available}",
+  "schema_version_emitted": "${schema_version_emitted}",
+  "origin_match_rule": "${origin_match_rule}",
+  "allowlist_digest_declared_equals_compiled": "${allowlist_digest_declared_equals_compiled}",
+  "release_relaxation_literals": "${release_relaxation_literals}",
+  "relaxation_sweep_discriminates": "${relaxation_sweep_discriminates}",
+  "mormot_net_client_files": "${mormot_net_client_files}",
+  "tls_provider": "${tls_provider}",
+  "retries": "${retries}",
+  "redirects_followed": "${redirects_followed}",
+  "cookie_jar": "${cookie_jar}",
+  "deadline_observed_mid_transfer": "${deadline_observed_mid_transfer}",
+  "response_bound_enforced_during_read": "${response_bound_enforced_during_read}",
+  "response_bound_enforced_on_content_length": "${response_bound_enforced_on_content_length}",
+  "fetch_live_status": "${fetch_live_status}",
+  "schema1_project_gains_door": "${schema1_project_gains_door}",
+  "empty_origins_links_decorator": "${empty_origins_links_decorator}",
+  "loopback_dev_accepted": "${loopback_dev_accepted}",
+  "loopback_release_refused": "${loopback_release_refused}",
+  "malformed_origin_refused_at_load": "${malformed_origin_refused_at_load}",
+  "bundler_refuses_network": "${bundler_refuses_network}",
+  "cap15b_failures": "${cap15b_failures}",
   "github_sha": "${github_sha}",
   "github_run_id": "${github_run_id}",
   "waivers": [${waivers}]

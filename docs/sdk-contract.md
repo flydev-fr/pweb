@@ -82,7 +82,7 @@ compiler.**
 | `bin/pweb`, `bin/pwebbundle` | **ship** | the product |
 | `share/pweb/pweb-templates.zip` | **ship** | the CAP-10B0 pack `pweb create` generates from |
 | `share/pweb/src/**` | **ship** | the framework a generated project compiles against |
-| `share/pweb/sdk/typescript`, `sdk/pas2js` | **ship** | the two frontend SDKs |
+| `share/pweb/sdk/typescript`, `sdk/pas2js` | **ship** | the two frontend SDKs. CAP-15B adds `src/http.ts` to the TypeScript package and `PWebFetch` to the Pas2JS one, so `sdk_ship_table_digest` and `sdk_inventory_digest` supersede: the package grew a file. Neither addition is an HTTP client — each is one `invoke` of the runtime-owned `pweb.fetch`, and every policy it appears to carry is native |
 | `share/pweb/deps/mormot2/{src,static/<fpc-target>}` | **ship** | the pinned upstream tree, byte for byte, on every target — until the 2026-09-08 pin move Windows shipped a CAP-3U-patched copy with an `x64callmethod.obj`; `static/delphi` on Windows only |
 | `share/pweb/lib/<os>-<arch>/**` | **ship** | the webview library and, on Windows, the WebView2 loader |
 | `share/pweb/pack/**` | **ship**, Windows only | the CAP-10D1 packaging kit and its two compiled CAP-13 helpers |

@@ -1,16 +1,16 @@
 # The backlog
 
 `_bmad-output/implementation-artifacts/deferred-work.md` is append-only and
-carries **377 entries** from Phase 0 to CAP-15A. It is a
+carries **389 entries** from Phase 0 to CAP-15B. It is a
 ledger: it records what was found, in the words of the shard that found it,
 and it never edits itself. That makes it excellent evidence and a poor
 worklist — a reader who wants to know *what is still owed* has to resolve
 every supersession chain by hand, and three phase-closure artifacts answer
 that question for CAP-10 and CAP-11 only.
 
-This document is the worklist. Every one of the 377 entries is disposed of
-exactly once, with one verdict, an owner and a reason. **Fifty-seven are open,**
-**and those fifty-seven are listed here in full**; the other 320 are in
+This document is the worklist. Every one of the 389 entries is disposed of
+exactly once, with one verdict, an owner and a reason. **Fifty-four are open,**
+**and those fifty-four are listed here in full**; the other 335 are in
 `test/backlog/dispositions.tsv`, which is the table this document is written
 from and the one the gate reads.
 
@@ -18,9 +18,9 @@ from and the one the gate reads.
 |---|---:|---|
 | `FIX_NOW` | 4 | closed by this triage, one commit each, cited below |
 | `UPSTREAM` | 3 | the defect belongs to a third-party project and a report is written; two of the three also carry a local workaround, and `RP-2` deliberately does not |
-| `ROADMAP` | 50 | real work, deferred, with a named owner |
-| `ACCEPTED` | 110 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
-| `CLOSED` | 210 | the thing the entry describes is done |
+| `ROADMAP` | 47 | real work, deferred, with a named owner |
+| `ACCEPTED` | 111 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
+| `CLOSED` | 224 | the thing the entry describes is done |
 
 `ACCEPTED` is not a synonym for ignored. It is the verdict for an entry whose
 honest answer is a measurement — that WebView2 raises no navigation event for a
@@ -449,10 +449,7 @@ Fifty-seven rows: the four `FIX_NOW` items this triage closed, the three
 | `14B-5` | ROADMAP | the shard that relaxes `worker-src` | a Worker's console is not covered by the CAP-14B development console surface, and today that costs nothing: `PWEB_NATIVE_CSP` carries `worker-src 'none'`, so a bundle cannot start a Worker and there is no second realm for `console` to exist in. The shim wraps the top frame's console and listens on `window`. The day that CSP term is relaxed, the console goes quiet for exactly the code most likely to need it, in exactly the silent way CAP-14B exists to end |
 | `15A-2` | ROADMAP | a door-B reopening shard | the macOS/WKWebView rows of the CAP-15A matrix are owed only if door B reopens, and they are not a baseline gap: CAP-8B measured on all four targets that `connect-src 'self'` refuses every external connection and every `wss://` (ratification R-B), which is what the shipped product rests on. What the missing rows would add is WIDENED-mode behaviour on WKWebView — how that engine treats a named origin, its cookies and its `no-cors` shapes — and only door B needs it. The Darwin branch of `test/cap15a/run_cap15a.sh` is written and mirrors the proven CAP-8B recipe line for line, so one run per macOS architecture clears the row |
 | `15A-3` | ROADMAP | a door-B reopening shard | `wss://` under a WIDENED `connect-src` is unmeasured on all four targets. The baseline is not in question — CAP-8B recorded `'self'` refusing every `wss://` everywhere and CAP-15A reproduced the refusal at the wire on two engines — but nobody has measured whether widening the directive also opens a WebSocket, and with which credentials. Only a door-B contract has to answer it, so it is owed together with reopening condition 1 rather than before it |
-| `15A-4` | ROADMAP | CAP-15B | mORMot re-sends a failed request by itself: one `pweb.fetch` call that timed out was measured arriving TWICE at the probe server, which turns a non-idempotent POST into two. No code review finds this — it is visible only in a server-side wire log — which is why it is a contract row rather than a note. CAP-15B's transport suppresses the retry (`AsRetry := true`, or `RequestInternal` directly) and its contract says retries are NONE |
-| `15A-5` | ROADMAP | CAP-15B | a socket timeout is not a deadline: the spike asked for 800 ms and the call returned at 1609 ms, because mORMot's timeout is per-READ and a response that dribbles resets it on every read. CAP-15B owns a wall-clock TOTAL-REQUEST deadline in the runtime — default 10 s, maximum 30 s, completing as `cancelled` and honouring the cancellation token — rather than delegating the bound to the transport |
-| `15A-6` | ROADMAP | CAP-15B | the response bound was enforced AFTER the read: a 32 MiB body was pulled whole into memory and only then refused against the 8 MiB limit, which makes the bound a memory amplifier rather than a defence. CAP-15B enforces it on `Content-Length` AND on the running total DURING the read, so a lying or absent length cannot buy an allocation nobody authorised |
-| `15A-7` | ROADMAP | CAP-15B | mORMot's convenient client entry points inherit the SYSTEM proxy, so a native door meaning to talk to one declared origin would hand its bytes to whatever a machine policy or an environment variable had configured. CAP-15B's transport passes an explicit no-proxy and never inherits one: the origin allowlist is about who receives the request, and a proxy is a receiver nobody declared |
-| `15A-8` | ROADMAP | CAP-15B | TLS on Darwin is DECIDED — an `NSURLSession` transport behind the injected seam, in the adapter layer, on the system trust store, to be measured at CAP-15B's Checkpoint 1, with bundled OpenSSL and a macOS scope-out both refused. What remains owed is the implementation itself and the Linux side: OpenSSL 3.0.13 was measured working and is a runtime dependency the product does not currently have, so it owes a `docs/third-party-licenses.md` row and a `doctor` `platform.tls` line naming the provider this target resolves |
-| `15A-10` | ROADMAP | CAP-15B | the six zero-transport source sweeps — `test/cap7l/check_cap7l_nonetwork.sh`, `test/cap7m/check_cap7m_nonetwork.sh`, `test/cap5`, `test/cap6`, `test/cap9c1` and the CAP-4 composite action — forbid `mormot.net.(server|client|http)` and `socket` across a named file list, and a native outbound door makes that claim false as written. They are RE-SCOPED, never deleted: "no listening socket, no server, no second RPC path, and the only outbound client in the image is `pweb.rpc.fetch.mormot`, reachable only through `network.fetch`". The runtime half — this process owns no listening TCP socket — is unchanged and was always the load-bearing half |
 | `15A-12` | ROADMAP | CAP-15B | `test/cap15a` is kept until CAP-15B closes and is NEVER a CI step, because a run compiles a binary whose `connect-src` has been widened by one generated token and a gate that compiles a widened CSP is a gate that can normalise one. It is committed so the measurement can be re-run and audited rather than believed. At closure it reduces to `probe_server.js` and the `pweb.fetch` rows of the driver, as the seed of a headless transport test with no socket at all |
+| `15B-10` | ROADMAP | the CAP-15B hosted run | the §10 Darwin measurement could not be taken at Checkpoint 1: the development host is Windows with WSL and the only macOS this project reaches is the hosted runner. The seven rows CAP-15A §10 requires were resolved against documented public API at the checkpoint and are MEASURED by `test/cap15b/darwinprobe.pas` on the shard's hosted run, on a spawned worker thread against the local witness. §10 forbids falling through to bundling OpenSSL or scoping macOS out if a row disappoints, and nothing in the API reading suggests one will |
+| `15B-11` | ROADMAP | a shard with a PAC-configured macOS host | 15A-7 stays open on Darwin, with the wording rider 3 fixed. `connectionProxyDictionary` is set to an empty dictionary and the probe records that each exchange's configuration really carried one — but the case the row is ABOUT is a PAC-configured machine, and no hosted runner has one. What is measured is that nothing was inherited from a machine with nothing to inherit, so the row reads `no system proxy configured on the runner` and never `no proxy inherited` |
+| `15B-12` | ROADMAP | a follow-up shard on the CAP-10B/C generated-project legs | the end-to-end row is not mechanised in CAP-15B's own leg: a generated React project and a generated Pas2JS project, created by the real CLI at schema 2, built and run, calling a real origin through the SDK. Every CLAIM it would make is covered by a narrower four-target proof — the descriptor reader through the production functions, the compiled unit set of two real images, the allowlist digest recomputed from the compiled array, the templates' fenced regions cross-checked against the witness binary, and the whole request contract through the injected transport. What is NOT covered is the COMPOSITION: that a scaffolded project's `program.lpr` and `app.services.pas` compile together with the region on, inside a real `pweb build` |

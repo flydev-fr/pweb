@@ -35,6 +35,13 @@ uses
   mormot.core.interfaces,
   pweb.rpc.intf,
   pweb.rpc.support,
+  {$ifdef PWEB_NET}
+  // CAP-15B: the door's method and capability names, spelled once for the
+  // whole product. This unit is compiled with PWEB_NET only when this
+  // project's pweb.json declared a non-empty `network.origins`, so a
+  // project with `[]` never names them and never grants them
+  pweb.rpc.fetch,
+  {$endif PWEB_NET}
   pweb.capabilities.policy;
 
 const
@@ -138,10 +145,24 @@ begin
     // the explicit ceiling of this application. It is a NATIVE trust
     // anchor: app.pwb can never enlarge it, and an empty set would mean no
     // rights at all rather than unrestricted ones
+    {$ifdef PWEB_NET}
+    // CAP-15B: `network.fetch` enters the ceiling IFF this project declared
+    // outbound origins. It is granted to the one window and its principal
+    // beside the sample capability, and mapped to `pweb.fetch` below - so
+    // the door is authorized in exactly the same visible way any other
+    // method is, in this file, by name
+    b.SetAppMaximum([APP_CAP_CALCULATOR_ADD, PWEB_CAP_NETWORK_FETCH]);
+    b.SetWindowCapabilities('main',
+      [APP_CAP_CALCULATOR_ADD, PWEB_CAP_NETWORK_FETCH]);
+    b.SetPrincipalCapabilities('window:main',
+      [APP_CAP_CALCULATOR_ADD, PWEB_CAP_NETWORK_FETCH]);
+    b.MapMethod(PWEB_METHOD_FETCH, [PWEB_CAP_NETWORK_FETCH]);
+    {$else}
     b.SetAppMaximum([APP_CAP_CALCULATOR_ADD]);
     // the one window and its principal
     b.SetWindowCapabilities('main', [APP_CAP_CALCULATOR_ADD]);
     b.SetPrincipalCapabilities('window:main', [APP_CAP_CALCULATOR_ADD]);
+    {$endif PWEB_NET}
     // the one application method. Add yours the same way: a method that is
     // not named here is denied before the bridge sees it
     b.MapMethod(APP_METHOD_ADD, [APP_CAP_CALCULATOR_ADD]);

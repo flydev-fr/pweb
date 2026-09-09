@@ -967,6 +967,12 @@ jobs:
         with:
           target: ${{ inputs.target }}
 
+      - name: CAP-15B native fetch door gates (S1, L1, D1, P1, B1-B5) + evidence
+        timeout-minutes: 30
+        uses: ./.github/actions/cap-15b-native-fetch-door-gates-s1-l1-d1-p1-b1-b5-evidence
+        with:
+          target: ${{ inputs.target }}
+
       - name: Backlog disposition - every ledger entry has a verdict
         if: ${{ inputs.target == 'windows' }}
         timeout-minutes: 5

@@ -36,6 +36,21 @@
 # Writes: build/cap9c1/quickjsrelease-windows-x86_64.json (PASS|FAIL),
 #         build/cap9c1/quickjs-release-corpus.txt (the digest source),
 #         build/quickjs-release/ (the reusable release payload) + logs.
+#
+# CAP-15B RE-SCOPES THIS CLAIM, and does not delete it. A native outbound
+# door now exists - `pweb.fetch`, behind the `network.fetch` capability and
+# an origin allowlist compiled into each application - so "no HTTP client
+# anywhere" stopped being true as written. What is asserted from CAP-15B
+# onward is the half that was always load-bearing, stated exactly:
+#
+#   no listening socket, no server, no second RPC path, and the only
+#   outbound client in the image is `pweb.rpc.fetch.mormot`, reachable only
+#   through `network.fetch`.
+#
+# The file list below is unchanged and none of these files is a fetch unit,
+# so the sweep is as strict about them as it ever was. The runtime half -
+# this process owns no listening TCP socket - is untouched.
+
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path

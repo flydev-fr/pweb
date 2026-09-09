@@ -2,7 +2,7 @@
   "name": "@pweb/runtime",
   "version": "0.1.0",
   "private": true,
-  "description": "PWeb TypeScript frontend SDK: typed invoke/handshake over the native PWeb invocation primitive. No HTTP, no fallback transport.",
+  "description": "PWeb TypeScript frontend SDK: typed invoke/handshake/fetch over the native PWeb invocation primitive. No HTTP client, no fallback transport.",
   "license": "MIT",
   "type": "module",
   "main": "./dist/src/index.js",

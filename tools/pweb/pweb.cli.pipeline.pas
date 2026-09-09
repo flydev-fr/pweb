@@ -340,7 +340,7 @@ var
   res: TPWebCliPipeResult;
   ctx: TPipeContext;
   excludes, prefixes, tokens: TRawUtf8DynArray;
-  outputDir, targetDir, unitDir, binDir, distDir, assetsDir: RawUtf8;
+  outputDir, targetDir, unitDir, binDir, genDir, distDir, assetsDir: RawUtf8;
   appPwb, exePath: RawUtf8;
   sdkCause, sdkDetail: RawUtf8;
   frontendRoot, sdkStageParent, found: RawUtf8;
@@ -533,6 +533,24 @@ begin
   begin
     Refuse(pskOpen, ppcProject,
       PWebCliProjectRefusalText(Project.Refusal), Project.Detail);
+    exit;
+  end;
+  // CAP-15B: A RELEASE BUILD REFUSES THE DEVELOPMENT LOOPBACK ORIGIN, BY
+  // NAME, and does NOT silently drop it. The descriptor accepts it - a
+  // developer really does run their API on loopback, and `pweb dev`
+  // compiles it in - but a release image that carried a plaintext origin
+  // would be one whose bytes anyone on the path can read. Dropping it
+  // instead would be a behaviour difference between `pweb dev` and `pweb
+  // build` with no message anywhere, which is the exact failure class
+  // CAP-14A and CAP-14B exist to end. `pweb doctor` names the same origin
+  // long before a build refuses on it.
+  //
+  // Refused HERE, in the open stage, before the tree is digested: nothing
+  // has been written and no child has been spawned.
+  if Length(Project.NetworkLoopback) > 0 then
+  begin
+    Refuse(pskOpen, ppcProject, 'network_origin_loopback_release',
+      Project.NetworkLoopback[0]);
     exit;
   end;
   // CAP-10D1: the Windows project-root ceiling, refused HERE - before the
@@ -794,6 +812,21 @@ begin
       PWebCliStageRefusalText(stageRefusal));
     exit;
   end;
+  // CAP-15B: the declared allowlist becomes a Pascal literal HERE, before
+  // the compiler runs and under <output>/ where the pipeline may write. The
+  // descriptor is read at build time and never at runtime, so app.pwb can
+  // change nothing about it. A project with no origins writes no include -
+  // the compile does not define the network region and does not reach for
+  // one - which is why the empty-set vector is byte-identical to the one
+  // this pipeline has always produced
+  if Length(Project.NetworkOrigins) > 0 then
+    if not PWebCliPipeWriteNetworkInclude(targetDir,
+         PWebCliNetworkInclude(Project), genDir, stageRefusal) then
+    begin
+      Refuse(pskCompile, ppcInternal, 'compile_network_include',
+        PWebCliStageRefusalText(stageRefusal));
+      exit;
+    end;
   cmd := PWebCliFpcCommand(res.Toolset.Fpc.Path, Project, res.Sdk,
     Os, Arch, unitDir, binDir, Project.NativeProgramPath.Full);
   if not RunStage(pskCompile, cmd, PWEB_CLI_PIPE_FPC_MS) then

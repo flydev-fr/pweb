@@ -1221,6 +1221,25 @@ if (-not (Test-Path $c14bFile)) {
 }
 $c14b = Get-Content $c14bFile -Raw | ConvertFrom-Json
 
+# --- CAP-15B: the native outbound network door ------------------------------
+# build/cap15b/cli-<target>.json is ONE record: the whole §4/§5 decision driven
+# through the INJECTED transport with the transport entry count asserted on
+# every refusal, the SHIPPED transport measured against a real local server
+# whose JSONL log is the witness, the schema-2 descriptor reader, and four
+# claims that are properties of a BUILT IMAGE - the CSP did not move, the
+# compiled allowlist digest equals the declared one, the release image carries
+# no relaxation (with the same sweep REQUIRED to fire on a dev image that
+# carries one by design), and a project that declared no origins links neither
+# the decorator nor mormot.net.client.
+#
+# This block exists in BOTH emitters, for the reason the CAP-10E block spells
+# out: rows added to one and not the other cost a whole hosted run.
+$c15bFile = Join-Path $repoRoot 'build/cap15b/cli-windows-x86_64.json'
+if (-not (Test-Path $c15bFile)) {
+    throw '[CAP-7F] cap15b/cli-windows-x86_64.json missing -- the CAP-15B gates have not run in this workspace'
+}
+$c15b = Get-Content $c15bFile -Raw | ConvertFrom-Json
+
 # --- CAP-10E: the kernel-resolved image path --------------------------------
 # TWO records, and both are required rather than optional: the RUNTIME one
 # (test/cap10e/run_cap10e_gates.ps1) says what a real host at a real
@@ -2196,6 +2215,30 @@ $evidence = [ordered]@{
     react_console_levels_seen          = "$($c14b.react_console_levels_seen)"
     react_console_error_position       = "$($c14b.react_console_error_position)"
     cap14b_gates                       = "$($c14b.cap14b_gates)"
+    fetch_suite                        = "$($c15b.fetch_suite)"
+    fetch_corpus_digest                = "$($c15b.fetch_corpus_digest)"
+    fetch_door_available               = "$($c15b.fetch_door_available)"
+    schema_version_emitted             = "$($c15b.schema_version_emitted)"
+    origin_match_rule                  = "$($c15b.origin_match_rule)"
+    allowlist_digest_declared_equals_compiled = "$($c15b.allowlist_digest_declared_equals_compiled)"
+    release_relaxation_literals        = "$($c15b.release_relaxation_literals)"
+    relaxation_sweep_discriminates     = "$($c15b.relaxation_sweep_discriminates)"
+    mormot_net_client_files            = "$($c15b.mormot_net_client_files)"
+    tls_provider                       = "$($c15b.tls_provider)"
+    retries                            = "$($c15b.retries)"
+    redirects_followed                 = "$($c15b.redirects_followed)"
+    cookie_jar                         = "$($c15b.cookie_jar)"
+    deadline_observed_mid_transfer     = "$($c15b.deadline_observed_mid_transfer)"
+    response_bound_enforced_during_read = "$($c15b.response_bound_enforced_during_read)"
+    response_bound_enforced_on_content_length = "$($c15b.response_bound_enforced_on_content_length)"
+    fetch_live_status                  = "$($c15b.fetch_live_status)"
+    schema1_project_gains_door         = "$($c15b.schema1_project_gains_door)"
+    empty_origins_links_decorator      = "$($c15b.empty_origins_links_decorator)"
+    loopback_dev_accepted              = "$($c15b.loopback_dev_accepted)"
+    loopback_release_refused           = "$($c15b.loopback_release_refused)"
+    malformed_origin_refused_at_load   = "$($c15b.malformed_origin_refused_at_load)"
+    bundler_refuses_network            = "$($c15b.bundler_refuses_network)"
+    cap15b_failures                    = "$($c15b.cap15b_failures)"
     github_sha                      = $sha
     github_run_id                   = "$runId"
     waivers                         = @(

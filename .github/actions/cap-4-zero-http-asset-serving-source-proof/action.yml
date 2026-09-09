@@ -1,6 +1,19 @@
 # Source-level proof that CAP-4 serves assets with no HTTP, localhost,
 # socket, or file:// transport anywhere in its units, tests, example,
 # or frontend fixture.
+#
+# CAP-15B RE-SCOPES THIS CLAIM, and does not delete it. A native outbound
+# door now exists - `pweb.fetch`, behind the `network.fetch` capability and
+# an origin allowlist compiled into each application - so "no HTTP client
+# anywhere" stopped being true as written. What is asserted from CAP-15B
+# onward is the half that was always load-bearing, stated exactly:
+#
+#   no listening socket, no server, no second RPC path, and the only
+#   outbound client in the image is `pweb.rpc.fetch.mormot`, reachable only
+#   through `network.fetch`.
+#
+# The file list below is unchanged and none of these files is a fetch unit,
+# so the sweep is as strict about them as it ever was.
 
 name: 'CAP-4 zero-HTTP asset-serving source proof'
 description: 'CAP-11A: the body of the "CAP-4 zero-HTTP asset-serving source proof" step of the one platform-leg sequence.'

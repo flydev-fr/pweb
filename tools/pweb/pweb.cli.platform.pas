@@ -92,6 +92,23 @@ type
     Expected: RawUtf8;
   end;
 
+  /// CAP-15B: what this target resolves as the TLS provider of the native
+  /// outbound door
+  // - `schannel` on Windows and `nsurlsession` on macOS are constants of the
+  // platform and need no probe; on Linux the provider is the SYSTEM OpenSSL,
+  // reached through mORMot's binding, so Present says whether libssl.so.3
+  // could be loaded at all and Version reports what it answered
+  // - measuring it is a dlopen and nothing else: `pweb doctor` still opens
+  // no socket, resolves no name and writes no byte
+  TPWebCliTlsFact = record
+    /// the provider family, lowercase: schannel | openssl | nsurlsession
+    Provider: RawUtf8;
+    /// True when the provider is present and usable on THIS machine
+    Present: Boolean;
+    /// the measured version, for a provider that has one ('' otherwise)
+    Version: RawUtf8;
+  end;
+
 /// 'windows' | 'linux' | 'macos'
 function PWebCliHostOs: TPWebCliOs;
 function PWebCliHostOsText: RawUtf8;
@@ -328,6 +345,9 @@ function PWebCliFindExecutable(const Dir, Tool: RawUtf8;
 /// the host WebView engine, measured through the ratified detector of each
 // platform - never reimplemented here
 function PWebCliEngine: TPWebCliEngineFact;
+
+/// CAP-15B: the TLS provider of THIS host, measured without a socket
+function PWebCliTls: TPWebCliTlsFact;
 
 
 { ---------------------------------------------------------------------------
@@ -1257,6 +1277,16 @@ begin
     // present but below the CAP-4W loader minimum, or unparseable: a
     // distinct cause from absent, and it must not read as the same row
     Result.Category := 'version_unusable';
+end;
+
+function PWebCliTls: TPWebCliTlsFact;
+begin
+  Result := Default(TPWebCliTlsFact);
+  // SChannel is inside mORMot and inside the operating system: the shipped
+  // transport names no unit for it and adds no dependency, so there is
+  // nothing here that could be missing
+  Result.Provider := 'schannel';
+  Result.Present := True;
 end;
 
 { ---------------------------------------------------------------------------
@@ -2516,6 +2546,69 @@ begin
       UnloadLibrary(hWebkit);
     if hGtk <> NilHandle then
       UnloadLibrary(hGtk);
+  end;
+  {$endif DARWIN}
+end;
+
+{$ifndef DARWIN}
+const
+  // the two sonames mORMot's own binding loads on Linux (LIB_SSL3 /
+  // LIB_CRYPTO3 in mormot.lib.openssl11), spelled here so that `doctor`
+  // asks the LOADER the same question the shipped transport will ask it -
+  // and so that the CLI does not have to link mormot.lib.openssl11, which
+  // would drag mormot.net.sock into a tool that opens no socket at all
+  SO_LIBSSL3 = 'libssl.so.3';
+  SO_LIBCRYPTO3 = 'libcrypto.so.3';
+  // `const char *OpenSSL_version(int type)`; type 0 is OPENSSL_VERSION,
+  // the free text `OpenSSL 3.0.13 30 Jan 2024`
+  OPENSSL_VERSION_TYPE = 0;
+
+type
+  TOpenSslVersionFn = function(AType: Integer): PAnsiChar; cdecl;
+{$endif DARWIN}
+
+function PWebCliTls: TPWebCliTlsFact;
+{$ifndef DARWIN}
+var
+  hSsl, hCrypto: TLibHandle;
+  fn: TOpenSslVersionFn;
+  text: PAnsiChar;
+{$endif DARWIN}
+begin
+  Result := Default(TPWebCliTlsFact);
+  {$ifdef DARWIN}
+  // NSURLSession on the SYSTEM trust store - the ratified CAP-15A §10
+  // answer, and a constant of the platform rather than a probe
+  Result.Provider := 'nsurlsession';
+  Result.Present := True;
+  {$else}
+  // Linux reaches TLS only through the SYSTEM OpenSSL. The loader's own
+  // question, asked the loader's own way - exactly as the WebKitGTK row
+  // above asks it. Loaded read-only and released immediately: nothing is
+  // installed, nothing is left behind, and no socket is opened
+  Result.Provider := 'openssl';
+  hSsl := NilHandle;
+  hCrypto := LoadLibrary(SO_LIBCRYPTO3);
+  try
+    if hCrypto = NilHandle then
+      exit;
+    // BOTH are required, because the transport needs both: a machine with
+    // libcrypto and no libssl resolves no TLS at all
+    hSsl := LoadLibrary(SO_LIBSSL3);
+    if hSsl = NilHandle then
+      exit;
+    Result.Present := True;
+    fn := TOpenSslVersionFn(GetProcedureAddress(hCrypto, 'OpenSSL_version'));
+    if not Assigned(fn) then
+      exit;
+    text := fn(OPENSSL_VERSION_TYPE);
+    if text <> nil then
+      Result.Version := RawUtf8(text);
+  finally
+    if hSsl <> NilHandle then
+      UnloadLibrary(hSsl);
+    if hCrypto <> NilHandle then
+      UnloadLibrary(hCrypto);
   end;
   {$endif DARWIN}
 end;

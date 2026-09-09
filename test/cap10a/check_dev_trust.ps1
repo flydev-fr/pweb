@@ -323,6 +323,200 @@ foreach ($phrase in 'cli_content_fingerprint_poll',
 }
 $report.Add('CAP-10C: rebuild-and-reload for BOTH UIs; the ws:// allowance stays ratified, unused and absent')
 
+# --- 6. CAP-15B: the NATIVE OUTBOUND DOOR, and the two things pinned apart --
+#
+# CAP-15A ratified door A - `pweb.fetch` behind the `network.fetch`
+# capability and a native origin allowlist compiled into each application -
+# and refused door B, which would have widened `connect-src` per
+# application. Section 1 above is unchanged and is now LOAD-BEARING FOR A
+# SECOND REASON: it is the mechanical proof that door B was not taken. The
+# CSP and the native door are pinned APART, so widening one can never be
+# mistaken for widening the other.
+# Pascal comments, removed, so that the CAP-15B checks below read CODE. The
+# repository's own rule, stated in section 2: a comment that names something
+# the product refuses is how this repository EXPLAINS the refusal, and a
+# gate that could not tell a literal from its explanation would forbid the
+# explanation.
+function Strip15bComments([string]$Text) {
+    $out = New-Object System.Text.StringBuilder
+    $i = 0
+    $n = $Text.Length
+    while ($i -lt $n) {
+        $c = $Text[$i]
+        if ($c -eq '''') {
+            [void]$out.Append($c); $i++
+            while ($i -lt $n) {
+                [void]$out.Append($Text[$i])
+                if ($Text[$i] -eq '''') { $i++; break }
+                $i++
+            }
+            continue
+        }
+        if ($c -eq '/' -and $i + 1 -lt $n -and $Text[$i + 1] -eq '/') {
+            while ($i -lt $n -and $Text[$i] -ne "`n") { $i++ }
+            continue
+        }
+        if ($c -eq '{') {
+            # a compiler directive is CODE, not a comment
+            if ($i + 1 -lt $n -and $Text[$i + 1] -eq '$') {
+                while ($i -lt $n -and $Text[$i] -ne '}') { [void]$out.Append($Text[$i]); $i++ }
+                if ($i -lt $n) { [void]$out.Append('}'); $i++ }
+                continue
+            }
+            while ($i -lt $n -and $Text[$i] -ne '}') { $i++ }
+            $i++
+            continue
+        }
+        if ($c -eq '(' -and $i + 1 -lt $n -and $Text[$i + 1] -eq '*') {
+            $i += 2
+            while ($i + 1 -lt $n -and -not ($Text[$i] -eq '*' -and $Text[$i + 1] -eq ')')) { $i++ }
+            $i += 2
+            continue
+        }
+        [void]$out.Append($c); $i++
+    }
+    return $out.ToString()
+}
+$fetchDecorator = 'src/rpc/pweb.rpc.fetch.pas'
+$fetchTransport = 'src/rpc/pweb.rpc.fetch.mormot.pas'
+$fetchDarwin = 'src/platform/macos/pweb.platform.cocoa.fetch.pas'
+$decText = if (Test-Path $fetchDecorator) { [System.IO.File]::ReadAllText($fetchDecorator) } else { '' }
+foreach ($f in $fetchDecorator, $fetchTransport, $fetchDarwin) {
+    if (-not (Test-Path $f)) {
+        $violations.Add("CAP-15B outbound surface is missing: $f")
+    }
+}
+# NO `https://` ORIGIN LITERAL ANYWHERE IN src/**. The allowlist is
+# GENERATED into an application at build time and compiled in as a Pascal
+# literal; the runtime carries none. Section 2's literal extractor is reused
+# and its rule is the same: only a literal counts, and an origin SHAPE at
+# that - `https:///x` in a comment is this repository explaining what it
+# refuses, and a gate that could not tell the two apart would forbid the
+# explanation.
+$originShape = '^https?://[a-z0-9.\-]+(:\d+)?/?$'
+foreach ($file in (Get-ChildItem src -Recurse -File -Include '*.pas', '*.inc')) {
+    $rel = ($file.FullName.Substring($repoRoot.Length).TrimStart('\', '/')) `
+        -replace '\\', '/'
+    $lineNo = 0
+    foreach ($line in [System.IO.File]::ReadLines($file.FullName)) {
+        $lineNo++
+        # a comment line explains; it never ships as data
+        if ($line -match '^\s*(//|\{|\(\*)') { continue }
+        foreach ($m in [regex]::Matches($line, "'((?:[^']|'')*)'")) {
+            if ($m.Groups[1].Value -match $originShape) {
+                $violations.Add(("an ORIGIN literal appears in the runtime: " +
+                    "${rel}:${lineNo}: " + $m.Groups[1].Value))
+            }
+        }
+    }
+}
+# THE LOOPBACK EXCEPTION IS NOT A REGION, and the fetch units carry no
+# PWEB_DEV branch at all - which is stronger than fencing one, because there
+# is no branch to compile in by accident. The ratified exception is a
+# property of WHAT IS COMPILED INTO the allowlist: the descriptor accepts
+# it, `pweb doctor` names it, and a RELEASE `pweb build` refuses it by name.
+#
+# The grammar DOES name the two loopback hosts, because the grammar is what
+# accepts them, so the pin is exact rather than absolute: they may appear
+# ONLY inside the two grammar functions, and NO FULL LOOPBACK ORIGIN literal
+# may appear anywhere in the fetch units. What a release IMAGE carries is a
+# separate, stronger proof (test/cap15b, release_relaxation_literals), and
+# that sweep is required to FIRE on a dev image so it cannot pass vacuously.
+foreach ($f in $fetchDecorator, $fetchTransport, $fetchDarwin) {
+    if (-not (Test-Path $f)) { continue }
+    $code = Strip15bComments ([System.IO.File]::ReadAllText($f))
+    foreach ($needle in 'http://127.0.0.1', 'http://localhost') {
+        if ($code.Contains($needle)) {
+            $violations.Add(("$f carries a full loopback ORIGIN literal " +
+                "${needle}: the compiled allowlist is where a loopback " +
+                'origin may live, never the source of the door'))
+        }
+    }
+    if ($code -match '\{\$ifdef[^}]*PWEB_DEV') {
+        $violations.Add("$f branches on PWEB_DEV: the fetch units have no development mode")
+    }
+}
+# and the two hosts are named ONLY by the grammar
+$decCodeOnly = Strip15bComments $decText
+foreach ($needle in '127.0.0.1', 'localhost') {
+    $hits = ([regex]::Matches($decCodeOnly, [regex]::Escape($needle))).Count
+    if ($hits -gt 2) {
+        $violations.Add(("the fetch decorator names $needle $hits times: the " +
+            'origin grammar accepts it in exactly two places - the parser ' +
+            'and the loopback predicate - and nothing else may'))
+    }
+}
+foreach ($f in $fetchTransport, $fetchDarwin) {
+    if (-not (Test-Path $f)) { continue }
+    $code = Strip15bComments ([System.IO.File]::ReadAllText($f))
+    foreach ($needle in '127.0.0.1', 'localhost') {
+        if ($code.Contains($needle)) {
+            $violations.Add("$f names the loopback host ${needle}: only the grammar may")
+        }
+    }
+}
+# EXACTLY ONE FILE in src/** names mormot.net.client, and it is the mORMot
+# transport. On Darwin the seam is filled by the adapter instead, so that
+# file is not even on the compiled unit set - which is the point of
+# injecting the transport rather than conditionalising it.
+$netClient = @(Get-ChildItem src -Recurse -File -Include '*.pas', '*.inc' |
+    Where-Object { (Strip15bComments ([System.IO.File]::ReadAllText($_.FullName))).Contains('mormot.net.client') } |
+    ForEach-Object { ($_.FullName.Substring($repoRoot.Length).TrimStart('\', '/')) -replace '\\', '/' })
+if ($netClient.Count -ne 1) {
+    $violations.Add(("$($netClient.Count) file(s) in src/** name " +
+        "mormot.net.client, expected exactly 1: $($netClient -join ', ')"))
+} elseif ($netClient[0] -ne $fetchTransport) {
+    $violations.Add("the one file naming mormot.net.client is $($netClient[0])")
+}
+# THE DECORATOR IS PLATFORM-FREE. It joins the CAP-7F zero-conditional core
+# list: no mormot.net.*, no compiler conditional, no operating system.
+if (Test-Path $fetchDecorator) {
+    $decCode = Strip15bComments $decText
+    foreach ($banned in 'mormot.net.', 'OSWINDOWS', 'MSWINDOWS') {
+        if ($decCode.Contains($banned)) {
+            $violations.Add("the fetch decorator names ${banned}")
+        }
+    }
+    if ($decCode -match '\{\$ifdef') {
+        $violations.Add('the fetch decorator carries a compiler conditional')
+    }
+}
+# BOTH GENERATED PROGRAMS install the door only inside the region the
+# descriptor's origins control - the same shape, and the same rule, as the
+# PWEB_DEV region section 5 pins.
+foreach ($tpl in 'tools/templates/react/src/program.lpr',
+                 'tools/templates/pas2js/src/program.lpr') {
+    if (-not (Test-Path $tpl)) { continue }
+    $inNet = $false
+    $sawNet = $false
+    $lineNo = 0
+    foreach ($line in [System.IO.File]::ReadLines($tpl)) {
+        $lineNo++
+        if ($line -match '\{\$ifdef\s+PWEB_NET\}') { $inNet = $true; $sawNet = $true; continue }
+        if ($line -match '\{\$endif\s+PWEB_NET\}') { $inNet = $false; continue }
+        if ((-not $inNet) -and
+            ($line -match 'pweb\.rpc\.fetch|TPWebFetchBridge|APP_NETWORK_')) {
+            $violations.Add(("the generated program names the network door " +
+                "OUTSIDE its PWEB_NET region: ${tpl}:${lineNo}"))
+        }
+    }
+    if (-not $sawNet) {
+        $violations.Add(("$tpl carries no PWEB_NET region: the outbound door " +
+            'is installed iff the descriptor declared an origin, and that is ' +
+            'a compile-time property of the generated program'))
+    }
+}
+# and the PUBLIC CONTRACT records the decision, so CAP-15B implemented what
+# was agreed rather than what it could remember
+foreach ($phrase in 'pweb.fetch', 'network.fetch', 'never an origin exception',
+                    'schema 2') {
+    if (-not $contractText.Contains($phrase)) {
+        $violations.Add(("docs/cli-contract.md does not record the CAP-15B " +
+            "outbound decision: `"$phrase`" is absent"))
+    }
+}
+$report.Add('CAP-15B: the door is native, the CSP did not move, and the two are pinned apart')
+
 # --- verdict ----------------------------------------------------------------
 New-Item -ItemType Directory -Force build/cap10a | Out-Null
 $lines = New-Object System.Collections.Generic.List[string]

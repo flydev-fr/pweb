@@ -8,6 +8,21 @@
 # never silently escape the sweep. Committed sources are swept; the
 # bundled React framework internals are third-party browser code and
 # PWeb RPC never travels through them.
+#
+# CAP-15B RE-SCOPES THIS CLAIM, and does not delete it. A native outbound
+# door now exists - `pweb.fetch`, behind the `network.fetch` capability and
+# an origin allowlist compiled into each application - so "no HTTP client
+# anywhere" stopped being true as written. What is asserted from CAP-15B
+# onward is the half that was always load-bearing, stated exactly:
+#
+#   no listening socket, no server, no second RPC path, and the only
+#   outbound client in the image is `pweb.rpc.fetch.mormot`, reachable only
+#   through `network.fetch`.
+#
+# The file list below is unchanged and none of these files is a fetch unit,
+# so the sweep is as strict about them as it ever was. The runtime half -
+# this process owns no listening TCP socket - is untouched.
+
 $ErrorActionPreference = 'Stop'
 
 $sdkFiles = @(
@@ -21,7 +36,13 @@ $frontendFiles = @(
     'examples/04-react/frontend/build.mjs',
     'examples/05-pas2js/frontend/build.ps1'
 )
-$network = 'fetch\s*\(|XMLHttpRequest|WebSocket|EventSource|' +
+# `fetch(` means the BROWSER's fetch, so the match is anchored on a
+# non-identifier byte before it. Without that, CAP-15B's `httpFetch(` and
+# `PWebFetch(` - each of which is ONE `invoke` of the runtime-owned
+# `pweb.fetch` and opens nothing - would be refused for the way they are
+# spelled. `window.fetch(` and `globalThis.fetch(` are still caught, because
+# a dot is not an identifier byte.
+$network = '(?<![A-Za-z0-9_])fetch\s*\(|XMLHttpRequest|WebSocket|EventSource|' +
     'sendBeacon|localhost|127\.0\.0\.1|http://|https://|file://|' +
     'TRestHttpServer|THttpServer|mormot\.net\.(server|client|http)'
 

@@ -1,0 +1,36 @@
+name: 'CAP-15B native fetch door gates (S1, L1, D1, P1, B1-B5) + evidence'
+description: 'CAP-11A: the body of the "CAP-15B native fetch door gates (S1, L1, D1, P1, B1-B5) + evidence" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: all targets
+      shell: bash
+      run: |
+        # BOTH SCRIPTS RUN, AND THE STEP FAILS AFTERWARDS - the CAP-14A rule,
+        # kept for the CAP-14A reason. The contract cross-checks come first
+        # because they are checkout-only and cost nothing, but an `&&`
+        # between them would mean a contracts failure aborts the step before
+        # the gates write build/cap15b/cli-<target>.json, and the aggregate
+        # could then only report "artifact absent" for a leg whose real
+        # cause was one named field.
+        #
+        # NO DISPLAY IS NEEDED. Every claim here is a property of a binary,
+        # of the descriptor reader, or of an exchange with a LOCAL server -
+        # never of a window - which is why this step runs identically on all
+        # four targets and needs no xvfb.
+        set +e
+        pwsh -NoProfile -File test/cap15b/check_cap15b_contracts.ps1 2>&1 |
+          tee build/cap15b-contracts.log
+        c=${PIPESTATUS[0]}
+        pwsh -NoProfile -File test/cap15b/build_cap15b.ps1 2>&1 |
+          tee build/cap15b-build.log
+        b=${PIPESTATUS[0]}
+        pwsh -NoProfile -File test/cap15b/run_cap15b_gates.ps1 2>&1 |
+          tee build/cap15b-gates.log
+        g=${PIPESTATUS[0]}
+        set -e
+        test "$c" -eq 0 -a "$b" -eq 0 -a "$g" -eq 0

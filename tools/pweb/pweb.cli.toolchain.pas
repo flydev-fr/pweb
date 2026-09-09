@@ -201,6 +201,27 @@ const
   // - MEASURED: Vite does NOT coalesce rapid rebuilds (five edits 50 ms
   // apart produced five sentinels), so five keystrokes would otherwise be
   // five generations. A further change inside this window restarts the wait
+  { CAP-15B: the compiler define that selects the NETWORK region of a
+    generated project - the fetch decorator in program.lpr and the
+    `network.fetch` rows in app.services. It reaches a compiler from
+    pweb.cli.native and from nowhere else, exactly as PWEB_CLI_DEV_DEFINE
+    does, and it is pushed IFF the descriptor declared a non-empty
+    `network.origins`. So "the door is installed iff origins were declared"
+    is a property of the compiled unit set rather than of a runtime test:
+    a project with `[]` does not compile pweb.rpc.fetch at all. }
+  PWEB_CLI_NETWORK_DEFINE = 'PWEB_NET';
+
+  { The generated include that carries the canonicalized allowlist and its
+    digest into the host as Pascal literals. Written beneath the compile's
+    own output directories - NEVER into the project's sources - and reached
+    through one -Fi. `app.pwb` cannot change it, which is what keeps
+    AppMaximum a native trust anchor. }
+  PWEB_CLI_NETWORK_INCLUDE = 'app.network.inc';
+
+  { The directory it is written into - a sibling of the compile's unit
+    directory, under <output>/ where the pipeline is allowed to write. }
+  PWEB_CLI_NETWORK_GEN_DIR = 'gen';
+
   PWEB_CLI_DEV_DEBOUNCE_MS = 250;
 
   /// the CEILING on that restarting wait: a file being written continuously
@@ -247,6 +268,11 @@ const
   PWEB_CLI_DEV_DIR = 'dev';
   PWEB_CLI_DEV_APP_DIR = 'app';
   PWEB_CLI_DEV_UNIT_DIR = 'units';
+  { CAP-15B: the suffix that keeps a network-enabled dev unit set apart from
+    a network-free one. A dev compile omits -B on purpose, and FPC does not
+    recompile a unit because a conditional define changed - so the two
+    define sets get two directories rather than one directory and a hope. }
+  PWEB_CLI_DEV_UNIT_NET_SUFFIX = '-net';
   PWEB_CLI_DEV_OBJ_DIR = 'obj';
   /// the ONE generation under construction; never published under this name
   PWEB_CLI_DEV_TMP_DIR = '.gen.tmp';

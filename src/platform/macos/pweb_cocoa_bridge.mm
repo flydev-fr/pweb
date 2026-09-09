@@ -1649,3 +1649,424 @@ void pweb_cocoa_stub_task_outcome(uint64_t task,
   }
   *out = stub->outcome;
 }
+
+/* ======================================================================== *
+ *  CAP-15B: THE DARWIN OUTBOUND TRANSPORT                                  *
+ *                                                                          *
+ *  See the header for what this is and what it deliberately is not. In one *
+ *  line: an asynchronous, delegate-driven NSURLSession adapted to ONE      *
+ *  bounded synchronous call on a scheduler worker thread, with no ambient  *
+ *  state of any kind and no way to relax TLS.                              *
+ *                                                                          *
+ *  THERE IS NO -URLSession:didReceiveChallenge:completionHandler: IN THIS  *
+ *  FILE, and its absence is the mechanism rather than an omission: default *
+ *  handling is full system trust evaluation, and a setting that does not   *
+ *  exist cannot be reached by a descriptor, an environment variable, an    *
+ *  argument or a line of Pascal.                                           *
+ * ======================================================================== */
+
+/* how long one wait slice is: short enough that a cancelled invocation and
+   an expired deadline are both acted on promptly, long enough that a
+   multi-second transfer costs a handful of wakeups rather than thousands */
+#define PWEB_COCOA_FETCH_SLICE_MS 50
+/* how long the driver waits for the delegate to settle AFTER it cancelled a
+   task. Bounded on purpose: a wait with no bound is how a worker thread
+   disappears, and the outcome is already decided by the time we get here */
+#define PWEB_COCOA_FETCH_SETTLE_MS 2000
+
+static uint64_t g_fetch_calls = 0;
+static uint64_t g_fetch_caught_exceptions = 0;
+
+static int64_t pweb_fetch_now_ms(void) {
+  return (int64_t)([NSDate timeIntervalSinceReferenceDate] * 1000.0);
+}
+
+@interface PWebCocoaFetchCollector : NSObject <NSURLSessionDataDelegate> {
+@public
+  NSMutableData *body;
+  NSHTTPURLResponse *response;
+  dispatch_semaphore_t done;
+  int64_t maxBytes;
+  int64_t seen;
+  int64_t peak;
+  int32_t deliveries;
+  int32_t redirectsOffered;
+  int outcome;
+}
+@end
+
+@implementation PWebCocoaFetchCollector
+
+- (id)init {
+  self = [super init];
+  if (self != nil) {
+    body = [[NSMutableData alloc] init];
+    response = nil;
+    done = dispatch_semaphore_create(0);
+    maxBytes = 0;
+    seen = 0;
+    peak = 0;
+    deliveries = 0;
+    redirectsOffered = 0;
+    outcome = PWEB_COCOA_FETCH_OK;
+  }
+  return self;
+}
+
+- (void)dealloc {
+  [body release];
+  [response release];
+  if (done != NULL) {
+    dispatch_release(done);
+  }
+  [super dealloc];
+}
+
+/* THE REDIRECT REFUSAL. Answering the completion handler with nil is the
+   documented way to make the session return the redirect response itself,
+   which is exactly what the contract wants: a 3xx comes back with its
+   Location header and the runtime never follows it, because following it
+   leaves the origin allowlist behind. */
+- (void)URLSession:(NSURLSession *)session
+                        task:(NSURLSessionTask *)task
+  willPerformHTTPRedirection:(NSHTTPURLResponse *)redirectResponse
+                  newRequest:(NSURLRequest *)request
+           completionHandler:(void (^)(NSURLRequest *))completionHandler {
+  (void)session;
+  (void)task;
+  (void)redirectResponse;
+  (void)request;
+  redirectsOffered++;
+  completionHandler(nil);
+}
+
+/* THE DECLARED-LENGTH HALF OF THE BOUND, refused before one body byte is
+   accepted. A server that lies about Content-Length is caught by the
+   running total below instead; both halves exist because either one alone
+   is a bound somebody can walk around. */
+- (void)URLSession:(NSURLSession *)session
+          dataTask:(NSURLSessionDataTask *)dataTask
+didReceiveResponse:(NSURLResponse *)incoming
+ completionHandler:(void (^)(NSURLSessionResponseDisposition))completionHandler {
+  long long expected;
+  (void)session;
+  (void)dataTask;
+  if ([incoming isKindOfClass:[NSHTTPURLResponse class]]) {
+    [response release];
+    response = (NSHTTPURLResponse *)[incoming retain];
+  }
+  expected = (long long)[incoming expectedContentLength];
+  if (expected > 0 && expected > maxBytes) {
+    seen = (int64_t)expected;
+    if (seen > peak) {
+      peak = seen;
+    }
+    outcome = PWEB_COCOA_FETCH_TOOLARGE;
+    completionHandler(NSURLSessionResponseCancel);
+    return;
+  }
+  completionHandler(NSURLSessionResponseAllow);
+}
+
+/* THE RUNNING-TOTAL HALF, enforced at the delivery that crosses the bound
+   rather than after the whole body is in memory. The peak this can reach is
+   the bound plus ONE delivery, and how large one delivery is on this
+   platform is a MEASUREMENT the shard reports rather than a claim it makes. */
+- (void)URLSession:(NSURLSession *)session
+          dataTask:(NSURLSessionDataTask *)dataTask
+    didReceiveData:(NSData *)data {
+  (void)session;
+  deliveries++;
+  seen += (int64_t)[data length];
+  if (seen > peak) {
+    peak = seen;
+  }
+  if (seen > maxBytes) {
+    outcome = PWEB_COCOA_FETCH_TOOLARGE;
+    [dataTask cancel];
+    return;
+  }
+  [body appendData:data];
+}
+
+- (void)URLSession:(NSURLSession *)session
+                task:(NSURLSessionTask *)task
+didCompleteWithError:(NSError *)error {
+  (void)session;
+  (void)task;
+  /* an outcome the driver or a delegate above already decided WINS: a task
+     cancelled because it crossed the bound reports NSURLErrorCancelled, and
+     reading that as a plain transport failure would lose the reason */
+  if (error != nil && outcome == PWEB_COCOA_FETCH_OK) {
+    if ([[error domain] isEqualToString:NSURLErrorDomain] &&
+        ([error code] == NSURLErrorTimedOut)) {
+      outcome = PWEB_COCOA_FETCH_TIMEDOUT;
+    } else {
+      outcome = PWEB_COCOA_FETCH_TRANSPORT;
+    }
+  }
+  dispatch_semaphore_signal(done);
+}
+
+@end
+
+/* the response header block, rebuilt in the CRLF shape the shared decorator
+   parses. No filtering happens here: the response allowlist - and the rule
+   that `set-cookie` is never exposed - belongs to pweb.rpc.fetch, which is
+   the same code that filters the mORMot transport's headers */
+static void *pweb_fetch_headers_block(NSHTTPURLResponse *response) {
+  NSMutableString *text = [NSMutableString string];
+  NSDictionary *fields;
+  NSEnumerator *keys;
+  id key;
+  const char *utf8;
+  size_t len;
+  void *block;
+  if (response == nil) {
+    block = pweb_cocoa_alloc(1);
+    if (block != NULL) {
+      ((char *)block)[0] = 0;
+    }
+    return block;
+  }
+  fields = [response allHeaderFields];
+  keys = [fields keyEnumerator];
+  while ((key = [keys nextObject]) != nil) {
+    id value = [fields objectForKey:key];
+    if (![key isKindOfClass:[NSString class]] ||
+        ![value isKindOfClass:[NSString class]]) {
+      continue;
+    }
+    [text appendFormat:@"%@: %@\r\n", key, value];
+  }
+  utf8 = [text UTF8String];
+  if (utf8 == NULL) {
+    utf8 = "";
+  }
+  len = strlen(utf8);
+  block = pweb_cocoa_alloc(len + 1);
+  if (block != NULL) {
+    memcpy(block, utf8, len + 1);
+  }
+  return block;
+}
+
+/* the `Name: Value` CRLF block the decorator built, applied one field at a
+   time. It has already been allowlisted and checked for control bytes, so
+   this loop splits and never validates - a second validator is a second
+   answer to one question */
+static void pweb_fetch_apply_headers(NSMutableURLRequest *request,
+                                     const char *headers) {
+  const char *p = headers;
+  if (headers == NULL) {
+    return;
+  }
+  while (*p != 0) {
+    const char *eol = strstr(p, "\r\n");
+    const char *colon;
+    size_t linelen = (eol == NULL) ? strlen(p) : (size_t)(eol - p);
+    if (linelen == 0) {
+      if (eol == NULL) {
+        break;
+      }
+      p = eol + 2;
+      continue;
+    }
+    colon = (const char *)memchr(p, ':', linelen);
+    if (colon != NULL && colon > p) {
+      size_t namelen = (size_t)(colon - p);
+      const char *v = colon + 1;
+      size_t vlen = linelen - namelen - 1;
+      NSString *name;
+      NSString *value;
+      while (vlen > 0 && *v == ' ') {
+        v++;
+        vlen--;
+      }
+      name = [[[NSString alloc] initWithBytes:p
+                                       length:namelen
+                                     encoding:NSUTF8StringEncoding] autorelease];
+      value = [[[NSString alloc] initWithBytes:v
+                                        length:vlen
+                                      encoding:NSUTF8StringEncoding] autorelease];
+      if (name != nil && value != nil) {
+        [request setValue:value forHTTPHeaderField:name];
+      }
+    }
+    if (eol == NULL) {
+      break;
+    }
+    p = eol + 2;
+  }
+}
+
+void pweb_cocoa_fetch_release(pweb_cocoa_fetch_response_t *out) {
+  if (out == NULL) {
+    return;
+  }
+  if (out->headers != NULL) {
+    pweb_cocoa_free(out->headers);
+    out->headers = NULL;
+  }
+  if (out->body != NULL) {
+    pweb_cocoa_free(out->body);
+    out->body = NULL;
+  }
+  out->body_length = 0;
+}
+
+int pweb_cocoa_fetch(const pweb_cocoa_fetch_request_t *request,
+                     pweb_cocoa_cancel_fn cancel, void *cancel_opaque,
+                     pweb_cocoa_fetch_response_t *out) {
+  int result = PWEB_COCOA_FETCH_TRANSPORT;
+  if (out == NULL) {
+    return PWEB_COCOA_FETCH_TRANSPORT;
+  }
+  memset(out, 0, sizeof(*out));
+  if (request == NULL || request->url == NULL || request->method == NULL) {
+    return PWEB_COCOA_FETCH_TRANSPORT;
+  }
+  pweb_bump(&g_fetch_calls);
+  @autoreleasepool {
+    @try {
+      NSString *urlText = [NSString stringWithUTF8String:request->url];
+      NSURL *url = (urlText == nil) ? nil : [NSURL URLWithString:urlText];
+      if (url == nil) {
+        result = PWEB_COCOA_FETCH_TRANSPORT;
+      } else {
+        NSTimeInterval seconds = (NSTimeInterval)request->deadline_ms / 1000.0;
+        NSMutableURLRequest *req = [NSMutableURLRequest
+             requestWithURL:url
+                cachePolicy:NSURLRequestReloadIgnoringLocalAndRemoteCacheData
+            timeoutInterval:seconds];
+        NSURLSessionConfiguration *cfg =
+            [NSURLSessionConfiguration ephemeralSessionConfiguration];
+        NSOperationQueue *queue = [[NSOperationQueue alloc] init];
+        PWebCocoaFetchCollector *collector =
+            [[PWebCocoaFetchCollector alloc] init];
+        NSURLSession *session;
+        NSURLSessionDataTask *task;
+        int64_t startMs = pweb_fetch_now_ms();
+        int64_t deadlineAt = startMs + request->deadline_ms;
+        int settled = 0;
+
+        [req setHTTPMethod:[NSString stringWithUTF8String:request->method]];
+        /* THE JAR, OFF AT THE REQUEST TOO. Belt and braces on purpose: the
+           configuration below removes the storage, and this removes the
+           request's own willingness to use one. */
+        [req setHTTPShouldHandleCookies:NO];
+        pweb_fetch_apply_headers(req, request->headers);
+        if (request->content_type != NULL && request->content_type[0] != 0) {
+          [req setValue:[NSString stringWithUTF8String:request->content_type]
+              forHTTPHeaderField:@"Content-Type"];
+        }
+        if (request->body != NULL && request->body_length > 0) {
+          [req setHTTPBody:
+                   [NSData dataWithBytes:request->body
+                                  length:(NSUInteger)request->body_length]];
+        }
+
+        /* NO AMBIENT STATE OF ANY KIND. An ephemeral configuration gives a
+           PRIVATE jar and a private cache; the contract says NO jar and no
+           cache, so each is removed by name rather than merely isolated. */
+        [cfg setHTTPCookieStorage:nil];
+        [cfg setHTTPShouldSetCookies:NO];
+        [cfg setHTTPCookieAcceptPolicy:NSHTTPCookieAcceptPolicyNever];
+        [cfg setURLCache:nil];
+        [cfg setURLCredentialStorage:nil];
+        [cfg setRequestCachePolicy:
+                 NSURLRequestReloadIgnoringLocalAndRemoteCacheData];
+        /* NO PROXY INHERITED. An empty dictionary OVERRIDES the system proxy
+           configuration; leaving this unset is what would inherit it. */
+        [cfg setConnectionProxyDictionary:[NSDictionary dictionary]];
+        [cfg setHTTPMaximumConnectionsPerHost:1];
+        [cfg setHTTPShouldUsePipelining:NO];
+        [cfg setWaitsForConnectivity:NO];
+        [cfg setTimeoutIntervalForRequest:seconds];
+        /* THE WALL-CLOCK TOTAL, which is what a deadline means. It is the
+           framework's own total-resource bound and it is NOT a per-read
+           timeout - the exact distinction the CAP-15A spike got wrong on the
+           other two platforms (ledger 15A-5). */
+        [cfg setTimeoutIntervalForResource:seconds];
+
+        collector->maxBytes = request->max_response_bytes;
+        [queue setMaxConcurrentOperationCount:1];
+        [queue setName:@"pweb.fetch"];
+        /* a PRIVATE delegate queue is what removes the run-loop requirement
+           from the calling thread: the callbacks land there, and this thread
+           simply blocks on the semaphore below */
+        session = [NSURLSession sessionWithConfiguration:cfg
+                                               delegate:collector
+                                          delegateQueue:queue];
+        task = [session dataTaskWithRequest:req];
+        [task resume];
+
+        for (;;) {
+          if (dispatch_semaphore_wait(
+                  collector->done,
+                  dispatch_time(DISPATCH_TIME_NOW,
+                                (int64_t)PWEB_COCOA_FETCH_SLICE_MS *
+                                    NSEC_PER_MSEC)) == 0) {
+            settled = 1;
+            break;
+          }
+          /* BETWEEN SLICES, which is the whole point: a blocking wait cannot
+             see a clock or a token, so the check lives where the wait ends */
+          if (pweb_fetch_now_ms() >= deadlineAt) {
+            collector->outcome = PWEB_COCOA_FETCH_TIMEDOUT;
+            [task cancel];
+            break;
+          }
+          if (cancel != NULL && cancel(cancel_opaque)) {
+            collector->outcome = PWEB_COCOA_FETCH_CANCELLED;
+            [task cancel];
+            break;
+          }
+        }
+        if (settled == 0) {
+          /* bounded: the outcome is already decided, and a wait with no
+             bound is how a worker thread stops being one */
+          dispatch_semaphore_wait(
+              collector->done,
+              dispatch_time(DISPATCH_TIME_NOW,
+                            (int64_t)PWEB_COCOA_FETCH_SETTLE_MS *
+                                NSEC_PER_MSEC));
+        }
+        [session invalidateAndCancel];
+
+        result = collector->outcome;
+        out->ms = (int32_t)(pweb_fetch_now_ms() - startMs);
+        out->bytes = collector->seen;
+        out->peak_bytes = collector->peak;
+        out->deliveries = collector->deliveries;
+        out->redirects_offered = collector->redirectsOffered;
+        out->proxy_dict_empty =
+            ([[cfg connectionProxyDictionary] count] == 0) ? 1 : 0;
+        if (result == PWEB_COCOA_FETCH_OK) {
+          NSUInteger len = [collector->body length];
+          out->status = (collector->response == nil)
+                            ? 0
+                            : (int)[collector->response statusCode];
+          out->headers = pweb_fetch_headers_block(collector->response);
+          if (len > 0) {
+            out->body = pweb_cocoa_alloc((size_t)len);
+            if (out->body == NULL) {
+              result = PWEB_COCOA_FETCH_TRANSPORT;
+            } else {
+              memcpy(out->body, [collector->body bytes], (size_t)len);
+              out->body_length = (int64_t)len;
+            }
+          }
+        }
+        [collector release];
+        [queue release];
+      }
+    } @catch (NSException *e) {
+      (void)e;
+      pweb_bump(&g_fetch_caught_exceptions);
+      pweb_cocoa_fetch_release(out);
+      result = PWEB_COCOA_FETCH_TRANSPORT;
+    }
+  }
+  return result;
+}

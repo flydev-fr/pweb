@@ -806,6 +806,8 @@ var
   feRefusal: TPWebCliFrontendRefusal;
   cmd: TPWebCliCommand;
   layout: TPWebCliDevLayout;
+  netGenDir: RawUtf8;
+  netStage: TPWebCliStageRefusal;
   inputs: TPWebCliDevInputs;
   unreadable: Boolean;
   staged, files, i: Integer;
@@ -1557,6 +1559,18 @@ begin
         PWebCliDevLayoutRefusalText(layout.Refusal), layout.Detail);
       exit;
     end;
+    // CAP-15B: the same generated allowlist a release build compiles in,
+    // written into the DEV tree beside the dev unit directory. A dev host
+    // may carry the ratified loopback exception; a release build refuses it
+    // by name, which is the one difference between the two
+    if Length(Project.NetworkOrigins) > 0 then
+      if not PWebCliPipeWriteNetworkInclude(layout.DevDir,
+           PWebCliNetworkInclude(Project), netGenDir, netStage) then
+      begin
+        Refuse(pdvCompile, pdcInternal, 'dev_network_include',
+          PWebCliStageRefusalText(netStage));
+        exit;
+      end;
     cmd := PWebCliFpcDevCommand(res.Toolset.Fpc.Path, Project, res.Sdk,
       Os, Arch, layout.UnitDir, layout.ObjDir,
       Project.NativeProgramPath.Full);

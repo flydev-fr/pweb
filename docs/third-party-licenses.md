@@ -140,6 +140,37 @@ PWeb application. Applications that choose to redistribute these libraries
 themselves — which PWeb neither does nor recommends — become responsible for
 carrying their license texts.
 
+## OpenSSL 3 (Apache License 2.0, dynamically linked, Linux only)
+
+The Linux build reaches TLS through the target system's own OpenSSL 3
+(`libssl.so.3`, `libcrypto.so.3`), loaded at runtime by mORMot's
+`mormot.lib.openssl11` binding when — and only when — an application declared
+an outbound origin and the CAP-15B native fetch door was therefore compiled
+into it (`docs/cli-contract.md` §5).
+
+**Nothing is vendored, bundled, patched or redistributed.** The pinned mORMot
+statics under `deps/mormot2/static/x86_64-linux` contain no cryptographic
+library at all — they are `crc32c64.o`, `libdeflatepas.a`, `liblizard.a`,
+`quickjs.o`, `sha512-x64sse4.o` and `sqlite3.o` — the release layout contains
+no OpenSSL file, and the shared objects belong to the distribution that
+installed them. OpenSSL 3 is distributed under the Apache License 2.0, and
+those terms are satisfied by that distribution. An application that chooses to
+redistribute OpenSSL itself — which PWeb neither does nor recommends — becomes
+responsible for carrying its licence text.
+
+`pweb doctor` reports the provider this target resolves, by name and version,
+in its `platform.tls` row, and refuses a machine whose OpenSSL is older than 3
+(`openssl_too_old`) or absent (`openssl_missing`) — but only when the project
+declared an origin, because a door nobody declared needs no provider.
+
+**Windows and macOS need no such dependency.** Windows reaches TLS through
+SChannel, which is inside mORMot and inside the operating system; macOS
+reaches it through `NSURLSession` on the system trust store (CAP-15A §10,
+which refused bundling OpenSSL into the `.app` precisely so that this row
+would stay a *system* row on every target).
+
+The ship table above gains no row: nothing new is shipped, which is the point.
+
 ## React and react-dom (MIT)
 
 The CAP-5 React example bundles [React](https://github.com/facebook/react)

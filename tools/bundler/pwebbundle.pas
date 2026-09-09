@@ -15,6 +15,17 @@ program pwebbundle;
   --include-sourcemaps opts in, and a root manifest.json in the input
   is refused - the bundler owns that entry.
 
+  CAP-15B adds a second content refusal, in the same family and for the
+  same reason: a ROOT-level JSON document carrying a top-level `network`,
+  `origins`, `connect` or `csp` field is refused. No frontend byte can name
+  an origin, relax a policy or select a mode - the outbound allowlist is
+  compiled into the native image from pweb.json and `app.pwb` cannot change
+  it - so such a field is not configuration, it is a developer's belief that
+  something will read it. Nothing does, and a bundle carrying one would
+  build, verify, run and silently ignore it, which is the exact failure
+  class CAP-14A exists to end. Nested application data is untouched: a
+  `data/config.json` with a `connect` key is data, not a manifest.
+
   CAP-14A adds ONE further refusal, and it is the only one that reads
   content: every HTML document is scanned for what the native CSP would
   not execute - an inline <script>, a <script src> that is not
@@ -58,6 +69,7 @@ uses
   mormot.core.base,
   mormot.core.os,
   mormot.core.unicode,
+  mormot.core.json,  // CAP-15B: the top-level keys of a root JSON document
   pweb.rpc.intf,     // PWEB_PROTOCOL_VERSION, PWEB_SUPPORTED_PROTOCOLS
   pweb.rpc.support,  // PWEB_RUNTIME_VERSION
   pweb.assets.intf,
@@ -362,12 +374,85 @@ var
   // the four CSP violation classes, and the two refusals to JUDGE -
   // counted apart because they earn a different closing sentence: one
   // says no option can help, the other says fix the document
-  csp, unjudged: Integer;
+  csp, unjudged, netFields: Integer;
 
   // CAP-14A: one document, scanned once. True when the native CSP would
   // run everything in it. Every finding is printed - cause, logical path
   // and line - before anything fails, and the printed path is the
   // LOGICAL one, so a forwarded pack line carries no absolute path
+  { CAP-15B: is this a ROOT-level JSON document, i.e. one this bundler
+    would expect a runtime or a platform to read as configuration? Depth 0
+    only, by extension, and never a nested file. }
+  function IsRootConfigJson(const Logical: RawUtf8): Boolean;
+  var
+    dot: PtrInt;
+    ext: RawUtf8;
+  begin
+    Result := False;
+    if Pos('/', Logical) > 0 then
+      exit; // nested: application data, not a manifest
+    dot := 0;
+    for dot := Length(Logical) downto 1 do
+      if Logical[dot] = '.' then
+        break;
+    if dot <= 1 then
+      exit;
+    ext := LowerCaseU(Copy(Logical, dot + 1, MaxInt));
+    Result := (ext = 'json') or (ext = 'webmanifest');
+  end;
+
+  { the top-level field names of one JSON object, and only the top level:
+    a nested `connect` belongs to whatever object carries it }
+  function ScanRootJson(const Logical: RawUtf8;
+    const Native: TFileName): Boolean;
+  var
+    doc: RawUtf8;
+    field: TGetJsonField;
+    name: RawUtf8;
+  begin
+    Result := True;
+    doc := RawUtf8(StringFromFile(Native));
+    if doc = '' then
+      exit; // unreadable or empty: the size check in the entries loop owns it
+    UniqueRawUtf8(doc); // mORMot's parser unescapes IN PLACE
+    field.Json := pointer(doc);
+    while (field.Json <> nil) and
+          (field.Json^ <= ' ') and
+          (field.Json^ <> #0) do
+      Inc(field.Json);
+    if (field.Json = nil) or
+       (field.Json^ <> '{') then
+      exit; // not an object: nothing here claims to be a manifest
+    Inc(field.Json);
+    while (field.Json <> nil) and
+          (field.Json^ <= ' ') and
+          (field.Json^ <> #0) do
+      Inc(field.Json);
+    if (field.Json <> nil) and
+       (field.Json^ = '}') then
+      exit;
+    repeat
+      if not field.GetJsonFieldName then
+        exit; // malformed: not this pass's refusal to make
+      FastSetString(name, field.Value, field.ValueLen);
+      name := LowerCaseU(name);
+      if (name = 'network') or (name = 'origins') or
+         (name = 'connect') or (name = 'csp') then
+      begin
+        WriteLn(StdErr, 'pwebbundle: network_field_in_bundle: ', Logical,
+          ': a bundle may not carry a `', name, '` field - the outbound ',
+          'origin allowlist is compiled into the native image from ',
+          'pweb.json and no frontend byte can name an origin, relax a ',
+          'policy or select a mode');
+        Inc(netFields);
+        Result := False;
+      end;
+      field.GetJsonFieldOrObjectOrArray({HandleValuesAsObjectOrArray=}true);
+      if field.Json = nil then
+        exit;
+    until field.EndOfObject <> ',';
+  end;
+
   function ScanDocument(const Logical: RawUtf8;
     const Native: TFileName): Boolean;
   var
@@ -474,6 +559,7 @@ begin
   bad := 0;
   csp := 0;
   unjudged := 0;
+  netFields := 0;
   for i := 0 to High(inputs) do
     case PWebBundleClassifyName(inputs[i].Logical) of
       pbcSecret:
@@ -505,6 +591,19 @@ begin
     if not ScanDocument(inputs[i].Logical, inputs[i].Native) then
       Inc(bad);
   end;
+  // CAP-15B: the same round again, over ROOT JSON documents
+  for i := 0 to High(inputs) do
+  begin
+    if PWebBundleClassifyName(inputs[i].Logical) <> pbcAsset then
+      continue;
+    if not IsRootConfigJson(inputs[i].Logical) then
+      continue;
+    if not ScanRootJson(inputs[i].Logical, inputs[i].Native) then
+      Inc(bad);
+  end;
+  if netFields > 0 then
+    WriteLn(StdErr, 'pwebbundle: ', netFields, ' network/policy field(s) in ',
+      'a bundled manifest; there is no option that packs them anyway');
   if csp > 0 then
     WriteLn(StdErr, 'pwebbundle: the native CSP (script-src ''self'', ',
       'no ''unsafe-inline'') will not run those ', csp, ' construct(s); ',

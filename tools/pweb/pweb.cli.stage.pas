@@ -204,6 +204,14 @@ function PWebCliPipeCopyFile(const FromPath, ToPath: RawUtf8;
 /// create one directory if it is not already there, and answer its path
 // - an existing DIRECTORY of that exact name is success; anything else
 // (a file, a link) is pstCreateDir, because this never replaces
+/// CAP-15B: (re)create <Parent>/gen and write the generated network include
+// - Text comes from PWebCliNetworkInclude, which is a PURE function of the
+// project; this unit owns the I/O and knows nothing about origins
+// - the directory is reclaimed first, so a rebuild never merges a stale
+// include with a fresh one
+function PWebCliPipeWriteNetworkInclude(const Parent, Text: RawUtf8;
+  out GenDir: RawUtf8; out Refusal: TPWebCliStageRefusal): Boolean;
+
 function PWebCliPipeEnsureDir(const Parent, Name: RawUtf8;
   out Full: RawUtf8; out Refusal: TPWebCliStageRefusal): Boolean;
 
@@ -435,6 +443,26 @@ begin
     exit;
   end;
   if not PWebCliWriteNewFile(ToPath, content, execBit) then
+  begin
+    Refusal := pstWriteFile;
+    exit;
+  end;
+  Refusal := pstNone;
+  Result := True;
+end;
+
+function PWebCliPipeWriteNetworkInclude(const Parent, Text: RawUtf8;
+  out GenDir: RawUtf8; out Refusal: TPWebCliStageRefusal): Boolean;
+begin
+  Result := False;
+  GenDir := '';
+  if not PWebCliPipeRemoveTree(Parent, PWEB_CLI_NETWORK_GEN_DIR, Refusal) then
+    exit;
+  if not PWebCliPipeEnsureDir(Parent, PWEB_CLI_NETWORK_GEN_DIR, GenDir,
+       Refusal) then
+    exit;
+  if not PWebCliWriteNewFile(PWebCliJoin(GenDir, PWEB_CLI_NETWORK_INCLUDE),
+       RawByteString(Text), {SetExecBit=}False) then
   begin
     Refusal := pstWriteFile;
     exit;

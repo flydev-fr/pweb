@@ -921,13 +921,20 @@ if (Test-Path -LiteralPath $c10aFile) {
     # CAP-10A's value was 2dda57ba...c8fa7aa; CAP-10C1's ratification (the
     # npm row stays a presence row) is untouched and still the reason this
     # pin exists at all.
+    #
+    # SUPERSEDED AT CAP-15B, and recorded rather than re-baselined quietly:
+    # 3c597c8e...18eb493a -> de66b8bf...79f57c0fb7. The doctor grew the two
+    # rows CAP-15A §6 ratified - `project.network_origins` (schema >= 2) and
+    # `platform.tls` (required when origins are declared) - so the row set
+    # this digest is over is a row set with two more members. Sixteen checks
+    # became eighteen. Nothing else about the shape moved.
+    $doctorSchemaPin = 'de66b8bf583dfed9a72e0c419196245a9ff586e1bf558c1dce18b479f57c0fb7'
     Row 'doctor_schema_digest_unchanged' (Bool (
-        "$($c10a.doctor_schema_digest)" -ceq '3c597c8e09a442dbef93369bbfd2a8ce79011b455166584525330e8418eb493a'))
-    Require ("$($c10a.doctor_schema_digest)" -ceq `
-        '3c597c8e09a442dbef93369bbfd2a8ce79011b455166584525330e8418eb493a') `
+        "$($c10a.doctor_schema_digest)" -ceq $doctorSchemaPin))
+    Require ("$($c10a.doctor_schema_digest)" -ceq $doctorSchemaPin) `
         ("SF2: doctor_schema_digest moved to $($c10a.doctor_schema_digest); " +
-         'CAP-10D2 ratified the three sdk.* rows and CAP-10C1 ratified ' +
-         'leaving the npm row a presence row')
+         'CAP-10D2 ratified the three sdk.* rows, CAP-10C1 ratified leaving ' +
+         'the npm row a presence row, and CAP-15B added the two network rows')
 } else {
     Row 'cli_digest_unchanged' 'unmeasured'
     Row 'doctor_schema_digest_unchanged' 'unmeasured'

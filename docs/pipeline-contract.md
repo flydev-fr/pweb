@@ -279,6 +279,22 @@ script path dies inside `realpathSync` with `EISDIR … lstat 'C:'`.
 
 ## 7. The native compile
 
+**CAP-15B adds one conditional pair, and only for a project that declared an
+outbound origin.** Before the compiler runs, the compile stage writes
+`O/gen/app.network.inc` from the descriptor — the canonicalized origin array
+and its digest, as Pascal literals, produced by the same pure function
+`pweb.cli.native` exposes to the gates — and the vector gains
+`-dPWEB_NET -Fi O/gen`. When `network.origins` is empty, neither element is
+pushed and no include is written, so the vector is BYTE-IDENTICAL to the one
+below and `pipeline_digest` is re-measured unchanged rather than re-baselined.
+
+`pweb dev` does the same into its own `<dev>/gen`, and its unit directory
+carries a `-net` suffix when the region is on: a development compile omits
+`-B` on purpose, units persist across runs, and FPC does not recompile a unit
+because a conditional define changed. Two directories cost one rebuild on the
+run that changes the answer and make "the define never varies within one unit
+directory" true rather than hoped.
+
 S = `<sdk>/share/pweb`, M = `S/deps/mormot2`, L = `S/lib/<os>-<arch>`,
 O = `<root>/<output>/<os>-<arch>`:
 

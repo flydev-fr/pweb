@@ -69,6 +69,10 @@ uses
   pweb.cli.project,
   pweb.cli.probe,
   pweb.cli.toolchain,
+  // CAP-15B: the bounds and the origin grammar, spelled once for the whole
+  // product and reported here rather than restated
+  pweb.rpc.fetch,
+  mormot.core.text,
   // CAP-10D2: the installation's own integrity, MEASURED elsewhere and
   // reported here. The engine stays a pure function of its environment -
   // the fact arrives in TPWebCliDoctorEnv exactly as the host facts do
@@ -140,6 +144,15 @@ type
     // a synthetic environment that never heard of a manifest reports the
     // same thing this repository's own staged SDK root reports
     Sdk: TPWebCliSdkFact;
+    /// CAP-15B: which TLS provider THIS target resolves for the native
+    /// outbound door - a machine fact, injected exactly as the host facts
+    /// are, so the whole matrix stays reproducible without four machines
+    // - `schannel` on Windows and `nsurlsession` on macOS are constants of
+    // the platform; on Linux it is the SYSTEM OpenSSL, so Present says
+    // whether libssl could be reached at all and Version reports what it
+    // said. Reading a version is a dlopen, never a socket: `doctor` still
+    // opens nothing, resolves nothing and writes nothing
+    Tls: TPWebCliTlsFact;
     NodeKind: function(const Path: RawUtf8): TPWebCliNodeKind;
     DirWritable: function(const Dir: RawUtf8): Boolean;
     ProbeTool: function(const Tool, ProjectRoot: RawUtf8;
@@ -220,9 +233,45 @@ begin
   // packaged one it is the FULL inventory - measured at 288 files / 38 MB
   // in 57 ms, which is why there is no sampling policy to argue about
   Result.Sdk := PWebCliSdkVerify(PWEB_CLI_VERSION);
+  // CAP-15B: a dlopen on Linux and a constant everywhere else; no socket,
+  // no name resolution, no write - the doctor's own rule, unchanged
+  Result.Tls := PWebCliTls;
   Result.NodeKind := @PWebCliNodeKind;
   Result.DirWritable := @PWebCliDirWritable;
   Result.ProbeTool := @RealProbe;
+end;
+
+function IntText(V: Integer): RawUtf8;
+begin
+  Result := RawUtf8(IntToStr(V));
+end;
+
+// the ratified Linux floor: OpenSSL 3 or later. The binding answers a free
+// text like `OpenSSL 3.0.13 30 Jan 2024`, so the MAJOR is parsed as a
+// component rather than compared as a string - '10.0' must not read as
+// older than '3.0' and '1.1.1w' must not read as newer
+function PWebCliOpenSslAtLeast3(const VersionText: RawUtf8): Boolean;
+var
+  i, major: PtrInt;
+begin
+  Result := False;
+  i := 1;
+  // skip to the first digit: the product name and any vendor prefix
+  while (i <= Length(VersionText)) and
+        not (VersionText[i] in ['0' .. '9']) do
+    Inc(i);
+  if i > Length(VersionText) then
+    exit;
+  major := 0;
+  while (i <= Length(VersionText)) and
+        (VersionText[i] in ['0' .. '9']) do
+  begin
+    major := major * 10 + (Ord(VersionText[i]) - Ord('0'));
+    if major > 9999 then
+      exit; // not a version this rule can read
+    Inc(i);
+  end;
+  Result := major >= 3;
 end;
 
 { ---------------------------------------------------------------------------
@@ -631,6 +680,75 @@ begin
     Add(b, 'platform.webview', pdsPass, pdvRequired, 'ok',
       'the host WebView engine is usable', Env.Engine.Observed,
       Env.Engine.Expected, '', '');
+
+  { ---- CAP-15B: the declared outbound origins, and this target's TLS ----
+
+    Two rows, both diagnostic-only. `doctor` MUST NOT connect to a declared
+    origin, resolve its name or open a socket: it reads the descriptor and
+    inspects the machine, exactly as it does for every other row.
+
+    `project.network_origins` applies to schema >= 2 and reports the set the
+    reader already canonicalized - so a malformed origin never reaches this
+    row at all, because the descriptor refused at load and the project rows
+    below carry that refusal instead. What this row adds is the thing a
+    developer needs to read BEFORE a release build refuses on it: a declared
+    loopback origin, BY NAME, as development-only.
+
+    `platform.tls` applies when the set is non-empty, because a door nobody
+    declared needs no provider. }
+  if Project.Refusal <> pcrNone then
+    Add(b, 'project.network_origins', pdsNotApplicable, pdvRequired,
+      'no_project', 'no project was opened', '', '', '', '')
+  else if Project.Schema < 2 then
+    Add(b, 'project.network_origins', pdsNotApplicable, pdvRequired,
+      'schema_1_no_network', 'schema 1 carries no network block and reads ' +
+      'as an empty origin set', 'schema ' + IntText(Project.Schema),
+      'schema ' + IntText(PWEB_CLI_SCHEMA_MAX), '', '')
+  else if Length(Project.NetworkOrigins) = 0 then
+    Add(b, 'project.network_origins', pdsPass, pdvRequired, 'ok_empty',
+      'no outbound origin is declared, so the native fetch door is absent ' +
+      'by construction', '0', '0..' + IntText(PWEB_FETCH_MAX_ORIGINS), '', '')
+  else if Length(Project.NetworkLoopback) > 0 then
+    // a WARNING and never a failure: the descriptor is right to carry it,
+    // `pweb dev` compiles it in, and only a RELEASE build refuses it
+    Add(b, 'project.network_origins', pdsWarning, pdvRequired,
+      'loopback_development_only',
+      'a declared origin is the development-only loopback exception and a ' +
+      'release build will refuse it by name',
+      RawUtf8(RawUtf8ArrayToCsv(Project.NetworkLoopback)),
+      'https origins only in a release build',
+      'remove the loopback origin before `pweb build`', '')
+  else
+    Add(b, 'project.network_origins', pdsPass, pdvRequired, 'ok',
+      'every declared origin is well-formed, canonical and within bounds',
+      RawUtf8(RawUtf8ArrayToCsv(Project.NetworkOrigins)),
+      '1..' + IntText(PWEB_FETCH_MAX_ORIGINS) + ' https origins', '', '');
+
+  if (Project.Refusal <> pcrNone) or
+     (Length(Project.NetworkOrigins) = 0) then
+    Add(b, 'platform.tls', pdsNotApplicable, pdvRequired,
+      'no_network_origins',
+      'no outbound origin is declared, so no TLS provider is required',
+      '', '', '', '')
+  else if not Env.Tls.Present then
+    Add(b, 'platform.tls', pdsFail, pdvRequired, 'openssl_missing',
+      'this target resolves no TLS provider for the native fetch door',
+      Env.Tls.Provider + ' absent', 'openssl >= 3',
+      'install libssl3 (libssl.so.3) from your distribution', '')
+  else if (Env.Tls.Provider = 'openssl') and
+          (not PWebCliOpenSslAtLeast3(Env.Tls.Version)) then
+    Add(b, 'platform.tls', pdsFail, pdvRequired, 'openssl_too_old',
+      'the system OpenSSL is older than the ratified floor',
+      Env.Tls.Version, 'openssl >= 3',
+      'install libssl3 (libssl.so.3) from your distribution', '')
+  else if Env.Tls.Version <> '' then
+    Add(b, 'platform.tls', pdsPass, pdvRequired, 'ok',
+      'this target resolves a TLS provider for the native fetch door',
+      Env.Tls.Provider + ' ' + Env.Tls.Version, 'openssl >= 3', '', '')
+  else
+    Add(b, 'platform.tls', pdsPass, pdvRequired, 'ok',
+      'this target resolves a TLS provider for the native fetch door',
+      Env.Tls.Provider, Env.Tls.Provider, '', '');
 
   { ---- the installation itself (CAP-10D2) ----
 

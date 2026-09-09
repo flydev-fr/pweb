@@ -17,6 +17,21 @@
 # proof, and a fixture spelled `'htt' + 'ps://'` to dodge a gate is a
 # gate that has stopped meaning anything. The unit under test is swept;
 # the corpus that attacks it is not.
+#
+# CAP-15B RE-SCOPES THIS CLAIM, and does not delete it. A native outbound
+# door now exists - `pweb.fetch`, behind the `network.fetch` capability and
+# an origin allowlist compiled into each application - so "no HTTP client
+# anywhere" stopped being true as written. What is asserted from CAP-15B
+# onward is the half that was always load-bearing, stated exactly:
+#
+#   no listening socket, no server, no second RPC path, and the only
+#   outbound client in the image is `pweb.rpc.fetch.mormot`, reachable only
+#   through `network.fetch`.
+#
+# The file list below is unchanged and none of these files is a fetch unit,
+# so the sweep is as strict about them as it ever was. The runtime half -
+# this process owns no listening TCP socket - is untouched.
+
 $ErrorActionPreference = 'Stop'
 
 $cap6Files = @(

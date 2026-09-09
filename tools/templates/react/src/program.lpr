@@ -68,6 +68,30 @@ uses
     the same policy and the bridge chain is the same chain. }
   pweb.webview.devhost,
   {$endif PWEB_DEV}
+  {$ifdef PWEB_NET}
+  { THE NATIVE OUTBOUND DOOR, and the ONLY region of this program that can
+    reach a remote server. PWEB_NET is defined by the COMPILER COMMAND
+    `pweb build` and `pweb dev` construct, and ONLY when this project's
+    pweb.json declared a non-empty `network.origins`; no frontend file, no
+    `app.pwb` field, no manifest and no environment variable can reach it.
+
+    A project that declared `[]` - which is every schema-1 project - does
+    not compile these units at all, so it does not merely fail to install
+    the door: the door is not in its image. That is what "network.fetch is
+    absent by construction" means when it is a property of the compiled
+    unit set rather than of a runtime test.
+
+    The TRANSPORT is chosen here and injected: mORMot on Windows and Linux,
+    NSURLSession on macOS. Both units export the same
+    PWebFetchNativeTransport, and they are never both compiled, so the
+    decision below carries no platform knowledge of its own. }
+  pweb.rpc.fetch,
+  {$ifdef DARWIN}
+  pweb.platform.cocoa.fetch,
+  {$else}
+  pweb.rpc.fetch.mormot,
+  {$endif DARWIN}
+  {$endif PWEB_NET}
   app.services;
 
 const
@@ -76,10 +100,19 @@ const
   APP_BUNDLE_ID = '{{BUNDLE_ID}}';
   APP_TITLE = '{{PROJECT_NAME}}';
 
+{$ifdef PWEB_NET}
+{ The canonicalized origin allowlist and its digest, GENERATED from
+  pweb.json into <output>/<target>/gen by `pweb build` and compiled in as
+  Pascal literals. The descriptor is read at BUILD time and never at
+  runtime, so `app.pwb` cannot enlarge this set - which is what keeps
+  AppMaximum a native trust anchor. }
+{$I app.network.inc}
+{$endif PWEB_NET}
+
 var
   server: TRestServerFullMemory;
   factory: TServiceFactoryServerAbstract;
-  realBridge, bridge: IInvocationBridge;
+  realBridge, runtimeBridge, bridge: IInvocationBridge;
   policy: TPWebCapabilityPolicy;
   policyRef: ICapabilityPolicy;
   options: TPWebHostOptions;
@@ -108,7 +141,26 @@ begin
     // runtime owns, and everything else reaches mORMot
     realBridge := TMormotInvocationBridge.Create(server, True);
     server := nil; // ownership moved to the bridge
-    bridge := TAppBridge.Create(PWebHostRuntimeBridge(realBridge), APP_NAME);
+    runtimeBridge := PWebHostRuntimeBridge(realBridge);
+    {$ifdef PWEB_NET}
+    // the outbound door, between the application decorator and the runtime
+    // command layer. Installing it is NOT a grant: `pweb.fetch` still has
+    // to be MAPPED by the capability policy below, and the policy runs at
+    // the scheduler BEFORE this chain is reached - so a principal without
+    // `network.fetch` is answered forbidden with the transport never
+    // reached and no socket opened
+    runtimeBridge := TPWebFetchBridge.Create(runtimeBridge,
+      @PWebFetchNativeTransport, APP_NETWORK_ORIGINS);
+    // the allowlist this binary actually carries, recomputed from the
+    // COMPILED array, beside the digest the build declared. `pweb build`
+    // compares both with the digest of pweb.json, which is how "the
+    // production carries exactly the declared set" stops being a promise
+    WriteLn(APP_NAME, ': network ',
+      PWebFetchDeclaredDigest(APP_NETWORK_ORIGINS), ' ',
+      APP_NETWORK_ALLOWLIST_DIGEST);
+    Flush(Output);
+    {$endif PWEB_NET}
+    bridge := TAppBridge.Create(runtimeBridge, APP_NAME);
 
     // the policy is authoritative and runs at the scheduler, BEFORE the
     // bridge chain above is reached
@@ -135,6 +187,7 @@ begin
   policyRef := nil;
   policy := nil;
   bridge := nil;
+  runtimeBridge := nil;
   realBridge := nil; // frees the owned server after the workers have drained
   server.Free;
   if ExitCode = 0 then

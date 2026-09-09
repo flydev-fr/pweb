@@ -278,6 +278,7 @@ function PWebCliDevEnsureLayout(const Project: TPWebCliProject;
 var
   stage: TPWebCliStageRefusal;
   reclaimed: Integer;
+  unitDirName: RawUtf8;
 
   function Fail(R: TPWebCliDevLayoutRefusal;
     const Detail: RawUtf8): TPWebCliDevLayout;
@@ -298,9 +299,23 @@ begin
     Result := Fail(pdlCreateDir, PWEB_CLI_DEV_DIR);
     exit;
   end;
+  // THE DEV UNIT DIRECTORY IS SCOPED BY THE NETWORK DEFINE (CAP-15B), and
+  // it is the same rule that already keeps the dev and release unit sets
+  // apart: a development compile deliberately omits -B, so units persist
+  // across `pweb dev` runs, and FPC does not re-compile a unit merely
+  // because a conditional define changed. A developer who adds their first
+  // `network.origins` entry would otherwise link yesterday's app.services
+  // .ppu - the one compiled WITHOUT the capability - and meet `forbidden`
+  // from a door the descriptor says exists. Two directories cost a
+  // rebuild once, on the run that changes the answer, and make "the define
+  // never varies within one unit directory" true rather than hoped.
+  if Length(Project.NetworkOrigins) > 0 then
+    unitDirName := PWEB_CLI_DEV_UNIT_DIR + PWEB_CLI_DEV_UNIT_NET_SUFFIX
+  else
+    unitDirName := PWEB_CLI_DEV_UNIT_DIR;
   if not PWebCliPipeEnsureDir(Result.DevDir, PWEB_CLI_DEV_APP_DIR,
        Result.AppDir, stage) or
-     not PWebCliPipeEnsureDir(Result.DevDir, PWEB_CLI_DEV_UNIT_DIR,
+     not PWebCliPipeEnsureDir(Result.DevDir, unitDirName,
        Result.UnitDir, stage) or
      not PWebCliPipeEnsureDir(Result.DevDir, PWEB_CLI_DEV_OBJ_DIR,
        Result.ObjDir, stage) then

@@ -24,6 +24,50 @@
   while both call themselves schema 1, which is a silent change of meaning.
   Growth happens by bumping `schema`, and a bump is a visible, reviewable act.
 
+  ---------------------------------------------------------------------------
+  SCHEMA 2 - THE SAME EIGHT, PLUS `network` (CAP-15B)
+  ---------------------------------------------------------------------------
+
+    {
+      "schema": 2,
+      ...
+      "network": { "origins": ["https://api.example.com"] }
+    }
+
+  A BUMP, not an optional key, and that is the whole point of the rule above:
+  an optional key added to schema 1 would be accepted by a new CLI and
+  refused by an old one while both called themselves schema 1. `network` is
+  REQUIRED in schema 2 and `network.origins` MAY be the empty array - the
+  absent-versus-empty distinction made explicit.
+
+  `[]` does not mean "a door with nothing behind it". It means `network.fetch`
+  is ABSENT BY CONSTRUCTION: the build defines no network region, so the
+  decorator is not compiled, the capability is never granted, and the door is
+  not in the bridge chain at all.
+
+  A SCHEMA-1 DESCRIPTOR STAYS VALID AND READS AS `[]`. It is not deprecated,
+  not warned about and not rewritten - the reader simply leaves the array
+  empty, which is exactly the no-outbound-network application schema 1 could
+  only ever have been. So the bump adds a capability without invalidating a
+  single existing project, and NO EXISTING PROJECT GAINS A NETWORK DOOR BY
+  BEING REBUILT. `network` in a schema-1 descriptor is an unknown field and
+  is refused as one, which is the honest answer rather than a courtesy.
+
+  THE ORIGIN GRAMMAR IS NOT SPELLED HERE. It lives once, in
+  `src/rpc/pweb.rpc.fetch.pas`, and this reader calls it - the same parser the
+  running decorator compares every request URL with, so a descriptor cannot
+  declare an origin the runtime would read differently. Malformed is a
+  refusal AT DESCRIPTOR LOAD, which means `dev`, `doctor` and `build` refuse
+  identically because all three open the project through this unit.
+
+  The development loopback exception - an http origin whose host is a
+  loopback name, with an explicit port and never a wildcard - is ACCEPTED
+  here: the descriptor is developer-controlled build metadata and a developer
+  really does run their API on loopback. A RELEASE `pweb build` refuses such
+  an origin BY NAME rather than dropping it - an origin that vanished between
+  `pweb dev` and `pweb build` would be a behaviour difference with no message
+  anywhere - and `pweb doctor` names it long before a build refuses on it.
+
   WHAT IT IS: developer-controlled build metadata, at the trust level of the
   developer's own source tree. WHAT IT IS NOT: frontend content. It is never
   read from app.pwb, plugins.zip, browser storage, JavaScript or a build
@@ -78,6 +122,9 @@ uses
   mormot.core.base,
   pweb.assets.support,
   pweb.assets.bundle,
+  // the ONE origin grammar of this product, shared with the running
+  // decorator: two copies of a security grammar are two answers
+  pweb.rpc.fetch,
   pweb.cli.platform,
   pweb.cli.paths,
   pweb.cli.toolchain;
@@ -85,8 +132,12 @@ uses
 const
   /// the one descriptor filename, matched with EXACT case on every platform
   PWEB_CLI_DESCRIPTOR = 'pweb.json';
-  /// the only schema this build understands
+  /// the first schema, still valid and still read
   PWEB_CLI_SCHEMA = 1;
+  /// the highest schema this build understands
+  PWEB_CLI_SCHEMA_MAX = 2;
+  /// what `pweb create` writes, from CAP-15B onward
+  PWEB_CLI_SCHEMA_CREATE = 2;
 
 type
   /// the ratified frontend kinds of schema 1
@@ -135,7 +186,13 @@ type
     /// `version` is not strict X.Y.Z
     pcrVersion,
     /// a path field failed syntax, confinement, case or the link refusal
-    pcrPath);
+    pcrPath,
+    /// a declared origin is not in the ratified grammar
+    pcrOriginGrammar,
+    /// more than PWEB_FETCH_MAX_ORIGINS origins were declared
+    pcrOriginCount,
+    /// two declared origins are the same origin after canonicalization
+    pcrOriginDuplicate);
 
   /// one fully established project, or the reason there is none
   TPWebCliProject = record
@@ -164,6 +221,19 @@ type
     /// the Pascal program / executable identifier, derived by the ratified
     /// rule from the basename of NativeProgram
     ProgramIdent: RawUtf8;
+    /// the declared outbound origins, CANONICAL and SORTED
+    // - empty for every schema-1 project, which is what "reads as []" means
+    // - the canonical spelling drops a default port, so
+    // https://a.example and https://a.example:443 are one entry (and
+    // declaring both is pcrOriginDuplicate)
+    NetworkOrigins: TRawUtf8DynArray;
+    /// sha256 over the canonical origins, one per LF-terminated line
+    // - `pweb build` compiles this same digest into the host, so
+    // "the production carries exactly the declared set" is a measurement
+    NetworkOriginsDigest: RawUtf8;
+    /// the subset that is the DEVELOPMENT-ONLY loopback exception, by name
+    // - doctor reports these by name and a release build refuses on them
+    NetworkLoopback: TRawUtf8DynArray;
     /// what each path field resolved to under Root
     NativeProgramPath: TPWebCliResolved;
     FrontendRootPath: TPWebCliResolved;
@@ -237,6 +307,9 @@ begin
     pcrIdentifier:           Result := 'identifier_invalid';
     pcrVersion:              Result := 'version_invalid';
     pcrPath:                 Result := 'path_invalid';
+    pcrOriginGrammar:        Result := 'network_origin_invalid';
+    pcrOriginCount:          Result := 'network_origin_count';
+    pcrOriginDuplicate:      Result := 'network_origin_duplicate';
   else
     Result := 'project_refused';
   end;
@@ -357,12 +430,13 @@ end;
   --------------------------------------------------------------------------- }
 
 type
-  TPWebJsonKind = (pjkString, pjkInteger, pjkObject, pjkOther);
+  TPWebJsonKind = (pjkString, pjkInteger, pjkObject, pjkArray, pjkOther);
 
   TPWebJsonMember = record
     Key: RawUtf8;
     Kind: TPWebJsonKind;
-    /// decoded string value, integer digits, or the exact object substring
+    /// decoded string value, integer digits, or the exact object/array
+    /// substring
     Text: RawUtf8;
   end;
   TPWebJsonMembers = array of TPWebJsonMember;
@@ -611,6 +685,66 @@ begin
   end;
 end;
 
+// parse ONE array of JSON strings. Schema 2 has exactly one array field and
+// every element of it is a string, so an element of any other kind is a TYPE
+// error rather than a malformed document - which is a different bug and
+// deserves a different diagnostic
+function ParseStringArray(const S: RawUtf8; var P: PtrInt;
+  out Items: TRawUtf8DynArray; out WrongType: Boolean): TPWebJsonError;
+var
+  one: RawUtf8;
+  n: PtrInt;
+begin
+  Result := pjeMalformed;
+  Items := nil;
+  WrongType := False;
+  n := 0;
+  SkipSpace(S, P);
+  if (P > Length(S)) or
+     (S[P] <> '[') then
+    exit;
+  Inc(P);
+  SkipSpace(S, P);
+  if (P <= Length(S)) and
+     (S[P] = ']') then
+  begin
+    Inc(P);
+    exit(pjeNone);
+  end;
+  repeat
+    SkipSpace(S, P);
+    if P > Length(S) then
+      exit;
+    if S[P] <> '"' then
+    begin
+      // parsed rather than abandoned, so the caller can say "wrong type"
+      if not SkipValue(S, P) then
+        exit;
+      WrongType := True;
+      exit;
+    end;
+    if not ParseString(S, P, one) then
+      exit;
+    SetLength(Items, n + 1);
+    Items[n] := one;
+    Inc(n);
+    SkipSpace(S, P);
+    if P > Length(S) then
+      exit;
+    if S[P] = ',' then
+    begin
+      Inc(P);
+      continue;
+    end;
+    if S[P] = ']' then
+    begin
+      Inc(P);
+      exit(pjeNone);
+    end;
+    exit;
+  until False;
+end;
+
 // parse ONE object into its members, refusing a repeated key
 function ParseObject(const S: RawUtf8; var P: PtrInt;
   out Members: TPWebJsonMembers): TPWebJsonError;
@@ -667,6 +801,19 @@ begin
           Members[n].Kind := pjkObject;
           Members[n].Text := Copy(S, start, P - start);
         end;
+      '[':
+        begin
+          // schema 2 needs an ARRAY value, and the same bracket walker that
+          // has always skipped one now captures it. Nothing else about the
+          // reader moves: the encoding rules, the duplicate-key rule, the
+          // trailing-content rule, the secret-key rule and the 64 KiB bound
+          // are what they were
+          start := P;
+          if not SkipObjectOrArray(S, P, '[', ']') then
+            exit;
+          Members[n].Kind := pjkArray;
+          Members[n].Text := Copy(S, start, P - start);
+        end;
       '-', '0' .. '9':
         begin
           if not ParseInteger(S, P, text) then
@@ -676,8 +823,8 @@ begin
         end;
     else
       begin
-        // arrays, true, false, null: parsed so the diagnostic can say
-        // "wrong type" instead of "malformed", which is a different bug
+        // true, false, null: parsed so the diagnostic can say "wrong type"
+        // instead of "malformed", which is a different bug
         if not SkipValue(S, P) then
           exit;
         Members[n].Kind := pjkOther;
@@ -813,6 +960,73 @@ begin
   Result := True;
 end;
 
+// network { origins }: the block schema 2 adds, and the ONLY place this
+// reader knows anything about outbound network at all. The grammar itself
+// lives in pweb.rpc.fetch - the same parser the running decorator compares
+// every request URL with - so a descriptor cannot declare an origin the
+// runtime would read differently
+function TakeNetwork(var Project: TPWebCliProject;
+  const Members: TPWebJsonMembers): Boolean;
+var
+  nested: TPWebJsonMembers;
+  items: TRawUtf8DynArray;
+  parsed: TPWebFetchOrigins;
+  refusal: TPWebFetchOriginsRefusal;
+  err: TPWebJsonError;
+  detail, value: RawUtf8;
+  wrongType: Boolean;
+  idx, p, i: PtrInt;
+begin
+  if not FindMember(Members, 'network', idx) then
+    exit(Fail(Project, pcrMissingField, 'network'));
+  if Members[idx].Kind <> pjkObject then
+    exit(Fail(Project, pcrFieldType, 'network'));
+  p := 1;
+  value := Members[idx].Text;
+  err := ParseObject(value, p, nested);
+  if err = pjeDuplicate then
+    exit(Fail(Project, pcrDuplicateKey, 'network'));
+  if err <> pjeNone then
+    exit(Fail(Project, pcrJsonMalformed, 'network'));
+  if not CheckKnownKeys(Project, nested, ['origins'], 'network.') then
+    exit(False);
+  if not FindMember(nested, 'origins', idx) then
+    exit(Fail(Project, pcrMissingField, 'network.origins'));
+  if nested[idx].Kind <> pjkArray then
+    exit(Fail(Project, pcrFieldType, 'network.origins'));
+  p := 1;
+  value := nested[idx].Text;
+  err := ParseStringArray(value, p, items, wrongType);
+  if wrongType then
+    exit(Fail(Project, pcrFieldType, 'network.origins'));
+  if err <> pjeNone then
+    exit(Fail(Project, pcrJsonMalformed, 'network.origins'));
+  if not PWebFetchParseOrigins(items, parsed, refusal, detail) then
+    case refusal of
+      pforCount:
+        exit(Fail(Project, pcrOriginCount, detail));
+      pforDuplicate:
+        exit(Fail(Project, pcrOriginDuplicate, detail));
+    else
+      // the offending origin BY NAME: it is developer-controlled build
+      // metadata, so naming it is a diagnostic rather than a disclosure
+      exit(Fail(Project, pcrOriginGrammar, detail));
+    end;
+  SetLength(Project.NetworkOrigins, Length(parsed));
+  for i := 0 to High(parsed) do
+  begin
+    Project.NetworkOrigins[i] := PWebFetchOriginText(parsed[i]);
+    if PWebFetchOriginIsLoopbackHttp(parsed[i]) then
+    begin
+      SetLength(Project.NetworkLoopback, Length(Project.NetworkLoopback) + 1);
+      Project.NetworkLoopback[High(Project.NetworkLoopback)] :=
+        Project.NetworkOrigins[i];
+    end;
+  end;
+  Project.NetworkOriginsDigest := PWebFetchAllowlistDigest(parsed);
+  Result := True;
+end;
+
 function PWebCliParseDescriptor(const Root, Json: RawUtf8): TPWebCliProject;
 var
   members, nested: TPWebJsonMembers;
@@ -864,12 +1078,11 @@ begin
     Fail(Result, pcrTrailingContent, '');
     exit;
   end;
-  if not CheckKnownKeys(Result, members,
-       ['schema', 'name', 'version', 'bundleId', 'ui', 'native',
-        'frontend', 'output'], '') then
-    exit;
-  // schema before anything else: a future schema must not be interpreted
-  // through this build's field rules
+  // THE SCHEMA IS READ BEFORE ANY FIELD RULE OF THIS BUILD IS APPLIED, and
+  // that ordering is the whole of "a future schema must not be interpreted
+  // through this build's field rules": a schema-3 descriptor carrying a
+  // schema-3 key must be refused as an unsupported SCHEMA, never as an
+  // unknown field, because the field is not unknown - this build is old
   if not FindMember(members, 'schema', idx) then
   begin
     Fail(Result, pcrMissingField, 'schema');
@@ -881,11 +1094,26 @@ begin
     exit;
   end;
   Result.Schema := StrToIntDef(string(members[idx].Text), -1);
-  if Result.Schema <> PWEB_CLI_SCHEMA then
+  if (Result.Schema < PWEB_CLI_SCHEMA) or
+     (Result.Schema > PWEB_CLI_SCHEMA_MAX) then
   begin
     Fail(Result, pcrSchemaUnsupported, members[idx].Text);
     exit;
   end;
+  // the known-key set is a FUNCTION OF THE SCHEMA. `network` is unknown in
+  // schema 1 and required in schema 2, so an old descriptor that grew the
+  // key is refused as the mistake it is rather than silently honoured
+  if Result.Schema >= 2 then
+  begin
+    if not CheckKnownKeys(Result, members,
+         ['schema', 'name', 'version', 'bundleId', 'ui', 'native',
+          'frontend', 'output', 'network'], '') then
+      exit;
+  end
+  else if not CheckKnownKeys(Result, members,
+       ['schema', 'name', 'version', 'bundleId', 'ui', 'native',
+        'frontend', 'output'], '') then
+    exit;
   if not RequireString(Result, members, 'name', Result.Name) then
     exit;
   if not PWebCliValidName(Result.Name) then
@@ -982,6 +1210,12 @@ begin
   end;
   if not RequireString(Result, members, 'output', Result.Output) then
     exit;
+  // network { origins } - REQUIRED in schema 2, and permitted to be empty.
+  // A schema-1 descriptor takes neither branch and leaves the array nil,
+  // which IS "reads as []": the absence of a branch rather than a branch
+  if Result.Schema >= 2 then
+    if not TakeNetwork(Result, members) then
+      exit;
   // the derived identifier, by the ratified rule and nothing else
   Result.ProgramIdent := PWebCliProgramIdentOf(Result.NativeProgram);
   if not PWebCliValidProgramIdent(Result.ProgramIdent) then
@@ -1002,6 +1236,10 @@ begin
   if not TakePath(Result, 'output', Result.Output, True,
        Result.OutputPath) then
     exit;
+  // a schema-1 project has the digest of the EMPTY set, not an empty
+  // digest: "no origins" is a set, and the build proof compares digests
+  if Result.NetworkOriginsDigest = '' then
+    Result.NetworkOriginsDigest := PWebFetchAllowlistDigest(nil);
   Result.Refusal := pcrNone;
   Result.Detail := '';
 end;

@@ -651,9 +651,40 @@ procedure TTestPWebCliProject.SchemaAndFieldRules;
     Result := StringReplaceAll(VALID_DESCRIPTOR, Old, New_);
   end;
 
+  // one schema-2 descriptor: the schema-1 body plus a network block
+  function Schema2(const Network: RawUtf8): RawUtf8;
+  begin
+    Result := StringReplaceAll(
+      StringReplaceAll(VALID_DESCRIPTOR, '"schema": 1', '"schema": 2'),
+      '"output": "dist"', '"output": "dist",' + #10 + '  ' + Network);
+  end;
+
+  procedure Accepts(const Tag: RawUtf8; const Json: RawUtf8;
+    ExpectedOrigins: Integer; const ExpectedFirst: RawUtf8);
+  var
+    root: RawUtf8;
+    p: TPWebCliProject;
+  begin
+    NewProject(Tag, Json, root);
+    p := PWebCliOpenProject(root, root);
+    Check(p.Refusal = pcrNone, 'refused ' + string(Tag) + ': ' +
+      string(PWebCliProjectRefusalText(p.Refusal)) + ' ' + string(p.Detail));
+    CheckEqual(Length(p.NetworkOrigins), ExpectedOrigins,
+      'origin count for ' + string(Tag));
+    if (ExpectedFirst <> '') and (Length(p.NetworkOrigins) > 0) then
+      CheckEqual(p.NetworkOrigins[0], ExpectedFirst,
+        'first canonical origin for ' + string(Tag));
+    Record_('project|' + Tag + '|ok|origins=' +
+      RawUtf8(IntToStr(Length(p.NetworkOrigins))) + '|digest=' +
+      p.NetworkOriginsDigest + '|loopback=' +
+      RawUtf8(IntToStr(Length(p.NetworkLoopback))));
+  end;
+
 begin
-  // P5
-  Refuses('schema-2', Swap('"schema": 1', '"schema": 2'),
+  // P5 - THE SCHEMA WINDOW. CAP-15B makes 2 the highest this build reads,
+  // so an unsupported schema is now 3, and 2 is a schema whose rules are
+  // applied rather than a version that is refused
+  Refuses('schema-3', Swap('"schema": 1', '"schema": 3'),
     pcrSchemaUnsupported);
   Refuses('schema-0', Swap('"schema": 1', '"schema": 0'),
     pcrSchemaUnsupported);
@@ -687,6 +718,71 @@ begin
   Refuses('ui-invalid', Swap('"ui": "react"', '"ui": "vue"'), pcrUiInvalid);
   Refuses('ui-case', Swap('"ui": "react"', '"ui": "React"'), pcrUiInvalid);
   Refuses('ui-type', Swap('"ui": "react"', '"ui": 1'), pcrFieldType);
+
+  // ---- CAP-15B: schema 2, and the network block it adds -----------------
+  //
+  // A SCHEMA-1 DESCRIPTOR STAYS VALID AND READS AS []. That is the whole of
+  // "no existing project gains a network door by being rebuilt", and it is
+  // the absence of a branch rather than a branch: the reader leaves the
+  // array nil
+  Accepts('schema1-reads-as-empty', VALID_DESCRIPTOR, 0, '');
+  // `network` is REQUIRED in schema 2 and MAY be empty - the absent-versus-
+  // empty distinction, made explicit
+  Refuses('schema2-network-missing',
+    Swap('"schema": 1', '"schema": 2'), pcrMissingField);
+  Accepts('schema2-empty-origins',
+    Schema2('"network": { "origins": [] }'), 0, '');
+  Accepts('schema2-one-origin',
+    Schema2('"network": { "origins": ["https://api.example.com"] }'),
+    1, 'https://api.example.com');
+  // canonical and SORTED, with the default port dropped on both sides
+  Accepts('schema2-canonical-sorted',
+    Schema2('"network": { "origins": ["https://b.example", ' +
+      '"https://a.example:443"] }'), 2, 'https://a.example');
+  // the DEVELOPMENT loopback exception is accepted BY THE DESCRIPTOR: a
+  // developer really does run their API on loopback, and it is a RELEASE
+  // `pweb build` that refuses it by name
+  Accepts('schema2-loopback-accepted',
+    Schema2('"network": { "origins": ["http://127.0.0.1:5173"] }'),
+    1, 'http://127.0.0.1:5173');
+  // and every way the grammar can be broken, at DESCRIPTOR LOAD
+  Refuses('schema2-origin-path',
+    Schema2('"network": { "origins": ["https://api.example.com/v1"] }'),
+    pcrOriginGrammar);
+  Refuses('schema2-origin-wildcard',
+    Schema2('"network": { "origins": ["https://*.example.com"] }'),
+    pcrOriginGrammar);
+  Refuses('schema2-origin-uppercase',
+    Schema2('"network": { "origins": ["https://API.example.com"] }'),
+    pcrOriginGrammar);
+  Refuses('schema2-origin-http',
+    Schema2('"network": { "origins": ["http://api.example.com:80"] }'),
+    pcrOriginGrammar);
+  Refuses('schema2-origin-loopback-no-port',
+    Schema2('"network": { "origins": ["http://127.0.0.1"] }'),
+    pcrOriginGrammar);
+  Refuses('schema2-origin-duplicate',
+    Schema2('"network": { "origins": ["https://a.example", ' +
+      '"https://a.example:443"] }'), pcrOriginDuplicate);
+  Refuses('schema2-origin-count',
+    Schema2('"network": { "origins": ["https://h1.example", ' +
+      '"https://h2.example", "https://h3.example", "https://h4.example", ' +
+      '"https://h5.example", "https://h6.example", "https://h7.example", ' +
+      '"https://h8.example", "https://h9.example"] }'), pcrOriginCount);
+  Refuses('schema2-origins-not-an-array',
+    Schema2('"network": { "origins": "https://a.example" }'), pcrFieldType);
+  Refuses('schema2-origin-not-a-string',
+    Schema2('"network": { "origins": [5] }'), pcrFieldType);
+  Refuses('schema2-network-not-an-object',
+    Schema2('"network": []'), pcrFieldType);
+  Refuses('schema2-network-unknown-key',
+    Schema2('"network": { "origins": [], "mode": "x" }'), pcrUnknownField);
+  // and `network` in a SCHEMA-1 descriptor is an unknown field, which is
+  // the honest answer rather than a courtesy
+  Refuses('schema1-network-unknown',
+    StringReplaceAll(VALID_DESCRIPTOR, '"output": "dist"',
+      '"output": "dist",' + #10 + '  "network": { "origins": [] }'),
+    pcrUnknownField);
 end;
 
 procedure TTestPWebCliProject.IdentifierGrammars;

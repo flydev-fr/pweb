@@ -51,6 +51,13 @@ const
   { Runtime-owned handshake method (reserved pweb.* namespace). }
   PWEB_METHOD_HANDSHAKE = 'pweb.handshake';
 
+  { Runtime-owned outbound fetch method (CAP-15B), and the capability that
+    authorizes it. The capability name is ADVISORY here exactly as the
+    handshake's list is: authorization is native and per invocation, and
+    this SDK never enforces, caches-then-trusts, or grants from a name. }
+  PWEB_METHOD_FETCH = 'pweb.fetch';
+  PWEB_CAP_NETWORK_FETCH = 'network.fetch';
+
   { JS global name of the native invocation primitive bound by the CAP-2
     binding (webview_bind). Internal transport detail - applications use
     PWebInvoke, never this global directly. }
@@ -100,6 +107,26 @@ function PWebIsRuntime: Boolean;
   - Rejects with EPWebError; when the binding is absent it rejects
     immediately with code runtime_closed. }
 function PWebInvoke(const AMethod: String; AArgs: TJSObject): TJSPromise;
+
+{ One bounded outbound request through the native door (CAP-15B).
+
+  ARequest is a plain object carrying `url` and, optionally, `method`,
+  `headers`, `body` and `timeoutMs`. It is passed through BYTE-EXACT: this
+  function constructs no URL, supplies no default origin, adds no header,
+  follows no redirect, keeps no cookie and retries nothing. Every one of
+  those is a NATIVE decision taken under the `network.fetch` capability and
+  a per-application origin allowlist compiled into the host, and an SDK that
+  supplied one would be a second answer to a settled question.
+
+  Resolves with the response envelope: status, ms, bytes, truncated (always
+  False in protocol v1), an allowlisted `headers` object from which
+  `set-cookie` is ALWAYS absent, and exactly one of bodyText / bodyBase64.
+  Rejects with EPWebError - `forbidden` with zero network activity when the
+  application does not hold the capability, `invalid_request` for anything
+  the request contract refuses, `cancelled` when the deadline expires, and
+  `service_error` with a category in Data for a transport failure or a
+  response over a bound. }
+function PWebFetch(ARequest: TJSObject): TJSPromise;
 
 { Perform the runtime handshake and verify protocol compatibility.
   Resolves with TPWebRuntimeInfo when the reported protocol is supported;
@@ -275,6 +302,19 @@ begin
       raise ConvertReason(AReason);
       Result := JS.Undefined; // unreachable - the raise rejects
     end);
+end;
+
+function PWebFetch(ARequest: TJSObject): TJSPromise;
+begin
+  if ARequest = nil then
+    Result := TJSPromise.reject(MakeError('invalid_request',
+      'A fetch request object is required', JS.Null))
+  else
+    // ONE invoke of the runtime-owned method, and nothing else. The object
+    // crosses byte-exact: an absent option stays absent, because the native
+    // door refuses an argument of the wrong type and sending an explicit
+    // undefined would be sending one
+    Result := PWebInvoke(PWEB_METHOD_FETCH, ARequest);
 end;
 
 function Mismatch(const ADetail: String): EPWebError;
