@@ -159,10 +159,25 @@ Set-Location $repoRoot
 # The Pas2JS side carries no literal pin here - its inventory travels as an
 # evidence row compared across four targets - so it moves with the same
 # bytes on every target and needs no second number.
+#
+# CAP-15B SUPERSEDES BOTH NUMBERS, and the reason is the whole of the shard:
+# the React template's `program.lpr` and `app.services.pas` gain a fenced
+# `{$ifdef PWEB_NET}` region and `pweb.json` gains `"network": { "origins":
+# [] }` at schema 2. No file was added or removed, so the COUNT does not
+# move; three files grew.
+#   inventory 5bcfb4976ea9cd2ce3ae3c82746b65e5dfdf47a3d97b6d4cb7aa0b23fa7ded77
+#          -> eabbc88d209c252128646ceeaddfb247567ce3c574f03088dcbbbaf29feee111
+#   bytes     73176 -> 76854   (16 files, unchanged)
+# MEASURED rather than computed, and on TWO targets before it was written
+# here: `generated_inventory_digest` and `generated_total_bytes` in
+# build/cap10b1/cli-windows-x86_64.json locally, and the same two values
+# reported by the linux leg of hosted run 34452631822 - which is how this
+# pin was found, because CAP-10B1's own gate records the digest as a ROW and
+# only this gate holds it as a literal.
 $CAP10B1_REACT_INVENTORY_DIGEST =
-    '5bcfb4976ea9cd2ce3ae3c82746b65e5dfdf47a3d97b6d4cb7aa0b23fa7ded77'
+    'eabbc88d209c252128646ceeaddfb247567ce3c574f03088dcbbbaf29feee111'
 $CAP10B1_REACT_FILE_COUNT = 16
-$CAP10B1_REACT_TOTAL_BYTES = 73176
+$CAP10B1_REACT_TOTAL_BYTES = 76854
 
 $exeSuffix = if ($IsWindows) { '.exe' } else { '' }
 $work = Join-Path $repoRoot 'build/cap10b2'

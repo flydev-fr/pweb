@@ -520,8 +520,8 @@ void pweb_cocoa_stub_task_outcome(uint64_t task, pweb_cocoa_stub_outcome_t *out)
  *  ships on is a hole, not a limitation). So the Darwin transport is        *
  *  NSURLSession, on the SYSTEM trust store, behind the SAME injected seam   *
  *  the mORMot transport fills - which is why this is one platform file and  *
- *  not a redesign, and why "exactly one file under src names                *
- *  mormot.net.client" survives a second platform unchanged.                 *
+ *  not a redesign, and why the ratified "exactly one outbound               *
+ *  client unit under src" claim survives a second platform.                 *
  *                                                                          *
  *  NOTHING HERE DECIDES ANYTHING. The URL was parsed, the origin matched,   *
  *  the method and headers allowlisted, the body bounded and the deadline    *

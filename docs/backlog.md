@@ -1,16 +1,16 @@
 # The backlog
 
 `_bmad-output/implementation-artifacts/deferred-work.md` is append-only and
-carries **396 entries** from Phase 0 to CAP-15B. It is a
+carries **398 entries** from Phase 0 to CAP-15B. It is a
 ledger: it records what was found, in the words of the shard that found it,
 and it never edits itself. That makes it excellent evidence and a poor
 worklist — a reader who wants to know *what is still owed* has to resolve
 every supersession chain by hand, and three phase-closure artifacts answer
 that question for CAP-10 and CAP-11 only.
 
-This document is the worklist. Every one of the 396 entries is disposed of
+This document is the worklist. Every one of the 398 entries is disposed of
 exactly once, with one verdict, an owner and a reason. **Fifty-four are open,**
-**and those fifty-four are listed here in full**; the other 342 are in
+**and those fifty-four are listed here in full**; the other 344 are in
 `test/backlog/dispositions.tsv`, which is the table this document is written
 from and the one the gate reads.
 
@@ -20,7 +20,7 @@ from and the one the gate reads.
 | `UPSTREAM` | 3 | the defect belongs to a third-party project and a report is written; two of the three also carry a local workaround, and `RP-2` deliberately does not |
 | `ROADMAP` | 47 | real work, deferred, with a named owner |
 | `ACCEPTED` | 111 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
-| `CLOSED` | 231 | the thing the entry describes is done |
+| `CLOSED` | 233 | the thing the entry describes is done |
 
 `ACCEPTED` is not a synonym for ignored. It is the verdict for an entry whose
 honest answer is a measurement — that WebView2 raises no navigation event for a

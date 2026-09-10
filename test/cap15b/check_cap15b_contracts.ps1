@@ -434,6 +434,81 @@ if (-not (Test-Path $listPath)) {
     $report.Add("C12: $($live.Count) mORMot defines, committed set equal, pin $($pinShaLive.Substring(0,12))...")
 }
 
+# --- C14: the macOS zero-transport SOURCE sweep, run where a Mac is not -----
+#
+# MEASURED, and it cost both macOS legs a second time. `test/cap7m/
+# check_cap7m_nonetwork.sh` is CAP-7M0 gate M20 and it has two halves: a
+# RUNTIME half that needs a Mac (the probe's own file descriptors against
+# listening TCP sockets), and a SOURCE half that is pure text over a named
+# file list - and is therefore platform-independent. But the script opens
+# with `assert_native_arch`, so on any other host it exits before the sweep
+# with `macOS only, host is Linux`. Running it here proves NOTHING and reads
+# as green, which is the vacuous-pass shape this repository refuses.
+#
+# The consequence, measured: this shard's own banner comment in
+# `pweb_cocoa_bridge.h` explained that "exactly one file under src names
+# mormot.net.client" - and thereby became a file under src naming
+# mormot.net.client, in a file M20 sweeps. Two macOS legs went red for a
+# sentence.
+#
+# So the SOURCE half runs here, on every target, and it is DERIVED FROM THE
+# SCRIPT rather than copied: the file list, the exempt list and the forbidden
+# pattern are parsed out of `check_cap7m_nonetwork.sh` itself. A duplicated
+# list would rot; a parsed one cannot disagree with the gate it mirrors. The
+# list-rot guard - every file under `test/cap7m/` either swept or explicitly
+# exempt - is platform-independent too, and comes along.
+$m20 = 'test/cap7m/check_cap7m_nonetwork.sh'
+if (-not (Test-Path $m20)) {
+    Violation "$m20 is absent -- CAP-7M0 gate M20 is the claim this mirrors"
+} else {
+    $m20Text = ([System.IO.File]::ReadAllText($m20) -replace "`r`n", "`n")
+    function ShellArray([string]$Text, [string]$Name) {
+        $m = [regex]::Match($Text, ('(?ms)^' + [regex]::Escape($Name) + '=\(\s*(.*?)^\)\s*$'))
+        if (-not $m.Success) { return $null }
+        return @($m.Groups[1].Value -split "`n" |
+            ForEach-Object { ($_ -replace '#.*$', '').Trim() } |
+            Where-Object { $_ -ne '' })
+    }
+    $swept = ShellArray $m20Text 'cap7m_files'
+    $exempt = ShellArray $m20Text 'sweep_exempt'
+    $fm = [regex]::Match($m20Text, "(?m)^forbidden='([^']+)'\s*$")
+    if ($null -eq $swept -or $null -eq $exempt -or -not $fm.Success) {
+        Violation ("C14: $m20 no longer exposes cap7m_files, sweep_exempt and " +
+            'forbidden in the shapes this mirror parses -- the mirror must be ' +
+            'updated in the same commit, never left reading a stale definition')
+    } else {
+        # the shell pattern is ERE; the classes used here are the same in .NET
+        $rx = [regex]::new($fm.Groups[1].Value,
+            [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        $m20Hits = 0
+        foreach ($f in $swept) {
+            if (-not (Test-Path -LiteralPath $f)) {
+                Violation "C14: M20 sweep target missing: $f"
+                continue
+            }
+            $lineNo = 0
+            foreach ($line in [System.IO.File]::ReadLines($f)) {
+                $lineNo++
+                if ($rx.IsMatch($line)) {
+                    $m20Hits++
+                    Violation ("C14: ${f}:${lineNo}: forbidden CAP-7M0 transport " +
+                        "pattern -- $($line.Trim())")
+                }
+            }
+        }
+        # the list-rot guard, in the same words the script uses
+        $unswept = @(Get-ChildItem 'test/cap7m' -Recurse -File | ForEach-Object {
+                ($_.FullName.Substring($repoRoot.Length).TrimStart([char]92, [char]47)).Replace([char]92, [char]47)
+            } | Where-Object { ($swept -notcontains $_) -and ($exempt -notcontains $_) })
+        foreach ($u in $unswept) {
+            Violation ("C14: $u is under test/cap7m/ and is neither swept nor " +
+                'exempt in M20 -- a gate added later cannot be silently unswept')
+        }
+        $report.Add("C14: M20 source half mirrored here - $($swept.Count) file(s) swept, " +
+            "$($exempt.Count) exempt, $($m20Hits) hit(s), $($unswept.Count) unswept")
+    }
+}
+
 # --- verdict ----------------------------------------------------------------
 New-Item -ItemType Directory -Force build/cap15b | Out-Null
 $lines = New-Object System.Collections.Generic.List[string]

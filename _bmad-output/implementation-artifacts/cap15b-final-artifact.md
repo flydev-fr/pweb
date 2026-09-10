@@ -300,13 +300,14 @@ bodyless method is refused.
 | `navigation_policy_digest` `360d69f2…`, `capability_policy_digest` `23b87da5…` | **must not move**, and are re-measured rather than assumed |
 | `pipeline_digest` | **must not move** for an empty-origins project, by the `-d`/`-Fi`-iff design |
 | the CAP-7F evidence schema | 836 → **843** fields in all three lists (`emit_evidence.ps1`, `emit_evidence.sh`, the aggregator's `$required`), the seven `composition_*` rows |
-| the backlog census | 389 entries / 54 open → **396** / **54**: `15B-12` closes, `15B-13` to `15B-19` are new |
+| the backlog census | 389 entries / 54 open → **398** / **54**: `15B-12` closes, `15B-13` to `15B-21` are new |
 | `cli_digest` | `4aa3c03b…c198f9ec` → **`095c95b2…75eb6f67`**, pinned in `test/cap10c1/run_cap10c1_gates.ps1` with the reason above it. Measured **identical on windows-x86_64 and linux-x86_64** before it was written down. The first time this value has moved for something other than a command becoming public: `project\|schema-2\|schema_unsupported` became `schema-3`, and eighteen `schema1-*` / `schema2-*` descriptor rows joined the corpus. 130 lines → 148 |
 | the CAP-7F divergence allowlist | one row ADDED (`src/rpc/pweb.rpc.fetch.mormot.pas`, 2 directives), one RE-RATIFIED (`tools/pweb/pweb.cli.platform.pas`, 36 → 42 for the `platform.tls` probe's three bodies), and three fingerprints moved with **no count moving at all** (`pweb.pas`, `pwebtemplates.pas`, `pwebsdk.pas` — the `OSWINDOWS` → `WINDOWS` substitution). That last row is the fingerprint doing exactly what it exists for |
 | the two template contracts | section 6 of `check_cap10b1_contracts.ps1` and `check_cap10b2_contracts.ps1` gains ONE named exception — the transport selection — pinned to its exact ordered directive texts, required to be present, and observed firing. Ledger `15B-15` owns removing it |
 | `template_digest` (CAP-10B0 corpus) | moves: P10 pins the canonical descriptor and it is now the schema-2 document. 106 corpus lines, `2dfa9138…` |
 | `docs/cli-contract.md` §2 | "schema 1" → **"schema 1 and schema 2"**, with the schema-2 document canonical, schema 1 kept beside it as still valid and reading as `[]`, and the 267-byte origin bound written in as a Checkpoint-1 amendment. The section had still said schema 2 was "ratified and not yet implemented" |
 | `test/cap7f/mormot-defines.tsv` | **new, committed data**: the 206-symbol define set derived from the pin, plus the pin's sha256. The derivation is re-done and compared wherever `deps/mormot2` is present, and required on all four legs by C12 |
+| the CAP-10B1 React closure, pinned in CAP-10B2 | inventory `5bcfb497…` → **`eabbc88d…`**, bytes 73176 → **76854**, count 16 unchanged: three template files grew (`program.lpr` and `app.services.pas` gain the fenced `PWEB_NET` region, `pweb.json` gains the network block at schema 2). Measured on windows-x86_64 locally and on the linux leg before being written |
 
 ## REGRESSIONS (local)
 
@@ -316,16 +317,20 @@ re-ratified)** · `check_mormot_defines` PASS (derived 206, scanned 93,
 hits 0), **in a full checkout and in a `git archive` checkout with no
 `deps/` at all** · CAP-7F schema agreement PASS (843 fields, three lists,
 zero asymmetry) · CAP-11A structure PASS (205 steps) and migration map PASS ·
-**the source contract gates PASS** — CAP-10A, 10B0, 10B1, 10B2, 10C1, 10C2,
-10C3, 10D0, 10D1, 14A, 14B and 15B (now C1–C13) — and CAP-10D2's own
-contract passes once the tree is committed, which is the one thing it
+**the twelve source contract gates PASS** — CAP-10A, 10B0, 10B1, 10B2, 10C1,
+10C2, 10C3, 10D0, 10D1, 14A, 14B and 15B (now **C1–C14**) — and CAP-10D2's
+own contract passes once the tree is committed, which is the one thing it
 measures that a dirty working tree cannot satisfy · both CAP-10 and CAP-11
-ledger gates PASS · backlog gate PASS (396 entries, 0 orphans, 54 open) and
-its 19-leg negative self-test PASS · **the CAP-10B0, 10B1, 10A and 10C1
-GATES re-run and PASS**, with `cli_digest_unchanged` and
-`doctor_schema_digest_unchanged` both true against the new pins ·
-CAP-15B contracts and gates PASS on Windows and Linux · the composition
-smoke PASS on Linux.
+ledger gates PASS · backlog gate PASS (398 entries, 0 orphans, 54 open) and
+its 19-leg negative self-test PASS.
+
+**Both reachable chains are now exercised end to end, build and gates.** On
+**windows-x86_64**: CAP-10A, 10B0, 10B1, 10C0, 10C1, 10C2, 10D0, 10D1, 10D2,
+14A, 14B and 15B. Under **WSL on linux-x86_64**: CAP-10A, 10B0, 10B1, 10B2,
+10C0, 10C1, 10C2, 10C3 — including both private build proofs — plus the
+CAP-15B gates and the composition smoke. `cli_digest_unchanged`,
+`doctor_schema_digest_unchanged`, `c0_supervision_digest_unchanged` and both
+pipeline closures read true against the superseded pins on both targets.
 
 **Three cross-cutting gates were red at the CAP-15B implementation commit
 and are green here**, which is a finding of its own (ledger `15B-16`): a
@@ -354,6 +359,28 @@ gates prove the shard. What this run adds is that **the dev host's blind spots
 are a class too** — no macOS, and no hosted-job environment — and the answer to
 both is the same as for the always-false conditional: a source rule that runs
 where the code is, not where the compiler is.
+
+## HOSTED RUN 34452631822 — TWO MORE, AND WHAT THEY HAVE IN COMMON
+
+| leg | cause | fix |
+|---|---|---|
+| macos-x64, macos-arm64 | **CAP-7M0 gate M20** sweeps `pweb_cocoa_bridge.h` for `mormot\.net\.(server|client|http)` — and this shard's banner comment in that file explained that *"exactly one file under src names `mormot.net.client`"*. The sentence was true, and writing it there made it false | reworded to name no unit. **C14** now runs M20's SOURCE half on every target, **derived from the script** — the file list, the exempt list and the forbidden pattern are parsed out of `check_cap7m_nonetwork.sh` itself, so a copy cannot rot — and it was **observed refusing line 524 by name** |
+| linux | **CAP-10B2** holds the CAP-10B1 closure's React inventory as a **literal** (`$CAP10B1_REACT_INVENTORY_DIGEST`, `_TOTAL_BYTES`) while CAP-10B1's own gate records it as a **row**. A row moves with the thing it measures; a literal must be moved by hand. Three template files grew, so `5bcfb497…` → `eabbc88d…` and 73176 → 76854 bytes (16 files, unchanged) | both superseded with the arithmetic written above them, **measured on two targets first** — the local windows record and the linux leg that went red |
+
+**What the three runs have in common is a shape, not a bug.** Every failure so
+far has been a *claim held somewhere the shard's own scripts do not run*: an
+allowlist, a literal pin, a byte-for-byte document, a comment inside a swept
+file. And in two cases the local check that should have caught it was
+structurally incapable of doing so — M20 aborts on a non-Mac before its
+platform-independent half, and the aggregate job carries no `deps/`. Both are
+now mirrored where they can actually run.
+
+**The Linux and Windows chains are now exercised end to end here.** On Windows:
+CAP-10A, 10B0, 10B1, 10C0, 10C1, 10C2, 10D0, 10D1, 10D2, 14A, 14B — build and
+gates, all green. Under WSL: CAP-10A, 10B0, 10B1, **10B2**, 10C0, 10C1, 10C2,
+**10C3** — including both private build proofs — all green. What remains
+unreachable from this host is macOS, and that is the same limitation the seven
+Darwin rows are conditioned on.
 
 ## FREEZE
 

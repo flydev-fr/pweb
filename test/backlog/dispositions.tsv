@@ -395,3 +395,5 @@ RP-5	b4c32379	ACCEPTED	post-MVP mORMot repin	-	the ratification measurement itse
 15B-17	bd77204b	CLOSED	CAP-15B	-	the wording is fixed and the class is swept by C13, which was observed refusing the exact line that went red
 15B-18	d21922d0	CLOSED	CAP-15B	-	both pinned copies of the canonical descriptor now carry schema 2, and the contract no longer says the schema it implements is unimplemented
 15B-19	b30d9ba0	CLOSED	CAP-15B	-	the derived set is committed so the sweep stays checkout-only, and the derivation is corroborated against the real pin on four legs
+15B-20	6ded2e2d	CLOSED	CAP-15B	-	the wording no longer names the unit, and C14 runs M20 source half on every target from M20 own definition rather than a copy
+15B-21	bd5eda15	CLOSED	CAP-15B	-	both literals superseded with the reason recorded, measured on two targets first, and the whole Linux CAP-10 chain re-run green
