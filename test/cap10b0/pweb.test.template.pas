@@ -1200,17 +1200,25 @@ begin
   Check(json <> '', 'the plan carries no descriptor');
   // P10 (shape half): the exact canonical document, as docs/cli-contract.md
   // prints it. The other half - that the FROZEN reader accepts it - needs a
-  // tree that exists and lives in the atomic case
+  // tree that exists and lives in the atomic case.
+  //
+  // CAP-15B: `create` emits SCHEMA 2 with an EMPTY origin set. `[]` is not a
+  // door with nothing behind it - it is the statement that network.fetch is
+  // absent by construction, because the build compiles no network region and
+  // the capability is never granted. This assertion is the reason the change
+  // could not be made quietly: the canonical document is pinned here, byte
+  // for byte, and in docs/cli-contract.md beside it
   CheckEqual(json,
     '{' + #10 +
-    '  "schema": 1,' + #10 +
+    '  "schema": 2,' + #10 +
     '  "name": "demo",' + #10 +
     '  "version": "0.1.0",' + #10 +
     '  "bundleId": "com.example.demo",' + #10 +
     '  "ui": "react",' + #10 +
     '  "native": { "program": "src/demo.lpr" },' + #10 +
     '  "frontend": { "root": "frontend" },' + #10 +
-    '  "output": "dist"' + #10 +
+    '  "output": "dist",' + #10 +
+    '  "network": { "origins": [] }' + #10 +
     '}' + #10);
   Record_('P10 descriptor ' + PWebTplSha256Hex(json));
 end;

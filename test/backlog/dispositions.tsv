@@ -392,3 +392,6 @@ RP-5	b4c32379	ACCEPTED	post-MVP mORMot repin	-	the ratification measurement itse
 15B-14	3f23aa5b	CLOSED	CAP-15B	-	a one-constant fix in the scaffold self-verification, and the composition smoke is the only reason anybody saw it
 15B-15	fd9d8e64	ROADMAP	a shard that owns the unit path and the SDK ship table	-	the exception is narrow, pinned in both template gates and proven to fire; moving it into the framework re-measures the pipeline digest, the ship table and both generated inventories, which is a shard rather than a paragraph
 15B-16	8f4a9129	CLOSED	CAP-15B	-	all four cross-cutting gates re-ratified with their reasons written down, and the new cli_digest corroborated on two targets before it was pinned
+15B-17	bd77204b	CLOSED	CAP-15B	-	the wording is fixed and the class is swept by C13, which was observed refusing the exact line that went red
+15B-18	d21922d0	CLOSED	CAP-15B	-	both pinned copies of the canonical descriptor now carry schema 2, and the contract no longer says the schema it implements is unimplemented
+15B-19	b30d9ba0	CLOSED	CAP-15B	-	the derived set is committed so the sweep stays checkout-only, and the derivation is corroborated against the real pin on four legs

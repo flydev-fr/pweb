@@ -300,26 +300,32 @@ bodyless method is refused.
 | `navigation_policy_digest` `360d69f2…`, `capability_policy_digest` `23b87da5…` | **must not move**, and are re-measured rather than assumed |
 | `pipeline_digest` | **must not move** for an empty-origins project, by the `-d`/`-Fi`-iff design |
 | the CAP-7F evidence schema | 836 → **843** fields in all three lists (`emit_evidence.ps1`, `emit_evidence.sh`, the aggregator's `$required`), the seven `composition_*` rows |
-| the backlog census | 389 entries / 54 open → **393** / **54**: `15B-12` closes, `15B-13` to `15B-16` are new |
+| the backlog census | 389 entries / 54 open → **396** / **54**: `15B-12` closes, `15B-13` to `15B-19` are new |
 | `cli_digest` | `4aa3c03b…c198f9ec` → **`095c95b2…75eb6f67`**, pinned in `test/cap10c1/run_cap10c1_gates.ps1` with the reason above it. Measured **identical on windows-x86_64 and linux-x86_64** before it was written down. The first time this value has moved for something other than a command becoming public: `project\|schema-2\|schema_unsupported` became `schema-3`, and eighteen `schema1-*` / `schema2-*` descriptor rows joined the corpus. 130 lines → 148 |
 | the CAP-7F divergence allowlist | one row ADDED (`src/rpc/pweb.rpc.fetch.mormot.pas`, 2 directives), one RE-RATIFIED (`tools/pweb/pweb.cli.platform.pas`, 36 → 42 for the `platform.tls` probe's three bodies), and three fingerprints moved with **no count moving at all** (`pweb.pas`, `pwebtemplates.pas`, `pwebsdk.pas` — the `OSWINDOWS` → `WINDOWS` substitution). That last row is the fingerprint doing exactly what it exists for |
 | the two template contracts | section 6 of `check_cap10b1_contracts.ps1` and `check_cap10b2_contracts.ps1` gains ONE named exception — the transport selection — pinned to its exact ordered directive texts, required to be present, and observed firing. Ledger `15B-15` owns removing it |
+| `template_digest` (CAP-10B0 corpus) | moves: P10 pins the canonical descriptor and it is now the schema-2 document. 106 corpus lines, `2dfa9138…` |
+| `docs/cli-contract.md` §2 | "schema 1" → **"schema 1 and schema 2"**, with the schema-2 document canonical, schema 1 kept beside it as still valid and reading as `[]`, and the 267-byte origin bound written in as a Checkpoint-1 amendment. The section had still said schema 2 was "ratified and not yet implemented" |
+| `test/cap7f/mormot-defines.tsv` | **new, committed data**: the 206-symbol define set derived from the pin, plus the pin's sha256. The derivation is re-done and compared wherever `deps/mormot2` is present, and required on all four legs by C12 |
 
 ## REGRESSIONS (local)
 
 `check_dev_trust` PASS · CAP-5 and CAP-6 zero-network sweeps PASS ·
 **CAP-7F divergence sweep PASS (220 platform conditionals, allowlist
 re-ratified)** · `check_mormot_defines` PASS (derived 206, scanned 93,
-hits 0) · CAP-7F schema agreement PASS (843 fields, three lists, zero
-asymmetry) · CAP-11A structure PASS (205 steps) and migration map PASS ·
-**the ten source contract gates PASS** — CAP-10A, 10B0, **10B1**, **10B2**,
-10C1, 10C2, 10C3, 10D0, 10D1, 14A, 14B, 15B — and CAP-10D2's own contract
-passes once the tree is committed, which is the one thing it measures that a
-dirty working tree cannot satisfy · both CAP-10 and CAP-11 ledger gates PASS
-· backlog gate PASS (393 entries, 0 orphans, 54 open) and its 19-leg negative
-self-test PASS · CAP-10A gates PASS on **both** targets with
-`cli_digest` and `doctor_schema_digest` identical · CAP-15B contracts and
-gates PASS on Windows and Linux · the composition smoke PASS on Linux.
+hits 0), **in a full checkout and in a `git archive` checkout with no
+`deps/` at all** · CAP-7F schema agreement PASS (843 fields, three lists,
+zero asymmetry) · CAP-11A structure PASS (205 steps) and migration map PASS ·
+**the source contract gates PASS** — CAP-10A, 10B0, 10B1, 10B2, 10C1, 10C2,
+10C3, 10D0, 10D1, 14A, 14B and 15B (now C1–C13) — and CAP-10D2's own
+contract passes once the tree is committed, which is the one thing it
+measures that a dirty working tree cannot satisfy · both CAP-10 and CAP-11
+ledger gates PASS · backlog gate PASS (396 entries, 0 orphans, 54 open) and
+its 19-leg negative self-test PASS · **the CAP-10B0, 10B1, 10A and 10C1
+GATES re-run and PASS**, with `cli_digest_unchanged` and
+`doctor_schema_digest_unchanged` both true against the new pins ·
+CAP-15B contracts and gates PASS on Windows and Linux · the composition
+smoke PASS on Linux.
 
 **Three cross-cutting gates were red at the CAP-15B implementation commit
 and are green here**, which is a finding of its own (ledger `15B-16`): a
@@ -330,6 +336,24 @@ always-false fix had moved; the two template contracts did not know that the
 door needs one conditional in generated Pascal; and the CAP-10A `cli_digest`
 pin did not know the parser corpus had gained eighteen descriptor rows. Every
 one is checkout-only or near it. Every one would have cost a hosted run.
+
+## HOSTED RUN 34443707568 — THREE FAILURES, THREE DEFECTS
+
+The first hosted run of the branch went red on all four legs and the
+aggregate. None of the three causes was in the door; all three were things a
+shard's own scripts do not run, and each is now mechanised.
+
+| leg | cause | fix, and the gate that would have caught it |
+|---|---|---|
+| macos-x64, macos-arm64 | `pweb_cocoa_bridge.h:523:53: error: '/*' within block comment [-Werror,-Wcomment]` — the banner comment wrote `exactly one file in src/** names mormot.net.client`, and `src/**` contains `/*` | reworded to `under src`; **C13** of `check_cap15b_contracts.ps1` now sweeps every `.h`/`.m`/`.mm` under `src/platform/macos` for both shapes `-Wcomment` refuses, and was **observed refusing the exact line** before the fix was kept. There is no macOS here, so a source rule is the only instrument that could have found it |
+| windows, linux | the CAP-10B0 suite's `CheckEqual len a=242 b=210` — the canonical `pweb.json` is pinned byte for byte in `pweb.test.template.pas` P10 *and* in `docs/cli-contract.md` §2, and neither was updated when `create` began emitting schema 2. §2 was worse than stale: it still said schema 2 was "ratified and not yet implemented" | both carry the schema-2 document; §2 keeps schema 1 beside it as still valid and reading as `[]`, and now carries the 267-byte origin bound as a written Checkpoint-1 amendment. Ledger `15B-18` |
+| cap7 aggregate | `deps/mormot2/src/mormot.defines.inc is absent` — the always-false sweep derives its symbol set from the pin, and the job it correctly lives in checks out the repository and fetches nothing | **a checkout-only gate that needs a dependency is not one.** The derived set is committed as `test/cap7f/mormot-defines.tsv` (206 symbols + the pin's sha256); the sweep still re-derives and refuses a mismatch **wherever the pin is present**, and **C12** requires that corroboration on all four legs — so a repin that moves the set turns four legs red rather than passing. Both paths proven locally: green in a `git archive` checkout with no `deps/` at all, and the stale-list refusal observed firing |
+
+The pattern is the one ledger `15B-16` already named, met again: a shard's own
+gates prove the shard. What this run adds is that **the dev host's blind spots
+are a class too** — no macOS, and no hosted-job environment — and the answer to
+both is the same as for the always-false conditional: a source rule that runs
+where the code is, not where the compiler is.
 
 ## FREEZE
 

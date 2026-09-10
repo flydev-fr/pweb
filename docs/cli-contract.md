@@ -174,7 +174,34 @@ identity is easier to reason about than two that must be kept in step.
 
 ---
 
-## 2. The project descriptor — `pweb.json`, schema 1
+## 2. The project descriptor — `pweb.json`, schema 1 and schema 2
+
+`pweb create` emits **schema 2**, and this is the canonical document byte for
+byte — `test/cap10b0/pweb.test.template.pas` P10 pins it against the scaffold
+engine's own output:
+
+```json
+{
+  "schema": 2,
+  "name": "my-app",
+  "version": "0.1.0",
+  "bundleId": "com.example.myapp",
+  "ui": "react",
+  "native": { "program": "src/myapp.lpr" },
+  "frontend": { "root": "frontend" },
+  "output": "dist",
+  "network": { "origins": [] }
+}
+```
+
+**Every key is required and there are no optional keys.** That is a choice
+about how the contract grows: an optional key added to a schema later would be
+accepted by a new CLI and refused by an old one while both call themselves the
+same schema — a silent change of meaning. Growth happens by bumping `schema`,
+and a bump is a visible, reviewable act.
+
+**Schema 1 is still valid**, and it is exactly the document above without
+`network`:
 
 ```json
 {
@@ -189,16 +216,26 @@ identity is easier to reason about than two that must be kept in step.
 }
 ```
 
-**Every key is required and there are no optional keys.** That is a choice
-about how the contract grows: an optional key added to schema 1 later would be
-accepted by a new CLI and refused by an old one while both call themselves
-schema 1 — a silent change of meaning. Growth happens by bumping `schema`, and
-a bump is a visible, reviewable act.
+A schema-1 descriptor **reads as an empty origin list**, so no existing project
+gains a network door by being rebuilt. `[]` is not a door with nothing behind
+it: it means `network.fetch` is absent by construction — the build compiles no
+network region, the decorator is never constructed and the capability is never
+granted. §5 is the whole of what schema 2 means.
 
-The first such bump is ratified and not yet implemented: **schema 2** adds a
-required `network.origins`, and §5's outbound-network decision is the whole of
-what it means. A schema-1 descriptor stays valid and reads as an empty origin
-list, so nothing in this section changes for an existing project.
+**The origin grammar**, for `network.origins`: an absolute origin with no path,
+no query, no fragment, no userinfo and no wildcard; `https` in a release build;
+lower-case scheme and host; a default port canonicalised away, so
+`https://example.com:443` and `https://example.com` are the same origin and
+declaring both is a duplicate; at most **8** origins; at most **267 bytes**
+each.
+
+> **Amendment, CAP-15B Checkpoint 1.** CAP-15A §2 bounded a declared origin at
+> **262** bytes and derived it as `https://` plus a 253-byte host plus
+> `:65535`. That is `8 + 253 + 6 = 267`: 262 is the colon without its port
+> digits, so the ratified bound would have refused a maximum-length host
+> carrying an explicit port — the exact case its own parenthesis says must fit.
+> The shard ships **267** and spells the arithmetic in the constant's comment
+> (`PWEB_FETCH_MAX_ORIGIN_BYTES`).
 
 The descriptor is **developer-controlled build metadata**, at the trust level
 of the developer's own source tree. It is never read from `app.pwb`,

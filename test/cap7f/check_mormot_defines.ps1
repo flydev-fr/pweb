@@ -29,9 +29,13 @@
 #   `mormot.defines.inc` may not test a symbol that only that file defines.
 #
 # The symbol set is DERIVED FROM THE PIN, not hand-written: every
-# `{$define X}` in the pinned `mormot.defines.inc`. A mORMot repin that adds
-# a define widens this gate automatically, and the derived count is reported
-# so a repin that changes it is visible.
+# `{$define X}` in the pinned `mormot.defines.inc`. It is COMMITTED as
+# `test/cap7f/mormot-defines.tsv` so this sweep stays checkout-only - the job
+# it runs in has the repository and nothing else - and the derivation is
+# re-done and compared wherever `deps/mormot2` IS present, which is every
+# platform leg. A mORMot repin that adds a define therefore widens this gate,
+# and one that changes the set without regenerating the file turns four legs
+# red rather than passing quietly.
 #
 # FOUR SYMBOLS ARE EXCLUDED, and the exclusion is measured rather than
 # assumed. FPC predefines a `CPU<target>` family of its own, and four members
@@ -62,7 +66,7 @@
 #
 # Checkout-only: no build, no toolchain, no network.
 #
-# Emits build/cap7f/mormot-defines.txt and exits nonzero on any violation.
+# Emits build/cap7f/mormot-defines-sweep.txt and exits nonzero on any violation.
 #
 # Usage: pwsh test/cap7f/check_mormot_defines.ps1
 $ErrorActionPreference = 'Stop'
@@ -74,24 +78,69 @@ New-Item -ItemType Directory -Force build/cap7f | Out-Null
 $report = New-Object System.Collections.Generic.List[string]
 $violations = New-Object System.Collections.Generic.List[string]
 
-# --- the symbol set, derived from the pinned include -----------------------
-$definesInc = 'deps/mormot2/src/mormot.defines.inc'
-if (-not (Test-Path $definesInc)) {
-    throw "[cap7f] $definesInc is absent - deps/mormot2 has not been fetched"
+# --- the symbol set ---------------------------------------------------------
+#
+# DERIVED FROM THE PIN, and committed beside this gate so the sweep can run in
+# a job that carries no `deps/` tree. `test/cap7f/mormot-defines.tsv` is DATA,
+# not a hand-written list:
+#
+#   * wherever `deps/mormot2` IS present - every platform leg, and any
+#     developer checkout that has fetched it - this gate RE-DERIVES the set
+#     from the pin and REFUSES a mismatch by name, so a mORMot repin that adds
+#     or removes a define cannot pass without regenerating the file in the
+#     same commit;
+#   * where it is NOT present - the checkout-only aggregate job, which is
+#     exactly where this sweep belongs beside `check_divergence` - the
+#     committed list is used and the report says so.
+#
+# The first hosted run of this gate went red for precisely the absence this
+# handles: the aggregate job checks out the repository and nothing else, and
+# the gate threw on a missing `mormot.defines.inc`. A checkout-only gate that
+# needs a dependency is not a checkout-only gate.
+$listPath = 'test/cap7f/mormot-defines.tsv'
+if (-not (Test-Path $listPath)) { throw "[cap7f] $listPath is absent" }
+$listLines = @([System.IO.File]::ReadAllLines($listPath))
+$pinSha = ''
+$committed = [System.Collections.Generic.HashSet[string]]::new(
+    [System.StringComparer]::OrdinalIgnoreCase)
+foreach ($l in $listLines) {
+    if ($l -match '^#\s*pin-sha256\s+([0-9a-f]{64})\s*$') { $pinSha = $Matches[1]; continue }
+    if ($l -match '^\s*#' -or $l.Trim() -eq '') { continue }
+    [void]$committed.Add($l.Trim())
 }
-$defText = [System.IO.File]::ReadAllText($definesInc)
+if ($pinSha -eq '') { throw "[cap7f] $listPath carries no pin-sha256 line" }
+
+$definesInc = 'deps/mormot2/src/mormot.defines.inc'
 $symbols = [System.Collections.Generic.HashSet[string]]::new(
     [System.StringComparer]::OrdinalIgnoreCase)
-foreach ($m in [regex]::Matches($defText, '\{\$define\s+([A-Za-z_][A-Za-z0-9_]*)\s*\}',
-        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
-    [void]$symbols.Add($m.Groups[1].Value)
+foreach ($s in $committed) { [void]$symbols.Add($s) }
+$derivedFrom = 'the committed list (deps/mormot2 is absent, as it is in the checkout-only job)'
+if (Test-Path $definesInc) {
+    $defText = [System.IO.File]::ReadAllText($definesInc)
+    $live = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($m in [regex]::Matches($defText, '\{\$define\s+([A-Za-z_][A-Za-z0-9_]*)\s*\}',
+            [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+        [void]$live.Add($m.Groups[1].Value)
+    }
+    $added = @($live | Where-Object { -not $committed.Contains($_) } | Sort-Object)
+    $removed = @($committed | Where-Object { -not $live.Contains($_) } | Sort-Object)
+    if ($added.Count -gt 0 -or $removed.Count -gt 0) {
+        $violations.Add(("THE COMMITTED DEFINE SET IS STALE: $listPath has " +
+            "$($committed.Count) symbol(s) and the pin has $($live.Count) -- " +
+            "added: $($added -join ',') removed: $($removed -join ',') -- " +
+            'regenerate the file in the same commit as the repin, so the ' +
+            'sweep widens with mORMot instead of quietly staying where it was'))
+    }
+    $symbols = $live
+    $derivedFrom = "$definesInc (re-derived and compared against the committed list)"
 }
 $derived = $symbols.Count
 # MEASURED, not assumed - see the header
 foreach ($alsoFpc in 'CPU32', 'CPU64', 'CPUAARCH64', 'CPUARM') {
     [void]$symbols.Remove($alsoFpc)
 }
-$report.Add("symbols derived from ${definesInc}: $derived ($($symbols.Count) after the four FPC CPU-target members)")
+$report.Add("symbols: $derived from $derivedFrom ($($symbols.Count) after the four FPC CPU-target members)")
 
 # --- the surface -----------------------------------------------------------
 # src/** is the framework, tools/** the CLI and the bundler, examples/** the
@@ -159,7 +208,7 @@ if ($violations.Count -eq 0) {
     foreach ($v in $violations) { $lines.Add("VIOLATION: $v") }
 }
 [System.IO.File]::WriteAllText(
-    (Join-Path $repoRoot 'build/cap7f/mormot-defines.txt'),
+    (Join-Path $repoRoot 'build/cap7f/mormot-defines-sweep.txt'),
     (($lines -join "`n") + "`n"), [System.Text.UTF8Encoding]::new($false))
 foreach ($r in $report) { Write-Host "[cap7f] $r" }
 if ($violations.Count -gt 0) {

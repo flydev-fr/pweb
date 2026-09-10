@@ -319,6 +319,121 @@ foreach ($s in $sweeps) {
 }
 $report.Add("C11: all $($sweeps.Count) zero-transport sweeps carry the re-scoped claim")
 
+# --- C13: the Cocoa bridge compiles under -Werror -Wcomment -----------------
+#
+# MEASURED, and it cost a hosted macOS leg. This shard's addition to
+# `src/platform/macos/pweb_cocoa_bridge.h` documented the transport split in a
+# banner comment and wrote the phrase `exactly one file in src/** names
+# mormot.net.client`. `src/**` contains `/*`, the banner is a block comment,
+# and `test/cap7m1` compiles the bridge with `-Werror`:
+#
+#   pweb_cocoa_bridge.h:523:53: error: '/*' within block comment
+#     [-Werror,-Wcomment]
+#
+# There is no macOS on the development host, so the only instrument that could
+# have caught it before the push is a source rule. This is that rule, and it
+# covers BOTH shapes `-Wcomment` refuses: a `/*` opened inside an already-open
+# block comment, and a `//` comment continued onto the next line with a
+# trailing backslash.
+$cocoaSources = @(Get-ChildItem 'src/platform/macos' -File -Include '*.h', '*.mm', '*.m' -Recurse |
+    Sort-Object FullName)
+$commentHits = 0
+foreach ($f in $cocoaSources) {
+    $rel = ($f.FullName.Substring($repoRoot.Length).TrimStart([char]92, [char]47)).Replace([char]92, [char]47)
+    $inBlock = $false
+    $lineNo = 0
+    foreach ($line in [System.IO.File]::ReadLines($f.FullName)) {
+        $lineNo++
+        $i = 0
+        while ($i -lt $line.Length - 1) {
+            $two = $line.Substring($i, 2)
+            if ($inBlock) {
+                if ($two -eq '*/') { $inBlock = $false; $i += 2; continue }
+                if ($two -eq '/*') {
+                    $commentHits++
+                    Violation ("C13: ${rel}:${lineNo}: '/*' inside an open block " +
+                        "comment -- clang refuses this under -Werror,-Wcomment, " +
+                        'and the macOS bridge is compiled that way')
+                    $i += 2; continue
+                }
+                $i++; continue
+            }
+            if ($two -eq '/*') { $inBlock = $true; $i += 2; continue }
+            if ($two -eq '//') {
+                if ($line.TrimEnd().EndsWith('\')) {
+                    $commentHits++
+                    Violation ("C13: ${rel}:${lineNo}: a // comment continued by a " +
+                        'trailing backslash -- -Wcomment refuses it')
+                }
+                break
+            }
+            $i++
+        }
+    }
+}
+$report.Add("C13: $($cocoaSources.Count) Cocoa source(s) swept for -Wcomment shapes; $commentHits hit(s)")
+
+# --- C12: the committed mORMot define set IS the pinned one -----------------
+#
+# `test/cap7f/check_mormot_defines.ps1` refuses an always-false conditional -
+# a directive testing a symbol only `mormot.defines.inc` defines, in a file
+# that does not include it. That sweep runs in the CHECKOUT-ONLY job beside
+# `check_divergence`, which is where it belongs and which has no `deps/`
+# tree, so its symbol set is committed as `test/cap7f/mormot-defines.tsv`.
+#
+# A committed list nothing checks is a list that goes stale silently, and the
+# sweep would then keep passing over a symbol mORMot had added. THIS is the
+# check: every platform leg carries the real pin (the mORMot fetch runs long
+# before this gate), so every platform leg re-derives the set and compares.
+# Four targets, four independent corroborations, and a repin that moves the
+# set turns all four red until the file is regenerated in the same commit.
+$listPath = 'test/cap7f/mormot-defines.tsv'
+$definesInc = 'deps/mormot2/src/mormot.defines.inc'
+if (-not (Test-Path $listPath)) {
+    Violation "$listPath is absent -- the always-false-conditional sweep has no symbol set"
+} elseif (-not (Test-Path $definesInc)) {
+    Violation ("$definesInc is absent, so the committed define set could not be " +
+        'corroborated against the pin -- this gate runs after the mORMot fetch ' +
+        'on every leg, and the corroboration is the whole of C12')
+} else {
+    $committed = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase)
+    $pinShaClaimed = ''
+    foreach ($l in [System.IO.File]::ReadAllLines($listPath)) {
+        if ($l -match '^#\s*pin-sha256\s+([0-9a-f]{64})\s*$') { $pinShaClaimed = $Matches[1]; continue }
+        if ($l -match '^\s*#' -or $l.Trim() -eq '') { continue }
+        [void]$committed.Add($l.Trim())
+    }
+    $live = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($m in [regex]::Matches([System.IO.File]::ReadAllText($definesInc),
+            '\{\$define\s+([A-Za-z_][A-Za-z0-9_]*)\s*\}',
+            [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+        [void]$live.Add($m.Groups[1].Value)
+    }
+    $added = @($live | Where-Object { -not $committed.Contains($_) } | Sort-Object)
+    $removed = @($committed | Where-Object { -not $live.Contains($_) } | Sort-Object)
+    if ($added.Count -gt 0 -or $removed.Count -gt 0) {
+        Violation ("C12: $listPath is stale against $definesInc -- added: " +
+            "$($added -join ',') removed: $($removed -join ',') -- regenerate " +
+            'it in the same commit as the repin')
+    }
+    # the pin's own bytes, so a repin that reshuffles the file without changing
+    # the SET is still visible rather than silently accepted
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $pinShaLive = (-join ($sha.ComputeHash(
+            [System.IO.File]::ReadAllBytes($definesInc)) |
+            ForEach-Object { $_.ToString('x2') }))
+    } finally { $sha.Dispose() }
+    if ($pinShaClaimed -cne $pinShaLive) {
+        Violation ("C12: $listPath claims pin-sha256 $pinShaClaimed and " +
+            "$definesInc hashes to $pinShaLive -- the define SET may be " +
+            'unchanged, but the file it was derived from is not the one on disk')
+    }
+    $report.Add("C12: $($live.Count) mORMot defines, committed set equal, pin $($pinShaLive.Substring(0,12))...")
+}
+
 # --- verdict ----------------------------------------------------------------
 New-Item -ItemType Directory -Force build/cap15b | Out-Null
 $lines = New-Object System.Collections.Generic.List[string]
