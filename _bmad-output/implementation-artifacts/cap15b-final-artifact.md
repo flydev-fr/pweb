@@ -300,7 +300,7 @@ bodyless method is refused.
 | `navigation_policy_digest` `360d69f2…`, `capability_policy_digest` `23b87da5…` | **must not move**, and are re-measured rather than assumed |
 | `pipeline_digest` | **must not move** for an empty-origins project, by the `-d`/`-Fi`-iff design |
 | the CAP-7F evidence schema | 836 → **843** fields in all three lists (`emit_evidence.ps1`, `emit_evidence.sh`, the aggregator's `$required`), the seven `composition_*` rows |
-| the backlog census | 389 entries / 54 open → **398** / **54**: `15B-12` closes, `15B-13` to `15B-21` are new |
+| the backlog census | 389 entries / 54 open → **400** / **54**: `15B-12` closes, `15B-13` to `15B-23` are new |
 | `cli_digest` | `4aa3c03b…c198f9ec` → **`095c95b2…75eb6f67`**, pinned in `test/cap10c1/run_cap10c1_gates.ps1` with the reason above it. Measured **identical on windows-x86_64 and linux-x86_64** before it was written down. The first time this value has moved for something other than a command becoming public: `project\|schema-2\|schema_unsupported` became `schema-3`, and eighteen `schema1-*` / `schema2-*` descriptor rows joined the corpus. 130 lines → 148 |
 | the CAP-7F divergence allowlist | one row ADDED (`src/rpc/pweb.rpc.fetch.mormot.pas`, 2 directives), one RE-RATIFIED (`tools/pweb/pweb.cli.platform.pas`, 36 → 42 for the `platform.tls` probe's three bodies), and three fingerprints moved with **no count moving at all** (`pweb.pas`, `pwebtemplates.pas`, `pwebsdk.pas` — the `OSWINDOWS` → `WINDOWS` substitution). That last row is the fingerprint doing exactly what it exists for |
 | the two template contracts | section 6 of `check_cap10b1_contracts.ps1` and `check_cap10b2_contracts.ps1` gains ONE named exception — the transport selection — pinned to its exact ordered directive texts, required to be present, and observed firing. Ledger `15B-15` owns removing it |
@@ -318,10 +318,10 @@ hits 0), **in a full checkout and in a `git archive` checkout with no
 `deps/` at all** · CAP-7F schema agreement PASS (843 fields, three lists,
 zero asymmetry) · CAP-11A structure PASS (205 steps) and migration map PASS ·
 **the twelve source contract gates PASS** — CAP-10A, 10B0, 10B1, 10B2, 10C1,
-10C2, 10C3, 10D0, 10D1, 14A, 14B and 15B (now **C1–C14**) — and CAP-10D2's
+10C2, 10C3, 10D0, 10D1, 14A, 14B and 15B (now **C1–C15**) — and CAP-10D2's
 own contract passes once the tree is committed, which is the one thing it
 measures that a dirty working tree cannot satisfy · both CAP-10 and CAP-11
-ledger gates PASS · backlog gate PASS (398 entries, 0 orphans, 54 open) and
+ledger gates PASS · backlog gate PASS (400 entries, 0 orphans, 54 open) and
 its 19-leg negative self-test PASS.
 
 **Both reachable chains are now exercised end to end, build and gates.** On
@@ -382,6 +382,51 @@ gates, all green. Under WSL: CAP-10A, 10B0, 10B1, **10B2**, 10C0, 10C1, 10C2,
 unreachable from this host is macOS, and that is the same limitation the seven
 Darwin rows are conditioned on.
 
+## HOSTED RUN 34457918457 — LINUX GREEN, AND THE LAST DARWIN GAP
+
+**The Linux leg passed end to end for the first time**, and both macOS legs
+reached **step 183 with 97 successes** — past CAP-7M0, CAP-7M1, CAP-8B/8C,
+every CAP-9 harness and the whole CAP-10 chain. The only remaining failure was
+the CAP-15B step itself:
+
+```
+Undefined symbols for architecture x86_64:
+  "_pweb_cocoa_fetch", referenced from:
+     _PWEB.PLATFORM.COCOA.FETCH_$$_PWEBFETCHNATIVETRANSPORT in pweb.platform.cocoa.fetch.o
+  "_pweb_cocoa_fetch_release", referenced from: …
+```
+
+**Half a transport does not link.** `pweb.platform.cocoa.fetch` is a Pascal
+seam over C entry points in `pweb_cocoa_bridge.o`, so every program that
+*compiles* the unit must also *link* that object plus Cocoa and WebKit. The
+production path always did — `pweb.cli.native.pas` pushes exactly those flags
+for a generated project — but the harness compiled `fetchlive` and both
+`nethost` witnesses with the unit and without the object. Only `darwinprobe`
+had them.
+
+Two rules close it, and both were observed firing:
+
+- **C15** pairs the sets mechanically: every `test/cap15b/*.pas` naming the
+  Cocoa fetch unit must be compiled by a script that also names
+  `pweb_cocoa_bridge.o`. A fourth program cannot be added with only the
+  compile half. *(Refused `hostproofs.ps1` by name when the reference was
+  removed.)*
+- **The Darwin path is now type-checked where no Darwin exists.** The unit
+  opens with `{$ifndef DARWIN} {$MESSAGE Error}` — correct product behaviour,
+  and the reason it was compiled by exactly one target and type-checked by
+  none of the others. `build_cap15b.ps1` now compiles it, `fetchlive.pas` and
+  `darwinprobe.pas` with **`-dDARWIN -Cn`** on every non-Darwin target:
+  `-dDARWIN` takes it past its own guard and selects the Darwin branch of
+  everything that has one; `-Cn` omits the link, which is the only half that
+  genuinely needs a Mac and which C15 covers. It is a **type check** and says
+  so — it proves well-formed Pascal against the real interfaces, and nothing
+  about NSURLSession's behaviour, which is what `darwinprobe` measures on the
+  leg. *(Observed failing on a wrong-arity call to `pweb_cocoa_fetch`, passing
+  again when restored.)*
+
+All three sources type-check clean on windows-x86_64 and linux-x86_64, so the
+Pascal half of the Darwin transport is now known-good rather than assumed.
+
 ## FREEZE
 
 `PWEB_NATIVE_CSP`; the names `pweb.fetch`, `network.fetch`,
@@ -414,6 +459,14 @@ Darwin rows are conditioned on.
    a paragraph. Until then it is pinned to its exact directive texts in both
    template contract gates, required to be present, and both pins were
    observed firing.
+6. **The Darwin transport's Pascal half is type-checked, not compiled.**
+   `build_cap15b.ps1` compiles `pweb.platform.cocoa.fetch.pas`,
+   `fetchlive.pas` and `darwinprobe.pas` with `-dDARWIN -Cn` on every
+   non-Darwin target, and C15 pairs every program naming the unit against
+   the bridge object it must link. Together those cover *well-formedness*
+   and *linkage*. What neither covers is **behaviour**: whether
+   `NSURLSession` does what §10 requires is measured only by
+   `darwinprobe` on a real macOS runner, which is limitation 1.
 
 ## A NOTE ON THIS DOCUMENT'S SIZE
 

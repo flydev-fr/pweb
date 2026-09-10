@@ -509,6 +509,52 @@ if (-not (Test-Path $m20)) {
     }
 }
 
+# --- C15: half a transport does not link -----------------------------------
+#
+# MEASURED, and it cost both macOS legs a third time. `pweb.platform.cocoa
+# .fetch` is a Pascal seam over C entry points that live in
+# `pweb_cocoa_bridge.o`, so every PROGRAM that compiles that unit must also
+# LINK that object and the two frameworks behind it. The production path
+# always did - `pweb.cli.native.pas` pushes exactly those flags for a
+# generated project - but this shard's own harness compiled `fetchlive` and
+# both `nethost` witnesses without them, and hosted run 34457918457 died at
+# the linker on both architectures:
+#
+#   Undefined symbols for architecture x86_64:
+#     "_pweb_cocoa_fetch", referenced from: ... in pweb.platform.cocoa.fetch.o
+#
+# A compile on Windows or Linux cannot show it: the unit is not on the unit
+# path there, so the whole class is invisible from this development host.
+# THE RULE: every `test/cap15b/*.pas` that names the Cocoa fetch unit must be
+# compiled by a script that also names the bridge object. It is checked by
+# pairing the two sets rather than by reading either one, so a fourth
+# program cannot be added with only the compile half.
+$fetchUnit = 'pweb.platform.cocoa.fetch'
+$bridgeObjName = 'pweb_cocoa_bridge.o'
+$harness = @(Get-ChildItem 'test/cap15b' -File -Filter '*.ps1' |
+    Where-Object { ([System.IO.File]::ReadAllText($_.FullName)) -match '\bfpc\b' })
+$linkPairs = 0
+foreach ($src in @(Get-ChildItem 'test/cap15b' -File -Filter '*.pas' |
+        Where-Object { ([System.IO.File]::ReadAllText($_.FullName)).Contains($fetchUnit) })) {
+    $builders = @($harness | Where-Object {
+        ([System.IO.File]::ReadAllText($_.FullName)).Contains($src.Name) })
+    if ($builders.Count -eq 0) {
+        Violation ("C15: test/cap15b/$($src.Name) names $fetchUnit and no harness " +
+            'script compiles it -- an unbuilt program proves nothing')
+        continue
+    }
+    foreach ($b in $builders) {
+        $linkPairs++
+        if (-not ([System.IO.File]::ReadAllText($b.FullName)).Contains($bridgeObjName)) {
+            Violation ("C15: test/cap15b/$($b.Name) compiles $($src.Name), which names " +
+                "$fetchUnit, but never names $bridgeObjName -- on Darwin that program " +
+                'links half a transport and dies at the linker with ' +
+                '"Undefined symbols: _pweb_cocoa_fetch"')
+        }
+    }
+}
+$report.Add("C15: $linkPairs source/builder pair(s) naming $fetchUnit, each linking $bridgeObjName")
+
 # --- verdict ----------------------------------------------------------------
 New-Item -ItemType Directory -Force build/cap15b | Out-Null
 $lines = New-Object System.Collections.Generic.List[string]

@@ -135,6 +135,28 @@ function Invoke-Cap15bHostProofs {
         'P1: an explicit default port was not canonicalised away'
 
     # --- the two built images ---------------------------------------------
+    #
+    # ON DARWIN THE NETWORKED WITNESS LINKS AN OBJECT. `nethost.pas` names
+    # `pweb.platform.cocoa.fetch` inside its `{$ifdef PWEB_NET}` region, and
+    # that unit is a seam over `pweb_cocoa_bridge.o` plus Cocoa and WebKit.
+    # Building it without them is how both macOS legs of hosted run
+    # 34457918457 died - `Undefined symbols: "_pweb_cocoa_fetch"` - while
+    # the production path was fine all along, because `pweb.cli.native.pas`
+    # has always pushed exactly these flags for a generated project.
+    #
+    # THE NONET WITNESS DELIBERATELY GETS NONE OF THEM. It compiles no fetch
+    # unit at all, which is the claim it exists to make, and handing it an
+    # object it does not reference would blur that.
+    $macNetLink = @()
+    if ($IsMacOS) {
+        $bridgeObj = Join-Path $RepoRoot 'build/cap7m/bridge/pweb_cocoa_bridge.o'
+        if (-not (Test-Path -LiteralPath $bridgeObj)) {
+            throw ("the Cocoa bridge object is absent at $bridgeObj -- " +
+                'test/cap15b/build_cap15b.ps1 builds it and runs before these gates')
+        }
+        $macNetLink = @("-k$bridgeObj", '-k-framework', '-kCocoa',
+            '-k-framework', '-kWebKit', '-k-lc++', '-k-lobjc')
+    }
     function BuildWitness([string]$Tag, [string]$IncDir, [bool]$Net) {
         $units = Join-Path $Work "units-$Tag"
         $out = Join-Path $Work "bin-$Tag"
@@ -147,7 +169,7 @@ function Invoke-Cap15bHostProofs {
             '-Fudeps/mormot2/src/lib', '-Fudeps/mormot2/src/crypt',
             '-Fudeps/mormot2/src/net', "-Fl$static")
         if ($IsWindows) { $args = @('-Px86_64', '-Twin64') + $args }
-        if ($Net) { $args += @('-dPWEB_NET', "-Fi$IncDir") }
+        if ($Net) { $args += @('-dPWEB_NET', "-Fi$IncDir") + $macNetLink }
         $args += 'test/cap15b/nethost.pas'
         & fpc @args | Select-Object -Last 2
         if ($LASTEXITCODE -ne 0) { throw "the $Tag witness did not compile" }

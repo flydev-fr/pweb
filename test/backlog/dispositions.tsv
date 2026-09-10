@@ -397,3 +397,5 @@ RP-5	b4c32379	ACCEPTED	post-MVP mORMot repin	-	the ratification measurement itse
 15B-19	b30d9ba0	CLOSED	CAP-15B	-	the derived set is committed so the sweep stays checkout-only, and the derivation is corroborated against the real pin on four legs
 15B-20	6ded2e2d	CLOSED	CAP-15B	-	the wording no longer names the unit, and C14 runs M20 source half on every target from M20 own definition rather than a copy
 15B-21	bd5eda15	CLOSED	CAP-15B	-	both literals superseded with the reason recorded, measured on two targets first, and the whole Linux CAP-10 chain re-run green
+15B-22	6d56750d	CLOSED	CAP-15B	-	the link flags live in one variable per script and C15 pairs every source naming the unit against the bridge object, proven firing
+15B-23	0e322a49	CLOSED	CAP-15B	-	the one unit no reachable target compiles is now type-checked on every target with -dDARWIN -Cn, and the check was observed failing on a wrong-arity call
