@@ -16,9 +16,15 @@ program {{PASCAL_PROGRAM}};
 
 {$mode ObjFPC}{$H+}
 
-{$ifdef OSWINDOWS}
+{ WINDOWS, not mORMot's OSWINDOWS: this file includes no
+  mormot.defines.inc, so OSWINDOWS was never defined here and the
+  directive never applied. It was harmless only because a console
+  subsystem is already FPC's default for a program - a dead region
+  that happened to restate the default. Found by
+  test/cap7f/check_mormot_defines.ps1 (ledger 15B-13). }
+{$ifdef WINDOWS}
   {$apptype console}
-{$endif OSWINDOWS}
+{$endif WINDOWS}
 
 uses
   sysutils;

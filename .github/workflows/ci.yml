@@ -277,6 +277,18 @@ jobs:
           pwsh -NoProfile -File test/cap7f/check_divergence.ps1
           if ($LASTEXITCODE -ne 0) { throw 'CAP-7F divergence sweep FAILED' }
 
+      # THE MISSING HALF OF THE SWEEP ABOVE. check_divergence COUNTS platform
+      # conditionals; it cannot evaluate them, and a count reads the same
+      # whether the symbol is ever defined or not. CAP-15B measured what that
+      # costs: an {$ifdef OSPOSIX} in a unit that includes no mORMot header
+      # compiled cleanly, linked no TLS layer, and failed at the handshake.
+      # This runs beside it, in the same job, for the same reason.
+      - name: CAP-15B always-false-conditional sweep (checkout only)
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File test/cap7f/check_mormot_defines.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'CAP-15B always-false-conditional sweep FAILED' }
+
       # the failure branches are the product: every hosted run proves, on
       # COPIES of the freshly downloaded evidence, that the aggregator and
       # the sweep actually refuse (absent artifact, perturbed field, SKIP
