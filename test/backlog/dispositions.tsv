@@ -385,7 +385,7 @@ RP-5	b4c32379	ACCEPTED	post-MVP mORMot repin	-	the ratification measurement itse
 15B-7	0182ece5	CLOSED	CAP-15B	-	fixed and measured; the unit's comment now says why the symbol has to be FPC's rather than mORMot's
 15B-8	60ca3160	ACCEPTED	CAP-15B	-	the security property holds and is asserted; the mechanism is the parser's, and the row says so
 15B-9	eaac9e3f	CLOSED	CAP-15B	-	two directories, one rule, and the rule the CAP-10C2 header already relied on is now true instead of assumed
-15B-10	d121fbf3	ROADMAP	the CAP-15B hosted run	-	the instrument is written and wired into the leg; the rows arrive with the first macOS run and the shard's PASS is conditioned on them
+15B-10	d121fbf3	CLOSED	CAP-15B	-	measured on hosted run 34463816748: the seven rows on macos-x64 and macos-arm64, darwinprobe PASS with darwin_failures = 0, and nothing fell through to bundling OpenSSL or scoping macOS out
 15B-11	e04db090	ROADMAP	a shard with a PAC-configured macOS host	-	measured as far as a runner allows, and worded as exactly that
 15B-12	8c1ac556	CLOSED	CAP-15B	-	mechanised once, on the Linux leg: pweb create at schema 2, an origin declared in the descriptor, pweb build, pweb run, and the page calling that origin through @pweb/runtime - with Add still 42 and zero listening sockets. Scoped to React on one target by the decision that ratified it: breadth already runs on four targets and a fifth copy of the composition would buy four npm installs
 15B-13	9a77be9e	CLOSED	CAP-15B	-	the class is swept mechanically rather than remembered, and the sweep found four more dead regions; all four are fixed in this shard rather than deferred
@@ -399,3 +399,7 @@ RP-5	b4c32379	ACCEPTED	post-MVP mORMot repin	-	the ratification measurement itse
 15B-21	bd5eda15	CLOSED	CAP-15B	-	both literals superseded with the reason recorded, measured on two targets first, and the whole Linux CAP-10 chain re-run green
 15B-22	6d56750d	CLOSED	CAP-15B	-	the link flags live in one variable per script and C15 pairs every source naming the unit against the bridge object, proven firing
 15B-23	0e322a49	CLOSED	CAP-15B	-	the one unit no reachable target compiles is now type-checked on every target with -dDARWIN -Cn, and the check was observed failing on a wrong-arity call
+15B-24	e9ad0477	CLOSED	CAP-15B	-	all seven rows measured on both macOS architectures with darwin_failures = 0; this is what 15B-10 was waiting for
+15B-25	091579a8	CLOSED	CAP-15B	-	the seam reported a declared length as bytes received; both assignments removed and the property is now gated at zero
+15B-26	4d1346b9	CLOSED	CAP-15B	-	seventeen paths added to the records class, staged 223 files to 229, and the three CAP-11A gates re-run green
+15B-27	a95abfc0	CLOSED	CAP-15B	-	the four-target aggregation is exercised locally before the run rather than discovered by it; zero field-level disagreements

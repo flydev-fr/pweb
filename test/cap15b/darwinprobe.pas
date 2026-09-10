@@ -279,13 +279,26 @@ begin
       (resp.Bytes <= PWEB_FETCH_MAX_RESPONSE + (4 shl 20))]));
   Require(resp.Bytes <= PWEB_FETCH_MAX_RESPONSE + (4 shl 20),
     'the Darwin read overshot the bound by more than one delivery');
-  // and the DECLARED length, refused before the body
+  // and the DECLARED length, refused BEFORE the body. The row is a
+  // measurement AND a gate: `bytes` means bytes this process received, so
+  // zero is the claim - `didReceiveResponse:` answered
+  // NSURLSessionResponseCancel on `expectedContentLength` and no
+  // `didReceiveData:` ever arrived. mORMot's transport reports one 256 KiB
+  // slice on the same leg, because it refuses at the first slice rather
+  // than at the header; both satisfy the contract and the numbers differ
+  // per transport, which is why each is recorded per target and neither is
+  // compared across them.
   outcome := RunOnWorker('/bytes?n=16777216', 30000,
     PWEB_FETCH_MAX_RESPONSE, nil, resp, elapsed, onMain);
   Row('darwin_bound_declared_outcome', OutcomeText(outcome));
   RowInt('darwin_bound_declared_bytes_seen', resp.Bytes);
   Require(outcome = pfoTooLarge,
     'a declared over-bound Content-Length was not refused on Darwin');
+  Require(resp.Bytes = 0,
+    'a declared over-bound length was refused only after reading ' +
+    IntToStr(resp.Bytes) + ' byte(s) on Darwin');
+  Row('darwin_bound_declared_before_body',
+    RawUtf8(BOOL_STR[(outcome = pfoTooLarge) and (resp.Bytes = 0)]));
 
   { --- §10.5: the ambient cookie jar is OFF, not merely unused ---------- }
   outcome := RunOnWorker('/setcookie', 5000, PWEB_FETCH_MAX_RESPONSE, nil,

@@ -2,15 +2,16 @@
 
 ```
 CAP-15B NOT READY
-hosted CI has not run on this HEAD; two acceptance rows are outstanding
+the seven Darwin rows are measured; hosted CI has not yet been green on this HEAD
 ```
 
 The door CAP-15A ratified exists: `pweb.fetch`, behind the `network.fetch`
 capability and a native per-application origin allowlist compiled into the
-host, with `PWEB_NATIVE_CSP` unchanged. Everything mechanised here is green
-on the two targets this development host can reach — Windows x86_64 and
-Linux x86_64 under WSL — and the two rows that are not yet closed are named
-at the end rather than implied.
+host, with `PWEB_NATIVE_CSP` unchanged. Everything mechanised here is green on
+the two targets this development host can reach — Windows x86_64 and Linux
+x86_64 under WSL — and green on the hosted Windows and Linux legs of run
+34463816748. The §10 Darwin measurement is **taken**, on both architectures.
+The one row still open is named at the end rather than implied.
 
 ---
 
@@ -114,7 +115,11 @@ is the strongest form of "TLS validation cannot be turned off by any input at
 any layer": there is no code path to reach.
 
 `test/cap15b/darwinprobe.pas` measures all seven rows on a spawned worker
-thread. **It has not run** — see KNOWN LIMITATIONS.
+thread, and **it has run**: hosted run 34463816748, both architectures,
+`darwin_failures = 0`. The rows are tabulated under HOSTED RUN 34463816748.
+The one thing that leg found was a **measurement** bug rather than a transport
+one — the declared-length refusal reported the declared length as bytes
+received — and it is fixed and now gated at zero.
 
 ## DOCTOR
 
@@ -300,7 +305,7 @@ bodyless method is refused.
 | `navigation_policy_digest` `360d69f2…`, `capability_policy_digest` `23b87da5…` | **must not move**, and are re-measured rather than assumed |
 | `pipeline_digest` | **must not move** for an empty-origins project, by the `-d`/`-Fi`-iff design |
 | the CAP-7F evidence schema | 836 → **843** fields in all three lists (`emit_evidence.ps1`, `emit_evidence.sh`, the aggregator's `$required`), the seven `composition_*` rows |
-| the backlog census | 389 entries / 54 open → **400** / **54**: `15B-12` closes, `15B-13` to `15B-23` are new |
+| the backlog census | 389 entries / 54 open → **404** / **53**: `15B-12` and `15B-10` close, `15B-13` to `15B-27` are new |
 | `cli_digest` | `4aa3c03b…c198f9ec` → **`095c95b2…75eb6f67`**, pinned in `test/cap10c1/run_cap10c1_gates.ps1` with the reason above it. Measured **identical on windows-x86_64 and linux-x86_64** before it was written down. The first time this value has moved for something other than a command becoming public: `project\|schema-2\|schema_unsupported` became `schema-3`, and eighteen `schema1-*` / `schema2-*` descriptor rows joined the corpus. 130 lines → 148 |
 | the CAP-7F divergence allowlist | one row ADDED (`src/rpc/pweb.rpc.fetch.mormot.pas`, 2 directives), one RE-RATIFIED (`tools/pweb/pweb.cli.platform.pas`, 36 → 42 for the `platform.tls` probe's three bodies), and three fingerprints moved with **no count moving at all** (`pweb.pas`, `pwebtemplates.pas`, `pwebsdk.pas` — the `OSWINDOWS` → `WINDOWS` substitution). That last row is the fingerprint doing exactly what it exists for |
 | the two template contracts | section 6 of `check_cap10b1_contracts.ps1` and `check_cap10b2_contracts.ps1` gains ONE named exception — the transport selection — pinned to its exact ordered directive texts, required to be present, and observed firing. Ledger `15B-15` owns removing it |
@@ -308,6 +313,7 @@ bodyless method is refused.
 | `docs/cli-contract.md` §2 | "schema 1" → **"schema 1 and schema 2"**, with the schema-2 document canonical, schema 1 kept beside it as still valid and reading as `[]`, and the 267-byte origin bound written in as a Checkpoint-1 amendment. The section had still said schema 2 was "ratified and not yet implemented" |
 | `test/cap7f/mormot-defines.tsv` | **new, committed data**: the 206-symbol define set derived from the pin, plus the pin's sha256. The derivation is re-done and compared wherever `deps/mormot2` is present, and required on all four legs by C12 |
 | the CAP-10B1 React closure, pinned in CAP-10B2 | inventory `5bcfb497…` → **`eabbc88d…`**, bytes 73176 → **76854**, count 16 unchanged: three template files grew (`program.lpr` and `app.services.pas` gain the fenced `PWEB_NET` region, `pweb.json` gains the network block at schema 2). Measured on windows-x86_64 locally and on the linux leg before being written |
+| `test/cap11a/collection-paths.json` | **+17 paths** in the `records` class — CAP-15B's four step logs, the four per-target `cli-*.json`, the contract record, the fetch corpus, the composition record, the two Darwin probe records and the four live records. The shard's own evidence was collected by nobody until now; staging goes 223 → 229 files |
 
 ## REGRESSIONS (local)
 
@@ -321,7 +327,7 @@ zero asymmetry) · CAP-11A structure PASS (205 steps) and migration map PASS ·
 10C2, 10C3, 10D0, 10D1, 14A, 14B and 15B (now **C1–C15**) — and CAP-10D2's
 own contract passes once the tree is committed, which is the one thing it
 measures that a dirty working tree cannot satisfy · both CAP-10 and CAP-11
-ledger gates PASS · backlog gate PASS (400 entries, 0 orphans, 54 open) and
+ledger gates PASS · backlog gate PASS (404 entries, 0 orphans, 53 open) and
 its 19-leg negative self-test PASS.
 
 **Both reachable chains are now exercised end to end, build and gates.** On
@@ -427,6 +433,70 @@ Two rules close it, and both were observed firing:
 All three sources type-check clean on windows-x86_64 and linux-x86_64, so the
 Pascal half of the Darwin transport is now known-good rather than assumed.
 
+## HOSTED RUN 34463816748 — WINDOWS AND LINUX GREEN, AND THE SEVEN DARWIN ROWS
+
+**Both reachable legs passed end to end.** Both macOS legs reached the CAP-15B
+step and ran it to completion, and **`darwinprobe` reported
+`darwin_failures = 0`** — so the §10 measurement CAP-15A deferred to this
+shard is taken. Ledger `15B-10` closes on it.
+
+### The seven §10 rows, as measured on macos-x64 and macos-arm64
+
+| §10 requirement | measured |
+|---|---|
+| the async API as a bounded synchronous call on a worker | `darwin_called_on_main_thread` **false**, `darwin_bounded_sync_call` **true** |
+| the deadline observable DURING the transfer | 800 ms asked, **823 ms** observed, `darwin_deadline_observed_mid_transfer` **true** |
+| a `RedirectMax = 0` equivalent | `darwin_redirect_status` 302, `darwin_redirect_location_present` true, `darwin_redirects_followed` **0** |
+| the response bound enforced during the read | 8454144 seen against the 8 MiB bound, `darwin_peak_bytes` 8454144, **`darwin_overshoot_bytes` 65536** — one 64 KiB delivery, which is the number the row exists to carry |
+| the ambient cookie jar OFF, not merely unused | `darwin_cookie_echoed` false, `darwin_cookie_jar` **absent** |
+| the system trust store | `system (no challenge delegate in the seam)`, and a live `https` exchange returned **200** |
+| no proxy inherited | `darwin_proxy_dict_empty` true, and the row reads **`no system proxy configured on the runner`** — rider 3's wording, because no runner has a PAC |
+
+Nothing fell through to bundling OpenSSL or scoping macOS out, which §10
+forbids.
+
+### The one failing row, and why it was a measurement bug
+
+```
+bound_declared_bytes_seen = 16777216
+response_bound_enforced_on_content_length = false
+FAIL: a declared over-bound length was refused only after reading the body
+```
+
+The seam's behaviour was **right** — `didReceiveResponse:` answered
+`NSURLSessionResponseCancel` on `expectedContentLength` before one body byte
+arrived. What was wrong was the *number it reported*: it wrote the **declared**
+length into `seen` and `peak`, and both fields mean *bytes this process
+received*. `peak_bytes` is the whole evidence that the bound is not a memory
+amplifier (ledger `15A-6`), so the row claimed sixteen megabytes of memory for
+an exchange that allocated none — the opposite of what happened.
+
+Both assignments are removed. **Zero is the honest number and the stronger
+result**: mORMot refuses at the first 256 KiB slice, this seam refuses at the
+header. The probe now **gates** the property instead of recording it —
+`darwin_bound_declared_bytes_seen` must be `0` — and `darwin_bound_declared_before_body`
+carries the verdict.
+
+### Two things found by looking rather than by failing
+
+**CAP-15B's own records were collected by nobody.** `collection-paths.json` is
+the ratified per-class union the leg uploads at its end; CAP-14B added seven
+entries for itself and CAP-15B added none, so the green Linux leg's records
+artifact carried `cap10*`, `cap14a`, `cap14b`, `cap7f` — and no `cap15b` at
+all. It refuses nothing, which is exactly why it was invisible. Seventeen
+paths added; staging goes 223 → 229 files. Ledger `15B-26`.
+
+**The four-target aggregation was pre-flighted rather than discovered.** It has
+never run on a complete set carrying this shard's fields, because no macOS leg
+has ever been green — and a red aggregate is the last thing between the shard
+and its closure. It was run locally against the **real** windows and linux
+`evidence.json` from this run plus two macOS clones patched only where the
+contract types a value per target. The first pass deliberately left the clones
+carrying Linux's `composition = PASS`, and the aggregator **refused all twelve
+rows by name** — the both-directions check working. With the fallback values in
+place, **zero field-level disagreements remain**; every failure left is a
+fixture file the synthesis did not carry. Ledger `15B-27`.
+
 ## FREEZE
 
 `PWEB_NATIVE_CSP`; the names `pweb.fetch`, `network.fetch`,
@@ -435,10 +505,13 @@ Pascal half of the Darwin transport is now known-good rather than assumed.
 
 ## KNOWN LIMITATIONS
 
-1. **The §10 Darwin rows have not been measured** (ledger `15B-10`). No macOS
-   exists on this development host; the probe is written, wired into the leg
-   and gated, and the rows arrive with the first hosted run. Nothing stands
-   in for them and the shard's PASS is conditioned on them.
+1. **The seven §10 Darwin rows are MEASURED** (ledger `15B-10`, closed) —
+   hosted run 34463816748, both architectures, `darwin_failures = 0`. What
+   remains outstanding is narrower and named: that measurement was taken on a
+   HEAD whose CAP-15B step then failed on one row, so it has to be reproduced
+   on the final HEAD together with a green aggregate. Nothing stands in for
+   the rows and the shard's PASS is still conditioned on seeing them beside a
+   green run.
 2. `15B-11`: the Darwin proxy row can only say `no system proxy configured on
    the runner`. It is worded as what was measured, on what.
 3. The public-TLS row is **recorded and never gates** — a real certificate
@@ -485,10 +558,16 @@ that nobody wrote a decision against reads as an ignored gate.
 CAP-15B NOT READY
 ```
 
-Not because something is known to be wrong: everything mechanised is green on
-both reachable targets, and the four measured defects CAP-15A found in its own
-transport are each answered by a named mechanism and a number
-(retry 1 hit; deadline 800 asked / 808–812 observed against 1609; bound
-8454144 and 262144 bytes against 32 MiB; proxy consulted by construction).
-It is NOT READY because PASS requires hosted CI green on the final HEAD with
-the seven Darwin rows present, and neither has happened yet.
+Not because something is known to be wrong. Everything mechanised is green on
+both reachable targets; the four measured defects CAP-15A found in its own
+transport are each answered by a named mechanism and a number (retry 1 hit;
+deadline 800 asked / 808–812 observed against 1609; bound 8454144 and 262144
+bytes against 32 MiB; proxy consulted by construction); and **the seven §10
+Darwin rows are measured**, on both architectures, with `darwin_failures = 0`.
+
+It is NOT READY for one reason, stated exactly: **hosted CI has not yet been
+green on the final HEAD.** The Darwin rows were taken on run 34463816748,
+whose CAP-15B step then failed on a single row — a measurement bug, since
+fixed — so the rows and a green run have not yet appeared together, and the
+CAP-7F aggregate has still never run on a complete four-target set outside the
+local pre-flight. PASS needs one run that shows all three at once.

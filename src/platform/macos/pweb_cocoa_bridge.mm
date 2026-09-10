@@ -1743,7 +1743,17 @@ static int64_t pweb_fetch_now_ms(void) {
 /* THE DECLARED-LENGTH HALF OF THE BOUND, refused before one body byte is
    accepted. A server that lies about Content-Length is caught by the
    running total below instead; both halves exist because either one alone
-   is a bound somebody can walk around. */
+   is a bound somebody can walk around.
+
+   `seen` AND `peak` ARE LEFT AT ZERO ON THIS PATH, and that is the whole
+   point of the row rather than an omission. Both fields mean BYTES THIS
+   PROCESS ACTUALLY RECEIVED - `peak_bytes` is the evidence that the bound
+   is not a memory amplifier (ledger 15A-6) - so writing the DECLARED length
+   into them would report sixteen megabytes of memory for an exchange that
+   allocated none. It also cost a hosted run: the live driver asserts
+   `bytes <= 1 MiB` on this leg, mORMot reports one 256 KiB slice there, and
+   this seam reported 16777216 for a body it never read. Zero is the honest
+   number and the stronger result. */
 - (void)URLSession:(NSURLSession *)session
           dataTask:(NSURLSessionDataTask *)dataTask
 didReceiveResponse:(NSURLResponse *)incoming
@@ -1757,10 +1767,6 @@ didReceiveResponse:(NSURLResponse *)incoming
   }
   expected = (long long)[incoming expectedContentLength];
   if (expected > 0 && expected > maxBytes) {
-    seen = (int64_t)expected;
-    if (seen > peak) {
-      peak = seen;
-    }
     outcome = PWEB_COCOA_FETCH_TOOLARGE;
     completionHandler(NSURLSessionResponseCancel);
     return;
