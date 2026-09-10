@@ -117,7 +117,8 @@ if (-not $IsMacOS) {
                      'test/cap15b/darwinprobe.pas') {
         Write-Host "[CAP-15B] type-checking $src as Darwin (-dDARWIN -Cn)"
         $tcArgs = @('-MObjFPC', '-Sh', '-B', '-Cn', '-dDARWIN',
-            "-FU$tcUnits", '-Fusrc/rpc', '-Fusrc/security', '-Fusrc/lib',
+            "-FU$tcUnits", "-FE$tcUnits",
+            '-Fusrc/rpc', '-Fusrc/security', '-Fusrc/lib',
             '-Fusrc/assets', '-Fusrc/platform/macos', '-Futest/cap15b',
             '-Fideps/mormot2/src', '-Fudeps/mormot2/src/core',
             '-Fudeps/mormot2/src/lib', '-Fudeps/mormot2/src/crypt',
