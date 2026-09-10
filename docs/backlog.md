@@ -1,16 +1,16 @@
 # The backlog
 
 `_bmad-output/implementation-artifacts/deferred-work.md` is append-only and
-carries **389 entries** from Phase 0 to CAP-15B. It is a
+carries **393 entries** from Phase 0 to CAP-15B. It is a
 ledger: it records what was found, in the words of the shard that found it,
 and it never edits itself. That makes it excellent evidence and a poor
 worklist — a reader who wants to know *what is still owed* has to resolve
 every supersession chain by hand, and three phase-closure artifacts answer
 that question for CAP-10 and CAP-11 only.
 
-This document is the worklist. Every one of the 389 entries is disposed of
+This document is the worklist. Every one of the 393 entries is disposed of
 exactly once, with one verdict, an owner and a reason. **Fifty-four are open,**
-**and those fifty-four are listed here in full**; the other 335 are in
+**and those fifty-four are listed here in full**; the other 339 are in
 `test/backlog/dispositions.tsv`, which is the table this document is written
 from and the one the gate reads.
 
@@ -20,7 +20,7 @@ from and the one the gate reads.
 | `UPSTREAM` | 3 | the defect belongs to a third-party project and a report is written; two of the three also carry a local workaround, and `RP-2` deliberately does not |
 | `ROADMAP` | 47 | real work, deferred, with a named owner |
 | `ACCEPTED` | 111 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
-| `CLOSED` | 224 | the thing the entry describes is done |
+| `CLOSED` | 228 | the thing the entry describes is done |
 
 `ACCEPTED` is not a synonym for ignored. It is the verdict for an entry whose
 honest answer is a measurement — that WebView2 raises no navigation event for a
@@ -452,4 +452,4 @@ Fifty-seven rows: the four `FIX_NOW` items this triage closed, the three
 | `15A-12` | ROADMAP | CAP-15B | `test/cap15a` is kept until CAP-15B closes and is NEVER a CI step, because a run compiles a binary whose `connect-src` has been widened by one generated token and a gate that compiles a widened CSP is a gate that can normalise one. It is committed so the measurement can be re-run and audited rather than believed. At closure it reduces to `probe_server.js` and the `pweb.fetch` rows of the driver, as the seed of a headless transport test with no socket at all |
 | `15B-10` | ROADMAP | the CAP-15B hosted run | the §10 Darwin measurement could not be taken at Checkpoint 1: the development host is Windows with WSL and the only macOS this project reaches is the hosted runner. The seven rows CAP-15A §10 requires were resolved against documented public API at the checkpoint and are MEASURED by `test/cap15b/darwinprobe.pas` on the shard's hosted run, on a spawned worker thread against the local witness. §10 forbids falling through to bundling OpenSSL or scoping macOS out if a row disappoints, and nothing in the API reading suggests one will |
 | `15B-11` | ROADMAP | a shard with a PAC-configured macOS host | 15A-7 stays open on Darwin, with the wording rider 3 fixed. `connectionProxyDictionary` is set to an empty dictionary and the probe records that each exchange's configuration really carried one — but the case the row is ABOUT is a PAC-configured machine, and no hosted runner has one. What is measured is that nothing was inherited from a machine with nothing to inherit, so the row reads `no system proxy configured on the runner` and never `no proxy inherited` |
-| `15B-12` | ROADMAP | a follow-up shard on the CAP-10B/C generated-project legs | the end-to-end row is not mechanised in CAP-15B's own leg: a generated React project and a generated Pas2JS project, created by the real CLI at schema 2, built and run, calling a real origin through the SDK. Every CLAIM it would make is covered by a narrower four-target proof — the descriptor reader through the production functions, the compiled unit set of two real images, the allowlist digest recomputed from the compiled array, the templates' fenced regions cross-checked against the witness binary, and the whole request contract through the injected transport. What is NOT covered is the COMPOSITION: that a scaffolded project's `program.lpr` and `app.services.pas` compile together with the region on, inside a real `pweb build` |
+| `15B-15` | ROADMAP | a shard that owns the unit path and the SDK ship table | the one platform conditional a generated program now carries: the transport selection in the `uses` clause of `program.lpr`, inside the `{$ifdef PWEB_NET}` region, choosing `pweb.platform.cocoa.fetch` on Darwin and `pweb.rpc.fetch.mormot` elsewhere. It selects a unit NAME and decides nothing else. It is not in the framework because the two transports are one injected function type never both compiled, and because a framework selector unit means putting a macOS unit on every target's unit path — which re-measures the pipeline digest, the SDK ship table and both generated inventories. Until then the exception is pinned by its exact ordered directive texts in **both** template contract gates and is required to be PRESENT, and both pins were observed firing on a perturbed template |

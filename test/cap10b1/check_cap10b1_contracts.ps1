@@ -309,26 +309,77 @@ if ($lock -match '"resolved":\s*"http://') {
 }
 
 # --- 6. the generated Pascal carries no platform conditional -------------
+#
+# The claim is that a GENERATED PROJECT takes no platform decisions of its
+# own: the framework owns the split, and a scaffold that starts life with an
+# `{$ifdef DARWIN}` in it is a scaffold whose owner will add a second one.
+#
+# TWO EXCEPTIONS, and both are NAMED, PINNED and REQUIRED TO BE PRESENT
+# rather than merely tolerated - a tolerated exception is one that can grow
+# or vanish without anybody noticing:
+#
+#   1. `{$ifdef OSWINDOWS} {$apptype console} {$endif OSWINDOWS}` selects a
+#      SUBSYSTEM rather than a behaviour, and the generated README says how
+#      to remove it. The symbol is mORMot's, and it is live here only
+#      because the generated program includes `mormot.defines.inc` - which
+#      `test/cap7f/check_mormot_defines.ps1` measures rather than assumes.
+#
+#   2. CAP-15B: the transport selection inside the `{$ifdef PWEB_NET}`
+#      region of `program.lpr`. It selects a UNIT NAME in the `uses` clause
+#      - `pweb.platform.cocoa.fetch` on Darwin, `pweb.rpc.fetch.mormot`
+#      elsewhere - and decides nothing else. It is in the generated program
+#      rather than in the framework because the two transports are ONE
+#      injected function type and are never both compiled, and because
+#      moving the choice into a framework selector unit means putting a
+#      macOS unit on every target's unit path, which re-measures the
+#      pipeline digest and the SDK ship table. That is a shard of its own,
+#      and it is ledger `15B-15`.
+#
+# The exception is pinned by the EXACT ordered directive texts of the whole
+# region, so it cannot quietly become a general licence.
 $platformRx = '\{\$\s*(?:ifdef|ifndef|elseif|if|else|endif)\b[^}]*\}'
 $platformSym = '\b(WIN32|WIN64|WINDOWS|OSWINDOWS|MSWINDOWS|LINUX|DARWIN|UNIX|' +
     'POSIX|BSD|IOS|OSX|MACOS|ANDROID|CPUX86_64|CPUX64|CPUAARCH64|CPUARM64|' +
     'AARCH64|CPU32|CPU64)\b'
+$netTransportPin = @('{$ifdef DARWIN}', '{$else}', '{$endif DARWIN}')
 $generatedConditionals = 0
 foreach ($f in "$templateRoot/src/program.lpr", "$templateRoot/src/app.services.pas") {
     $lineNo = 0
+    $inNet = $false
+    $isProgram = $f.EndsWith('program.lpr')
+    $seenTransport = New-Object System.Collections.Generic.List[string]
     foreach ($line in [System.IO.File]::ReadLines($f)) {
         $lineNo++
+        if ($line -match '\{\$\s*ifdef\s+PWEB_NET\s*\}') { $inNet = $true }
         foreach ($m in [regex]::Matches($line, $platformRx)) {
-            if ($m.Value -match $platformSym) {
-                # {$apptype console} needs OSWINDOWS and is the ONE allowed
-                # conditional: it selects a SUBSYSTEM, not a behaviour, and
-                # the generated README says how to remove it
-                if ($m.Value -notmatch 'OSWINDOWS') {
-                    $generatedConditionals++
-                    Violation ("the generated Pascal carries a platform " +
-                        "conditional: ${f}:${lineNo}: $($m.Value)")
-                }
+            # INSIDE the PWEB_NET region of program.lpr EVERY directive is
+            # collected - the platform ones and the bare `{$else}` between
+            # them - because the pin is over the whole exception, not over
+            # the half of it that happens to name a platform symbol.
+            if ($inNet -and $isProgram) {
+                if ($m.Value -notmatch 'PWEB_NET') { $seenTransport.Add($m.Value) }
+                continue
             }
+            if ($m.Value -notmatch $platformSym) { continue }
+            if ($m.Value -match 'OSWINDOWS') { continue }
+            $generatedConditionals++
+            Violation ("the generated Pascal carries a platform " +
+                "conditional: ${f}:${lineNo}: $($m.Value)")
+        }
+        if ($line -match '\{\$\s*endif\s+PWEB_NET\s*\}') { $inNet = $false }
+    }
+    if ($isProgram) {
+        # PRESENT, and exactly these three, in this order. An empty list
+        # would mean the door had lost its transport selection; a longer one
+        # would mean the exception had started growing. Only the FIRST
+        # PWEB_NET region carries units - the later ones carry statements
+        # and no directive of their own - so the pin is over all of them.
+        if (($seenTransport -join '|') -cne ($netTransportPin -join '|')) {
+            $generatedConditionals++
+            Violation ('the CAP-15B transport selection in the PWEB_NET region ' +
+                "of ${f} is '$($seenTransport -join '|')', not " +
+                "'$($netTransportPin -join '|')' -- the one platform exception " +
+                'a generated program carries is pinned to its exact texts')
         }
     }
 }

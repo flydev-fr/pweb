@@ -387,4 +387,8 @@ RP-5	b4c32379	ACCEPTED	post-MVP mORMot repin	-	the ratification measurement itse
 15B-9	eaac9e3f	CLOSED	CAP-15B	-	two directories, one rule, and the rule the CAP-10C2 header already relied on is now true instead of assumed
 15B-10	d121fbf3	ROADMAP	the CAP-15B hosted run	-	the instrument is written and wired into the leg; the rows arrive with the first macOS run and the shard's PASS is conditioned on them
 15B-11	e04db090	ROADMAP	a shard with a PAC-configured macOS host	-	measured as far as a runner allows, and worded as exactly that
-15B-12	8c1ac556	ROADMAP	a follow-up shard on the CAP-10B/C generated-project legs	-	named rather than implied; the claims it would make are each covered elsewhere, the composition is not
+15B-12	8c1ac556	CLOSED	CAP-15B	-	mechanised once, on the Linux leg: pweb create at schema 2, an origin declared in the descriptor, pweb build, pweb run, and the page calling that origin through @pweb/runtime - with Add still 42 and zero listening sockets. Scoped to React on one target by the decision that ratified it: breadth already runs on four targets and a fifth copy of the composition would buy four npm installs
+15B-13	9a77be9e	CLOSED	CAP-15B	-	the class is swept mechanically rather than remembered, and the sweep found four more dead regions; all four are fixed in this shard rather than deferred
+15B-14	3f23aa5b	CLOSED	CAP-15B	-	a one-constant fix in the scaffold self-verification, and the composition smoke is the only reason anybody saw it
+15B-15	fd9d8e64	ROADMAP	a shard that owns the unit path and the SDK ship table	-	the exception is narrow, pinned in both template gates and proven to fire; moving it into the framework re-measures the pipeline digest, the ship table and both generated inventories, which is a shard rather than a paragraph
+15B-16	8f4a9129	CLOSED	CAP-15B	-	all four cross-cutting gates re-ratified with their reasons written down, and the new cli_digest corroborated on two targets before it was pinned

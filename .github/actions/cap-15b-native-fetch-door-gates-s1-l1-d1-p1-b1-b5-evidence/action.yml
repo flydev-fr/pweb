@@ -7,6 +7,20 @@ inputs:
 runs:
   using: composite
   steps:
+    # THE COMPOSITION, Linux only and BEFORE the gate that reads its record.
+    # It needs a display because it runs a real window, and it needs the SDK
+    # root CAP-10B1 staged and CAP-10C1 completed - both earlier in this
+    # sequence. Every other CAP-15B claim is a property of a binary, of the
+    # descriptor reader, or of an exchange with a local server, which is why
+    # only this one step is scoped to one leg.
+    - name: linux - the composition smoke
+      if: ${{ inputs.target == 'linux' }}
+      shell: bash
+      run: |
+        set -eu
+        mkdir -p build
+        xvfb-run -a test/cap15b/prove_cap15b_composition.sh 2>&1 |
+          tee build/cap15b-composition.log
     - name: all targets
       shell: bash
       run: |

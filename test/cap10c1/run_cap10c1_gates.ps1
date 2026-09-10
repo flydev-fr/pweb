@@ -891,7 +891,18 @@ $c0Closure = '120f6769c155c59b8bc0cbc8b96e7faee14091628a5af49833f5b4fb96db11c0'
 # public parser surface moves only in the shard that changes it, and only
 # with the supersession recorded - exactly as CAP-10C0 moved it for `run`,
 # CAP-10C2 for `dev` and CAP-10D0 for `build`.
-$cliClosure = '4aa3c03b772ad1bddc8b51d1ea974543184529733cebf9463c899a84c198f9ec'
+#
+# SUPERSEDED AT CAP-15B, and recorded rather than re-baselined quietly:
+# 4aa3c03b...c198f9ec -> 095c95b2...75eb6f67. This is the first time the
+# value has moved for something other than a command becoming public, and
+# the reason is the DESCRIPTOR rather than the parser: the reader accepts
+# schema 2, so `project|schema-2|schema_unsupported` becomes
+# `project|schema-3|schema_unsupported` (the first rejected schema moved by
+# one), and EIGHTEEN `project|schema1-*` / `project|schema2-*` rows join it -
+# the origin grammar, its bounds, the allowlist digest and the loopback
+# predicate, each driven through the production reader. 130 corpus lines
+# became 148.
+$cliClosure = '095c95b22c9964f1594b154fd6033c6b5ae58aefac116c301d2d01a475eb6f67'
 $c0File = Join-Path $repoRoot "build/cap10c0/cli-$target.json"
 if (Test-Path -LiteralPath $c0File) {
     $c0 = Get-Content $c0File -Raw | ConvertFrom-Json

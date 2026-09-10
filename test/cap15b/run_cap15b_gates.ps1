@@ -244,6 +244,37 @@ if (Test-Path $bundler) {
     }
 }
 
+# --- C1: the composition, mechanised once on the Linux leg -----------------
+#
+# `test/cap15b/prove_cap15b_composition.sh` is the one gate that runs the
+# thing a user does on day one - create, declare an origin, build, run, and
+# call it from the page through @pweb/runtime. It is Linux-only ON PURPOSE:
+# breadth is already where it belongs (the request contract, the grammar, the
+# image proofs and the transport all run on four targets), and a fifth copy
+# of the composition would buy nothing but four npm installs.
+#
+# The other three targets emit `not_applicable`, which is a VALUE. A target
+# that silently stopped emitting the row would otherwise go unnoticed, which
+# is the CAP-10D2 lesson the aggregator's required set is built on.
+$compFile = Join-Path $work 'composition-linux-x86_64.json'
+if ($IsLinux -and (Test-Path $compFile)) {
+    $comp = Get-Content -Raw $compFile | ConvertFrom-Json
+    foreach ($p in $comp.PSObject.Properties) { Row $p.Name $p.Value }
+    Require ("$($comp.composition)" -ceq 'PASS') 'C1: the composition smoke failed'
+} elseif ($IsLinux) {
+    Row 'composition' 'FAIL'
+    Require $false ('C1: the composition smoke left no record - ' +
+        'test/cap15b/prove_cap15b_composition.sh runs before this gate on Linux')
+} else {
+    foreach ($k in 'composition', 'composition_region', 'composition_fetch',
+                   'composition_payload', 'composition_rpc_ok') {
+        Row $k 'not_applicable'
+    }
+    foreach ($k in 'composition_rpc_result', 'composition_listener_members') {
+        Row $k '0'
+    }
+}
+
 # --- verdict ----------------------------------------------------------------
 Row 'cap15b_failures' ([string]$failures.Count)
 $json = Join-Path $work "cli-$target.json"

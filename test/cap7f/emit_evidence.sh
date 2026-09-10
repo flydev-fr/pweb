@@ -1733,6 +1733,9 @@ for f in fetch_suite fetch_corpus_digest fetch_door_available \
         schema1_project_gains_door empty_origins_links_decorator \
         loopback_dev_accepted loopback_release_refused \
         malformed_origin_refused_at_load bundler_refuses_network \
+        composition composition_region composition_fetch \
+        composition_payload composition_rpc_ok composition_rpc_result \
+        composition_listener_members \
         cap15b_failures; do
     eval "${f}=\"\$(c15b_str ${f})\""
 done
@@ -2839,6 +2842,13 @@ cat > "${work}/evidence.json" <<EOF
   "loopback_release_refused": "${loopback_release_refused}",
   "malformed_origin_refused_at_load": "${malformed_origin_refused_at_load}",
   "bundler_refuses_network": "${bundler_refuses_network}",
+  "composition": "${composition}",
+  "composition_region": "${composition_region}",
+  "composition_fetch": "${composition_fetch}",
+  "composition_payload": "${composition_payload}",
+  "composition_rpc_ok": "${composition_rpc_ok}",
+  "composition_rpc_result": "${composition_rpc_result}",
+  "composition_listener_members": "${composition_listener_members}",
   "cap15b_failures": "${cap15b_failures}",
   "github_sha": "${github_sha}",
   "github_run_id": "${github_run_id}",

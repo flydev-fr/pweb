@@ -549,6 +549,17 @@ $required = @(
     'schema1_project_gains_door', 'empty_origins_links_decorator',
     'loopback_dev_accepted', 'loopback_release_refused',
     'malformed_origin_refused_at_load', 'bundler_refuses_network',
+    #   composition*              CAP-15B C1, the day-one path mechanised
+    #                             once on the Linux leg (ledger 15B-12).
+    #                             Linux carries the measurements; the other
+    #                             three carry `not_applicable`, which is a
+    #                             VALUE and is checked as one below. Not
+    #                             compared: three targets deliberately do
+    #                             not run it, so equality would be equality
+    #                             between three absences
+    'composition', 'composition_region', 'composition_fetch',
+    'composition_payload', 'composition_rpc_ok', 'composition_rpc_result',
+    'composition_listener_members',
     'cap15b_failures',
     # CAP-14B: the development console surface.
     #
@@ -1271,6 +1282,13 @@ $absolutePins = @{
     response_bound_enforced_on_content_length = 'true'
     fetch_live_status                  = '200'
     bundler_refuses_network            = 'true'
+    # THE COMPOSITION OWNS NO LISTENER EITHER. Every target emits this row:
+    # linux-x86_64 from 47 samples of the supervised application's own
+    # socket table, the other three as the literal `0` their fallback
+    # writes. Pinning it absolutely is what makes "the door opened no
+    # server" a claim about the shipped composition rather than about a
+    # unit test.
+    composition_listener_members       = '0'
     cap15b_failures                    = '0'
     cap14b_gates                       = 'PASS'
 }
@@ -1878,6 +1896,53 @@ foreach ($t in $evidence.Keys) {
         $v = "$($e.$f)"
         if ($v -cne $absolutePins[$f]) {
             $failures.Add("ABSOLUTE PIN VIOLATED: target=$t field=$f value='$v' pinned='$($absolutePins[$f])'")
+        }
+    }
+    # --- CAP-15B C1: the composition, checked where it ran ------------------
+    #
+    # `test/cap15b/prove_cap15b_composition.sh` runs the day-one path -
+    # create at schema 2, declare an origin, build, run, and the page calls
+    # that origin through @pweb/runtime - and it runs on linux-x86_64 ONLY.
+    # That asymmetry is deliberate (ledger 15B-12): breadth is already where
+    # it belongs, on the four-target request contract and the image proofs.
+    #
+    # So the rows cannot be compared and cannot be pinned to one value. They
+    # are checked HERE, per target, and BOTH sides are checked: Linux must
+    # carry the measurements, and the other three must carry exactly
+    # `not_applicable`. A target that silently started emitting a real value
+    # would be running an unratified leg; a Linux leg that silently started
+    # emitting `not_applicable` would be a composition that stopped running
+    # and still read green. Neither passes.
+    if ($t -ceq 'linux-x86_64') {
+        if ("$($e.composition)" -cne 'PASS') {
+            $failures.Add("CAP-15B COMPOSITION: target=$t composition='$($e.composition)' -- the day-one path did not compose")
+        }
+        if ("$($e.composition_region)" -cne 'compiled') {
+            $failures.Add("CAP-15B COMPOSITION: target=$t composition_region='$($e.composition_region)' -- the generated project linked no network region")
+        }
+        if ("$($e.composition_rpc_ok)" -cne 'true' -or "$($e.composition_rpc_result)" -cne '42') {
+            $failures.Add("CAP-15B COMPOSITION: target=$t rpc_ok='$($e.composition_rpc_ok)' result='$($e.composition_rpc_result)' -- the door displaced the RPC that was already there")
+        }
+        # THE DOOR WAS REACHED. `rendered` means a real payload came back;
+        # `service_error` means the request left the decorator and entered
+        # the transport on a runner with no outbound network. `forbidden` or
+        # `invalid_request` would mean the capability or the compiled
+        # allowlist was not in the chain, and neither is acceptable.
+        if ("$($e.composition_fetch)" -cnotin @('rendered', 'service_error')) {
+            $failures.Add("CAP-15B COMPOSITION: target=$t composition_fetch='$($e.composition_fetch)' -- the page did not reach the door")
+        }
+        if ("$($e.composition_payload)" -cnotin @('rendered', 'unreachable')) {
+            $failures.Add("CAP-15B COMPOSITION: target=$t composition_payload='$($e.composition_payload)'")
+        }
+    } else {
+        foreach ($f in 'composition', 'composition_region', 'composition_fetch',
+                       'composition_payload', 'composition_rpc_ok') {
+            if ("$($e.$f)" -cne 'not_applicable') {
+                $failures.Add("CAP-15B COMPOSITION: target=$t field=$f value='$($e.$f)' -- only linux-x86_64 runs the composition smoke, and every other target says so by name")
+            }
+        }
+        if ("$($e.composition_rpc_result)" -cne '0') {
+            $failures.Add("CAP-15B COMPOSITION: target=$t composition_rpc_result='$($e.composition_rpc_result)', expected '0' where the smoke does not run")
         }
     }
     # the export surface: exactly 17 webview_* names, no strays

@@ -870,7 +870,10 @@ begin
     exit;
   end;
   Code := pscDescriptorMismatch;
-  if project.Schema <> PWEB_CLI_SCHEMA then
+  // the schema `pweb create` WRITES, not the oldest one this build reads:
+  // CAP-15B emits schema 2, and comparing the re-read descriptor against
+  // PWEB_CLI_SCHEMA would have made every create refuse its own output
+  if project.Schema <> PWEB_CLI_SCHEMA_CREATE then
   begin
     Detail := 'schema';
     exit;

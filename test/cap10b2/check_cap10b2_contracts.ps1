@@ -451,27 +451,53 @@ if (($p2jDeclared -join '|') -cne ($p2jExpected -join '|')) {
 }
 
 # --- 6. no platform conditional, no allow-all, no listener, no script -----
+#
+# TWO NAMED EXCEPTIONS, both pinned - see the same section of
+# test/cap10b1/check_cap10b1_contracts.ps1, which carries the reasoning in
+# full. `{$ifdef OSWINDOWS} {$apptype console}` selects a subsystem; the
+# CAP-15B `{$ifdef DARWIN}` inside the `{$ifdef PWEB_NET}` region of
+# `src/program.lpr` selects the transport UNIT NAME and decides nothing
+# else. The second is pinned by its exact ordered directive texts and is
+# REQUIRED TO BE PRESENT: an exception that may vanish unnoticed is not an
+# exception, it is a hole. Ledger `15B-15` owns moving it into the
+# framework.
 $platformRx = '\{\$\s*(?:ifdef|ifndef|elseif|if|else|endif)\b[^}]*\}'
 $platformSym = '\b(WIN32|WIN64|WINDOWS|OSWINDOWS|MSWINDOWS|LINUX|DARWIN|UNIX|' +
     'POSIX|BSD|IOS|OSX|MACOS|ANDROID|CPUX86_64|CPUX64|CPUAARCH64|CPUARM64|' +
     'AARCH64|CPU32|CPU64)\b'
+$netTransportPin = @('{$ifdef DARWIN}', '{$else}', '{$endif DARWIN}')
 $generatedConditionals = 0
 foreach ($f in "$p2j/src/program.lpr", "$p2j/src/app.services.pas",
                 "$p2j/frontend/src/program.lpr", "$p2j/frontend/src/app.pas") {
     $lineNo = 0
+    $inNet = $false
+    # the NATIVE program only: the pas2js frontend has no PWEB_NET region
+    # and must never grow one - it is JavaScript, and the door is native
+    $isNativeProgram = $f -eq "$p2j/src/program.lpr"
+    $seenTransport = New-Object System.Collections.Generic.List[string]
     foreach ($line in [System.IO.File]::ReadLines($f)) {
         $lineNo++
+        if ($line -match '\{\$\s*ifdef\s+PWEB_NET\s*\}') { $inNet = $true }
         foreach ($m in [regex]::Matches($line, $platformRx)) {
-            if ($m.Value -match $platformSym) {
-                # {$apptype console} needs OSWINDOWS and is the ONE allowed
-                # conditional: it selects a SUBSYSTEM, not a behaviour
-                if ($m.Value -notmatch 'OSWINDOWS') {
-                    $generatedConditionals++
-                    Violation ("the generated Pascal carries a platform " +
-                        "conditional: ${f}:${lineNo}: $($m.Value)")
-                }
+            if ($inNet -and $isNativeProgram) {
+                if ($m.Value -notmatch 'PWEB_NET') { $seenTransport.Add($m.Value) }
+                continue
             }
+            if ($m.Value -notmatch $platformSym) { continue }
+            if ($m.Value -match 'OSWINDOWS') { continue }
+            $generatedConditionals++
+            Violation ("the generated Pascal carries a platform " +
+                "conditional: ${f}:${lineNo}: $($m.Value)")
         }
+        if ($line -match '\{\$\s*endif\s+PWEB_NET\s*\}') { $inNet = $false }
+    }
+    if ($isNativeProgram -and
+        (($seenTransport -join '|') -cne ($netTransportPin -join '|'))) {
+        $generatedConditionals++
+        Violation ('the CAP-15B transport selection in the PWEB_NET region ' +
+            "of ${f} is '$($seenTransport -join '|')', not " +
+            "'$($netTransportPin -join '|')' -- the one platform exception a " +
+            'generated program carries is pinned to its exact texts')
     }
 }
 $generatedPascal = [System.IO.File]::ReadAllText("$p2j/src/app.services.pas") +

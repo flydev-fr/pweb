@@ -558,13 +558,17 @@ begin
       Project.Name + ' ' + Project.Version + ' (' +
         PWebCliUiText(Project.Ui) + ') schema ' +
         RawUtf8(IntToStr(Project.Schema)),
-      PWEB_CLI_DESCRIPTOR + ' schema ' + RawUtf8(IntToStr(PWEB_CLI_SCHEMA)),
+      PWEB_CLI_DESCRIPTOR + ' schema ' +
+        RawUtf8(IntToStr(PWEB_CLI_SCHEMA)) + '..' +
+        RawUtf8(IntToStr(PWEB_CLI_SCHEMA_MAX)),
       '', Project.DescriptorPath)
   else
     Add(b, 'project.descriptor', pdsFail, pdvRequired,
       PWebCliProjectRefusalText(Project.Refusal),
       'no usable project descriptor', Project.Detail,
-      PWEB_CLI_DESCRIPTOR + ' schema ' + RawUtf8(IntToStr(PWEB_CLI_SCHEMA)),
+      PWEB_CLI_DESCRIPTOR + ' schema ' +
+        RawUtf8(IntToStr(PWEB_CLI_SCHEMA)) + '..' +
+        RawUtf8(IntToStr(PWEB_CLI_SCHEMA_MAX)),
       'create or correct pweb.json, or pass --project',
       Project.DescriptorPath);
 

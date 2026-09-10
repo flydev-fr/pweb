@@ -173,8 +173,17 @@ $allow = @{
     # /proc pgrp scan against Darwin's libproc enumeration, plus the Darwin
     # variadic fcntl wrapper the CAP-10A F_GETPATH precedent already
     # required. Every one selects a whole platform body; none decides.
-    'tools/pweb/pweb.cli.platform.pas'   = @{ directives = 36;
-        fingerprint = 'e1fcbe2461a0fe9bdd31b66200dee78f7faa7ee1c199476964e5383cf08c3be9' }
+    # CAP-15B RE-RATIFIED at 42 (was 36): `pweb doctor` grew the
+    # `platform.tls` row CAP-15A §6 ratified, and answering it means asking
+    # the machine which TLS provider this target resolves - SChannel on
+    # Windows, NSURLSession on Darwin, and on Linux a `dlopen` of
+    # `libcrypto.so.3` / `libssl.so.3` plus a call to `OpenSSL_version`.
+    # Three platform bodies for one fact. Importing `mormot.lib.openssl11`
+    # instead would have dragged `mormot.net.sock` into the CLI, which the
+    # zero-transport sweeps forbid - it would make `pweb doctor` a program
+    # that links a socket layer in order to report that one exists.
+    'tools/pweb/pweb.cli.platform.pas'   = @{ directives = 42;
+        fingerprint = '218ee26f5cbe195bff9c422ba75755c188b886f079f2f351ee09d0793d872447' }
     # CAP-10A: the program, whose only conditional was {$apptype console}.
     # CAP-10C2 RE-RATIFIED at 4 (was 2): `pweb dev` supervises two
     # long-lived children on two threads, and FPC's Unix threading is armed
@@ -185,7 +194,7 @@ $allow = @{
     # src/webview/pweb.webview.devhost) carries ZERO conditionals and is
     # therefore deliberately absent from this list.
     'tools/pweb/pweb.pas'                = @{ directives = 4;
-        fingerprint = 'f4b8478344bc6029c69c1cc8439681b1ad1b21c57283aae4b3d644b3ef10fcd3' }
+        fingerprint = '8ac597acbffbf6cac93234d8e448e33078eb999313205d81f0a01dd2cd316754' }
     # CAP-10B0: the trusted template-pack builder, likewise. Its fingerprint
     # equals pweb.pas's because the directive TEXTS are the same two - which
     # is the fingerprint working as intended, not a collision.
@@ -198,7 +207,7 @@ $allow = @{
     # engine units (sdk, template, scaffold, write) carry zero and are
     # therefore deliberately absent from this list.
     'tools/pweb/pwebtemplates.pas'       = @{ directives = 2;
-        fingerprint = '0dc7a84a71485678f01dc0e7032093d6858fb389878b52157a2f69671187305d' }
+        fingerprint = '76fcf73794e7195ac497117dc97fbc4ca343cbe124ed87f891a90df3c07ab11b' }
     # CAP-10D2: the private SDK packager, and its ONLY conditional is the
     # same `{$apptype console}` guard every program in this repository
     # carries - the identical two directives and therefore the identical
@@ -210,7 +219,35 @@ $allow = @{
     # entry is UNCHANGED, because PWebCliImageDir went INSIDE the two
     # platform bodies that already existed.
     'tools/pweb/pwebsdk.pas'             = @{ directives = 2;
-        fingerprint = '0dc7a84a71485678f01dc0e7032093d6858fb389878b52157a2f69671187305d' }
+        fingerprint = '76fcf73794e7195ac497117dc97fbc4ca343cbe124ed87f891a90df3c07ab11b' }
+    #
+    # CAP-15B RE-RATIFIED THE FINGERPRINT OF pweb.pas, pwebtemplates.pas AND
+    # pwebsdk.pas WITHOUT ANY COUNT MOVING, which is precisely the case this
+    # fingerprint exists for. All three guarded `{$apptype console}` with
+    # `{$ifdef OSWINDOWS}` - a mORMot symbol none of them defines - so the
+    # region was ALWAYS FALSE and three programs were relying on console
+    # being FPC's default while their source claimed to select it. The
+    # substitution to FPC's own `WINDOWS` changes no count and every
+    # fingerprint, and `test/cap7f/check_mormot_defines.ps1` now refuses the
+    # whole class rather than waiting for it to be noticed again.
+    # CAP-15B: the mORMot-backed outbound transport, and the ONLY unit of
+    # the native door with any divergence at all. `pweb.rpc.fetch.pas` - the
+    # decorator, the grammar, the bounds and the whole request contract -
+    # carries ZERO conditionals and is deliberately absent from this list,
+    # because the transport is injected as a plain function type rather than
+    # selected by a directive. What remains here is one region whose body is
+    # a unit NAME: on UNIX the TLS layer is `mormot.lib.openssl11`, and on
+    # Windows SChannel is already registered inside mORMot.
+    #
+    # IT IS ALSO THE REASON `test/cap7f/check_mormot_defines.ps1` EXISTS.
+    # This region was first written `{$ifdef OSPOSIX}`, a symbol only
+    # `mormot.defines.inc` defines and no unit under `src/` includes - so it
+    # was always false, the unit compiled clean, linked no TLS layer, and
+    # every https request died at the handshake. This sweep COUNTS
+    # conditionals and cannot evaluate them; the sibling gate is the other
+    # half, and it found four more dead regions when it first ran.
+    'src/rpc/pweb.rpc.fetch.mormot.pas'  = @{ directives = 2;
+        fingerprint = '53492ae91961fed3f3b0921d36fb855a272c5157b0a1d6d7e4b643bdccbf5e27' }
 }
 
 function Get-DirectiveFingerprint([string[]]$Texts) {

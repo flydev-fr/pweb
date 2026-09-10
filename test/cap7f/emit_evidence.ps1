@@ -2238,6 +2238,17 @@ $evidence = [ordered]@{
     loopback_release_refused           = "$($c15b.loopback_release_refused)"
     malformed_origin_refused_at_load   = "$($c15b.malformed_origin_refused_at_load)"
     bundler_refuses_network            = "$($c15b.bundler_refuses_network)"
+    # CAP-15B C1: THE COMPOSITION, mechanised once on the Linux leg. Linux
+    # carries the measured values; the other three carry `not_applicable`,
+    # which is a VALUE - a target that silently stopped emitting the row
+    # would otherwise be indistinguishable from one that never had it.
+    composition                        = "$($c15b.composition)"
+    composition_region                 = "$($c15b.composition_region)"
+    composition_fetch                  = "$($c15b.composition_fetch)"
+    composition_payload                = "$($c15b.composition_payload)"
+    composition_rpc_ok                 = "$($c15b.composition_rpc_ok)"
+    composition_rpc_result             = "$($c15b.composition_rpc_result)"
+    composition_listener_members       = "$($c15b.composition_listener_members)"
     cap15b_failures                    = "$($c15b.cap15b_failures)"
     github_sha                      = $sha
     github_run_id                   = "$runId"

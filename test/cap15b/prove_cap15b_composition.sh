@@ -80,6 +80,12 @@ public_path='/'
     die "the CLI is not staged: ${cli} -- test/cap10b1/build_cap10b1.sh runs earlier in this leg"
 [ -d "${sdk_root}/share/pweb/src" ] ||
     die "the SDK root is not staged: ${sdk_root}/share/pweb/src"
+# `pweb build` resolves mORMot and the webview library from the INSTALLATION,
+# so the SDK root has to be the COMPLETED one - CAP-10B1 stages the framework
+# and the two frontend SDKs, and CAP-10C1 completes it with the pinned
+# upstream tree and the platform library. Both steps run earlier in this leg.
+[ -f "${sdk_root}/share/pweb/deps/mormot2/src/core/mormot.core.base.pas" ] ||
+    die "the SDK root carries no mORMot -- test/cap10c1/build_cap10c1.sh completes it and runs earlier in this leg"
 command -v node >/dev/null 2>&1 || die 'required tool not found: node'
 command -v npm >/dev/null 2>&1 || die 'required tool not found: npm'
 command -v ss >/dev/null 2>&1 || die 'required tool not found: ss (iproute2)'
@@ -104,8 +110,8 @@ grep -q '"schema": 2' "${project}/pweb.json" ||
     die 'pweb create did not emit schema 2'
 grep -q '"origins": \[\]' "${project}/pweb.json" ||
     die 'pweb create did not emit an EMPTY origin set'
-row create_schema '2'
-row create_origins_empty 'true'
+row composition_create_schema '2'
+row composition_create_origins_empty 'true'
 
 # --- 2. declare the origin -------------------------------------------------
 # ONE line of the descriptor, edited the way a developer edits it. Nothing
@@ -118,7 +124,7 @@ sed "s|\"origins\": \[\]|\"origins\": [\"${public_origin}\"]|" \
 mv -f -- "${tmp}" "${project}/pweb.json"
 grep -q "${public_origin}" "${project}/pweb.json" ||
     die 'the origin was not declared'
-row declared_origin "${public_origin}"
+row composition_declared_origin "${public_origin}"
 
 # --- 3. the page calls it, through @pweb/runtime ---------------------------
 # The SHIPPED template does not call the door - a scaffold that fetched a
@@ -165,7 +171,7 @@ awk -v origin="${public_origin}${public_path}" '
 ' "${app}" > "${tmp}"
 mv -f -- "${tmp}" "${app}"
 grep -q 'httpFetch' "${app}" || die 'the page was not taught to call the door'
-row page_calls_door 'true'
+row composition_page_calls_door 'true'
 
 # --- 4. pweb build ---------------------------------------------------------
 step 'pweb build'
@@ -174,14 +180,18 @@ step 'pweb build'
 release="${project}/dist/linux-x86_64/release"
 [ -x "${release}/demo" ] || die "no release executable at ${release}/demo"
 [ -f "${release}/app.pwb" ] || die 'the release layout carries no app.pwb'
-row build 'PASS'
+row composition_build 'PASS'
 
-# THE DECLARED DIGEST, from the descriptor the build read
-declared_digest="$(grep -o '"[0-9a-f]\{64\}"' \
-    "${project}/dist/linux-x86_64/gen/app.network.inc" | tr -d '"' | head -n 1)"
+# THE DECLARED DIGEST, from the include the build generated out of the
+# descriptor. It is a PASCAL literal, so it is single-quoted; and the
+# extraction is explicitly non-fatal, because a `grep` that matches nothing
+# exits 1 and would otherwise end this script inside a command substitution,
+# silently and with the last row still reading PASS
+declared_digest="$(grep -oE '[0-9a-f]{64}' \
+    "${project}/dist/linux-x86_64/gen/app.network.inc" | head -n 1 || true)"
 [ -n "${declared_digest}" ] ||
     die 'the build generated no allowlist digest'
-row generated_include 'present'
+row composition_include 'present'
 
 # --- 5. pweb run -----------------------------------------------------------
 # `pweb run` supervises the release layout, which is the path a user takes.
@@ -218,10 +228,10 @@ for _ in $(seq 1 60); do
     sleep 0.5
 done
 wait "${run_pid}" && run_exit=0 || run_exit=$?
-row run_exit "${run_exit}"
+row composition_run_exit "${run_exit}"
 require "${run_exit}" 'pweb run did not exit cleanly'
-row listener_samples "${samples}"
-row listener_members "${listener_max}"
+row composition_listener_samples "${samples}"
+row composition_listener_members "${listener_max}"
 [ "${samples}" -gt 0 ] || require 1 'the application was never sampled'
 [ "${listener_max}" = '0' ] ||
     require 1 "the supervised application opened ${listener_max} listener(s)"
@@ -263,8 +273,8 @@ rpc="$(field rpc)"
 value="$(field value)"
 net="$(field net)"
 net_status="$(field netStatus)"
-row rpc_ok "${rpc}"
-row rpc_result "${value:-0}"
+row composition_rpc_ok "${rpc}"
+row composition_rpc_result "${value:-0}"
 [ "${rpc}" = 'true' ] || require 1 'CalculatorService.Add did not answer'
 [ "${value}" = '42' ] || require 1 "Add answered ${value}, not 42"
 
@@ -296,7 +306,7 @@ esac
 row composition_target 'linux-x86_64'
 if [ "${failures}" -eq 0 ]; then row composition 'PASS'; else row composition 'FAIL'; fi
 
-numeric_keys='|run_exit|listener_members|listener_samples|rpc_result|composition_fetch_status|'
+numeric_keys='|composition_run_exit|composition_listener_members|composition_listener_samples|composition_rpc_result|composition_fetch_status|'
 evidence="${repo_root}/build/cap15b/composition-linux-x86_64.json"
 {
     printf '{\n'
