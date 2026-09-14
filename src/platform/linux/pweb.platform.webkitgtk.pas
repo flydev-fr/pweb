@@ -393,6 +393,15 @@ function PWebGtkOpenExternalUri(const AUri: RawUtf8): Boolean;
 function PWebGtkSetExternalOpener(
   AOpener: TPWebGtkExternalOpener): TPWebGtkExternalOpener;
 
+var
+  /// CAP-15C: called on the GUI thread when a document-kind decision was
+  // classified trusted - the moment a window's document is replaced
+  // - it decides nothing and runs after the decision was applied. This
+  // engine's decide-policy cannot name the frame (findings L2), so a
+  // trusted SUBFRAME document is told as well: the socket door then closes
+  // more than it had to, which is the safe direction
+  PWebNavTrustedDocumentHook: procedure = nil;
+
 implementation
 
 { ---- minimal private WebKitGTK / GLib surface ----
@@ -1387,6 +1396,10 @@ begin
     begin
       InterLockedIncrement64(PInt64(@cell^.Allowed)^);
       webkit_policy_decision_use(decision);
+      // CAP-15C: told, never asked - the decision above is already applied
+      if (req.Kind = pnkDocument) and
+         Assigned(PWebNavTrustedDocumentHook) then
+        PWebNavTrustedDocumentHook();
     end
     else
     begin

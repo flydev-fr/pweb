@@ -19,6 +19,15 @@
 #   outbound client in the image is `pweb.rpc.fetch.mormot`, reachable only
 #   through `network.fetch`.
 #
+# CAP-15C EXTENDS IT BY EXACTLY ONE DOOR: `pweb.socketOpen | socketSend |
+# socketReceive | socketClose`, behind the `network.socket` capability and
+# the SAME compiled origin allowlist. The claim now reads:
+#
+#   no listening socket, no server, no second RPC path, and the only
+#   outbound clients in the image are `pweb.rpc.fetch.mormot` and
+#   `pweb.rpc.socket.mormot`, reachable only through `network.fetch` and
+#   `network.socket` respectively.
+#
 # The file list below is unchanged and none of these files is a fetch unit,
 # so the sweep is as strict about them as it ever was. The runtime half -
 # this process owns no listening TCP socket - is untouched.
@@ -42,8 +51,17 @@ $frontendFiles = @(
 # `pweb.fetch` and opens nothing - would be refused for the way they are
 # spelled. `window.fetch(` and `globalThis.fetch(` are still caught, because
 # a dot is not an identifier byte.
-$network = '(?<![A-Za-z0-9_])fetch\s*\(|XMLHttpRequest|WebSocket|EventSource|' +
-    'sendBeacon|localhost|127\.0\.0\.1|http://|https://|file://|' +
+#
+# CAP-15C anchors `WebSocket` the same way, for the same reason: the SDK's
+# own `PWebSocket` (TypeScript) and `TPWebSocket` (Pas2JS) are ONE long-poll
+# `invoke` loop over the runtime-owned `pweb.socket*` methods and open
+# nothing, while `new WebSocket(`, `window.WebSocket` and
+# `globalThis.WebSocket` - the browser's primitive - are still caught. A
+# socket URL joins the bar in both spellings: an SDK never names one.
+# test/cap15c/check_cap15c_contracts.ps1 parses this pattern back out and
+# proves it still FIRES on each of those shapes.
+$network = '(?<![A-Za-z0-9_])fetch\s*\(|XMLHttpRequest|(?<![A-Za-z0-9_])WebSocket|EventSource|' +
+    'sendBeacon|localhost|127\.0\.0\.1|http://|https://|wss?://|file://|' +
     'TRestHttpServer|THttpServer|mormot\.net\.(server|client|http)'
 
 # CAP-8B carve-out, FRONTENDS ONLY (the SDK bar stays absolute): the
@@ -59,7 +77,7 @@ $network = '(?<![A-Za-z0-9_])fetch\s*\(|XMLHttpRequest|WebSocket|EventSource|' +
 $marker = 'cap8b-navsec-probe'
 $pinnedMarkers = @{ 'App.tsx' = 5; 'p2japp.pas' = 5 }
 $hardBan = 'XMLHttpRequest|WebSocket|EventSource|sendBeacon|localhost|' +
-    '127\.0\.0\.1|file://|TRestHttpServer|THttpServer|' +
+    '127\.0\.0\.1|wss?://|file://|TRestHttpServer|THttpServer|' +
     'mormot\.net\.(server|client|http)'
 $allowedMarkers = @{}
 

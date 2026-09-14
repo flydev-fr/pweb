@@ -517,6 +517,86 @@ foreach ($phrase in 'pweb.fetch', 'network.fetch', 'never an origin exception',
 }
 $report.Add('CAP-15B: the door is native, the CSP did not move, and the two are pinned apart')
 
+# --- 7. CAP-15C: the NATIVE SOCKET DOOR, held to the first door's rules -----
+#
+# The socket door is the second native door, and section 1 is load-bearing for
+# it exactly as it is for fetch: the engine opens no socket, so connect-src
+# stays 'self'. What this section adds is the development-trust half. The
+# socket units carry NO PWEB_DEV branch and name NO loopback host, because the
+# ratified loopback exception is a property of the COMPILED ALLOWLIST: a
+# `ws://127.0.0.1:<port>` authority is DERIVED, by parsed components, from a
+# declared `http://127.0.0.1:<port>` origin - which a release build refuses by
+# name. Nothing in src/** spells a socket URL, so there is no literal to leak
+# into a release image; test/cap15c proves the image sweep for one FIRES on a
+# planted twin, so that absence is a measurement rather than a hope.
+$socketUnits = @('src/rpc/pweb.rpc.socket.pas', 'src/rpc/pweb.rpc.socket.mormot.pas',
+                 'src/platform/macos/pweb.platform.cocoa.socket.pas')
+foreach ($f in $socketUnits) {
+    if (-not (Test-Path $f)) {
+        $violations.Add("CAP-15C socket surface is missing: $f")
+        continue
+    }
+    $code = Strip15bComments ([System.IO.File]::ReadAllText($f))
+    foreach ($needle in '127.0.0.1', 'localhost', '[::1]') {
+        if ($code.Contains($needle)) {
+            $violations.Add(("$f names the loopback host ${needle}: the socket " +
+                'door derives a loopback authority from the compiled allowlist ' +
+                'and never spells one'))
+        }
+    }
+    if ($code.Contains('PWEB_DEV')) {
+        $violations.Add("$f branches on PWEB_DEV: the socket door has no development mode")
+    }
+}
+if (Test-Path $socketUnits[0]) {
+    $sockDec = Strip15bComments ([System.IO.File]::ReadAllText($socketUnits[0]))
+    if ($sockDec -match '\{\$if') {
+        $violations.Add('the socket decorator carries a compiler conditional')
+    }
+}
+# NO SOCKET URL LITERAL in src/**. The decorator's two scheme PREFIXES
+# (`wss://`, `ws://`) carry no host and are how it reads a URL; a literal with
+# anything after the prefix would be an endpoint compiled into the runtime.
+foreach ($file in (Get-ChildItem src -Recurse -File -Include '*.pas', '*.inc')) {
+    $rel = ($file.FullName.Substring($repoRoot.Length).TrimStart('\', '/')) -replace '\\', '/'
+    $code = Strip15bComments ([System.IO.File]::ReadAllText($file.FullName))
+    foreach ($m in [regex]::Matches($code, "'((?:[^']|'')*)'")) {
+        if ($m.Groups[1].Value -match '(?i)^wss?://.') {
+            $violations.Add("a socket URL literal appears in the runtime: ${rel}: $($m.Groups[1].Value)")
+        }
+    }
+}
+# BOTH GENERATED PROGRAMS install the socket door only inside the region the
+# descriptor's origins control, beside fetch
+foreach ($tpl in 'tools/templates/react/src/program.lpr',
+                 'tools/templates/pas2js/src/program.lpr') {
+    if (-not (Test-Path $tpl)) { continue }
+    $inNet = $false
+    $sawDoor = $false
+    $lineNo = 0
+    foreach ($line in [System.IO.File]::ReadLines($tpl)) {
+        $lineNo++
+        if ($line -match '\{\$ifdef\s+PWEB_NET\}') { $inNet = $true; continue }
+        if ($line -match '\{\$endif\s+PWEB_NET\}') { $inNet = $false; continue }
+        if ($line -match 'pweb\.rpc\.socket|TPWebSocketBridge|PWebSocketNativeTransport|socketBridge') {
+            $sawDoor = $true
+            if (-not $inNet) {
+                $violations.Add(("the generated program names the socket door " +
+                    "OUTSIDE its PWEB_NET region: ${tpl}:${lineNo}"))
+            }
+        }
+    }
+    if (-not $sawDoor) { $violations.Add("$tpl does not install the socket door") }
+}
+foreach ($phrase in 'pweb.socketOpen', 'network.socket', 'only thing that changes',
+                    'by parsed components') {
+    if (-not $contractText.Contains($phrase)) {
+        $violations.Add(("docs/cli-contract.md does not record the CAP-15C " +
+            "socket decision: `"$phrase`" is absent"))
+    }
+}
+$report.Add('CAP-15C: the socket door has no development mode, spells no loopback authority, and is fenced beside fetch')
+
 # --- verdict ----------------------------------------------------------------
 New-Item -ItemType Directory -Force build/cap10a | Out-Null
 $lines = New-Object System.Collections.Generic.List[string]

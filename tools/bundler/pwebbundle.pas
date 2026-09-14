@@ -436,8 +436,12 @@ var
         exit; // malformed: not this pass's refusal to make
       FastSetString(name, field.Value, field.ValueLen);
       name := LowerCaseU(name);
+      // CAP-15C: the socket door's names join the refusal - a bundle can
+      // no more name a socket endpoint than it can name an origin
       if (name = 'network') or (name = 'origins') or
-         (name = 'connect') or (name = 'csp') then
+         (name = 'connect') or (name = 'csp') or
+         (name = 'socket') or (name = 'sockets') or
+         (name = 'websocket') or (name = 'ws') or (name = 'wss') then
       begin
         WriteLn(StdErr, 'pwebbundle: network_field_in_bundle: ', Logical,
           ': a bundle may not carry a `', name, '` field - the outbound ',

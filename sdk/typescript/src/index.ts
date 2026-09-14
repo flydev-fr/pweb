@@ -37,6 +37,25 @@ export type {
   PWebFetchRequest,
   PWebFetchResponse,
 } from "./http.js";
+export {
+  PWebSocket,
+  PWEB_METHOD_SOCKET_OPEN,
+  PWEB_METHOD_SOCKET_SEND,
+  PWEB_METHOD_SOCKET_RECEIVE,
+  PWEB_METHOD_SOCKET_CLOSE,
+  PWEB_CAP_NETWORK_SOCKET,
+  PWEB_SOCKET_RECEIVE_WAIT_MS,
+  PWEB_SOCKET_MAX_MESSAGE,
+  PWEB_SOCKET_MAX_PROTOCOLS,
+  PWEB_SOCKET_MAX_REASON_BYTES,
+} from "./socket.js";
+export type {
+  PWebSocketOptions,
+  PWebSocketOpenEvent,
+  PWebSocketMessageEvent,
+  PWebSocketErrorEvent,
+  PWebSocketCloseEvent,
+} from "./socket.js";
 export { PWebError, toPWebError } from "./errors.js";
 export {
   PWEB_ERROR_CODES,

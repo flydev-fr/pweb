@@ -561,6 +561,49 @@ $required = @(
     'composition_payload', 'composition_rpc_ok', 'composition_rpc_result',
     'composition_listener_members',
     'cap15b_failures',
+    # CAP-15C: the native socket door.
+    #
+    # COMPARED (in $equalityFields): the socket corpus digest and every
+    # DECISION - the wss authority rule, the image proofs, the lifecycle rows.
+    #
+    # PINNED ABSOLUTELY (in $absolutePins): every refusal the door was ratified
+    # under - a moved CSP, a followed handshake redirect, a message dropped
+    # under backpressure, a socket surviving revocation or document
+    # replacement, a ws loopback literal in a release image (with the planted
+    # twin REQUIRED to fire), a ws client or server unit in the image, a
+    # listener in the composition - and zero gate failures.
+    #
+    # PER-TARGET, required present and checked target by target below:
+    #   socket_transport          the mORMot RFC 6455 transport on Windows and
+    #                             Linux, NSURLSessionWebSocketTask on macOS
+    #   tls_name_verification     MEASURED on Linux, where the transport has
+    #                             to hand OpenSSL the name; typed by provider
+    #                             on the other two
+    #   darwin_socket_*           the seven Darwin rows: measured on macOS,
+    #                             `not_applicable` elsewhere
+    #   socket_composition*       Linux carries the measurements; the other
+    #                             three `not_applicable` / `0`
+    'socket_suite', 'socket_corpus_digest', 'socket_door_available',
+    'wss_authority_rule', 'raw_frame_standard_server', 'backpressure_no_drop',
+    'idle_close_typed', 'revoke_closes_all', 'principal_isolation',
+    'close_on_navigation', 'close_on_generation_switch',
+    'release_ws_relaxation_literals', 'dev_twin_ws_relaxation_literals',
+    'dev_image_ws_relaxation_literals', 'ws_relaxation_sweep_discriminates',
+    'mormot_net_ws_files', 'socket_transport', 'socket_csp_byte_identical',
+    'socket_csp_connect_src', 'nonet_links_socket_decorator',
+    'nonet_links_socket_transport', 'bundler_refuses_socket_field',
+    'frame_bound_both_directions', 'sockets_per_host_bound',
+    'socket_policy_absent_forbidden', 'handshake_redirects_followed',
+    'tls_name_verification',
+    'darwin_socket_opens', 'darwin_socket_redirects_offered',
+    'darwin_socket_proxy_dict_empty', 'darwin_socket_cookie_storage_nil',
+    'darwin_socket_should_set_cookies', 'darwin_socket_open_on_main_thread',
+    'darwin_socket_maximum_message_size',
+    'socket_composition', 'socket_composition_open', 'socket_composition_echo',
+    'socket_composition_navigation_close', 'socket_composition_shutdown_close',
+    'socket_composition_rpc_ok', 'socket_composition_rpc_result',
+    'socket_composition_listener_members', 'socket_composition_client_sockets',
+    'cap15c_failures',
     # CAP-14B: the development console surface.
     #
     # COMPARED (below, in $equalityFields): console_mechanism, console_levels,
@@ -1290,10 +1333,42 @@ $absolutePins = @{
     # unit test.
     composition_listener_members       = '0'
     cap15b_failures                    = '0'
+    # CAP-15C: the native socket door. Four targets agreeing is not enough
+    # for any of these - they could all agree that a socket survived its
+    # window, or that a release carries a ws loopback literal.
+    socket_door_available              = 'true'
+    wss_authority_rule                 = 'https_origin_authorises_wss_by_parsed_components;http_loopback_origin_authorises_ws;default_ports_canonical'
+    raw_frame_standard_server          = 'true'
+    backpressure_no_drop               = 'true'
+    idle_close_typed                   = 'true'
+    revoke_closes_all                  = 'true'
+    principal_isolation                = 'true'
+    close_on_navigation                = 'true'
+    close_on_generation_switch         = 'true'
+    release_ws_relaxation_literals     = '0'
+    dev_image_ws_relaxation_literals   = '0'
+    # THE SWEEP MUST FIRE, and exactly once: the planted twin carries one
+    # literal, and a sweep that found none - or found the twin twice - would
+    # not be the sweep that passed the release image
+    dev_twin_ws_relaxation_literals    = '1'
+    ws_relaxation_sweep_discriminates  = 'true'
+    mormot_net_ws_files                = '0'
+    socket_csp_byte_identical          = 'true'
+    socket_csp_connect_src             = 'self'
+    nonet_links_socket_decorator       = 'false'
+    nonet_links_socket_transport       = 'false'
+    bundler_refuses_socket_field       = 'true'
+    frame_bound_both_directions        = 'true'
+    sockets_per_host_bound             = 'true'
+    socket_policy_absent_forbidden     = 'true'
+    handshake_redirects_followed       = '0'
+    socket_composition_listener_members = '0'
+    cap15c_failures                    = '0'
     cap14b_gates                       = 'PASS'
 }
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
 $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
+    'socket_suite',
     'build_corpus', 'build_suite', 'build_option_matrix',
     'build_help_matrix', 'gate_quoting_space_path',
     # CAP-10D1: the packaging verdict and the suite behind it
@@ -1662,6 +1737,19 @@ $equalityFields = @(
     'loopback_dev_accepted', 'loopback_release_refused',
     'malformed_origin_refused_at_load', 'bundler_refuses_network',
     'cap15b_failures',
+    # CAP-15C: the socket door's DECISIONS, never its provider - the same
+    # corpus, the same authority rule, the same image proofs on four targets
+    'socket_suite', 'socket_corpus_digest', 'socket_door_available',
+    'wss_authority_rule', 'raw_frame_standard_server', 'backpressure_no_drop',
+    'idle_close_typed', 'revoke_closes_all', 'principal_isolation',
+    'close_on_navigation', 'close_on_generation_switch',
+    'release_ws_relaxation_literals', 'dev_twin_ws_relaxation_literals',
+    'dev_image_ws_relaxation_literals', 'ws_relaxation_sweep_discriminates',
+    'mormot_net_ws_files', 'socket_csp_byte_identical', 'socket_csp_connect_src',
+    'nonet_links_socket_decorator', 'nonet_links_socket_transport',
+    'bundler_refuses_socket_field', 'frame_bound_both_directions',
+    'sockets_per_host_bound', 'socket_policy_absent_forbidden',
+    'handshake_redirects_followed', 'cap15c_failures',
     'sdk_corpus', 'sdk_suite', 'sdk_digest', 'sdk_corpus_lines',
     'sdk_package_built', 'sdk_manifest_deterministic',
     'sdk_archive_deterministic', 'sdk_inventory_deterministic',
@@ -1943,6 +2031,85 @@ foreach ($t in $evidence.Keys) {
         }
         if ("$($e.composition_rpc_result)" -cne '0') {
             $failures.Add("CAP-15B COMPOSITION: target=$t composition_rpc_result='$($e.composition_rpc_result)', expected '0' where the smoke does not run")
+        }
+    }
+    # --- CAP-15C: the rows typed per target ---------------------------------
+    #
+    # The transport, the TLS name row, the seven Darwin rows and the
+    # composition cannot be compared across targets and cannot be pinned to
+    # one value, so they are checked HERE - and BOTH sides of each asymmetry
+    # are checked: the target that measures must carry a measurement, and the
+    # targets that do not must say so by name.
+    $c15cMac = $t -like 'macos-*'
+    $c15cTransport = if ($c15cMac) { 'nsurlsession_websocket_task' } else { 'mormot_net_sock_rfc6455' }
+    if ("$($e.socket_transport)" -cne $c15cTransport) {
+        $failures.Add("CAP-15C TRANSPORT: target=$t socket_transport='$($e.socket_transport)' expected '$c15cTransport'")
+    }
+    $c15cName = if ($t -like 'linux-*') { 'measured_wrong_name_refused' }
+        elseif ($t -like 'windows-*') { 'schannel_automatic_validation_against_target_name' }
+        else { 'nsurlsession_default_server_trust_evaluation' }
+    if ("$($e.tls_name_verification)" -cne $c15cName) {
+        $failures.Add("CAP-15C TLS NAME: target=$t tls_name_verification='$($e.tls_name_verification)' expected '$c15cName' -- a trusted certificate naming another host must never open a socket")
+    }
+    $c15cDarwin = @('darwin_socket_opens', 'darwin_socket_redirects_offered',
+        'darwin_socket_proxy_dict_empty', 'darwin_socket_cookie_storage_nil',
+        'darwin_socket_should_set_cookies', 'darwin_socket_open_on_main_thread',
+        'darwin_socket_maximum_message_size')
+    if ($c15cMac) {
+        foreach ($f in $c15cDarwin) {
+            $n = [long]0
+            if (-not [long]::TryParse("$($e.$f)", [ref]$n)) {
+                $failures.Add("CAP-15C DARWIN ROW NOT MEASURED: target=$t field=$f value='$($e.$f)'")
+            }
+        }
+        # the configuration READ BACK from the task and its session: the
+        # fetch door's section 10 rows, applied to the socket transport
+        foreach ($pair in @(@('darwin_socket_proxy_dict_empty', '1'),
+                            @('darwin_socket_cookie_storage_nil', '1'),
+                            @('darwin_socket_should_set_cookies', '0'),
+                            @('darwin_socket_maximum_message_size', '1048576'))) {
+            if ("$($e.($pair[0]))" -cne $pair[1]) {
+                $failures.Add("CAP-15C DARWIN CONFIGURATION: target=$t $($pair[0])='$($e.($pair[0]))' expected '$($pair[1])'")
+            }
+        }
+        if ("$($e.darwin_socket_opens)" -ceq '0') {
+            $failures.Add("CAP-15C DARWIN: target=$t darwin_socket_opens=0 -- the NSURLSessionWebSocketTask transport never opened")
+        }
+    } else {
+        foreach ($f in $c15cDarwin) {
+            if ("$($e.$f)" -cne 'not_applicable') {
+                $failures.Add("CAP-15C DARWIN ROW: target=$t field=$f value='$($e.$f)' -- only macOS carries the NSURLSessionWebSocketTask rows")
+            }
+        }
+    }
+    if ($t -ceq 'linux-x86_64') {
+        foreach ($pair in @(@('socket_composition', 'PASS'), @('socket_composition_open', 'true'),
+                            @('socket_composition_echo', 'echoed'),
+                            @('socket_composition_navigation_close', '1001/'),
+                            @('socket_composition_shutdown_close', '1001/'),
+                            @('socket_composition_rpc_ok', 'true'),
+                            @('socket_composition_rpc_result', '42'))) {
+            if ("$($e.($pair[0]))" -cne $pair[1]) {
+                $failures.Add("CAP-15C COMPOSITION: target=$t $($pair[0])='$($e.($pair[0]))' expected '$($pair[1])'")
+            }
+        }
+        $c15cClients = 0
+        if ((-not [int]::TryParse("$($e.socket_composition_client_sockets)", [ref]$c15cClients)) -or
+            ($c15cClients -lt 1)) {
+            $failures.Add("CAP-15C COMPOSITION: target=$t socket_composition_client_sockets='$($e.socket_composition_client_sockets)' -- the client connection was never typed on the application")
+        }
+    } else {
+        foreach ($f in 'socket_composition', 'socket_composition_open', 'socket_composition_echo',
+                       'socket_composition_navigation_close', 'socket_composition_shutdown_close',
+                       'socket_composition_rpc_ok') {
+            if ("$($e.$f)" -cne 'not_applicable') {
+                $failures.Add("CAP-15C COMPOSITION: target=$t field=$f value='$($e.$f)' -- only linux-x86_64 runs the socket composition smoke, and every other target says so by name")
+            }
+        }
+        foreach ($f in 'socket_composition_rpc_result', 'socket_composition_client_sockets') {
+            if ("$($e.$f)" -cne '0') {
+                $failures.Add("CAP-15C COMPOSITION: target=$t field=$f value='$($e.$f)', expected '0' where the smoke does not run")
+            }
         }
     }
     # the export surface: exactly 17 webview_* names, no strays

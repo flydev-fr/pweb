@@ -174,10 +174,22 @@ Set-Location $repoRoot
 # reported by the linux leg of hosted run 34452631822 - which is how this
 # pin was found, because CAP-10B1's own gate records the digest as a ROW and
 # only this gate holds it as a literal.
+#
+# CAP-15C SUPERSEDES BOTH NUMBERS AGAIN, for the same reason and in the same
+# two files: the React template's `program.lpr` installs the socket door
+# beside fetch inside `{$ifdef PWEB_NET}`, and `app.services.pas` grants
+# `network.socket` and maps its four methods there. No file was added or
+# removed, so the COUNT does not move; two files grew.
+#   inventory eabbc88d209c252128646ceeaddfb247567ce3c574f03088dcbbbaf29feee111
+#          -> 31244b06547bf15f239eb5bc68742df573137ff7517d7c7cbc41aa48a9f9c98b
+#   bytes     76854 -> 78679   (16 files, unchanged)
+# MEASURED on two targets before it was written here: the same two values in
+# build/cap10b1/cli-windows-x86_64.json and build/cap10b1/cli-linux-x86_64.json,
+# from the local CAP-15C chains on each.
 $CAP10B1_REACT_INVENTORY_DIGEST =
-    'eabbc88d209c252128646ceeaddfb247567ce3c574f03088dcbbbaf29feee111'
+    '31244b06547bf15f239eb5bc68742df573137ff7517d7c7cbc41aa48a9f9c98b'
 $CAP10B1_REACT_FILE_COUNT = 16
-$CAP10B1_REACT_TOTAL_BYTES = 76854
+$CAP10B1_REACT_TOTAL_BYTES = 78679
 
 $exeSuffix = if ($IsWindows) { '.exe' } else { '' }
 $work = Join-Path $repoRoot 'build/cap10b2'

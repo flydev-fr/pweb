@@ -126,6 +126,15 @@ function PWebFactorIntersect(
 type
   TPWebCapabilityPolicy = class;
 
+  /// CAP-15C: told that ONE principal's runtime grants changed
+  // - called AFTER the store changed and OUTSIDE the grant lock, on the
+  // thread that changed them, so a subscriber may call SnapshotCapabilities
+  // from inside it. It decides nothing about any invocation: the policy
+  // already answers every one of them. It exists because a native socket
+  // outlives the invocation that opened it, and "a revoked network.socket
+  // closes every socket immediately" needs somebody to be told
+  TPWebGrantsChangedEvent = procedure(const APrincipalId: Utf8String) of object;
+
   /// native Pascal configuration builder - the ONLY way to construct a
   // production policy. Every setter validates at the call site; Build
   // re-validates the whole and raises EPWebCapabilityConfig atomically,
@@ -200,6 +209,8 @@ type
     FGrantLock: TCriticalSection;
     FGrantNames: array of Utf8String;
     FGrantCaps: array of TPWebCapabilities;
+    FOnGrantsChanged: TPWebGrantsChangedEvent;
+    procedure NotifyGrantsChanged(const APrincipalId: Utf8String);
     function MethodIndex(const AMethod: Utf8String): Integer;
     function GrantIndex(const APrincipalId: Utf8String): Integer;
     function StaticFactor(const ANames: array of Utf8String;
@@ -248,6 +259,12 @@ type
     { Remove the principal's grant entry entirely - back to the absent
       factor (unrestricted, i.e. the static configuration alone). }
     procedure ClearRuntimeGrants(const APrincipalId: Utf8String);
+
+    { CAP-15C: one subscriber, told after any of the three calls above
+      changed a principal's grants (see TPWebGrantsChangedEvent). Set at
+      startup, before the host runs; nil means nobody is told. }
+    property OnGrantsChanged: TPWebGrantsChangedEvent
+      read FOnGrantsChanged write FOnGrantsChanged;
   end;
 
 implementation
@@ -706,6 +723,15 @@ begin
   Result := CopyCaps(factor.Caps); // fresh array per invocation snapshot
 end;
 
+procedure TPWebCapabilityPolicy.NotifyGrantsChanged(
+  const APrincipalId: Utf8String);
+begin
+  // outside the grant lock, by the placement of every call: a subscriber
+  // may read the store it is being told about
+  if Assigned(FOnGrantsChanged) then
+    FOnGrantsChanged(APrincipalId);
+end;
+
 procedure TPWebCapabilityPolicy.SetRuntimeGrants(
   const APrincipalId: Utf8String; const ACaps: array of Utf8String);
 var
@@ -741,6 +767,7 @@ begin
     end;
   finally
     FGrantLock.Leave;
+    NotifyGrantsChanged(APrincipalId);
   end;
 end;
 
@@ -788,6 +815,7 @@ begin
     FGrantCaps[i] := caps; // still canonical: removal keeps the order
   finally
     FGrantLock.Leave;
+    NotifyGrantsChanged(APrincipalId);
   end;
 end;
 
@@ -813,6 +841,7 @@ begin
     SetLength(FGrantCaps, Length(FGrantCaps) - 1);
   finally
     FGrantLock.Leave;
+    NotifyGrantsChanged(APrincipalId);
   end;
 end;
 

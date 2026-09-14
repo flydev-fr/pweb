@@ -58,6 +58,24 @@ const
   PWEB_METHOD_FETCH = 'pweb.fetch';
   PWEB_CAP_NETWORK_FETCH = 'network.fetch';
 
+  { The native socket door (CAP-15C): four runtime-owned methods and the one
+    capability that authorizes them - advisory here, as above. The bounds are
+    the native ones, cross-checked against src/rpc/pweb.rpc.socket.pas. }
+  PWEB_METHOD_SOCKET_OPEN = 'pweb.socketOpen';
+  PWEB_METHOD_SOCKET_SEND = 'pweb.socketSend';
+  PWEB_METHOD_SOCKET_RECEIVE = 'pweb.socketReceive';
+  PWEB_METHOD_SOCKET_CLOSE = 'pweb.socketClose';
+  PWEB_CAP_NETWORK_SOCKET = 'network.socket';
+  PWEB_SOCKET_RECEIVE_WAIT_MS = 25000;
+  PWEB_SOCKET_MAX_MESSAGE = 1048576;
+  PWEB_SOCKET_MAX_PROTOCOLS = 4;
+  PWEB_SOCKET_MAX_REASON_BYTES = 123;
+
+  PWEB_SOCKET_CONNECTING = 0;
+  PWEB_SOCKET_OPEN = 1;
+  PWEB_SOCKET_CLOSING = 2;
+  PWEB_SOCKET_CLOSED = 3;
+
   { JS global name of the native invocation primitive bound by the CAP-2
     binding (webview_bind). Internal transport detail - applications use
     PWebInvoke, never this global directly. }
@@ -90,6 +108,62 @@ type
     Protocol: NativeInt; external name 'protocol';
     Runtime: String; external name 'runtime';
     Capabilities: TJSArray; external name 'capabilities'; // may be undefined
+  end;
+
+  TPWebSocket = class;
+
+  { AInfo carries the event's fields as the TypeScript SDK names them:
+    `protocol` for open; `code`, `category` for error; `code`, `reason`,
+    `wasClean`, `category`, `undelivered` for close. }
+  TPWebSocketNotify = reference to procedure(Sender: TPWebSocket;
+    AInfo: TJSObject);
+  { AData is a String for a text message, a TJSArrayBuffer for a binary one }
+  TPWebSocketMessage = reference to procedure(Sender: TPWebSocket;
+    AData: JSValue);
+
+  { The native socket door (CAP-15C), the twin of `PWebSocket` in
+    @pweb/runtime. The page opens no socket: the runtime does, under the
+    `network.socket` capability and the origin allowlist compiled into the
+    host.
+
+    ONE receive loop per socket - `pweb.socketReceive` long-polls, one after
+    another. When CAP-12 brings streaming, that loop is the only thing that
+    changes: this class, its events, the four method names and the native
+    decorator do not.
+
+    It constructs no URL, supplies no default origin, adds no header, retries
+    nothing and reconnects nothing. Send on a socket that is not open raises
+    EPWebError invalid_request rather than dropping the message. }
+  TPWebSocket = class
+  private
+    FUrl: String;
+    FId: String;
+    FReadyState: NativeInt;
+    FProtocol: String;
+    FSendChain: TJSPromise;
+    FCloseWanted: Boolean;
+    FCloseCode: NativeInt;
+    FCloseReason: String;
+    procedure ReceiveNext;
+    procedure DispatchEvent(AEvent: TJSObject);
+    procedure Fail(AError: EPWebError);
+    procedure RequestClose(ACode: NativeInt; const AReason: String);
+  public
+    OnOpen: TPWebSocketNotify;
+    OnMessage: TPWebSocketMessage;
+    OnError: TPWebSocketNotify;
+    OnClose: TPWebSocketNotify;
+    { AOptions may carry `protocols` (an array of at most four tokens) and
+      `headers` (the fetch door's request-header allowlist); both pass
+      through byte-exact }
+    constructor Create(const AUrl: String; AOptions: TJSObject = nil);
+    procedure Send(const AText: String);
+    procedure SendBinary(ABuffer: TJSArrayBuffer);
+    { 1000, or an application code 3000-4999. Idempotent. }
+    procedure Close(ACode: NativeInt = 1000; const AReason: String = '');
+    property Url: String read FUrl;
+    property ReadyState: NativeInt read FReadyState;
+    property Protocol: String read FProtocol;
   end;
 
 { True when the PWeb native binding is present in this JS context.
@@ -315,6 +389,230 @@ begin
     // door refuses an argument of the wrong type and sending an explicit
     // undefined would be sending one
     Result := PWebInvoke(PWEB_METHOD_FETCH, ARequest);
+end;
+
+{ ---------------- TPWebSocket ---------------- }
+
+function SocketBufferToBase64(ABuffer: TJSArrayBuffer): String; assembler;
+asm
+  var bytes = new Uint8Array(ABuffer);
+  var binary = '';
+  for (var i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+end;
+
+function SocketBase64ToBuffer(const AText: String): TJSArrayBuffer; assembler;
+asm
+  var binary = atob(AText);
+  var bytes = new Uint8Array(binary.length);
+  for (var i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes.buffer;
+end;
+
+constructor TPWebSocket.Create(const AUrl: String; AOptions: TJSObject);
+var
+  args: TJSObject;
+begin
+  inherited Create;
+  FUrl := AUrl;
+  FReadyState := PWEB_SOCKET_CONNECTING;
+  FSendChain := TJSPromise.resolve(JS.Undefined);
+  // an ABSENT option stays absent: the native door refuses an argument of
+  // the wrong type, and an explicit undefined would be sending one
+  args := TJSObject.new;
+  args['url'] := AUrl;
+  if AOptions <> nil then
+  begin
+    if not isUndefined(AOptions['protocols']) then
+      args['protocols'] := AOptions['protocols'];
+    if not isUndefined(AOptions['headers']) then
+      args['headers'] := AOptions['headers'];
+  end;
+  PWebInvoke(PWEB_METHOD_SOCKET_OPEN, args)._then(
+    function(AValue: JSValue): JSValue
+    begin
+      FId := String(TJSObject(AValue)['id']);
+      ReceiveNext;
+      if FCloseWanted then
+      begin
+        FCloseWanted := False;
+        RequestClose(FCloseCode, FCloseReason);
+      end;
+      Result := JS.Undefined;
+    end,
+    function(AReason: JSValue): JSValue
+    begin
+      Fail(ConvertReason(AReason));
+      Result := JS.Undefined;
+    end);
+end;
+
+// THE RECEIVE LOOP - the one part CAP-12 streaming replaces
+procedure TPWebSocket.ReceiveNext;
+var
+  args: TJSObject;
+begin
+  if FReadyState = PWEB_SOCKET_CLOSED then
+    exit;
+  args := TJSObject.new;
+  args['id'] := FId;
+  args['waitMs'] := PWEB_SOCKET_RECEIVE_WAIT_MS;
+  PWebInvoke(PWEB_METHOD_SOCKET_RECEIVE, args)._then(
+    function(AValue: JSValue): JSValue
+    var
+      events: JSValue;
+      list: TJSArray;
+      i: NativeInt;
+    begin
+      events := TJSObject(AValue)['events'];
+      if isArray(events) then
+      begin
+        list := TJSArray(events);
+        for i := 0 to list.length - 1 do
+          DispatchEvent(TJSObject(list[i]));
+      end;
+      ReceiveNext;
+      Result := JS.Undefined;
+    end,
+    function(AReason: JSValue): JSValue
+    begin
+      Fail(ConvertReason(AReason));
+      Result := JS.Undefined;
+    end);
+end;
+
+procedure TPWebSocket.DispatchEvent(AEvent: TJSObject);
+var
+  kind: String;
+begin
+  kind := String(AEvent['type']);
+  if kind = 'open' then
+  begin
+    if FReadyState = PWEB_SOCKET_CONNECTING then
+      FReadyState := PWEB_SOCKET_OPEN;
+    if isString(AEvent['protocol']) then
+      FProtocol := String(AEvent['protocol']);
+    if Assigned(OnOpen) then
+      OnOpen(Self, new(['protocol', FProtocol]));
+  end
+  else if kind = 'message' then
+  begin
+    if Assigned(OnMessage) then
+      if isString(AEvent['base64']) then
+        OnMessage(Self, SocketBase64ToBuffer(String(AEvent['base64'])))
+      else
+        OnMessage(Self, AEvent['text']);
+  end
+  else if kind = 'error' then
+  begin
+    if Assigned(OnError) then
+      OnError(Self, new(['code', 'service_error', 'category', AEvent['category']]));
+  end
+  else if kind = 'close' then
+  begin
+    FReadyState := PWEB_SOCKET_CLOSED;
+    if Assigned(OnClose) then
+      OnClose(Self, AEvent);
+  end;
+end;
+
+procedure TPWebSocket.Fail(AError: EPWebError);
+var
+  category: JSValue;
+begin
+  if FReadyState = PWEB_SOCKET_CLOSED then
+    exit;
+  FReadyState := PWEB_SOCKET_CLOSED;
+  category := JS.Null;
+  if isObject(AError.Data) and
+     isString(TJSObject(AError.Data)['category']) then
+    category := TJSObject(AError.Data)['category'];
+  if Assigned(OnError) then
+    OnError(Self, new(['code', AError.Code, 'category', category]));
+  if Assigned(OnClose) then
+    OnClose(Self, new(['code', 1006, 'reason', '', 'wasClean', False,
+      'category', 'failed', 'undelivered', 0]));
+end;
+
+procedure TPWebSocket.Send(const AText: String);
+var
+  args: TJSObject;
+begin
+  if FReadyState <> PWEB_SOCKET_OPEN then
+    raise MakeError('invalid_request', 'The socket is not open', JS.Null);
+  args := TJSObject.new;
+  args['id'] := FId;
+  args['text'] := AText;
+  // ONE send in flight at a time, so messages leave in the order given
+  FSendChain := FSendChain._then(
+    function(AValue: JSValue): JSValue
+    begin
+      Result := PWebInvoke(PWEB_METHOD_SOCKET_SEND, args);
+    end)._then(nil,
+    function(AReason: JSValue): JSValue
+    begin
+      Fail(ConvertReason(AReason));
+      Result := JS.Undefined;
+    end);
+end;
+
+procedure TPWebSocket.SendBinary(ABuffer: TJSArrayBuffer);
+var
+  args: TJSObject;
+begin
+  if FReadyState <> PWEB_SOCKET_OPEN then
+    raise MakeError('invalid_request', 'The socket is not open', JS.Null);
+  args := TJSObject.new;
+  args['id'] := FId;
+  args['base64'] := SocketBufferToBase64(ABuffer);
+  FSendChain := FSendChain._then(
+    function(AValue: JSValue): JSValue
+    begin
+      Result := PWebInvoke(PWEB_METHOD_SOCKET_SEND, args);
+    end)._then(nil,
+    function(AReason: JSValue): JSValue
+    begin
+      Fail(ConvertReason(AReason));
+      Result := JS.Undefined;
+    end);
+end;
+
+procedure TPWebSocket.RequestClose(ACode: NativeInt; const AReason: String);
+var
+  args: TJSObject;
+begin
+  args := TJSObject.new;
+  args['id'] := FId;
+  args['code'] := ACode;
+  if AReason <> '' then
+    args['reason'] := AReason;
+  FReadyState := PWEB_SOCKET_CLOSING;
+  PWebInvoke(PWEB_METHOD_SOCKET_CLOSE, args)._then(nil,
+    function(AReason: JSValue): JSValue
+    begin
+      Fail(ConvertReason(AReason));
+      Result := JS.Undefined;
+    end);
+end;
+
+procedure TPWebSocket.Close(ACode: NativeInt; const AReason: String);
+begin
+  if (FReadyState = PWEB_SOCKET_CLOSING) or
+     (FReadyState = PWEB_SOCKET_CLOSED) then
+    exit;
+  if FId = '' then
+  begin
+    FCloseWanted := True;
+    FCloseCode := ACode;
+    FCloseReason := AReason;
+    FReadyState := PWEB_SOCKET_CLOSING;
+    exit;
+  end;
+  RequestClose(ACode, AReason);
 end;
 
 function Mismatch(const ADetail: String): EPWebError;

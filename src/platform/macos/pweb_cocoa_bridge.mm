@@ -38,6 +38,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h> /* usleep: the CAP-15C receive queue's room wait */
 
 #include "pweb_cocoa_bridge.h"
 
@@ -2075,4 +2076,522 @@ int pweb_cocoa_fetch(const pweb_cocoa_fetch_request_t *request,
     }
   }
   return result;
+}
+
+/* ======================================================================== *
+ *  CAP-15C - NSURLSessionWebSocketTask behind the socket seam              *
+ *  (the contract of every function below is in pweb_cocoa_bridge.h)       *
+ * ======================================================================== */
+
+#define PWEB_COCOA_SOCKET_SLICE_MS 20
+#define PWEB_COCOA_SOCKET_SETTLE_MS 2000
+
+static int32_t g_socket_opens = 0;
+static int32_t g_socket_redirects = 0;
+static int32_t g_socket_proxy_empty = -1;
+static int32_t g_socket_cookie_nil = -1;
+static int32_t g_socket_should_set = -1;
+static int32_t g_socket_on_main = 0;
+static int64_t g_socket_max_message = 0;
+
+@interface PWebCocoaSocket : NSObject <NSURLSessionWebSocketDelegate> {
+@public
+  NSURLSession *session;
+  NSURLSessionWebSocketTask *task;
+  NSOperationQueue *queue;
+  dispatch_queue_t rx;
+  dispatch_semaphore_t openDone;
+  pweb_cocoa_socket_sink_t sink;
+  int64_t maxMessage;
+  int64_t sendDeadlineMs;
+  int opened;
+  int openOutcome;
+  int stopping;
+  int closeReported;
+  NSString *selected;
+}
+- (void)armReceive;
+- (void)reportClosed:(int)cause code:(int)code reason:(NSString *)reason;
+@end
+
+@implementation PWebCocoaSocket
+
+- (id)init {
+  self = [super init];
+  if (self != nil) {
+    session = nil;
+    task = nil;
+    queue = nil;
+    rx = dispatch_queue_create("pweb.socket.rx", DISPATCH_QUEUE_SERIAL);
+    openDone = dispatch_semaphore_create(0);
+    memset(&sink, 0, sizeof(sink));
+    maxMessage = 0;
+    sendDeadlineMs = 0;
+    opened = 0;
+    openOutcome = PWEB_COCOA_SOCKET_CONNECT_FAILED;
+    stopping = 0;
+    closeReported = 0;
+    selected = nil;
+  }
+  return self;
+}
+
+- (void)dealloc {
+  [task release];
+  [session release];
+  [queue release];
+  [selected release];
+  if (rx != NULL) {
+    dispatch_release(rx);
+  }
+  if (openDone != NULL) {
+    dispatch_release(openDone);
+  }
+  [super dealloc];
+}
+
+/* every sink call happens under this object's lock and only while it is not
+   stopping, so release can promise that no call BEGINS after it returns */
+- (void)reportClosed:(int)cause code:(int)code reason:(NSString *)reason {
+  @synchronized(self) {
+    if (stopping || closeReported || sink.closed == NULL) {
+      return;
+    }
+    closeReported = 1;
+    const char *text = (reason == nil) ? "" : [reason UTF8String];
+    sink.closed(sink.opaque, cause, code, (text == NULL) ? "" : text);
+  }
+}
+
+/* THE BACKPRESSURE, as far as this API lets it be expressed: the next
+   receive is armed only after the message just taken has been delivered,
+   and it is delivered only when the decorator says there is room. */
+- (void)armReceive {
+  [self retain];
+  [task receiveMessageWithCompletionHandler:
+            ^(NSURLSessionWebSocketMessage *message, NSError *error) {
+    if (error != nil || message == nil) {
+      if (error != nil && [[error domain] isEqualToString:NSPOSIXErrorDomain] &&
+          [error code] == 40) {
+        /* EMSGSIZE: the message crossed maximumMessageSize */
+        [self->task cancelWithCloseCode:1009 reason:nil];
+        [self reportClosed:PWEB_COCOA_SOCKET_CAUSE_TOO_LARGE
+                      code:1009
+                    reason:nil];
+      } else {
+        NSInteger code = [self->task closeCode];
+        if (code > 0) {
+          NSData *raw = [self->task closeReason];
+          NSString *reason =
+              (raw == nil) ? nil
+                           : [[[NSString alloc]
+                                 initWithData:raw
+                                     encoding:NSUTF8StringEncoding] autorelease];
+          [self reportClosed:PWEB_COCOA_SOCKET_CAUSE_REMOTE
+                        code:(int)code
+                      reason:reason];
+        } else {
+          [self reportClosed:PWEB_COCOA_SOCKET_CAUSE_ABNORMAL
+                        code:1006
+                      reason:nil];
+        }
+      }
+      [self release];
+      return;
+    }
+    [message retain];
+    dispatch_async(self->rx, ^{
+      NSData *payload;
+      int binary = ([message type] == NSURLSessionWebSocketMessageTypeData);
+      if (binary) {
+        payload = [message data];
+      } else {
+        payload = [[message string] dataUsingEncoding:NSUTF8StringEncoding];
+      }
+      int64_t size = (int64_t)[payload length];
+      for (;;) {
+        int fits = 0;
+        @synchronized(self) {
+          if (self->stopping) {
+            break;
+          }
+          fits = (self->sink.room == NULL) ||
+                 self->sink.room(self->sink.opaque, size);
+        }
+        if (fits) {
+          break;
+        }
+        usleep(PWEB_COCOA_SOCKET_SLICE_MS * 1000);
+      }
+      @synchronized(self) {
+        if (!self->stopping && self->sink.deliver != NULL) {
+          self->sink.deliver(self->sink.opaque, binary, [payload bytes], size);
+        }
+      }
+      [message release];
+      if (!self->stopping) {
+        [self armReceive];
+      }
+      [self release];
+    });
+  }];
+}
+
+- (void)URLSession:(NSURLSession *)s
+          webSocketTask:(NSURLSessionWebSocketTask *)t
+    didOpenWithProtocol:(NSString *)protocol {
+  (void)s;
+  (void)t;
+  [selected release];
+  selected = [(protocol == nil ? @"" : protocol) copy];
+  opened = 1;
+  openOutcome = PWEB_COCOA_SOCKET_OK;
+  dispatch_semaphore_signal(openDone);
+}
+
+- (void)URLSession:(NSURLSession *)s
+       webSocketTask:(NSURLSessionWebSocketTask *)t
+    didCloseWithCode:(NSURLSessionWebSocketCloseCode)code
+              reason:(NSData *)reason {
+  (void)s;
+  (void)t;
+  NSString *text =
+      (reason == nil) ? nil
+                      : [[[NSString alloc] initWithData:reason
+                                               encoding:NSUTF8StringEncoding]
+                            autorelease];
+  [self reportClosed:PWEB_COCOA_SOCKET_CAUSE_REMOTE code:(int)code reason:text];
+}
+
+/* THE REDIRECT REFUSAL: nil, counted, never followed */
+- (void)URLSession:(NSURLSession *)s
+                        task:(NSURLSessionTask *)t
+  willPerformHTTPRedirection:(NSHTTPURLResponse *)redirectResponse
+                  newRequest:(NSURLRequest *)request
+           completionHandler:(void (^)(NSURLRequest *))completionHandler {
+  (void)s;
+  (void)t;
+  (void)redirectResponse;
+  (void)request;
+  g_socket_redirects++;
+  completionHandler(nil);
+}
+
+- (void)URLSession:(NSURLSession *)s
+                    task:(NSURLSessionTask *)t
+    didCompleteWithError:(NSError *)error {
+  (void)s;
+  if (!opened) {
+    if (openOutcome == PWEB_COCOA_SOCKET_CONNECT_FAILED) {
+      NSURLResponse *response = [t response];
+      NSInteger status = 0;
+      if ([response isKindOfClass:[NSHTTPURLResponse class]]) {
+        status = [(NSHTTPURLResponse *)response statusCode];
+      }
+      if (status >= 300 && status < 400) {
+        openOutcome = PWEB_COCOA_SOCKET_REDIRECT;
+      } else if (status > 0 && status != 101) {
+        openOutcome = PWEB_COCOA_SOCKET_STATUS;
+      } else if (error != nil &&
+                 [[error domain] isEqualToString:NSURLErrorDomain]) {
+        NSInteger code = [error code];
+        if (code == NSURLErrorTimedOut) {
+          openOutcome = PWEB_COCOA_SOCKET_DEADLINE;
+        } else if (code <= -1200 && code >= -1206) {
+          openOutcome = PWEB_COCOA_SOCKET_TLS_FAILED;
+        } else if (code == NSURLErrorBadServerResponse) {
+          openOutcome = PWEB_COCOA_SOCKET_UPGRADE;
+        }
+      }
+    }
+    dispatch_semaphore_signal(openDone);
+    return;
+  }
+  if (error != nil) {
+    NSInteger code = [(NSURLSessionWebSocketTask *)t closeCode];
+    if (code > 0) {
+      [self reportClosed:PWEB_COCOA_SOCKET_CAUSE_REMOTE
+                    code:(int)code
+                  reason:nil];
+    } else {
+      [self reportClosed:PWEB_COCOA_SOCKET_CAUSE_ABNORMAL code:1006 reason:nil];
+    }
+  }
+}
+
+@end
+
+static int pweb_socket_offered(const char *protocols, NSString *chosen) {
+  NSArray *parts;
+  if (protocols == NULL || protocols[0] == 0) {
+    return 1;
+  }
+  if (chosen == nil || [chosen length] == 0) {
+    return 0; /* offered, and none selected: refused, as a browser refuses */
+  }
+  parts = [[NSString stringWithUTF8String:protocols]
+      componentsSeparatedByString:@","];
+  for (NSString *p in parts) {
+    NSString *trimmed = [p stringByTrimmingCharactersInSet:
+                               [NSCharacterSet whitespaceCharacterSet]];
+    if ([trimmed isEqualToString:chosen]) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+int pweb_cocoa_socket_open(const pweb_cocoa_socket_request_t *request,
+                           const pweb_cocoa_socket_sink_t *sink,
+                           pweb_cocoa_cancel_fn cancel, void *cancel_opaque,
+                           uint64_t *handle, char *selected,
+                           int32_t selected_capacity) {
+  int result = PWEB_COCOA_SOCKET_CONNECT_FAILED;
+  if (handle != NULL) {
+    *handle = 0;
+  }
+  if (selected != NULL && selected_capacity > 0) {
+    selected[0] = 0;
+  }
+  if (request == NULL || request->url == NULL || sink == NULL ||
+      handle == NULL) {
+    return PWEB_COCOA_SOCKET_CONNECT_FAILED;
+  }
+  g_socket_opens++;
+  g_socket_on_main = [NSThread isMainThread] ? 1 : 0;
+  @autoreleasepool {
+    PWebCocoaSocket *s = nil;
+    @try {
+      NSString *urlText = [NSString stringWithUTF8String:request->url];
+      NSURL *url = (urlText == nil) ? nil : [NSURL URLWithString:urlText];
+      if (url == nil) {
+        return PWEB_COCOA_SOCKET_CONNECT_FAILED;
+      }
+      NSTimeInterval seconds =
+          (NSTimeInterval)request->connect_deadline_ms / 1000.0;
+      NSMutableURLRequest *req = [NSMutableURLRequest
+           requestWithURL:url
+              cachePolicy:NSURLRequestReloadIgnoringLocalAndRemoteCacheData
+          timeoutInterval:seconds];
+      NSURLSessionConfiguration *cfg =
+          [NSURLSessionConfiguration ephemeralSessionConfiguration];
+      int64_t deadlineAt = pweb_fetch_now_ms() + request->connect_deadline_ms;
+      int settled = 0;
+
+      [req setHTTPShouldHandleCookies:NO];
+      pweb_fetch_apply_headers(req, request->headers);
+      [req setValue:@"PWeb" forHTTPHeaderField:@"User-Agent"];
+      if (request->protocols != NULL && request->protocols[0] != 0) {
+        [req setValue:[NSString stringWithUTF8String:request->protocols]
+            forHTTPHeaderField:@"Sec-WebSocket-Protocol"];
+      }
+      /* THE FETCH DOOR'S CONFIGURATION, removed by name */
+      [cfg setHTTPCookieStorage:nil];
+      [cfg setHTTPShouldSetCookies:NO];
+      [cfg setHTTPCookieAcceptPolicy:NSHTTPCookieAcceptPolicyNever];
+      [cfg setURLCache:nil];
+      [cfg setURLCredentialStorage:nil];
+      [cfg setConnectionProxyDictionary:[NSDictionary dictionary]];
+      [cfg setWaitsForConnectivity:NO];
+      [cfg setTimeoutIntervalForRequest:seconds];
+      g_socket_proxy_empty =
+          ([[cfg connectionProxyDictionary] count] == 0) ? 1 : 0;
+      g_socket_cookie_nil = ([cfg HTTPCookieStorage] == nil) ? 1 : 0;
+      g_socket_should_set = [cfg HTTPShouldSetCookies] ? 1 : 0;
+
+      s = [[PWebCocoaSocket alloc] init];
+      s->sink = *sink;
+      s->maxMessage = request->max_message;
+      s->sendDeadlineMs = request->send_deadline_ms;
+      s->queue = [[NSOperationQueue alloc] init];
+      [s->queue setMaxConcurrentOperationCount:1];
+      [s->queue setName:@"pweb.socket"];
+      s->session = [[NSURLSession sessionWithConfiguration:cfg
+                                                  delegate:s
+                                             delegateQueue:s->queue] retain];
+      s->task = [[s->session webSocketTaskWithRequest:req] retain];
+      [s->task setMaximumMessageSize:(NSInteger)request->max_message];
+      g_socket_max_message = (int64_t)[s->task maximumMessageSize];
+      [s->task resume];
+
+      for (;;) {
+        if (dispatch_semaphore_wait(
+                s->openDone,
+                dispatch_time(DISPATCH_TIME_NOW,
+                              (int64_t)PWEB_COCOA_SOCKET_SLICE_MS *
+                                  NSEC_PER_MSEC)) == 0) {
+          settled = 1;
+          break;
+        }
+        if (pweb_fetch_now_ms() >= deadlineAt) {
+          s->openOutcome = PWEB_COCOA_SOCKET_DEADLINE;
+          [s->task cancel];
+          break;
+        }
+        if (cancel != NULL && cancel(cancel_opaque)) {
+          s->openOutcome = PWEB_COCOA_SOCKET_CANCELLED;
+          [s->task cancel];
+          break;
+        }
+      }
+      if (!settled) {
+        dispatch_semaphore_wait(
+            s->openDone,
+            dispatch_time(DISPATCH_TIME_NOW,
+                          (int64_t)PWEB_COCOA_SOCKET_SETTLE_MS *
+                              NSEC_PER_MSEC));
+      }
+      result = s->openOutcome;
+      if (result == PWEB_COCOA_SOCKET_OK && !s->opened) {
+        result = PWEB_COCOA_SOCKET_CONNECT_FAILED;
+      }
+      if (result == PWEB_COCOA_SOCKET_OK &&
+          !pweb_socket_offered(request->protocols, s->selected)) {
+        [s->task cancelWithCloseCode:1002 reason:nil];
+        result = PWEB_COCOA_SOCKET_SUBPROTOCOL;
+      }
+      if (result != PWEB_COCOA_SOCKET_OK) {
+        @synchronized(s) {
+          s->stopping = 1;
+        }
+        [s->task cancel];
+        [s->session invalidateAndCancel];
+        [s release];
+        return result;
+      }
+      if (selected != NULL && selected_capacity > 0) {
+        const char *text = [s->selected UTF8String];
+        if (text != NULL) {
+          strncpy(selected, text, (size_t)selected_capacity - 1);
+          selected[selected_capacity - 1] = 0;
+        }
+      }
+      [s armReceive];
+      *handle = (uint64_t)(uintptr_t)s;
+      return PWEB_COCOA_SOCKET_OK;
+    } @catch (NSException *e) {
+      (void)e;
+      if (s != nil) {
+        @synchronized(s) {
+          s->stopping = 1;
+        }
+        [s->session invalidateAndCancel];
+        [s release];
+      }
+      return PWEB_COCOA_SOCKET_CONNECT_FAILED;
+    }
+  }
+}
+
+int pweb_cocoa_socket_send(uint64_t handle, int binary, const void *data,
+                           int64_t length) {
+  PWebCocoaSocket *s = (PWebCocoaSocket *)(uintptr_t)handle;
+  int result = PWEB_COCOA_SOCKET_SEND_FAILED;
+  if (s == nil) {
+    return PWEB_COCOA_SOCKET_SEND_FAILED;
+  }
+  @autoreleasepool {
+    @try {
+      NSURLSessionWebSocketMessage *message;
+      NSData *bytes = [NSData dataWithBytes:(data == NULL ? "" : data)
+                                     length:(NSUInteger)length];
+      int64_t deadlineAt = pweb_fetch_now_ms() + s->sendDeadlineMs;
+      dispatch_semaphore_t done = dispatch_semaphore_create(0);
+      __block int outcome = PWEB_COCOA_SOCKET_SEND_FAILED;
+      if (binary) {
+        message = [[NSURLSessionWebSocketMessage alloc] initWithData:bytes];
+      } else {
+        NSString *text = [[[NSString alloc]
+            initWithData:bytes
+                encoding:NSUTF8StringEncoding] autorelease];
+        message = [[NSURLSessionWebSocketMessage alloc]
+            initWithString:(text == nil ? @"" : text)];
+      }
+      [s->task sendMessage:message
+          completionHandler:^(NSError *error) {
+            outcome = (error == nil) ? PWEB_COCOA_SOCKET_OK
+                                     : PWEB_COCOA_SOCKET_SEND_FAILED;
+            dispatch_semaphore_signal(done);
+          }];
+      result = PWEB_COCOA_SOCKET_DEADLINE;
+      for (;;) {
+        if (dispatch_semaphore_wait(
+                done, dispatch_time(DISPATCH_TIME_NOW,
+                                    (int64_t)PWEB_COCOA_SOCKET_SLICE_MS *
+                                        NSEC_PER_MSEC)) == 0) {
+          result = outcome;
+          break;
+        }
+        /* THE SEND DEADLINE IS WALL-CLOCK: past it the message may be half
+           on the wire, so the connection is ended rather than trusted */
+        if (pweb_fetch_now_ms() >= deadlineAt) {
+          [s->task cancelWithCloseCode:1001 reason:nil];
+          result = PWEB_COCOA_SOCKET_DEADLINE;
+          break;
+        }
+      }
+      [message release];
+      dispatch_release(done);
+    } @catch (NSException *e) {
+      (void)e;
+      result = PWEB_COCOA_SOCKET_SEND_FAILED;
+    }
+  }
+  return result;
+}
+
+void pweb_cocoa_socket_close(uint64_t handle, int code, const char *reason) {
+  PWebCocoaSocket *s = (PWebCocoaSocket *)(uintptr_t)handle;
+  if (s == nil) {
+    return;
+  }
+  @autoreleasepool {
+    @try {
+      NSData *raw = nil;
+      if (reason != NULL && reason[0] != 0) {
+        raw = [NSData dataWithBytes:reason length:strlen(reason)];
+      }
+      [s->task cancelWithCloseCode:(NSURLSessionWebSocketCloseCode)code
+                            reason:raw];
+    } @catch (NSException *e) {
+      (void)e;
+    }
+  }
+}
+
+void pweb_cocoa_socket_release(uint64_t handle) {
+  PWebCocoaSocket *s = (PWebCocoaSocket *)(uintptr_t)handle;
+  if (s == nil) {
+    return;
+  }
+  @autoreleasepool {
+    @try {
+      @synchronized(s) {
+        s->stopping = 1;
+      }
+      [s->task cancel];
+      [s->session invalidateAndCancel];
+      /* a room wait already on the receive queue observes `stopping` within
+         one slice; waiting for the queue here is what lets the caller free
+         the sink the moment this returns */
+      dispatch_sync(s->rx, ^{
+      });
+    } @catch (NSException *e) {
+      (void)e;
+    }
+    [s release];
+  }
+}
+
+void pweb_cocoa_socket_facts(pweb_cocoa_socket_facts_t *out) {
+  if (out == NULL) {
+    return;
+  }
+  out->opens = g_socket_opens;
+  out->redirects_offered = g_socket_redirects;
+  out->proxy_dict_empty = g_socket_proxy_empty;
+  out->cookie_storage_nil = g_socket_cookie_nil;
+  out->should_set_cookies = g_socket_should_set;
+  out->open_on_main_thread = g_socket_on_main;
+  out->maximum_message_size = g_socket_max_message;
 }

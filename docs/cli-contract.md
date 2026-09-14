@@ -750,6 +750,108 @@ header, follows a redirect, keeps a cookie or retries: every one of those is a
 native decision, and an SDK that supplied one would be a second answer to a
 settled question.
 
+### The native socket door (ratified and implemented at CAP-15C)
+
+**A page opens a WebSocket to a declared origin through the native host, and the
+engine still opens nothing.** Four runtime-owned methods behind **one**
+capability, `network.socket`:
+
+| method | arguments | answer |
+| --- | --- | --- |
+| `pweb.socketOpen` | `{url, protocols?, headers?}` | `{id}` |
+| `pweb.socketSend` | `{id, text}` or `{id, base64}` | `{}` |
+| `pweb.socketReceive` | `{id, waitMs?}` | `{events: [...]}` |
+| `pweb.socketClose` | `{id, code?, reason?}` | `{}` |
+
+The method names are two segments, `Service.Method`, because the frozen method
+grammar admits nothing else — the brief's `pweb.socket.open` spelling was a
+three-segment name the policy builder refuses, and was amended at CAP-15C. The
+door is a second `IInvocationBridge` decorator (`src/rpc/pweb.rpc.socket.pas`)
+installed in the **same** `PWEB_NET` region as `pweb.fetch`, over the **same**
+compiled allowlist, and `network.socket` is in `AppMaximum` iff
+`network.origins` is non-empty. Holding `network.fetch` reaches nothing behind
+`network.socket`, and the reverse. `PWEB_NATIVE_CSP` does not move.
+
+**Authorising `wss://` without a schema move.** A `wss://host[:port]/…` URL is
+authorised by a declared `https://host[:port]` origin, compared **by parsed
+components** with the scheme pair fixed (`https` ↔ `wss`); a declared
+development loopback origin `http://127.0.0.1:<port>` authorises
+`ws://127.0.0.1:<port>` by the same rule. Default ports are canonical both ways
+(443 for `wss`, 80 for `ws`). There is no grammar change, no schema bump and no
+new field: `network.origins` means exactly what CAP-15B made it mean, and a
+release build still refuses a loopback origin by name. Because the `ws`
+authority is *derived*, no source file and no image spells a `ws://` loopback
+URL — the release-image sweep for one is proven to fire on a planted twin.
+
+**The contract rows.** The handshake is `GET` only, carries the request-header
+allowlist of the fetch door (`authorization` included, `cookie`, `origin`,
+`host`, `upgrade`, `connection` and every `sec-websocket-*` refused) and
+`User-Agent: PWeb`, offers at most 4 subprotocol tokens of at most 64 bytes,
+keeps no cookie, inherits no proxy, validates TLS - the certificate's name included - with no way to disable it,
+and answers a 3xx with the typed refusal `handshake_refused` — never followed.
+Messages are text or binary, **≤ 1 MiB in both directions**; fragmentation and
+ping/pong are handled natively and are never visible to, or drivable by, the
+page. Errors are `service_error` with a `category` (`socket_not_found`,
+`socket_limit`, `socket_closed`, `connect_failed`, `tls_failed`,
+`handshake_refused`, `deadline`, `send_failed`), never a native detail; a close
+is an event carrying its code, a reason bounded to 123 bytes, `wasClean`,
+`category` and `undelivered`.
+
+| bound | value |
+| --- | --- |
+| sockets per host | 4 |
+| connect deadline (wall clock, TLS and upgrade included) | 10 s |
+| send deadline (wall clock) | 10 s |
+| message, either direction | 1 MiB |
+| per-socket event queue | 64 events or 1 MiB |
+| long-poll wait maximum (refused, not clamped, above it) | 25 s |
+| idle bound — a socket the page has not polled | 60 s, closed as `idle` |
+| close handshake wait | 2 s |
+| binding request bound in a network host | 2 MiB |
+
+**Backpressure, never a drop.** When a socket's queue is full the native side
+**stops reading**, so TCP pushes back on the server; nothing is discarded. It
+was measured, not inferred: a server flooding 1024 messages at a page that did
+not poll for three seconds was blocked on its own writes for most of them, and
+every message then arrived, in order, uncorrupted.
+
+**Ownership and lifecycle.** A socket belongs to the window principal that
+opened it: another principal's `send`, `receive` or `close` is answered exactly
+as an unknown id is, with no transport call. Every socket of a window closes
+(code 1001) when its document is replaced — a navigation, a reload, and a
+development **generation switch**, which is a trusted re-navigation to
+`pweb://app` — and every socket closes on host shutdown **before** the binding
+closes and the scheduler drains, so the CAP-9 order is untouched. Revoking
+`network.socket` closes every affected socket before the revoking call returns,
+with zero further transport.
+
+**Transports**, injected as fetch's is. On Windows and Linux,
+`src/rpc/pweb.rpc.socket.mormot.pas` implements RFC 6455 framing over
+`mormot.net.sock` — **amended at CAP-15C**: mORMot's `mormot.net.ws.client` was
+measured against a standard non-mORMot server and refused (unbounded
+reassembly, a control frame between fragments killing the connection, the
+handshake deadline ignored, `mormot.net.server` linked into the image), so no
+file in `src/**` names `mormot.net.ws.*` or `mormot.net.server`. On macOS,
+`src/platform/macos/pweb.platform.cocoa.socket.pas` fills the same seam with
+`NSURLSessionWebSocketTask` under the fetch door's configuration rows: bounded
+synchronous calls, the deadline during transfer, no redirect, the bound during
+the read, no cookie storage, the system trust store, and an empty proxy
+dictionary.
+
+**The SDKs.** `PWebSocket` in `@pweb/runtime` and `TPWebSocket` in the Pas2JS
+SDK present `onopen`, `onmessage`, `onerror` and `onclose` over those four calls,
+each socket running one bounded long-poll `pweb.socketReceive` after another
+because protocol v1 has no server push. **When CAP-12 brings streaming, the
+receive loop is the only thing that changes**: the SDK surface, the four method
+names and the native decorator do not.
+
+**What the build proves.** As for fetch: `PWEB_NATIVE_CSP` byte-identical in the
+built image; the decorator, `network.socket` and the transport present iff
+origins were declared; no `ws://` loopback literal in a release image, with the
+identical sweep required to fire on a planted twin; and `app.pwb` refused with
+`network_field_in_bundle` when a root-level JSON document carries a `socket`,
+`sockets`, `websocket`, `ws` or `wss` field.
+
 ---
 
 ## 6. The reusable runtime-command layer

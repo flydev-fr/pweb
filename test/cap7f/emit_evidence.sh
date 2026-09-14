@@ -1740,6 +1740,48 @@ for f in fetch_suite fetch_corpus_digest fetch_door_available \
     eval "${f}=\"\$(c15b_str ${f})\""
 done
 
+# --- CAP-15C: the native socket door ----------------------------------------
+# build/cap15c/cli-<target>.json is ONE record: the socket contract through the
+# INJECTED transport and its decision corpus, the SHIPPED transport against a
+# standard RFC 6455 server whose wire log is the witness, the TLS name rows,
+# and the build proofs of a console image - the CSP unmoved, the door present
+# iff origins were declared, no ws loopback literal in a release image with
+# the identical sweep proven to FIRE on a planted twin, no mormot.net.ws.* or
+# mormot.net.server unit - and on Linux the day-one composition.
+#
+# This block exists in BOTH emitters, for the reason the CAP-10E block spells
+# out: rows added to one and not the other cost a whole hosted run.
+c15c_file="${repo_root}/build/cap15c/cli-${target}.json"
+[ -f "${c15c_file}" ] ||
+    die "cap15c/cli-${target}.json missing -- the CAP-15C gates have not run in this workspace"
+c15c_str() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+        "${c15c_file}" | head -n 1
+}
+for f in socket_suite socket_corpus_digest socket_door_available \
+        wss_authority_rule raw_frame_standard_server backpressure_no_drop \
+        idle_close_typed revoke_closes_all principal_isolation \
+        close_on_navigation close_on_generation_switch \
+        release_ws_relaxation_literals dev_twin_ws_relaxation_literals \
+        dev_image_ws_relaxation_literals ws_relaxation_sweep_discriminates \
+        mormot_net_ws_files socket_transport socket_csp_byte_identical \
+        socket_csp_connect_src nonet_links_socket_decorator \
+        nonet_links_socket_transport bundler_refuses_socket_field \
+        frame_bound_both_directions sockets_per_host_bound \
+        socket_policy_absent_forbidden handshake_redirects_followed \
+        tls_name_verification \
+        darwin_socket_opens darwin_socket_redirects_offered \
+        darwin_socket_proxy_dict_empty darwin_socket_cookie_storage_nil \
+        darwin_socket_should_set_cookies darwin_socket_open_on_main_thread \
+        darwin_socket_maximum_message_size \
+        socket_composition socket_composition_open socket_composition_echo \
+        socket_composition_navigation_close socket_composition_shutdown_close \
+        socket_composition_rpc_ok socket_composition_rpc_result \
+        socket_composition_listener_members socket_composition_client_sockets \
+        cap15c_failures; do
+    eval "${f}=\"\$(c15c_str ${f})\""
+done
+
 # --- CAP-10E: the kernel-resolved image path --------------------------------
 # TWO records, and both are required rather than optional: the RUNTIME one
 # (test/cap10e/run_cap10e_gates.sh) says what a real host at a real
@@ -2850,6 +2892,50 @@ cat > "${work}/evidence.json" <<EOF
   "composition_rpc_result": "${composition_rpc_result}",
   "composition_listener_members": "${composition_listener_members}",
   "cap15b_failures": "${cap15b_failures}",
+  "socket_suite": "${socket_suite}",
+  "socket_corpus_digest": "${socket_corpus_digest}",
+  "socket_door_available": "${socket_door_available}",
+  "wss_authority_rule": "${wss_authority_rule}",
+  "raw_frame_standard_server": "${raw_frame_standard_server}",
+  "backpressure_no_drop": "${backpressure_no_drop}",
+  "idle_close_typed": "${idle_close_typed}",
+  "revoke_closes_all": "${revoke_closes_all}",
+  "principal_isolation": "${principal_isolation}",
+  "close_on_navigation": "${close_on_navigation}",
+  "close_on_generation_switch": "${close_on_generation_switch}",
+  "release_ws_relaxation_literals": "${release_ws_relaxation_literals}",
+  "dev_twin_ws_relaxation_literals": "${dev_twin_ws_relaxation_literals}",
+  "dev_image_ws_relaxation_literals": "${dev_image_ws_relaxation_literals}",
+  "ws_relaxation_sweep_discriminates": "${ws_relaxation_sweep_discriminates}",
+  "mormot_net_ws_files": "${mormot_net_ws_files}",
+  "socket_transport": "${socket_transport}",
+  "socket_csp_byte_identical": "${socket_csp_byte_identical}",
+  "socket_csp_connect_src": "${socket_csp_connect_src}",
+  "nonet_links_socket_decorator": "${nonet_links_socket_decorator}",
+  "nonet_links_socket_transport": "${nonet_links_socket_transport}",
+  "bundler_refuses_socket_field": "${bundler_refuses_socket_field}",
+  "frame_bound_both_directions": "${frame_bound_both_directions}",
+  "sockets_per_host_bound": "${sockets_per_host_bound}",
+  "socket_policy_absent_forbidden": "${socket_policy_absent_forbidden}",
+  "handshake_redirects_followed": "${handshake_redirects_followed}",
+  "tls_name_verification": "${tls_name_verification}",
+  "darwin_socket_opens": "${darwin_socket_opens}",
+  "darwin_socket_redirects_offered": "${darwin_socket_redirects_offered}",
+  "darwin_socket_proxy_dict_empty": "${darwin_socket_proxy_dict_empty}",
+  "darwin_socket_cookie_storage_nil": "${darwin_socket_cookie_storage_nil}",
+  "darwin_socket_should_set_cookies": "${darwin_socket_should_set_cookies}",
+  "darwin_socket_open_on_main_thread": "${darwin_socket_open_on_main_thread}",
+  "darwin_socket_maximum_message_size": "${darwin_socket_maximum_message_size}",
+  "socket_composition": "${socket_composition}",
+  "socket_composition_open": "${socket_composition_open}",
+  "socket_composition_echo": "${socket_composition_echo}",
+  "socket_composition_navigation_close": "${socket_composition_navigation_close}",
+  "socket_composition_shutdown_close": "${socket_composition_shutdown_close}",
+  "socket_composition_rpc_ok": "${socket_composition_rpc_ok}",
+  "socket_composition_rpc_result": "${socket_composition_rpc_result}",
+  "socket_composition_listener_members": "${socket_composition_listener_members}",
+  "socket_composition_client_sockets": "${socket_composition_client_sockets}",
+  "cap15c_failures": "${cap15c_failures}",
   "github_sha": "${github_sha}",
   "github_run_id": "${github_run_id}",
   "waivers": [${waivers}]

@@ -86,10 +86,13 @@ uses
     PWebFetchNativeTransport, and they are never both compiled, so the
     decision below carries no platform knowledge of its own. }
   pweb.rpc.fetch,
+  pweb.rpc.socket,
   {$ifdef DARWIN}
   pweb.platform.cocoa.fetch,
+  pweb.platform.cocoa.socket,
   {$else}
   pweb.rpc.fetch.mormot,
+  pweb.rpc.socket.mormot,
   {$endif DARWIN}
   {$endif PWEB_NET}
   app.services;
@@ -116,6 +119,9 @@ var
   policy: TPWebCapabilityPolicy;
   policyRef: ICapabilityPolicy;
   options: TPWebHostOptions;
+  {$ifdef PWEB_NET}
+  socketBridge: TPWebSocketBridge;
+  {$endif PWEB_NET}
 
 begin
   ExitCode := 0;
@@ -151,6 +157,12 @@ begin
     // reached and no socket opened
     runtimeBridge := TPWebFetchBridge.Create(runtimeBridge,
       @PWebFetchNativeTransport, APP_NETWORK_ORIGINS);
+    // CAP-15C: the native SOCKET door, over the SAME compiled allowlist. It
+    // is not a grant either: the four pweb.socket* methods are mapped to
+    // network.socket below, and a principal without it never reaches here
+    socketBridge := TPWebSocketBridge.Create(runtimeBridge,
+      PWebSocketNativeTransport, APP_NETWORK_ORIGINS);
+    runtimeBridge := socketBridge;
     // the allowlist this binary actually carries, recomputed from the
     // COMPILED array, beside the digest the build declared. `pweb build`
     // compares both with the digest of pweb.json, which is how "the
@@ -168,6 +180,19 @@ begin
     policyRef := policy;
 
     options := PWebDefaultHostOptions(APP_TITLE, APP_NAME);
+    {$ifdef PWEB_NET}
+    // CAP-15C: a revoked network.socket closes its sockets before the
+    // revoking call returns; a replaced document closes its window's
+    // sockets; the host releases them all before it drains. The request
+    // bound lets a 1 MiB message cross the binding, and every socket may
+    // hold one long-poll without taking a worker from anything else
+    socketBridge.AttachPolicy(policy);
+    options.MaxRequestBytes := PWEB_SOCKET_REQUEST_BYTES;
+    options.Workers := options.Workers + PWEB_SOCKET_MAX_SOCKETS;
+    options.MaxConcurrent := options.MaxConcurrent + PWEB_SOCKET_MAX_SOCKETS;
+    options.DocumentReplacing := socketBridge.DocumentReplacing;
+    options.BeforeDrain := socketBridge.BeforeDrain;
+    {$endif PWEB_NET}
     {$ifdef PWEB_DEV}
     // the development host: --pweb-dev-root=<dir> is REQUIRED, generation 1
     // is opened through the production loader, and every later generation

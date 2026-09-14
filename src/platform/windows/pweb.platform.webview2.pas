@@ -225,6 +225,14 @@ function PWebWv2OpenExternal(const AUri: RawUtf8): Boolean;
 function PWebWv2SetExternalOpener(
   AOpener: TPWebWv2ExternalOpener): TPWebWv2ExternalOpener;
 
+var
+  /// CAP-15C: called on the GUI thread when a TOP-LEVEL navigation was
+  // classified trusted - the one moment a window's document is replaced
+  // - it decides nothing and runs after the classifier answered; the host
+  // sets it so the native socket door can close the replaced document's
+  // sockets. nil means nobody is told
+  PWebNavTrustedDocumentHook: procedure = nil;
+
 implementation
 
 { ---- minimal pinned WebView2 SDK 1.0.1587.40 COM surface ---- }
@@ -1036,6 +1044,12 @@ begin
       if args.get_IsUserInitiated(activated) = S_OK then
         req.UserActivated := activated <> 0;
       action := PWebClassifyNavigation(req);
+      // CAP-15C: a trusted top-level document replaces the page - told,
+      // never asked; the decision above is already final
+      if (action = pnaAllowTrusted) and
+         (req.Kind = pnkDocument) and
+         Assigned(PWebNavTrustedDocumentHook) then
+        PWebNavTrustedDocumentHook();
     finally
       // MEASURED: put_Cancel(TRUE) here refuses the navigation before
       // it executes, on every case the coverage table lists. A failing

@@ -171,6 +171,15 @@ type
   // - Title, Width and Height are the window; WindowId and PrincipalId are
   // the native trust identity the binding stamps into every context and
   // that the capability policy is keyed by
+  /// CAP-15C: told that the trusted top-level document of a window is being
+  // replaced - navigation, reload, a development generation switch
+  // - called on the GUI thread from the navigation decision, so it must not
+  // block
+  TPWebHostDocumentProc = procedure(const WindowId: RawUtf8) of object;
+  /// CAP-15C: told once, before the host closes its binding and drains its
+  // scheduler
+  TPWebHostNotifyProc = procedure of object;
+
   TPWebHostOptions = record
     Title: RawUtf8;
     Width: Integer;
@@ -192,6 +201,14 @@ type
     // the argv strings it actually saw, never a shape a future argument
     // might also match
     ConsumedArgs: TRawUtf8DynArray;
+    /// CAP-15C: the binding's whole-request byte bound; 0 keeps the
+    // binding's own default, so every composition that leaves it alone is
+    // unchanged. A network host raises it so a 1 MiB binary message - 1 398
+    // 104 base64 characters before its envelope - can cross at all
+    MaxRequestBytes: Integer;
+    /// CAP-15C: the native socket door's two lifecycle seams, or nil
+    DocumentReplacing: TPWebHostDocumentProc;
+    BeforeDrain: TPWebHostNotifyProc;
     {$ifdef PWEB_DEV}
     /// CAP-14B: the DEV composition's one view seam, or nil
     // - a development composition sets it to install its console channel;
@@ -310,6 +327,10 @@ var
   // caller that read a live handle one instruction before the disown could
   // dispatch onto a webview this teardown had already destroyed
   HostReloadBusy: LongInt;
+  /// CAP-15C: the document seam of the running host, and the window it
+  // names - read on the GUI thread by the navigation hook below
+  HostDocumentReplacing: TPWebHostDocumentProc;
+  HostDocumentWindow: RawUtf8;
   /// CAP-10C1: how the teardown tells the auto-close thread it is no longer
   // needed, or nil when the bound is not armed
   // - MEASURED at CAP-10C0: while PWEB_SMOKE_AUTOCLOSE_MS is armed the
@@ -439,6 +460,19 @@ end;
   PWEB_HOST_ORIGIN is the only origin this host has ever navigated to - in
   development and in production alike - so a re-navigation cannot become an
   origin change however it is called. }
+{ CAP-15C: the platform guard's trusted-document hook. It decides nothing -
+  the classifier has already answered - and it must not block, because its
+  caller is the navigation decision on the GUI thread. An exception never
+  leaves it: the guard's own barrier is the second line, this is the first. }
+procedure PWebHostTrustedDocument;
+begin
+  try
+    if Assigned(HostDocumentReplacing) then
+      HostDocumentReplacing(HostDocumentWindow);
+  except
+  end;
+end;
+
 procedure PWebHostReNavigate(w: webview_t; arg: Pointer); cdecl;
 begin
   try
@@ -975,6 +1009,8 @@ begin
       context.PrincipalKind := pkWindow;
       context.TrustedContent := True;
       opts := PWebDefaultBindingOptions(context);
+      if Options.MaxRequestBytes > 0 then
+        opts.MaxRequestBytes := Options.MaxRequestBytes;
       binding := TWebViewBinding.Create(w, source, opts);
       binding.Bind('__pweb_invoke', TPWebHostPolicyContext.Create(
         TPWebEnvelopeHandler.Create(source), Policy));
@@ -1004,6 +1040,11 @@ begin
       // CAP-8B: the guard is installed AFTER the handler that can serve
       // trusted content and BEFORE the first navigation that could load
       // any, so no document ever commits unclassified
+      // CAP-15C: the document seam is armed BEFORE the guard, so the very
+      // first navigation already passes through it
+      HostDocumentReplacing := Options.DocumentReplacing;
+      HostDocumentWindow := Options.WindowId;
+      PWebNavTrustedDocumentHook := PWebHostTrustedDocument;
       {$ifdef DARWIN}
       navGuard := TPWebHostNavGuard.Create;
       navGuard.Attach(w);
@@ -1097,6 +1138,23 @@ begin
         safeToDestroy := False;
         Result := 1;
       end;
+      // CAP-15C: the native doors release what they hold BEFORE the binding
+      // closes and the scheduler drains - one call prepended, and every
+      // CAP-9 step below keeps its place. The document seam is disarmed
+      // first: no navigation decision may reach a door that is going away
+      PWebNavTrustedDocumentHook := nil;
+      HostDocumentReplacing := nil;
+      if Assigned(Options.BeforeDrain) then
+        try
+          Options.BeforeDrain();
+        except
+          on E: Exception do
+          begin
+            WriteLn(StdErr, HostLogPrefix, ': FAIL BeforeDrain: ',
+              E.Message);
+            Result := 1;
+          end;
+        end;
       if binding <> nil then
         try
           binding.Close;

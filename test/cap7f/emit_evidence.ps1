@@ -1240,6 +1240,23 @@ if (-not (Test-Path $c15bFile)) {
 }
 $c15b = Get-Content $c15bFile -Raw | ConvertFrom-Json
 
+# --- CAP-15C: the native socket door ----------------------------------------
+# build/cap15c/cli-<target>.json is ONE record: the socket contract through the
+# INJECTED transport and its decision corpus, the SHIPPED transport against a
+# standard RFC 6455 server whose wire log is the witness, the TLS name rows,
+# and the build proofs of a console image - the CSP unmoved, the door present
+# iff origins were declared, no ws loopback literal in a release image with
+# the identical sweep proven to FIRE on a planted twin, no mormot.net.ws.* or
+# mormot.net.server unit - and on Linux the day-one composition.
+#
+# This block exists in BOTH emitters, for the reason the CAP-10E block spells
+# out: rows added to one and not the other cost a whole hosted run.
+$c15cFile = Join-Path $repoRoot 'build/cap15c/cli-windows-x86_64.json'
+if (-not (Test-Path $c15cFile)) {
+    throw '[CAP-7F] cap15c/cli-windows-x86_64.json missing -- the CAP-15C gates have not run in this workspace'
+}
+$c15c = Get-Content $c15cFile -Raw | ConvertFrom-Json
+
 # --- CAP-10E: the kernel-resolved image path --------------------------------
 # TWO records, and both are required rather than optional: the RUNTIME one
 # (test/cap10e/run_cap10e_gates.ps1) says what a real host at a real
@@ -2250,6 +2267,52 @@ $evidence = [ordered]@{
     composition_rpc_result             = "$($c15b.composition_rpc_result)"
     composition_listener_members       = "$($c15b.composition_listener_members)"
     cap15b_failures                    = "$($c15b.cap15b_failures)"
+    # CAP-15C: the native socket door. The Darwin rows read `not_applicable`
+    # here and the composition rows `not_applicable` / `0`, both VALUES
+    socket_suite                       = "$($c15c.socket_suite)"
+    socket_corpus_digest               = "$($c15c.socket_corpus_digest)"
+    socket_door_available              = "$($c15c.socket_door_available)"
+    wss_authority_rule                 = "$($c15c.wss_authority_rule)"
+    raw_frame_standard_server          = "$($c15c.raw_frame_standard_server)"
+    backpressure_no_drop               = "$($c15c.backpressure_no_drop)"
+    idle_close_typed                   = "$($c15c.idle_close_typed)"
+    revoke_closes_all                  = "$($c15c.revoke_closes_all)"
+    principal_isolation                = "$($c15c.principal_isolation)"
+    close_on_navigation                = "$($c15c.close_on_navigation)"
+    close_on_generation_switch         = "$($c15c.close_on_generation_switch)"
+    release_ws_relaxation_literals     = "$($c15c.release_ws_relaxation_literals)"
+    dev_twin_ws_relaxation_literals    = "$($c15c.dev_twin_ws_relaxation_literals)"
+    dev_image_ws_relaxation_literals   = "$($c15c.dev_image_ws_relaxation_literals)"
+    ws_relaxation_sweep_discriminates  = "$($c15c.ws_relaxation_sweep_discriminates)"
+    mormot_net_ws_files                = "$($c15c.mormot_net_ws_files)"
+    socket_transport                   = "$($c15c.socket_transport)"
+    socket_csp_byte_identical          = "$($c15c.socket_csp_byte_identical)"
+    socket_csp_connect_src             = "$($c15c.socket_csp_connect_src)"
+    nonet_links_socket_decorator       = "$($c15c.nonet_links_socket_decorator)"
+    nonet_links_socket_transport       = "$($c15c.nonet_links_socket_transport)"
+    bundler_refuses_socket_field       = "$($c15c.bundler_refuses_socket_field)"
+    frame_bound_both_directions        = "$($c15c.frame_bound_both_directions)"
+    sockets_per_host_bound             = "$($c15c.sockets_per_host_bound)"
+    socket_policy_absent_forbidden     = "$($c15c.socket_policy_absent_forbidden)"
+    handshake_redirects_followed       = "$($c15c.handshake_redirects_followed)"
+    tls_name_verification              = "$($c15c.tls_name_verification)"
+    darwin_socket_opens                = "$($c15c.darwin_socket_opens)"
+    darwin_socket_redirects_offered    = "$($c15c.darwin_socket_redirects_offered)"
+    darwin_socket_proxy_dict_empty     = "$($c15c.darwin_socket_proxy_dict_empty)"
+    darwin_socket_cookie_storage_nil   = "$($c15c.darwin_socket_cookie_storage_nil)"
+    darwin_socket_should_set_cookies   = "$($c15c.darwin_socket_should_set_cookies)"
+    darwin_socket_open_on_main_thread  = "$($c15c.darwin_socket_open_on_main_thread)"
+    darwin_socket_maximum_message_size = "$($c15c.darwin_socket_maximum_message_size)"
+    socket_composition                 = "$($c15c.socket_composition)"
+    socket_composition_open            = "$($c15c.socket_composition_open)"
+    socket_composition_echo            = "$($c15c.socket_composition_echo)"
+    socket_composition_navigation_close = "$($c15c.socket_composition_navigation_close)"
+    socket_composition_shutdown_close  = "$($c15c.socket_composition_shutdown_close)"
+    socket_composition_rpc_ok          = "$($c15c.socket_composition_rpc_ok)"
+    socket_composition_rpc_result      = "$($c15c.socket_composition_rpc_result)"
+    socket_composition_listener_members = "$($c15c.socket_composition_listener_members)"
+    socket_composition_client_sockets  = "$($c15c.socket_composition_client_sockets)"
+    cap15c_failures                    = "$($c15c.cap15c_failures)"
     github_sha                      = $sha
     github_run_id                   = "$runId"
     waivers                         = @(

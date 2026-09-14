@@ -175,6 +175,7 @@ step is still pinned and an undeclared edit still trips
 | `CAP-14A bundler CSP refusal gates (C0-C9, B1, D1) + evidence` | **added**, all four legs | `7f7dc950…` (202) → `412b21b2…` (203) |
 | `CAP-14B development console surface gates (C0, R1, D1-D6, B1-B2) + evidence` | **added**, all four legs | `412b21b2…` (203) → `e0d2e3f2…` (204) |
 | `CAP-15B native fetch door gates (S1, L1, D1, P1, B1-B5) + evidence` | **added**, all four legs | `e0d2e3f2…` (204) → measured on the CAP-15B hosted run (205) |
+| `CAP-15C native socket door gates (S1, L1, B1-B5, C1) + evidence` | **added**, all four legs | the CAP-15B closure (205) → measured on the CAP-15C hosted run (206) |
 
 **Two step names now outlive what they describe.** `CAP-5 host examples
 compile (re-applied CAP-3U window)` and `CAP-6 compile bundler + release host

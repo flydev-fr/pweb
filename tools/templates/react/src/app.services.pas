@@ -41,6 +41,7 @@ uses
   // project's pweb.json declared a non-empty `network.origins`, so a
   // project with `[]` never names them and never grants them
   pweb.rpc.fetch,
+  pweb.rpc.socket,
   {$endif PWEB_NET}
   pweb.capabilities.policy;
 
@@ -151,12 +152,21 @@ begin
     // beside the sample capability, and mapped to `pweb.fetch` below - so
     // the door is authorized in exactly the same visible way any other
     // method is, in this file, by name
-    b.SetAppMaximum([APP_CAP_CALCULATOR_ADD, PWEB_CAP_NETWORK_FETCH]);
+    b.SetAppMaximum([APP_CAP_CALCULATOR_ADD, PWEB_CAP_NETWORK_FETCH,
+      PWEB_CAP_NETWORK_SOCKET]);
     b.SetWindowCapabilities('main',
-      [APP_CAP_CALCULATOR_ADD, PWEB_CAP_NETWORK_FETCH]);
+      [APP_CAP_CALCULATOR_ADD, PWEB_CAP_NETWORK_FETCH,
+       PWEB_CAP_NETWORK_SOCKET]);
     b.SetPrincipalCapabilities('window:main',
-      [APP_CAP_CALCULATOR_ADD, PWEB_CAP_NETWORK_FETCH]);
+      [APP_CAP_CALCULATOR_ADD, PWEB_CAP_NETWORK_FETCH,
+       PWEB_CAP_NETWORK_SOCKET]);
     b.MapMethod(PWEB_METHOD_FETCH, [PWEB_CAP_NETWORK_FETCH]);
+    // CAP-15C: the socket door's four methods, and its ONE capability -
+    // holding network.fetch reaches nothing behind it, and the reverse
+    b.MapMethod(PWEB_METHOD_SOCKET_OPEN, [PWEB_CAP_NETWORK_SOCKET]);
+    b.MapMethod(PWEB_METHOD_SOCKET_SEND, [PWEB_CAP_NETWORK_SOCKET]);
+    b.MapMethod(PWEB_METHOD_SOCKET_RECEIVE, [PWEB_CAP_NETWORK_SOCKET]);
+    b.MapMethod(PWEB_METHOD_SOCKET_CLOSE, [PWEB_CAP_NETWORK_SOCKET]);
     {$else}
     b.SetAppMaximum([APP_CAP_CALCULATOR_ADD]);
     // the one window and its principal

@@ -628,6 +628,121 @@ int pweb_cocoa_fetch(const pweb_cocoa_fetch_request_t *request,
    struct, which is what every failure path leaves. */
 void pweb_cocoa_fetch_release(pweb_cocoa_fetch_response_t *out);
 
+/* ======================================================================== *
+ *  CAP-15C - THE NATIVE SOCKET DOOR ON DARWIN: NSURLSessionWebSocketTask   *
+ *                                                                          *
+ *  The Darwin half of the injected socket seam, for the reason the fetch   *
+ *  half exists: macOS ships no libssl, and the product bundles none. The   *
+ *  URL, the origin, the headers and the subprotocol list were validated by *
+ *  the shared decorator before this seam is reached, and the page's event  *
+ *  queue lives there too. This file adapts the task to that seam:          *
+ *                                                                          *
+ *    - open is ONE bounded synchronous call on a worker thread: a private  *
+ *      serial NSOperationQueue takes the delegate callbacks and the caller *
+ *      waits in slices, checking its wall-clock deadline and cancellation; *
+ *    - willPerformHTTPRedirection: is answered with nil and counted, so a  *
+ *      3xx on the upgrade is refused and never followed;                   *
+ *    - maximumMessageSize is SET to the message bound, never left at a     *
+ *      default somebody else chose;                                        *
+ *    - a receive is re-armed only after the decorator says there is ROOM   *
+ *      for the message just taken - the backpressure. Whether the framework *
+ *      then stops reading the socket is the MEASUREMENT the Darwin leg     *
+ *      takes, never an assumption this file makes;                         *
+ *    - the room wait runs on its own serial queue, so a page may still     *
+ *      send while it is not keeping up;                                    *
+ *    - the configuration is the fetch door's: no cookie storage, no cookie *
+ *      setting, an accept policy of Never, no URL cache, no credential     *
+ *      storage, an EMPTY proxy dictionary - and NO didReceiveChallenge:    *
+ *      implementation, so system trust evaluation cannot be relaxed;       *
+ *    - the ping and pong, and the reassembly of fragments, are the         *
+ *      framework's; the page reaches neither.                              *
+ * ======================================================================== */
+
+/* Outcomes, ORDINAL FOR ORDINAL with TPWebSocketOutcome in
+   src/rpc/pweb.rpc.socket.pas. */
+#define PWEB_COCOA_SOCKET_OK 0
+#define PWEB_COCOA_SOCKET_CONNECT_FAILED 1
+#define PWEB_COCOA_SOCKET_TLS_FAILED 2
+#define PWEB_COCOA_SOCKET_REDIRECT 3
+#define PWEB_COCOA_SOCKET_STATUS 4
+#define PWEB_COCOA_SOCKET_UPGRADE 5
+#define PWEB_COCOA_SOCKET_SUBPROTOCOL 6
+#define PWEB_COCOA_SOCKET_DEADLINE 7
+#define PWEB_COCOA_SOCKET_CANCELLED 8
+#define PWEB_COCOA_SOCKET_CLOSED 9
+#define PWEB_COCOA_SOCKET_SEND_FAILED 10
+
+/* Close causes, ORDINAL FOR ORDINAL with TPWebSocketCloseCause. */
+#define PWEB_COCOA_SOCKET_CAUSE_REMOTE 0
+#define PWEB_COCOA_SOCKET_CAUSE_ABNORMAL 1
+#define PWEB_COCOA_SOCKET_CAUSE_PROTOCOL 2
+#define PWEB_COCOA_SOCKET_CAUSE_TOO_LARGE 3
+
+/* The decorator's sink, called on this file's queues. None of the three may
+   block; room answers non-zero when a message of `size` bytes fits. */
+typedef int (*pweb_cocoa_socket_room_fn)(void *opaque, int64_t size);
+typedef void (*pweb_cocoa_socket_deliver_fn)(void *opaque, int binary,
+                                             const void *data,
+                                             int64_t length);
+typedef void (*pweb_cocoa_socket_closed_fn)(void *opaque, int cause,
+                                            int code, const char *reason);
+
+typedef struct pweb_cocoa_socket_sink {
+  pweb_cocoa_socket_room_fn room;
+  pweb_cocoa_socket_deliver_fn deliver;
+  pweb_cocoa_socket_closed_fn closed;
+  void *opaque;
+} pweb_cocoa_socket_sink_t;
+
+/* One socket, already validated by the shared decorator.
+
+   url       : the exact wss or ws URL, NUL-terminated.
+   headers   : CRLF-separated allowlisted `Name: Value` lines, or NULL.
+   protocols : the offered subprotocols, comma-separated, or NULL. */
+typedef struct pweb_cocoa_socket_request {
+  const char *url;
+  const char *headers;
+  const char *protocols;
+  int64_t connect_deadline_ms;
+  int64_t send_deadline_ms;
+  int64_t max_message;
+} pweb_cocoa_socket_request_t;
+
+/* EVIDENCE for the Darwin leg, never a decision: what the configuration and
+   the task actually carried, read back rather than assumed. */
+typedef struct pweb_cocoa_socket_facts {
+  int32_t opens;
+  int32_t redirects_offered;
+  int32_t proxy_dict_empty;
+  int32_t cookie_storage_nil;
+  int32_t should_set_cookies;
+  int32_t open_on_main_thread;
+  int64_t maximum_message_size;
+} pweb_cocoa_socket_facts_t;
+
+/* Open ONE socket, synchronously, on the calling thread. On
+   PWEB_COCOA_SOCKET_OK, *handle owns the socket until
+   pweb_cocoa_socket_release, and `selected` holds the negotiated
+   subprotocol, NUL-terminated. Never raises. */
+int pweb_cocoa_socket_open(const pweb_cocoa_socket_request_t *request,
+                           const pweb_cocoa_socket_sink_t *sink,
+                           pweb_cocoa_cancel_fn cancel, void *cancel_opaque,
+                           uint64_t *handle, char *selected,
+                           int32_t selected_capacity);
+
+/* Send ONE message under the send deadline. Never raises. */
+int pweb_cocoa_socket_send(uint64_t handle, int binary, const void *data,
+                           int64_t length);
+
+/* Send a close frame; never waits for the echo. */
+void pweb_cocoa_socket_close(uint64_t handle, int code, const char *reason);
+
+/* Stop, cancel and free. After it returns no sink call begins. */
+void pweb_cocoa_socket_release(uint64_t handle);
+
+/* The Darwin leg's evidence rows. */
+void pweb_cocoa_socket_facts(pweb_cocoa_socket_facts_t *out);
+
 #ifdef __cplusplus
 }
 #endif

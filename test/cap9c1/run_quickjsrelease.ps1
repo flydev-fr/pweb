@@ -47,6 +47,15 @@
 #   outbound client in the image is `pweb.rpc.fetch.mormot`, reachable only
 #   through `network.fetch`.
 #
+# CAP-15C EXTENDS IT BY EXACTLY ONE DOOR: `pweb.socketOpen | socketSend |
+# socketReceive | socketClose`, behind the `network.socket` capability and
+# the SAME compiled origin allowlist. The claim now reads:
+#
+#   no listening socket, no server, no second RPC path, and the only
+#   outbound clients in the image are `pweb.rpc.fetch.mormot` and
+#   `pweb.rpc.socket.mormot`, reachable only through `network.fetch` and
+#   `network.socket` respectively.
+#
 # The file list below is unchanged and none of these files is a fetch unit,
 # so the sweep is as strict about them as it ever was. The runtime half -
 # this process owns no listening TCP socket - is untouched.

@@ -248,6 +248,15 @@ $allow = @{
     # half, and it found four more dead regions when it first ran.
     'src/rpc/pweb.rpc.fetch.mormot.pas'  = @{ directives = 2;
         fingerprint = '53492ae91961fed3f3b0921d36fb855a272c5157b0a1d6d7e4b643bdccbf5e27' }
+    # CAP-15C: the socket transport, for the same single reason - its one
+    # region is a unit NAME, `mormot.lib.openssl11` on UNIX, because POSIX
+    # has no TLS layer unless that unit is linked. The two directive texts
+    # are byte-identical to the fetch transport's, so the fingerprint is too.
+    # `pweb.rpc.socket.pas` - the decorator, the wss authority rule, the
+    # queue, the bounds and ownership - carries ZERO conditionals and joins
+    # the frozen zero-conditional core list below.
+    'src/rpc/pweb.rpc.socket.mormot.pas' = @{ directives = 2;
+        fingerprint = '53492ae91961fed3f3b0921d36fb855a272c5157b0a1d6d7e4b643bdccbf5e27' }
 }
 
 function Get-DirectiveFingerprint([string[]]$Texts) {
@@ -263,7 +272,7 @@ function Get-DirectiveFingerprint([string[]]$Texts) {
 $frozenCore = @(
     'src/rpc/pweb.rpc.scheduler.pas', 'src/rpc/pweb.rpc.intf.pas',
     'src/rpc/pweb.rpc.mormot.pas', 'src/rpc/pweb.rpc.support.pas',
-    'src/rpc/pweb.rpc.command.pas',
+    'src/rpc/pweb.rpc.command.pas', 'src/rpc/pweb.rpc.socket.pas',
     'src/security/pweb.capabilities.pas',
     'src/security/pweb.capabilities.policy.pas',
     'src/webview/pweb.webview.binding.pas', 'src/webview/pweb.webview.intf.pas',

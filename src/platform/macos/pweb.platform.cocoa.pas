@@ -610,6 +610,14 @@ procedure PWebCocoaStubLeaveLive(ATask: QWord);
 procedure PWebCocoaStubDeliverAgain(ATask: QWord);
 function PWebCocoaStubOutcome(ATask: QWord): TPWebCocoaStubOutcome;
 
+var
+  /// CAP-15C: called on the GUI thread when a TOP-LEVEL navigation was
+  // classified trusted - the one moment a window's document is replaced
+  // - it decides nothing and runs after the classifier answered; the host
+  // sets it so the native socket door can close the replaced document's
+  // sockets. nil means nobody is told
+  PWebNavTrustedDocumentHook: procedure = nil;
+
 implementation
 
 { ---- the private C seam (src/platform/macos/pweb_cocoa_bridge.h) ----
@@ -1520,6 +1528,11 @@ begin
       PWebCocoaNavCount(AHandle, ncoAllow);
       PWebCocoaRecordNavigation(request.Uri, 'allow');
       Result := PWEB_COCOA_NAV_ALLOW;
+      // CAP-15C: a trusted top-level document replaces the page - told,
+      // never asked; the verdict above is already final
+      if (request.Kind = pnkDocument) and
+         Assigned(PWebNavTrustedDocumentHook) then
+        PWebNavTrustedDocumentHook();
     end
     else
     begin
