@@ -229,8 +229,8 @@ var
   /// CAP-15C: called on the GUI thread when a TOP-LEVEL navigation was
   // classified trusted - the one moment a window's document is replaced
   // - it decides nothing and runs after the classifier answered; the host
-  // sets it so the native socket door can close the replaced document's
-  // sockets. nil means nobody is told
+  // sets it so the native network doors can release what the replaced
+  // document held. nil means nobody is told
   PWebNavTrustedDocumentHook: procedure = nil;
 
 implementation

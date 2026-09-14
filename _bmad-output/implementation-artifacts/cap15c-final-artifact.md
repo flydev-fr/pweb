@@ -236,7 +236,7 @@ pattern), and `check_dev_trust` section 7.
 | `test/cap11a/collection-paths.json` records | - | +15 CAP-15C paths, same commit | CAP-15B's lesson |
 | CAP-10B1 React project inventory, held as literals in `test/cap10b2/run_cap10b2_gates.ps1` | `eabbc88d…`, 76 854 bytes, 16 files | `31244b06…`, 78 679 bytes, 16 files | the React template's `program.lpr` and `app.services.pas` grew inside `PWEB_NET`; measured identically in the Windows and Linux CAP-10B1 records |
 | `step-applicability.tsv` / `ci_sequence_digest` | 205 steps | 206 steps, measured on the CAP-15C hosted run | one step on four legs |
-| backlog census | 404 entries, 53 open | 419 entries, 57 open | ledger 15C-1..15C-15 |
+| backlog census | 404 entries, 53 open | 422 entries, 57 open | ledger 15C-1..15C-18 |
 
 ## REGRESSIONS
 
@@ -321,6 +321,19 @@ release harness stages; that harness could not read its own marker from a
 CRLF copy of `quickjsrelease.pas`. With the WSL copy's cap9 sources
 normalised to LF (in the copy only), CAP-9C1 passed its C1-C30 matrix and
 CAP-10D2 build and gates passed in 133 s.
+
+## HOSTED RUN 34901915886 — TWO DEFECTS, TWO RULES
+
+Linux green; Windows, macos-x64 and macos-arm64 red; the aggregate red only
+because three legs were. Both defects were this shard's, both were invisible
+to every local chain for a structural reason, and each now has a source rule
+that catches its class on any host - each observed firing on the unfixed tree
+before the fix was applied.
+
+| leg / step | defect | fix | rule |
+|---|---|---|---|
+| windows, 24, CAP-4 zero-HTTP asset-serving source proof | the trusted-document hook comment in `pweb.platform.webview2.pas` said "socket door" / "sockets", a word that proof forbids on the raw line; the proof is INLINE in its action, so no local chain runs it | the comment names "the native network doors" (the Cocoa guard's twin comment too) | K17 parses the action's file list and pattern and sweeps them on every host (ledger 15C-17) |
+| macos-x64 and macos-arm64, 107, CAP-7M1 compile the production Cocoa bridge | three `cancelWithCloseCode:` calls passed int literals; Objective-C++ refuses an int for `NSURLSessionWebSocketCloseCode` | all four sites cast explicitly | K18 requires the cast at every `cancelWithCloseCode:` (ledger 15C-18) |
 
 ## FREEZE
 

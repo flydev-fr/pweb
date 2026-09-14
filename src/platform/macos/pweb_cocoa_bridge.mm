@@ -2174,7 +2174,7 @@ static int64_t g_socket_max_message = 0;
       if (error != nil && [[error domain] isEqualToString:NSPOSIXErrorDomain] &&
           [error code] == 40) {
         /* EMSGSIZE: the message crossed maximumMessageSize */
-        [self->task cancelWithCloseCode:1009 reason:nil];
+        [self->task cancelWithCloseCode:(NSURLSessionWebSocketCloseCode)1009 reason:nil];
         [self reportClosed:PWEB_COCOA_SOCKET_CAUSE_TOO_LARGE
                       code:1009
                     reason:nil];
@@ -2447,7 +2447,7 @@ int pweb_cocoa_socket_open(const pweb_cocoa_socket_request_t *request,
       }
       if (result == PWEB_COCOA_SOCKET_OK &&
           !pweb_socket_offered(request->protocols, s->selected)) {
-        [s->task cancelWithCloseCode:1002 reason:nil];
+        [s->task cancelWithCloseCode:(NSURLSessionWebSocketCloseCode)1002 reason:nil];
         result = PWEB_COCOA_SOCKET_SUBPROTOCOL;
       }
       if (result != PWEB_COCOA_SOCKET_OK) {
@@ -2525,7 +2525,7 @@ int pweb_cocoa_socket_send(uint64_t handle, int binary, const void *data,
         /* THE SEND DEADLINE IS WALL-CLOCK: past it the message may be half
            on the wire, so the connection is ended rather than trusted */
         if (pweb_fetch_now_ms() >= deadlineAt) {
-          [s->task cancelWithCloseCode:1001 reason:nil];
+          [s->task cancelWithCloseCode:(NSURLSessionWebSocketCloseCode)1001 reason:nil];
           result = PWEB_COCOA_SOCKET_DEADLINE;
           break;
         }

@@ -41,6 +41,10 @@
 #   K15 FREEZE: the fetch units, the command layer and the navigation policy
 #       are byte-identical to what CAP-15B closed on (LF-normalised)
 #   K16 the decorator never grants: it reads the policy, it never writes it
+#   K17 the CAP-4 zero-HTTP source proof, parsed out of its inline action and
+#       run here, because no local chain runs an inline action
+#   K18 every Objective-C++ cancelWithCloseCode: argument is cast to the
+#       framework's enum - the one clang error class a non-Mac host can see
 #
 # Usage: pwsh test/cap15c/check_cap15c_contracts.ps1
 $ErrorActionPreference = 'Stop'
@@ -549,6 +553,72 @@ if (-not $decCode.Contains('SnapshotCapabilities')) {
     Violation 'K16: the socket decorator does not re-read capabilities through SnapshotCapabilities on a grant change'
 }
 $report.Add('K16: the decorator reads the policy and never writes it')
+
+# --- K17: the CAP-4 zero-HTTP source proof, mirrored where it can run ------------
+#
+# MEASURED, and it cost the Windows leg of hosted run 34901915886. The CAP-4
+# source proof lives INLINE in its composite action, not in a script, so no
+# local chain ever runs it - and this shard's trusted-document hook comment in
+# `src/platform/windows/pweb.platform.webview2.pas` said "socket door", a word
+# that proof forbids on the raw line. The file list and the pattern are PARSED
+# OUT OF THE ACTION rather than copied, so this mirror cannot disagree with the
+# gate it mirrors; a change to the action's shape is a violation here, never a
+# silent skip.
+$cap4Action = '.github/actions/cap-4-zero-http-asset-serving-source-proof/action.yml'
+$cap4Text = (Read_ $cap4Action) -replace "`r`n", "`n"
+$filesBlock = [regex]::Match($cap4Text, '(?s)\$cap4Files = @\((.*?)\)')
+$patternBlock = [regex]::Match($cap4Text, '(?s)\$forbidden = ((?:''[^'']*''\s*\+?\s*)+)')
+if (-not ($filesBlock.Success -and $patternBlock.Success)) {
+    Violation ("K17: $cap4Action no longer exposes `$cap4Files and `$forbidden in the " +
+        'shapes this mirror parses -- update the mirror in the same commit')
+} else {
+    $cap4Files = @([regex]::Matches($filesBlock.Groups[1].Value, "'([^']+)'") |
+        ForEach-Object { $_.Groups[1].Value })
+    $cap4Pattern = -join ([regex]::Matches($patternBlock.Groups[1].Value, "'([^']*)'") |
+        ForEach-Object { $_.Groups[1].Value })
+    $cap4Rx = [regex]::new($cap4Pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    $cap4Hits = 0
+    $cap4Swept = 0
+    foreach ($f in $cap4Files) {
+        # built frontend outputs are absent in a checkout; the action sweeps
+        # them on the leg that built them, and this mirror sweeps what exists
+        if (-not (Test-Path -LiteralPath $f)) { continue }
+        $cap4Swept++
+        $lineNo = 0
+        foreach ($line in [System.IO.File]::ReadLines((Resolve-Path -LiteralPath $f).Path)) {
+            $lineNo++
+            if ($cap4Rx.IsMatch($line)) {
+                $cap4Hits++
+                Violation ("K17: ${f}:${lineNo}: forbidden CAP-4 transport pattern -- " +
+                    "$($line.Trim())")
+            }
+        }
+    }
+    $report.Add("K17: the CAP-4 source proof mirrored - $cap4Swept of $($cap4Files.Count) file(s) present and swept, $cap4Hits hit(s)")
+}
+
+# --- K18: an Objective-C++ close code is the framework's enum, never an int -----
+#
+# MEASURED, and it cost both macOS legs of hosted run 34901915886: under
+# Objective-C++ `cancelWithCloseCode:` takes `NSURLSessionWebSocketCloseCode`,
+# and clang refuses an int literal for it (`cannot initialize a parameter of
+# type 'NSURLSessionWebSocketCloseCode' with an rvalue of type 'int'`). No
+# host here compiles the bridge, so the rule is a source rule: every argument
+# is cast explicitly.
+$mmPath = 'src/platform/macos/pweb_cocoa_bridge.mm'
+$mmLines = [System.IO.File]::ReadAllLines((Resolve-Path -LiteralPath $mmPath).Path)
+$closeSites = 0
+for ($i = 0; $i -lt $mmLines.Count; $i++) {
+    foreach ($m in [regex]::Matches($mmLines[$i], 'cancelWithCloseCode:\s*(\S)')) {
+        $closeSites++
+        $rest = $mmLines[$i].Substring($m.Index + 'cancelWithCloseCode:'.Length).TrimStart()
+        if (-not $rest.StartsWith('(NSURLSessionWebSocketCloseCode)')) {
+            Violation ("K18: ${mmPath}:$($i + 1): cancelWithCloseCode: is not passed an " +
+                'explicit (NSURLSessionWebSocketCloseCode) -- clang refuses an int there under Objective-C++')
+        }
+    }
+}
+$report.Add("K18: $closeSites cancelWithCloseCode: site(s) in the Cocoa bridge, each cast to NSURLSessionWebSocketCloseCode")
 
 # --- verdict ---------------------------------------------------------------------------------
 New-Item -ItemType Directory -Force build/cap15c | Out-Null
