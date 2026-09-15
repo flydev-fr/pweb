@@ -96,6 +96,64 @@ function Start-Witness([int]$Port, [string]$Log, [string[]]$Extra) {
     return $p
 }
 
+# THE NATIVE CRASH REPORT, macOS only and only after a failure. socketlive
+# keeps its faults native there, so ReportCrash writes a symbolicated report
+# instead of FPC printing a bare address; every thread's frames are printed
+# here, where the log reader is, and the report is copied next to the
+# evidence. ReportCrash writes after the process is gone: the poll is a
+# diagnostic's patience on a path that has already failed, and decides nothing.
+function Get-Field($Object, [string]$Name) {
+    if ($null -eq $Object) { return $null }
+    $prop = $Object.PSObject.Properties[$Name]
+    if ($null -eq $prop) { return $null }
+    return $prop.Value
+}
+function Show-CrashReport([string]$Name, [datetime]$Since) {
+    $dirs = @((Join-Path $HOME 'Library/Logs/DiagnosticReports'), '/Library/Logs/DiagnosticReports')
+    $found = $null
+    $until = (Get-Date).AddSeconds(30)
+    while ($null -eq $found -and (Get-Date) -lt $until) {
+        $found = Get-ChildItem -Path $dirs -Filter "$Name*" -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.LastWriteTime -ge $Since } |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if ($null -eq $found) { Start-Sleep -Milliseconds 500 }
+    }
+    if ($null -eq $found) {
+        Write-Host "[CAP-15C] no crash report for $Name was written under $($dirs -join ', ')"
+        return
+    }
+    Write-Host "[CAP-15C] crash report: $($found.FullName)"
+    Copy-Item -Force $found.FullName (Join-Path $work $found.Name) -ErrorAction SilentlyContinue
+    $text = [System.IO.File]::ReadAllText($found.FullName)
+    try {
+        # an .ips file is one JSON header line, then the JSON report
+        $body = $text.Substring($text.IndexOf("`n") + 1) | ConvertFrom-Json -Depth 64
+        $images = @(Get-Field $body 'usedImages')
+        $ex = Get-Field $body 'exception'
+        Write-Host ("[CAP-15C] crash: type=$(Get-Field $ex 'type') signal=$(Get-Field $ex 'signal') " +
+            "subtype=$(Get-Field $ex 'subtype') faultingThread=$(Get-Field $body 'faultingThread')")
+        $threads = @(Get-Field $body 'threads')
+        for ($t = 0; $t -lt $threads.Count; $t++) {
+            $th = $threads[$t]
+            $mark = if (Get-Field $th 'triggered') { ' TRIGGERED' } else { '' }
+            Write-Host "[CAP-15C] thread $t$mark $(Get-Field $th 'name') $(Get-Field $th 'queue')"
+            $k = 0
+            foreach ($f in @(Get-Field $th 'frames')) {
+                if ($k -ge 40) { Write-Host '    ...'; break }
+                $index = Get-Field $f 'imageIndex'
+                $img = if ($null -ne $index -and $index -lt $images.Count) { Get-Field $images[$index] 'name' } else { '?' }
+                $sym = Get-Field $f 'symbol'
+                $at = if ($sym) { "$sym + $(Get-Field $f 'symbolLocation')" } else { '+0x{0:x}' -f [int64](Get-Field $f 'imageOffset') }
+                Write-Host "    $k $img $at"
+                $k++
+            }
+        }
+    } catch {
+        Write-Host "[CAP-15C] the crash report did not parse ($($_.Exception.Message)); its head follows"
+        $text -split "`n" | Select-Object -First 200 | ForEach-Object { Write-Host $_ }
+    }
+}
+
 # per-target ports: WSL2 forwards loopback, so a Linux run and a Windows run
 # on one port could answer each other
 $port = if ($IsWindows) { 18761 } elseif ($IsMacOS) { 18781 } else { 18771 }
@@ -136,6 +194,7 @@ try {
         $liveArgs += @("--trusted-right-port=$($port + 3)", "--trusted-wrong-port=$($port + 4)")
         $env:SSL_CERT_FILE = "$tls/trusted-bundle.pem"
     }
+    $liveLaunched = Get-Date
     & (Join-Path $work "bin/socketlive$exeSuffix") @liveArgs
     $liveExit = $LASTEXITCODE
 }
@@ -149,6 +208,7 @@ finally {
         } catch { }
     }
 }
+if ($IsMacOS -and $liveExit -ne 0) { Show-CrashReport 'socketlive' $liveLaunched }
 Row 'live_exit' "$liveExit"
 Require ($liveExit -eq 0) 'L1: the live socket program reported a failure'
 Require (Test-Path $liveOut) 'L1: the live socket program wrote no evidence'

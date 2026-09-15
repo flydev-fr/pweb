@@ -2156,7 +2156,15 @@ static int64_t g_socket_max_message = 0;
 }
 
 /* every sink call happens under this object's lock and only while it is not
-   stopping, so release can promise that no call BEGINS after it returns */
+   stopping, so release can promise that no call BEGINS after it returns.
+
+   AND EVERY SINK CALL IS FOLLOWED BY A RE-MASK (ledger 15C-25). The sinks
+   are Pascal, called on NSURLSession's and libdispatch's threads, and the
+   first threadvar FPC touches on a thread it did not create runs its
+   InitThread - `SysResetFPU; SysInitFPU`, the trapping control word - on
+   that framework thread. MEASURED on macos-x64 of hosted run 34952410904:
+   EInvalidOp inside a system framework after every entry point had masked
+   its own caller. */
 - (void)reportClosed:(int)cause code:(int)code reason:(NSString *)reason {
   @synchronized(self) {
     if (stopping || closeReported || sink.closed == NULL) {
@@ -2165,6 +2173,7 @@ static int64_t g_socket_max_message = 0;
     closeReported = 1;
     const char *text = (reason == nil) ? "" : [reason UTF8String];
     sink.closed(sink.opaque, cause, code, (text == NULL) ? "" : text);
+    pweb_cocoa_mask_fpu_traps();
   }
 }
 
@@ -2172,21 +2181,47 @@ static int64_t g_socket_max_message = 0;
    receive is armed only after the message just taken has been delivered,
    and it is delivered only when the decorator says there is room. */
 - (void)armReceive {
+  /* THE TASK IS RETAINED UNDER THE LOCK, never messaged through the ivar:
+     pweb_socket_teardown, on whatever thread releases the socket, detaches
+     the ivar under this lock and releases the task outside it (ledger
+     15C-24). A stopping object arms nothing. */
+  NSURLSessionWebSocketTask *armed = nil;
+  @synchronized(self) {
+    if (!stopping && task != nil) {
+      armed = [task retain];
+    }
+  }
+  if (armed == nil) {
+    return;
+  }
   [self retain];
-  [task receiveMessageWithCompletionHandler:
+  [armed receiveMessageWithCompletionHandler:
             ^(NSURLSessionWebSocketMessage *message, NSError *error) {
     if (error != nil || message == nil) {
+      /* the same rule as armReceive: a stopping object has nobody left to
+         tell, and a running one reads its close from a task retained under
+         the lock, so a concurrent teardown cannot free it mid-message */
+      NSURLSessionWebSocketTask *closing = nil;
+      @synchronized(self) {
+        if (!self->stopping && self->task != nil) {
+          closing = [self->task retain];
+        }
+      }
+      if (closing == nil) {
+        [self release];
+        return;
+      }
       if (error != nil && [[error domain] isEqualToString:NSPOSIXErrorDomain] &&
           [error code] == 40) {
         /* EMSGSIZE: the message crossed maximumMessageSize */
-        [self->task cancelWithCloseCode:(NSURLSessionWebSocketCloseCode)1009 reason:nil];
+        [closing cancelWithCloseCode:(NSURLSessionWebSocketCloseCode)1009 reason:nil];
         [self reportClosed:PWEB_COCOA_SOCKET_CAUSE_TOO_LARGE
                       code:1009
                     reason:nil];
       } else {
-        NSInteger code = [self->task closeCode];
+        NSInteger code = [closing closeCode];
         if (code > 0) {
-          NSData *raw = [self->task closeReason];
+          NSData *raw = [closing closeReason];
           NSString *reason =
               (raw == nil) ? nil
                            : [[[NSString alloc]
@@ -2201,6 +2236,7 @@ static int64_t g_socket_max_message = 0;
                       reason:nil];
         }
       }
+      [closing release];
       [self release];
       return;
     }
@@ -2222,6 +2258,7 @@ static int64_t g_socket_max_message = 0;
           }
           fits = (self->sink.room == NULL) ||
                  self->sink.room(self->sink.opaque, size);
+          pweb_cocoa_mask_fpu_traps();
         }
         if (fits) {
           break;
@@ -2231,15 +2268,15 @@ static int64_t g_socket_max_message = 0;
       @synchronized(self) {
         if (!self->stopping && self->sink.deliver != NULL) {
           self->sink.deliver(self->sink.opaque, binary, [payload bytes], size);
+          pweb_cocoa_mask_fpu_traps();
         }
       }
       [message release];
-      if (!self->stopping) {
-        [self armReceive];
-      }
+      [self armReceive];
       [self release];
     });
   }];
+  [armed release];
 }
 
 - (void)URLSession:(NSURLSession *)s

@@ -51,6 +51,8 @@
 #       queue - one teardown path invalidates and releases them
 #   K21 every socket entry point of the Cocoa bridge masks the calling
 #       thread's FPU traps first - FPC re-arms them on each thread it creates
+#   K22 inside PWebCocoaSocket the task ivar is only retained, under
+#       @synchronized after a stopping test - never messaged directly
 #
 # Usage: pwsh test/cap15c/check_cap15c_contracts.ps1
 $ErrorActionPreference = 'Stop'
@@ -740,6 +742,88 @@ foreach ($name in $entryNames) {
     }
 }
 $report.Add("K21: $entriesChecked socket entry point(s) in the Cocoa bridge, each masking the calling thread's FPU traps first")
+
+# --- K22: a callback never messages the task the teardown is releasing ------------
+#
+# MEASURED on macos-arm64 of hosted run 34952410904: with the ownership and the
+# per-thread FPU fixes in, `socketlive` still died with `EAccessViolation` - at
+# the SAME instruction offset inside a system library as the run before
+# (`...C3F64` against `...CF3F64` under a different ASLR slide), the signature
+# of `objc_msgSend` on a freed object. The receive completion handler, on an
+# NSURLSession thread, sent `closeCode`, `closeReason` and
+# `cancelWithCloseCode:` to `self->task` with no lock, and `armReceive` armed
+# `task` with none, while the decorator's keeper thread - a Pascal thread -
+# released a closed socket through `pweb_socket_teardown`, which detaches the
+# task under the lock and releases it outside it. A handler that had already
+# loaded `self->task` then messaged freed memory. The rule: inside
+# `@implementation PWebCocoaSocket`, the task ivar is only ever RETAINED, under
+# `@synchronized` after a `stopping` test; every other message goes to that
+# retained local.
+$mmK22 = [System.IO.File]::ReadAllLines((Resolve-Path -LiteralPath 'src/platform/macos/pweb_cocoa_bridge.mm').Path)
+$k22Start = -1
+$k22End = -1
+for ($i = 0; $i -lt $mmK22.Count; $i++) {
+    if ($k22Start -lt 0 -and $mmK22[$i] -match '^@implementation PWebCocoaSocket\b') { $k22Start = $i; continue }
+    if ($k22Start -ge 0 -and $mmK22[$i] -match '^@end\b') { $k22End = $i; break }
+}
+$taskMessages = 0
+if ($k22Start -lt 0 -or $k22End -lt 0) {
+    Violation 'K22: the Cocoa bridge has no complete @implementation PWebCocoaSocket to sweep'
+} else {
+    for ($i = $k22Start; $i -lt $k22End; $i++) {
+        if ($mmK22[$i] -notmatch '\[\s*(self->)?task\s+[A-Za-z]') { continue }
+        $taskMessages++
+        $isRetain = $mmK22[$i] -match '\[\s*(self->)?task\s+retain\s*\]'
+        $guarded = $false
+        for ($j = $i; $j -gt $k22Start; $j--) {
+            if ($j -lt $i -and $mmK22[$j] -match '^- \(') { break }
+            if ($mmK22[$j] -match '@synchronized\s*\(') {
+                $guarded = (($mmK22[$j..$i]) -join "`n") -match '\bstopping\b'
+                break
+            }
+        }
+        if (-not ($isRetain -and $guarded)) {
+            Violation ("K22: src/platform/macos/pweb_cocoa_bridge.mm:$($i + 1): the task ivar is messaged " +
+                'other than to retain it under @synchronized after a stopping test -- measured: ' +
+                'objc_msgSend on a freed task when the keeper thread released the socket')
+        }
+    }
+}
+$report.Add("K22: $taskMessages task-ivar message(s) in PWebCocoaSocket, each a retain under @synchronized after a stopping test")
+
+# --- K23: a thread the framework owns leaves a Pascal callback with its traps masked ---
+#
+# MEASURED on macos-x64 of hosted run 34952410904: with every entry point
+# masking its caller (K21), `socketlive` still died with `EInvalidOp` inside a
+# system framework. The entry points mask PASCAL threads; the sink callbacks -
+# ROOM, DELIVER, CLOSED - run Pascal code on NSURLSession's and libdispatch's
+# threads. FPC 3.2.2 rtl/unix/cthreads.pp: the first threadvar a thread FPC
+# did not create touches goes through CRelocateThreadvar -> HookThread ->
+# InitThread(1000000000), and rtl/inc/thread.inc InitThread begins
+# `SysResetFPU; SysInitFPU` - the TRAPPING control word, installed on the
+# framework's own thread by the first `try` in a callback, and left there when
+# the callback returns into Foundation. So every sink call in the bridge is
+# followed, before control leaves the statement that made it, by
+# `pweb_cocoa_mask_fpu_traps()`.
+$mmK23 = [System.IO.File]::ReadAllLines((Resolve-Path -LiteralPath 'src/platform/macos/pweb_cocoa_bridge.mm').Path)
+$sinkCalls = 0
+for ($i = 0; $i -lt $mmK23.Count; $i++) {
+    if ($mmK23[$i] -notmatch '\bsink\.(room|deliver|closed)\s*\(') { continue }
+    $sinkCalls++
+    $remasked = $false
+    for ($j = $i + 1; $j -lt [math]::Min($mmK23.Count, $i + 3); $j++) {
+        if ($mmK23[$j] -match '\bpweb_cocoa_mask_fpu_traps\s*\(\s*\)') { $remasked = $true; break }
+    }
+    if (-not $remasked) {
+        Violation ("K23: src/platform/macos/pweb_cocoa_bridge.mm:$($i + 1): a sink call returns into the " +
+            'framework without re-masking the FPU traps FPC armed on its thread -- measured: ' +
+            'EInvalidOp on macos-x64 after every entry point masked its caller')
+    }
+}
+if ($sinkCalls -lt 3) {
+    Violation "K23: the Cocoa bridge makes $sinkCalls sink call(s); ROOM, DELIVER and CLOSED were expected"
+}
+$report.Add("K23: $sinkCalls sink call(s) in the Cocoa bridge, each followed by a re-mask of the FPU traps")
 
 # --- verdict ---------------------------------------------------------------------------------
 New-Item -ItemType Directory -Force build/cap15c | Out-Null

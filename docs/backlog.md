@@ -1,16 +1,16 @@
 # The backlog
 
 `_bmad-output/implementation-artifacts/deferred-work.md` is append-only and
-carries **427 entries** from Phase 0 to CAP-15C. It is a
+carries **429 entries** from Phase 0 to CAP-15C. It is a
 ledger: it records what was found, in the words of the shard that found it,
 and it never edits itself. That makes it excellent evidence and a poor
 worklist — a reader who wants to know *what is still owed* has to resolve
 every supersession chain by hand, and three phase-closure artifacts answer
 that question for CAP-10 and CAP-11 only.
 
-This document is the worklist. Every one of the 427 entries is disposed of
-exactly once, with one verdict, an owner and a reason. **Sixty-one are open,**
-**and those sixty-one are listed here in full**; the other 366 are in
+This document is the worklist. Every one of the 429 entries is disposed of
+exactly once, with one verdict, an owner and a reason. **Sixty-three are open,**
+**and those sixty-three are listed here in full**; the other 366 are in
 `test/backlog/dispositions.tsv`, which is the table this document is written
 from and the one the gate reads.
 
@@ -18,7 +18,7 @@ from and the one the gate reads.
 |---|---:|---|
 | `FIX_NOW` | 4 | closed by this triage, one commit each, cited below |
 | `UPSTREAM` | 3 | the defect belongs to a third-party project and a report is written; two of the three also carry a local workaround, and `RP-2` deliberately does not |
-| `ROADMAP` | 54 | real work, deferred, with a named owner |
+| `ROADMAP` | 56 | real work, deferred, with a named owner |
 | `ACCEPTED` | 118 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
 | `CLOSED` | 248 | the thing the entry describes is done |
 
@@ -460,3 +460,5 @@ Fifty-seven rows: the four `FIX_NOW` items this triage closed, the three
 | `15C-21` | ROADMAP | the CAP-15C hosted run | the socket adapter masks the FPU traps in its own initialization and K19 pins it; the remaining Darwin rows are measured by the next macOS legs |
 | `15C-22` | ROADMAP | the CAP-15C hosted run | the socket delegate no longer owns its session, task or delegate queue and one teardown path releases them from the calling thread; whether the Darwin live rows now complete is measured by the next macOS legs |
 | `15C-23` | ROADMAP | the CAP-15C hosted run | every socket entry point masks the calling thread's FPU traps and K21 pins it; whether the Darwin live rows now complete is measured by the next macOS legs |
+| `15C-24` | ROADMAP | the CAP-15C hosted run | the task is only ever messaged through a copy retained under the lock and K22 pins it; the crash report the macOS gate now prints says whether the arm64 fault is gone |
+| `15C-25` | ROADMAP | the CAP-15C hosted run | every sink call re-masks the FPU traps of the framework thread it ran on and K23 pins it; whether the x64 leg now completes is measured by the next macOS legs |

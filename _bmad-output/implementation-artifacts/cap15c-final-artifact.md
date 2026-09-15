@@ -177,8 +177,10 @@ program that names it (K10). Its seven rows - opens, redirects offered, proxy
 dictionary empty, cookie storage nil, should-set-cookies, open on main thread,
 maximum message size - are written by `socketlive` on macOS, required numeric
 by the aggregator, with the four configuration read-backs pinned; the other
-two targets say `not_applicable` by name. **Not measured yet: no macOS host
-has run this branch.**
+two targets say `not_applicable` by name. **Measured only in part: from hosted
+run 34941125057 on, the macOS legs open, echo, reassemble and refuse
+correctly, and neither has yet completed the live program - the hosted run
+sections below record each fault and its fix.**
 
 ## SDKS
 
@@ -236,7 +238,7 @@ pattern), and `check_dev_trust` section 7.
 | `test/cap11a/collection-paths.json` records | - | +15 CAP-15C paths, same commit | CAP-15B's lesson |
 | CAP-10B1 React project inventory, held as literals in `test/cap10b2/run_cap10b2_gates.ps1` | `eabbc88d…`, 76 854 bytes, 16 files | `31244b06…`, 78 679 bytes, 16 files | the React template's `program.lpr` and `app.services.pas` grew inside `PWEB_NET`; measured identically in the Windows and Linux CAP-10B1 records |
 | `step-applicability.tsv` / `ci_sequence_digest` | 205 steps | 206 steps, measured on the CAP-15C hosted run | one step on four legs |
-| backlog census | 404 entries, 53 open | 427 entries, 61 open | ledger 15C-1..15C-23 |
+| backlog census | 404 entries, 53 open | 429 entries, 63 open | ledger 15C-1..15C-25 |
 
 ## REGRESSIONS
 
@@ -389,6 +391,24 @@ the refused handshakes before it runs, so a remaining crash names its row.
 macos-x64 and windows were still running when this was written; the push that
 carries the fix waits for them, because a push cancels an in-progress run on
 this branch.
+
+## HOSTED RUN 34952410904 — BOTH MACOS LEGS STOPPED AFTER THE TLS STEP, FOR TWO REASONS
+
+Linux green. Both macOS legs printed `step l_redirect2`, `step l_setcookie`
+and `step l_tls`, then died before the next progress line.
+
+| leg / step | measured | disposition |
+|---|---|---|
+| macos-x64, 184, CAP-15C L1 | `EInvalidOp` at `$00007FF8112B27EE` inside a system framework, with every entry point already masking its caller | the entry points mask Pascal threads, but the ROOM, DELIVER and CLOSED sinks run Pascal on NSURLSession's and libdispatch's threads - and FPC 3.2.2 initialises a thread it did not create on its first threadvar access (`cthreads.pp` `CRelocateThreadvar` -> `HookThread` -> `InitThread`), whose first statements are `SysResetFPU; SysInitFPU`, the trapping control word, left armed on the framework's thread when the callback returns. Every sink call now re-masks before its statement ends; K23 fired on all three sink calls first (ledger 15C-25) |
+| macos-arm64, 184, CAP-15C L1 | `EAccessViolation` at `$00000001955C3F64`, the same `...3F64` offset as run 34947294257 under another slide | the ownership fix did not move it. The receive completion handler messaged the unlocked `task` ivar - `closeCode`, `closeReason`, `cancelWithCloseCode:` - and `armReceive` armed it with no lock, while the keeper thread's teardown released that task. Both now message only a task retained under `@synchronized` after a `stopping` test; K22 fired on four lines first (ledger 15C-24). **That this race is the measured fault is not proven**, so the fault is no longer anonymous: on Darwin `socketlive` puts SIGSEGV, SIGBUS, SIGILL and SIGFPE back to their default dispositions, and after a failure the macOS gate prints every thread of the ReportCrash report and copies it beside the evidence |
+
+Windows green on this run too (all 209 steps). The local Windows chain carries
+this change: CAP-15C build and the
+Darwin type-check of both sources, contracts K1-K23 PASS, the gates 322/322
+with `live_failures = 0`, CAP-15B contracts, dev trust, divergence, and the
+backlog at 429 entries / 63 open. Nothing in the change reaches the Linux
+leg's compiled code: `socketlive`'s new block is `{$ifdef DARWIN}` and the
+gate runner's new function runs only on macOS after a failure.
 
 ## FREEZE
 

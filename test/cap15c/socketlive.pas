@@ -476,18 +476,22 @@ begin
   Step('l_redirect2');
   Require(Verdict(Open(d, Ws('/redirect?row=l_redirect2'))) =
     'service_error:handshake_refused:redirect', 'L7: a 3xx was not refused as a redirect');
+  Step('l_redirect2_done');
 
   // L21 no cookie is kept
   Step('l_setcookie');
   Open(d, Ws('/setcookie?row=l_setcookie'));
+  Step('l_setcookie_opened');
   r := Open(d, Ws('/echo?row=l_after_cookie'));
   CloseSock(d, IdOf(r));
+  Step('l_after_cookie_closed');
 
   // L11 TLS validation cannot be turned off: a self-signed loopback chain
   Step('l_tls');
   r := Invoke(d, PWEB_METHOD_SOCKET_OPEN, '{"url":"wss://127.0.0.1:' +
     RawUtf8(IntToStr(TlsPort)) + '/echo?row=l_tls"}');
   Row('live_tls_untrusted', Verdict(r));
+  Step('l_tls_returned');
   Require(Verdict(r) = 'service_error:tls_failed', 'L11: an untrusted certificate was not refused');
 
   // L12 the message bound
@@ -832,6 +836,34 @@ begin
   Require(f.MaximumMessageSize = PWEB_SOCKET_MAX_MESSAGE,
     'D: maximumMessageSize is not the message bound');
 end;
+
+// THE NATIVE FAULT, kept native on the Darwin leg. FPC turns SIGSEGV,
+// SIGBUS, SIGILL and SIGFPE into a Pascal exception at a bare address -
+// `EAccessViolation at $00000001955C3F64` names no library, no symbol and
+// no thread, and hosted runs 34947294257 and 34952410904 of this transport
+// died exactly that way (ledger 15C-24). Put back to the default
+// disposition, a fault ends the process as macOS ends any other, ReportCrash
+// writes its symbolicated report, and test/cap15c/run_cap15c_gates.ps1
+// prints the threads from it. Nothing this program gates is a recovered
+// fault, so nothing is lost. Declared over libc rather than baseunix so the
+// Darwin type-check still compiles on Windows; the numbers are FPC 3.2.2
+// rtl/darwin/signal.inc's.
+const
+  DARWIN_SIGILL = 4;
+  DARWIN_SIGFPE = 8;
+  DARWIN_SIGBUS = 10;
+  DARWIN_SIGSEGV = 11;
+
+function DarwinSignal(Sig: LongInt; Handler: Pointer): Pointer; cdecl;
+  external name 'signal';
+
+procedure KeepFaultsNative;
+begin
+  DarwinSignal(DARWIN_SIGILL, nil);
+  DarwinSignal(DARWIN_SIGFPE, nil);
+  DarwinSignal(DARWIN_SIGBUS, nil);
+  DarwinSignal(DARWIN_SIGSEGV, nil);
+end;
 {$endif DARWIN}
 
 procedure ParseArgs;
@@ -877,6 +909,9 @@ begin
 end;
 
 begin
+  {$ifdef DARWIN}
+  KeepFaultsNative;
+  {$endif DARWIN}
   ParseArgs;
   if (Port <= 0) or (TlsPort <= 0) then
   begin
