@@ -90,16 +90,31 @@ pweb_macos_record "${PWEB_MACOS_MACHO_FACT}" > /dev/null
 # nm type S. They carry no code and cannot be invoked. Gating on them would
 # fail this object for having exception handling at all, which is the one
 # thing it exists to provide.
-step_bad="$(nm -g -U "${PWEB_MACOS_BRIDGE_OBJ}" |
-    awk '$2 == "T" { print $3 }' |
+#
+# AMENDED AT CAP-15C, and MEASURED on hosted run 34908218839: the socket
+# transport's completion handlers are Objective-C blocks that capture
+# objects, and clang emits a copy and a destroy helper for each such capture
+# layout (`___copy_helper_block_e8_32o`, `___destroy_helper_block_e8_32o40r`
+# and so on). `nm -g` lists them as global text, and the first run of this
+# gate over the socket transport refused the object for them. They are
+# emitted with HIDDEN visibility - `nm -m` names each a private external - so
+# the linker merges them and they never leave a linked image: they are not a
+# surface anybody can call. The assertion therefore reads `nm -m` and ignores
+# exactly the private externals. It FAILS CLOSED: an object whose listing
+# yields no seam entry point at all is refused, so a listing in a shape this
+# parser did not expect can never pass as an empty, clean export set.
+text_exports="$(nm -m -g -U "${PWEB_MACOS_BRIDGE_OBJ}" |
+    awk '/\(__TEXT,/ && !/private external/ { print $NF }' || true)"
+step_bad="$(printf '%s\n' "${text_exports}" | grep -v '^$' |
     grep -Ev '^_pweb_cocoa_' || true)"
 if [ -n "${step_bad}" ]; then
     printf '%s\n' "${step_bad}" >&2
     die 'the bridge object exports a CALLABLE symbol that is not part of the private seam'
 fi
 
-seam_count="$(nm -g -U "${PWEB_MACOS_BRIDGE_OBJ}" |
-    awk '$2 == "T" { print $3 }' | grep -c '^_pweb_cocoa_' || true)"
+seam_count="$(printf '%s\n' "${text_exports}" | grep -c '^_pweb_cocoa_' || true)"
+[ "${seam_count}" -gt 0 ] ||
+    die 'no seam entry point was read from the bridge object -- the nm -m listing is not in the shape this gate parses, and an empty export set is never a pass'
 data_syms="$(nm -g -U "${PWEB_MACOS_BRIDGE_OBJ}" |
     awk '$2 == "S" || $2 == "D" { print $3 }' | LC_ALL=C sort -u |
     tr '\n' ' ' || true)"

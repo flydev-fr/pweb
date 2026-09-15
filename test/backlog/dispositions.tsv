@@ -421,3 +421,5 @@ RP-5	b4c32379	ACCEPTED	post-MVP mORMot repin	-	the ratification measurement itse
 15C-16	380d2608	CLOSED	CAP-15C	-	the CAP-6 sweep matches the word socket in code rather than in string literals, every URL and loopback pattern still reads the raw line, and a planted-vector self-test proves both halves on every run
 15C-17	376e0221	CLOSED	CAP-15C	-	the hook comment no longer names the word, and K17 mirrors the inline CAP-4 proof from its own action on every host
 15C-18	ea138f54	CLOSED	CAP-15C	-	the three close codes are cast to the framework enum, and K18 refuses an uncast cancelWithCloseCode: in source on every host
+15C-19	d1510d4e	ROADMAP	the CAP-15C hosted run	-	the export gate ignores only private-external text symbols and fails closed on an empty seam; whether nm -m names the block helpers private externals is measured by the next macOS legs
+15C-20	1a9e0957	CLOSED	CAP-15C	-	the stall covers the measured buffer fill plus the required block; the requirement did not move and the local re-run blocked 5072 ms

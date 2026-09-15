@@ -1,16 +1,16 @@
 # The backlog
 
 `_bmad-output/implementation-artifacts/deferred-work.md` is append-only and
-carries **422 entries** from Phase 0 to CAP-15C. It is a
+carries **424 entries** from Phase 0 to CAP-15C. It is a
 ledger: it records what was found, in the words of the shard that found it,
 and it never edits itself. That makes it excellent evidence and a poor
 worklist — a reader who wants to know *what is still owed* has to resolve
 every supersession chain by hand, and three phase-closure artifacts answer
 that question for CAP-10 and CAP-11 only.
 
-This document is the worklist. Every one of the 422 entries is disposed of
-exactly once, with one verdict, an owner and a reason. **Fifty-seven are open,**
-**and those fifty-seven are listed here in full**; the other 365 are in
+This document is the worklist. Every one of the 424 entries is disposed of
+exactly once, with one verdict, an owner and a reason. **Fifty-eight are open,**
+**and those fifty-eight are listed here in full**; the other 366 are in
 `test/backlog/dispositions.tsv`, which is the table this document is written
 from and the one the gate reads.
 
@@ -18,9 +18,9 @@ from and the one the gate reads.
 |---|---:|---|
 | `FIX_NOW` | 4 | closed by this triage, one commit each, cited below |
 | `UPSTREAM` | 3 | the defect belongs to a third-party project and a report is written; two of the three also carry a local workaround, and `RP-2` deliberately does not |
-| `ROADMAP` | 50 | real work, deferred, with a named owner |
+| `ROADMAP` | 51 | real work, deferred, with a named owner |
 | `ACCEPTED` | 118 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
-| `CLOSED` | 247 | the thing the entry describes is done |
+| `CLOSED` | 248 | the thing the entry describes is done |
 
 `ACCEPTED` is not a synonym for ignored. It is the verdict for an entry whose
 honest answer is a measurement — that WebView2 raises no navigation event for a
@@ -456,3 +456,4 @@ Fifty-seven rows: the four `FIX_NOW` items this triage closed, the three
 | `15C-7` | ROADMAP | the same CAP-15B fix shard as 15C-1 | the fetch decorator lets an escaped NUL through that mORMot rewrites to `?`; the socket decorator's `HasEscapedNul` refusal is the fix to copy |
 | `15C-12` | ROADMAP | the CAP-15C hosted run | the Darwin socket transport is written, type-checked off a Mac and gated, and has not yet been measured on macOS |
 | `15C-14` | ROADMAP | the CAP-15B closure ritual | the CAP-15B final artifact still ends NOT READY although two hosted runs on 245ad80 were green, and the v0.2.0 tag run failed without investigation |
+| `15C-19` | ROADMAP | the CAP-15C hosted run | the export gate ignores only private-external text symbols and fails closed on an empty seam; whether nm -m names the block helpers private externals is measured by the next macOS legs |

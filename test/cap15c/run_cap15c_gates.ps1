@@ -220,7 +220,7 @@ Row 'wire_page_close' "$(if ($pc) { "$($pc.code)/$($pc.reason)" } else { 'none' 
 Require ($pc -and $pc.code -eq 4000 -and $pc.reason -eq 'done') 'L1: the page close did not reach the wire as 4000/done'
 
 # BACKPRESSURE: reading stopped - the server's writes were blocked for most of
-# the three seconds the page did not poll - and nothing was dropped
+# the five seconds the page did not poll - and nothing was dropped
 $fd = First (Of 'l_flood') 'flood_done'
 Row 'wire_flood_sent' "$(if ($fd) { $fd.sent } else { 'none' })"
 Row 'wire_flood_longest_block_ms' "$(if ($fd) { $fd.longestBlockMs } else { 'none' })"

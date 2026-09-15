@@ -236,7 +236,7 @@ pattern), and `check_dev_trust` section 7.
 | `test/cap11a/collection-paths.json` records | - | +15 CAP-15C paths, same commit | CAP-15B's lesson |
 | CAP-10B1 React project inventory, held as literals in `test/cap10b2/run_cap10b2_gates.ps1` | `eabbc88d…`, 76 854 bytes, 16 files | `31244b06…`, 78 679 bytes, 16 files | the React template's `program.lpr` and `app.services.pas` grew inside `PWEB_NET`; measured identically in the Windows and Linux CAP-10B1 records |
 | `step-applicability.tsv` / `ci_sequence_digest` | 205 steps | 206 steps, measured on the CAP-15C hosted run | one step on four legs |
-| backlog census | 404 entries, 53 open | 422 entries, 57 open | ledger 15C-1..15C-18 |
+| backlog census | 404 entries, 53 open | 424 entries, 58 open | ledger 15C-1..15C-20 |
 
 ## REGRESSIONS
 
@@ -334,6 +334,21 @@ before the fix was applied.
 |---|---|---|---|
 | windows, 24, CAP-4 zero-HTTP asset-serving source proof | the trusted-document hook comment in `pweb.platform.webview2.pas` said "socket door" / "sockets", a word that proof forbids on the raw line; the proof is INLINE in its action, so no local chain runs it | the comment names "the native network doors" (the Cocoa guard's twin comment too) | K17 parses the action's file list and pattern and sweeps them on every host (ledger 15C-17) |
 | macos-x64 and macos-arm64, 107, CAP-7M1 compile the production Cocoa bridge | three `cancelWithCloseCode:` calls passed int literals; Objective-C++ refuses an int for `NSURLSessionWebSocketCloseCode` | all four sites cast explicitly | K18 requires the cast at every `cancelWithCloseCode:` (ledger 15C-18) |
+
+## HOSTED RUN 34908218839 — ONE GATE READ TOO MUCH, ONE WINDOW WAS TOO SHORT
+
+Linux green again; Windows reached step 184 and failed one CAP-15C row; both
+macOS legs now compiled the bridge and failed the export gate right after it.
+Neither is a product defect, and neither was fixed by loosening a claim.
+
+| leg / step | measured | disposition |
+|---|---|---|
+| macos-x64 and macos-arm64, 107, CAP-7M1 bridge export gate | the object was refused for `___copy_helper_block_e8_32o`, `…32o40o`, `…32o40r` and their `___destroy_helper_block_` twins - clang's helpers for the socket transport's blocks that capture objects. They are emitted with hidden visibility and never leave a linked image | `tools/build-macos-bridge.sh` now reads `nm -m` and ignores exactly the private externals, and fails closed when no seam entry point is read at all (ledger 15C-19) |
+| windows, 184, CAP-15C L1 | the flood row passed its outcome - 1024 received, 0 gaps, 0 corrupt, queue parked at 1 048 576 bytes with no memory growth - and failed its proxy: the server's longest blocked write was 1801 ms of a 3000 ms stall, against a 2000 ms requirement. The runner's socket buffers took about 1.2 s to fill; the other targets blocked 2678-3074 ms | the stall is 5000 ms, sized from those measurements - the 1.2 s fill plus the required 2000 ms block with 1.8 s to spare - and the 2000 ms requirement is unchanged (ledger 15C-20) |
+
+The QUEUE AND BACKPRESSURE figures above were measured at the three-second
+stall; the five-second stall only lengthens the window in which the block is
+observed.
 
 ## FREEZE
 

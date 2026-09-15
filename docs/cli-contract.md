@@ -812,7 +812,7 @@ is an event carrying its code, a reason bounded to 123 bytes, `wasClean`,
 **Backpressure, never a drop.** When a socket's queue is full the native side
 **stops reading**, so TCP pushes back on the server; nothing is discarded. It
 was measured, not inferred: a server flooding 1024 messages at a page that did
-not poll for three seconds was blocked on its own writes for most of them, and
+not poll for several seconds was blocked on its own writes for most of them, and
 every message then arrived, in order, uncorrupted.
 
 **Ownership and lifecycle.** A socket belongs to the window principal that

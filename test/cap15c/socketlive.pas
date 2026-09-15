@@ -572,8 +572,14 @@ begin
   id := IdOf(r);
   WaitEvent(d, id, 'open', 3000, ev);
   peak0 := MemPeak;
-  // THE PAGE DOES NOT POLL for three seconds
-  Sleep(3000);
+  // THE PAGE DOES NOT POLL for five seconds. SIZED FROM MEASUREMENTS, not
+  // widened after a failure: the gate needs the server's writes blocked for
+  // at least 2000 ms, and the kernel's socket buffers absorb part of the flood
+  // before any write blocks. Hosted windows-x86_64 run 34908218839 took about
+  // 1.2 s to fill them - its longest block was 1801 ms of a 3000 ms stall -
+  // against 2678-3074 ms of blocking on the other targets measured. Five
+  // seconds covers that fill plus the required block with 1.8 s to spare
+  Sleep(5000);
   RowInt('live_bp_stall_queue_bytes', d.QueuedBytes(id));
   RowInt('live_bp_stall_queue_events', d.QueuedEvents(id));
   RowInt('live_bp_stall_mem_peak_delta', MemPeak - peak0);
