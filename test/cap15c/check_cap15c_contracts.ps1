@@ -49,6 +49,8 @@
 #       because a program may link it without the WebView adapter
 #   K20 the socket delegate owns neither its session, its task nor its delegate
 #       queue - one teardown path invalidates and releases them
+#   K21 every socket entry point of the Cocoa bridge masks the calling
+#       thread's FPU traps first - FPC re-arms them on each thread it creates
 #
 # Usage: pwsh test/cap15c/check_cap15c_contracts.ps1
 $ErrorActionPreference = 'Stop'
@@ -688,6 +690,56 @@ if ($implAt -lt 0) {
     }
 }
 $report.Add('K20: the socket delegate releases no session, queue or task; one teardown path invalidates and releases them')
+
+# --- K21: every socket entry point masks the FPU traps of the thread calling it ---
+#
+# MEASURED on macos-x64 of hosted run 34947294257: with the traps masked by the
+# adapter's initialization, the Darwin transport got FURTHER than the run
+# before - past the refused handshakes, the cookie pair, the untrusted TLS
+# refusal and both message-bound rows - and then died with `EInvalidOp` inside
+# a system framework again. FPU state is PER THREAD, and FPC re-applies its
+# trapping control word to every thread it creates: the initialization masked
+# the MAIN thread only, while the decorator's keeper thread and the scheduler
+# workers call release, close and send from Pascal threads of their own. So
+# every C entry point of the socket transport masks the calling thread's traps
+# through `pweb_cocoa_mask_fpu_traps` before it sends a single Objective-C
+# message.
+$mmK21 = [System.IO.File]::ReadAllLines((Resolve-Path -LiteralPath 'src/platform/macos/pweb_cocoa_bridge.mm').Path)
+$entryNames = @('pweb_cocoa_socket_open', 'pweb_cocoa_socket_send',
+                'pweb_cocoa_socket_close', 'pweb_cocoa_socket_release')
+$entriesChecked = 0
+foreach ($name in $entryNames) {
+    $start = -1
+    for ($i = 0; $i -lt $mmK21.Count; $i++) {
+        if ($mmK21[$i] -match ('^(int|void)\s+' + [regex]::Escape($name) + '\s*\(')) { $start = $i; break }
+    }
+    if ($start -lt 0) {
+        Violation "K21: the Cocoa bridge defines no $name"
+        continue
+    }
+    # the body opens on the first line that ends the signature with ') {'
+    $open = -1
+    for ($i = $start; $i -lt [math]::Min($mmK21.Count, $start + 12); $i++) {
+        if ($mmK21[$i] -match '\)\s*\{\s*$') { $open = $i; break }
+    }
+    if ($open -lt 0) {
+        Violation "K21: the body of $name could not be located"
+        continue
+    }
+    $entriesChecked++
+    $masked = $false
+    for ($i = $open + 1; $i -lt $mmK21.Count; $i++) {
+        $line = $mmK21[$i]
+        if ($line -match '\bpweb_cocoa_mask_fpu_traps\s*\(\s*\)') { $masked = $true; break }
+        # anything that can reach Foundation before the mask is the defect
+        if ($line -match '@autoreleasepool|@try|@synchronized|\[[A-Za-z_][A-Za-z0-9_>\-]*\s+[A-Za-z]|^\}') { break }
+    }
+    if (-not $masked) {
+        Violation ("K21: $name does not mask the calling thread's FPU traps before its first " +
+            'Objective-C message -- measured: EInvalidOp on macos-x64 from a Pascal thread')
+    }
+}
+$report.Add("K21: $entriesChecked socket entry point(s) in the Cocoa bridge, each masking the calling thread's FPU traps first")
 
 # --- verdict ---------------------------------------------------------------------------------
 New-Item -ItemType Directory -Force build/cap15c | Out-Null

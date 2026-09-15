@@ -425,3 +425,4 @@ RP-5	b4c32379	ACCEPTED	post-MVP mORMot repin	-	the ratification measurement itse
 15C-20	1a9e0957	CLOSED	CAP-15C	-	the stall covers the measured buffer fill plus the required block; the requirement did not move and the local re-run blocked 5072 ms
 15C-21	36969104	ROADMAP	the CAP-15C hosted run	-	the socket adapter masks the FPU traps in its own initialization and K19 pins it; the remaining Darwin rows are measured by the next macOS legs
 15C-22	7b1151e4	ROADMAP	the CAP-15C hosted run	-	the socket delegate no longer owns its session, task or delegate queue and one teardown path releases them from the calling thread; whether the Darwin live rows now complete is measured by the next macOS legs
+15C-23	12122b4e	ROADMAP	the CAP-15C hosted run	-	every socket entry point masks the calling thread's FPU traps and K21 pins it; whether the Darwin live rows now complete is measured by the next macOS legs

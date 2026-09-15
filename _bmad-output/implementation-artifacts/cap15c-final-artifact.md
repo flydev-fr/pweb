@@ -236,7 +236,7 @@ pattern), and `check_dev_trust` section 7.
 | `test/cap11a/collection-paths.json` records | - | +15 CAP-15C paths, same commit | CAP-15B's lesson |
 | CAP-10B1 React project inventory, held as literals in `test/cap10b2/run_cap10b2_gates.ps1` | `eabbc88d…`, 76 854 bytes, 16 files | `31244b06…`, 78 679 bytes, 16 files | the React template's `program.lpr` and `app.services.pas` grew inside `PWEB_NET`; measured identically in the Windows and Linux CAP-10B1 records |
 | `step-applicability.tsv` / `ci_sequence_digest` | 205 steps | 206 steps, measured on the CAP-15C hosted run | one step on four legs |
-| backlog census | 404 entries, 53 open | 426 entries, 60 open | ledger 15C-1..15C-22 |
+| backlog census | 404 entries, 53 open | 427 entries, 61 open | ledger 15C-1..15C-23 |
 
 ## REGRESSIONS
 
@@ -372,6 +372,14 @@ true`), so the previous run's overshoot did not reproduce.
 | leg / step | measured | disposition |
 |---|---|---|
 | macos-arm64, 184, CAP-15C L1 | no `EInvalidOp` any more - the FPU mask held - and the Darwin transport again opened, echoed text, binary and 1 MiB (9 ms send), reassembled fragments, answered the ping, surfaced 4001/`bye` and refused the redirect, the status and both subprotocol cases; then `EAccessViolation` inside a system library at the same point x64 had died | `PWebCocoaSocket` was the session's delegate AND owned the session, its task and its delegate queue, and released them in `dealloc` - which runs on the session's own delegate queue when invalidation drops the last reference, i.e. inside the session's teardown. The CAP-15B fetch half never does that. One `pweb_socket_teardown` now detaches and releases all three from the calling thread, for a refused open, a caught exception and release alike; K20 pins the shape and fired four ways on the old bridge (ledger 15C-22) |
+
+| macos-x64, 184, CAP-15C L1 | the FPU mask held for longer - past the refused handshakes, the cookie pair, `live_tls_untrusted = tls_failed` and both message-bound rows (1009 `message_too_large`) - then `EInvalidOp` inside a system framework again | FPU state is PER THREAD and FPC re-arms its traps on every thread it creates; the initialization had masked the main thread only, while the decorator's keeper thread and the scheduler workers call close, release and send. Every socket entry point of the bridge now masks the calling thread's traps first; K21 pins it and fired on all four entry points before the calls were added (ledger 15C-23) |
+
+Every GATE FAILURE after `L1: the live socket program wrote no evidence` on
+both macOS legs - down to `a generation switch is not proven to close the
+window's sockets` - is that one crash: the rows are read from evidence the
+program never wrote, and `close_on_generation_switch` requires the live
+navigation row among its witnesses.
 
 A first diagnosis blamed an unguarded `sink.closed` call. Reading the code
 refuted it - the close path already tested `stopping` under the object's

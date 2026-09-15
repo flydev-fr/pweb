@@ -2380,6 +2380,9 @@ int pweb_cocoa_socket_open(const pweb_cocoa_socket_request_t *request,
                            pweb_cocoa_cancel_fn cancel, void *cancel_opaque,
                            uint64_t *handle, char *selected,
                            int32_t selected_capacity) {
+  /* this THREAD's traps: FPC re-arms them on every thread it creates, and
+     Pascal workers call this entry point (ledger 15C-23) */
+  pweb_cocoa_mask_fpu_traps();
   int result = PWEB_COCOA_SOCKET_CONNECT_FAILED;
   if (handle != NULL) {
     *handle = 0;
@@ -2512,6 +2515,9 @@ int pweb_cocoa_socket_open(const pweb_cocoa_socket_request_t *request,
 
 int pweb_cocoa_socket_send(uint64_t handle, int binary, const void *data,
                            int64_t length) {
+  /* this THREAD's traps: FPC re-arms them on every thread it creates, and
+     Pascal workers call this entry point (ledger 15C-23) */
+  pweb_cocoa_mask_fpu_traps();
   PWebCocoaSocket *s = (PWebCocoaSocket *)(uintptr_t)handle;
   int result = PWEB_COCOA_SOCKET_SEND_FAILED;
   if (s == nil) {
@@ -2568,6 +2574,9 @@ int pweb_cocoa_socket_send(uint64_t handle, int binary, const void *data,
 }
 
 void pweb_cocoa_socket_close(uint64_t handle, int code, const char *reason) {
+  /* this THREAD's traps: FPC re-arms them on every thread it creates, and
+     Pascal workers call this entry point (ledger 15C-23) */
+  pweb_cocoa_mask_fpu_traps();
   PWebCocoaSocket *s = (PWebCocoaSocket *)(uintptr_t)handle;
   if (s == nil) {
     return;
@@ -2587,6 +2596,9 @@ void pweb_cocoa_socket_close(uint64_t handle, int code, const char *reason) {
 }
 
 void pweb_cocoa_socket_release(uint64_t handle) {
+  /* this THREAD's traps: FPC re-arms them on every thread it creates, and
+     Pascal workers call this entry point (ledger 15C-23) */
+  pweb_cocoa_mask_fpu_traps();
   PWebCocoaSocket *s = (PWebCocoaSocket *)(uintptr_t)handle;
   if (s == nil) {
     return;
