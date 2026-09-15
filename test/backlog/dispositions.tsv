@@ -403,20 +403,20 @@ RP-5	b4c32379	ACCEPTED	post-MVP mORMot repin	-	the ratification measurement itse
 15B-25	091579a8	CLOSED	CAP-15B	-	the seam reported a declared length as bytes received; both assignments removed and the property is now gated at zero
 15B-26	4d1346b9	CLOSED	CAP-15B	-	seventeen paths added to the records class, staged 223 files to 229, and the three CAP-11A gates re-run green
 15B-27	a95abfc0	CLOSED	CAP-15B	-	the four-target aggregation is exercised locally before the run rather than discovered by it; zero field-level disagreements
-15C-1	aebdfffb	ROADMAP	a CAP-15B fix shard, before any release that declares an origin	-	on Linux the fetch transport accepts a trusted certificate issued for another host; the fix is one line (`TLS.HostNamesCsv := Request.Host`) plus a live trusted-right-name / trusted-wrong-name pair, held back only because CAP-15C froze the fetch units byte for byte
+15C-1	aebdfffb	CLOSED	the CAP-15B fetch corrective	-	the transport hands mORMot the certificate name and C16 pins it; L2 refuses a trusted wrong-name certificate on Linux and measures Windows (SChannel) and Darwin (NSURLSession) refusing it too - the exposure was Linux and v0.2.0 only (15C-29)
 15C-2	9f3b65b8	CLOSED	CAP-15C	-	the socket transport hands OpenSSL the host name; on Linux the trusted right-name control opens and the trusted wrong-name witness is refused tls_failed with zero upgrades, and K3 pins the one TLS field assigned
 15C-3	0279ce85	ACCEPTED	CAP-15C	-	measured and amended at Checkpoint 1; no `mormot.net.ws.*` or `mormot.net.server` unit is named in source or compiled into an image, pinned by K2 and B4
 15C-4	e01ce8f1	ACCEPTED	CAP-15C	-	the frozen method grammar is two segments; the four names are cross-checked across the native unit and both SDKs by K5
 15C-5	2f150368	CLOSED	CAP-15C	-	a network host raises the binding request bound to 2 MiB inside PWEB_NET, and a 1 MiB binary message crosses it live
 15C-6	77d32385	ACCEPTED	CAP-15C	-	four extra workers and slots in a network host so parked long-polls cannot starve the application's RPC; pinned in both templates by K6
-15C-7	166b189e	ROADMAP	the same CAP-15B fix shard as 15C-1	-	the fetch decorator lets an escaped NUL through that mORMot rewrites to `?`; the socket decorator's `HasEscapedNul` refusal is the fix to copy
+15C-7	166b189e	CLOSED	the CAP-15B fetch corrective	-	the decorator refuses a raw or escaped NUL before decoding; C17 pins the placement and the corpus carries the refusal beside its literal-backslash control (15C-29)
 15C-8	fb2908f4	ACCEPTED	CAP-15C	-	WebKitGTK cannot name the frame, so a trusted subframe document closes the window's sockets too - the safe direction, and no template loads a subframe
 15C-9	6849e384	CLOSED	CAP-15C	-	the CAP-5 SDK pattern is anchored the way `fetch(` is, and K14 proves it still fires on the browser primitive and on both socket URL spellings
 15C-10	70f6d86a	CLOSED	CAP-15C	-	the decorator reads the scheme as a token, dev-trust passes, and the socket corpus digest is unchanged over 128 lines
 15C-11	d840ee53	ACCEPTED	CAP-15C	-	a native close carries 1001 and no reason on the wire; the category is typed on the page's close event only
 15C-12	92571b77	ROADMAP	the CAP-15C hosted run	-	the Darwin socket transport is written, type-checked off a Mac and gated, and has not yet been measured on macOS
 15C-13	a02e156f	ACCEPTED	CAP-15C	-	a generation switch is a trusted re-navigation; witnessed by K8, the suite, L1 and a real-window reload in the Linux composition
-15C-14	29624209	ROADMAP	the CAP-15B closure ritual	-	the CAP-15B final artifact still ends NOT READY although two hosted runs on 245ad80 were green, and the v0.2.0 tag run failed without investigation
+15C-14	29624209	CLOSED	the CAP-15B fetch corrective	-	the CAP-15B final artifact is closed PASS on hosted runs 34480791403 and 34852822671 on 245ad80; the v0.2.0 tag run 34852821007 failed on the fetchlive delivery allowance that 15C-28 corrected
 15C-15	e3013ba8	ACCEPTED	CAP-15C	-	OpenSSL honours SSL_CERT_FILE for any Linux client; the composition sets it for the supervised application only, and the product never reads or sets it
 15C-16	380d2608	CLOSED	CAP-15C	-	the CAP-6 sweep matches the word socket in code rather than in string literals, every URL and loopback pattern still reads the raw line, and a planted-vector self-test proves both halves on every run
 15C-17	376e0221	CLOSED	CAP-15C	-	the hook comment no longer names the word, and K17 mirrors the inline CAP-4 proof from its own action on every host
@@ -431,3 +431,4 @@ RP-5	b4c32379	ACCEPTED	post-MVP mORMot repin	-	the ratification measurement itse
 15C-26	d0311d60	ROADMAP	the CAP-15C hosted run	-	a close the Darwin transport scheduled gets the mORMot release grace before teardown and K24 pins it; the witness on the next macOS legs says whether the frames arrive
 15C-27	e4a8d258	ROADMAP	the CAP-15C hosted run	-	the Darwin rows run on a worker thread and the main-thread row is sticky; the next macOS legs measure it
 15C-28	e8dcdfbc	ROADMAP	the CAP-15C hosted run	-	fetchlive allows the Darwin delivery size darwinprobe already measures and allows; the next arm64 leg measures it
+15C-29	353d4e41	CLOSED	the CAP-15B fetch corrective	-	the fetch transport verifies the certificate name on Linux (C16, L2), Windows and Darwin are measured having verified it all along, and the decorator refuses an escaped NUL (C17); the exposure was Linux and v0.2.0 only

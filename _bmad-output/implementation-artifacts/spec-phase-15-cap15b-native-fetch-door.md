@@ -2,7 +2,7 @@
 title: 'CAP-15B — implement the native network door ratified by CAP-15A'
 type: 'feature'
 created: '2026-09-10'
-status: 'in-review'
+status: 'done'
 baseline_commit: 'aa7cc209f0fdbb6b151d3d0a42357c5036093e66'
 review_loop_iteration: 0
 context: []

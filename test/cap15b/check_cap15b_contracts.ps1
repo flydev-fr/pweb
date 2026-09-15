@@ -555,6 +555,55 @@ foreach ($src in @(Get-ChildItem 'test/cap15b' -File -Filter '*.pas' |
 }
 $report.Add("C15: $linkPairs source/builder pair(s) naming $fetchUnit, each linking $bridgeObjName")
 
+# --- C16: the transport hands mORMot the certificate NAME --------------------
+#
+# MEASURED at CAP-15C (ledger 15C-1): mORMot's OpenSSL layer calls
+# SSL_set1_host only when TNetTlsContext.HostNamesCsv is set (mormot.lib.openssl11
+# AfterConnection), so on Linux the zeroed context of v0.2.0 verified a
+# certificate's chain and not its name - a certificate the machine trusted for
+# ANY host answered for the declared one. SChannel ignores the field
+# (mormot.net.sock: "on Windows only recognizes IgnoreCertificateErrors") and
+# checks the target name it is handed; NSURLSession never reaches this unit.
+# The rule: the context is zeroed, and the ONE field assigned is the host,
+# between the zeroing and OpenBind.
+$zeroAt = [regex]::Match($trCode, 'client\.TLS\s*:=\s*Default\(\s*TNetTlsContext\s*\)\s*;')
+$nameAt = [regex]::Match($trCode, 'client\.TLS\.HostNamesCsv\s*:=\s*Request\.Host\s*;')
+$bindAt = [regex]::Match($trCode, 'client\.OpenBind\s*\(')
+if (-not $zeroAt.Success) {
+    Violation 'C16: the transport does not zero its TNetTlsContext'
+}
+if (-not $nameAt.Success) {
+    Violation ('C16: the transport never assigns client.TLS.HostNamesCsv := Request.Host -- ' +
+        'measured (15C-1): on Linux OpenSSL then verifies the chain and not the name')
+} elseif ($zeroAt.Success -and $bindAt.Success -and
+          -not ($zeroAt.Index -lt $nameAt.Index -and $nameAt.Index -lt $bindAt.Index)) {
+    Violation 'C16: the certificate name must be assigned after the context is zeroed and before OpenBind'
+}
+foreach ($m in [regex]::Matches($trCode, 'client\.TLS\.([A-Za-z_]+)\s*:=')) {
+    if ($m.Groups[1].Value -cne 'HostNamesCsv') {
+        Violation ("C16: the transport assigns client.TLS.$($m.Groups[1].Value): " +
+            'the one field it may set is HostNamesCsv')
+    }
+}
+$report.Add('C16: the TLS context is zeroed and carries exactly one field, the name the certificate must match')
+
+# --- C17: the decorator refuses a NUL before mORMot can rewrite it ----------
+#
+# MEASURED at CAP-15C (ledger 15C-7): mORMot's JSON reader decodes an escaped
+# NUL as `?`, so a URL, a header value or a body carrying one reached the
+# transport silently rewritten - a path turned into a query, a value into
+# another value. The decorator refuses a raw or escaped NUL on the UNDECODED
+# payload, before DecodeArgs walks it.
+$escAt = [regex]::Match($decOnly, 'if\s+HasEscapedNul\s*\(\s*payload\s*\)')
+$decAt = [regex]::Match($decOnly, 'DecodeArgs\s*\(\s*payload')
+if (-not $escAt.Success) {
+    Violation ('C17: the fetch decorator does not refuse an escaped NUL on the undecoded payload -- ' +
+        'measured (15C-7): mORMot rewrites it to ?')
+} elseif ((-not $decAt.Success) -or ($escAt.Index -gt $decAt.Index)) {
+    Violation 'C17: the escaped-NUL refusal must run before DecodeArgs walks the payload'
+}
+$report.Add('C17: the decorator refuses a raw or escaped NUL before it decodes a single argument')
+
 # --- verdict ----------------------------------------------------------------
 New-Item -ItemType Directory -Force build/cap15b | Out-Null
 $lines = New-Object System.Collections.Generic.List[string]

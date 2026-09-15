@@ -737,8 +737,9 @@ repeats, no control bytes; a body ≤ 1 MiB, refused on a bodyless method; a
 **wall-clock total-request deadline**, 10 s by default and 30 s at most,
 refused rather than clamped when larger, and observed *during* the transfer;
 **no retry, no redirect followed, no proxy inherited, no cookie jar**, and TLS
-validation that no descriptor, environment variable, argument or line of
-Pascal can disable. The response is bounded at 8 MiB *during the read*,
+validation - the certificate's name included - that no descriptor, environment
+variable, argument or line of Pascal can disable; a NUL in any argument, raw or
+escaped, is refused rather than rewritten. The response is bounded at 8 MiB *during the read*,
 inlined as text up to 1 MiB or as base64 up to 768 KiB, and anything between
 an inline cap and the ceiling is a typed `service_error` —
 `response_too_large_to_inline` — never a success with a null body. Response

@@ -623,22 +623,41 @@ begin
   CheckRefused(self, 'header-value-crlf',
     TPWebJson('{"url":"https://api.example.com/v1",' +
       '"headers":{"x-a":"b\r\nX-Evil: c"}}'), 'invalid_request');
-  // MEASURED, and recorded rather than assumed: mORMot's JSON parser
-  // decodes an escaped NUL as the byte `?` (0x3F), so a NUL cannot reach a
-  // header value through the wire at all and there is nothing here for the
-  // byte check to refuse. The row asserts the property that matters - the
-  // block that reached the transport carries no NUL and no CR/LF - rather
-  // than a refusal the parser upstream has already made impossible. A RAW
-  // NUL cannot arrive either: it would have ended the JSON document
+  // AN ESCAPED NUL IS REFUSED, never rewritten (ledger 15C-7). MEASURED at
+  // CAP-15C: mORMot's JSON reader decodes the escape - backslash, u, four
+  // zeros - as the byte `?`, so this row used to record a header value that
+  // reached the transport rewritten. The decorator now refuses a raw or
+  // escaped NUL on the UNDECODED payload, and the transport is never entered.
+  // The escape is spelled #92'u0000' on purpose: the row this replaces had
+  // carried a raw NUL byte in its source line, which is the escape decoded
+  // once too often on its way into the file, and it never exercised the
+  // escape at all
+  CheckRefused(self, 'header-escaped-nul',
+    TPWebJson('{"url":"https://api.example.com/v1",' +
+      '"headers":{"x-a":"b'#92'u0000c"}}'), 'invalid_request');
+  CheckRefused(self, 'url-escaped-nul',
+    TPWebJson('{"url":"https://api.example.com/a'#92'u0000b"}'),
+    'invalid_request');
+  CheckRefused(self, 'body-escaped-nul',
+    TPWebJson('{"url":"https://api.example.com/v1",' +
+      '"method":"POST","body":"a'#92'u0000b",' +
+      '"headers":{"content-type":"text/plain"}}'), 'invalid_request');
+  CheckRefused(self, 'header-raw-nul',
+    TPWebJson('{"url":"https://api.example.com/v1",' +
+      '"headers":{"x-a":"b'#0'c"}}'), 'invalid_request');
+  // the CONTROL: a LITERAL backslash followed by u0000 is data, and is
+  // carried exactly - a refusal that fired on it would be refusing text
   FakeReset;
   r := CallFetch(TPWebJson('{"url":"https://api.example.com/v1",' +
-    '"headers":{"x-a":"b c"}}'), calls);
-  Check(r.Kind = prkSuccess, 'the escaped-NUL row was refused for some ' +
-    'other reason - re-measure before trusting this row');
-  Check(Pos(#0, FakeSeen.Headers) = 0, 'a NUL reached the header block');
-  Check(Pos(#13, FakeSeen.Headers + 'x') = Length(FakeSeen.Headers) - 1,
-    'the header block is not exactly one CRLF-terminated line');
-  Record_('request|header-escaped-nul|substituted|no-nul-in-block');
+    '"method":"POST","body":"a'#92#92'u0000b",' +
+    '"headers":{"content-type":"text/plain"}}'), calls);
+  Check(r.Kind = prkSuccess, 'a literal backslash-u0000 body was refused: ' +
+    string(ErrorCodeOf(r)));
+  Check(calls = 1, 'a literal backslash-u0000 body did not reach the transport once');
+  Check(FakeSeen.Body = 'a'#92'u0000b',
+    'a literal backslash-u0000 body was not carried exactly');
+  Record_('request|body-literal-backslash-u0000|carried-exactly|calls=' +
+    RawUtf8(IntToStr(calls)));
   CheckRefused(self, 'header-name-space',
     TPWebJson('{"url":"https://api.example.com/v1",' +
       '"headers":{"x a":"b"}}'), 'invalid_request');

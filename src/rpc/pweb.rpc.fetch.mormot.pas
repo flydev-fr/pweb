@@ -62,8 +62,13 @@
 
   Certificate validation is ON and there is NO setting anywhere - descriptor,
   environment, argument or Pascal - that can turn it off. The
-  `TNetTlsContext` this unit builds is zeroed and never assigns
-  `IgnoreCertificateErrors`; the gate sweeps this file for that identifier,
+  `TNetTlsContext` this unit builds is zeroed and assigns exactly ONE field,
+  `HostNamesCsv` - the name the certificate must carry, which mORMot's
+  OpenSSL layer checks only when it is handed one (ledger 15C-1: on Linux
+  the zeroed context of v0.2.0 accepted a trusted certificate issued for
+  another host; SChannel ignores the field and checked the name all along).
+  It never assigns `IgnoreCertificateErrors`; the gate sweeps this file for
+  that identifier,
   for `IgnoreTlsCertError` and for `AllowDeprecatedTls` precisely so that the
   absence is measured rather than reviewed.
 
@@ -255,9 +260,15 @@ begin
       client := THttpClientSocket.Create(Request.DeadlineMs);
       client.RedirectMax := 0; // a 3xx comes back with its Location, never followed
       client.UserAgent := PWEB_FETCH_USER_AGENT;
-      // certificate validation stays ON: the context is zeroed and this unit
-      // assigns nothing that could relax it
+      // certificate validation stays ON: the context is zeroed, and the ONE
+      // field assigned is the name the certificate must carry (ledger 15C-1).
+      // MEASURED on Linux at CAP-15C: mORMot's OpenSSL layer checks a name
+      // only when it is handed one (SSL_set1_host, in AfterConnection), so the
+      // zeroed context of v0.2.0 accepted a trusted certificate issued for
+      // another host. SChannel ignores this field and checks the target name
+      // it is given; on UNIX this line is the check
       client.TLS := Default(TNetTlsContext);
+      client.TLS.HostNamesCsv := Request.Host;
       client.OpenBind(Request.Host, RawUtf8(IntToStr(Request.Port)),
         {doBind=}false, Request.Https);
       sink := TPWebFetchSink.CreateSink(Request.MaxResponseBytes, deadlineTix,

@@ -9,6 +9,8 @@
 #        transport, with the transport ENTRY COUNT asserted on each refusal
 #   L1   the SHIPPED transport against a real local server, whose JSONL
 #        request log is the independent witness
+#   L2   the certificate NAME: a trusted certificate issued for another host
+#        is refused, and one issued for the host is accepted (ledger 15C-1)
 #   D1   macOS only: the §10 NSURLSession measurement
 #   P1   the schema-2 descriptor reader: a schema-1 project reads as [] and
 #        gains no door, an empty set is a set, a malformed origin refuses AT
@@ -157,6 +159,228 @@ if ((Test-Path $live) -and ($null -ne $node)) {
     } finally {
         if ($srv -and -not $srv.HasExited) {
             Stop-Process -Id $srv.Id -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+# --- L2: the certificate NAME (ledger 15C-1) --------------------------------
+#
+# MEASURED at CAP-15C: on Linux the v0.2.0 transport verified a certificate's
+# chain and not its name, because mORMot's OpenSSL layer checks a name only
+# when it is handed one. The pair is two witnesses whose certificates ONE
+# throwaway CA issued - for 127.0.0.1 (the CONTROL) and for wrong.example -
+# driven through the real decorator by fetchlive's pair-only mode, with the
+# wrong-name witness's own log as the independent record that no request
+# crossed.
+#
+# THE TRUST SCOPE IS PER TARGET, and each is the narrowest the platform has:
+#   linux    OpenSSL's SSL_CERT_FILE, for the fetchlive process only
+#   windows  the machine Root store - hosted CI only, removed in `finally`
+#   macos    the System keychain    - hosted CI only, removed in `finally`
+# A developer's trust store is never touched: off CI, Windows and macOS read
+# `not_run`, and the rows are measured where the runner is disposable.
+# SChannel checks revocation (mORMot passes SCH_CRED_REVOCATION_CHECK_CHAIN and
+# ignores only an OFFLINE server), so the CA publishes a CRL from a loopback
+# witness of its own - without it the control would fail on revocation, for a
+# reason that has nothing to do with the name.
+$nameRows = @('live_tls_trusted_right_name', 'live_tls_trusted_wrong_name')
+$onCi = ($env:GITHUB_ACTIONS -eq 'true')
+$trust = if ($IsLinux) { 'ssl_cert_file' }
+         elseif (-not $onCi) { 'not_run_outside_ci' }
+         elseif ($IsWindows) { 'machine_root_store' }
+         else { 'system_keychain' }
+Row 'tls_name_trust' $trust
+if ($trust -eq 'not_run_outside_ci') {
+    foreach ($k in $nameRows) { Row $k 'not_run' }
+    Row 'tls_name_wrong_witness_requests' 'not_run'
+    Row 'tls_name_right_witness_requests' 'not_run'
+} elseif ((Test-Path $live) -and ($null -ne $node)) {
+    $openssl = (Get-Command openssl -ErrorAction SilentlyContinue).Source
+    if ((-not $openssl) -and $IsWindows) {
+        $gitSsl = Join-Path $env:ProgramFiles 'Git/usr/bin/openssl.exe'
+        if (Test-Path $gitSsl) { $openssl = $gitSsl }
+    }
+    Require ([bool]$openssl) 'L2: openssl is required to issue the certificate-name pair'
+    if ($openssl) {
+        $tls = (Join-Path $work 'tls-name') -replace '\\', '/'
+        Remove-Item -Recurse -Force $tls -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Force $tls | Out-Null
+        $base = 17900 + (Get-Random -Maximum 90)
+        $crlPort = $base
+        $rightPort = $base + 1
+        $wrongPort = $base + 2
+        $caName = 'PWeb CAP-15B name witness CA ' +
+            [guid]::NewGuid().ToString('N').Substring(0, 8)
+        $cnf = @"
+[req]
+distinguished_name = dn
+prompt = no
+[dn]
+CN = $caName
+[v3_ca]
+basicConstraints = critical,CA:TRUE
+keyUsage = critical,keyCertSign,cRLSign
+subjectKeyIdentifier = hash
+[leaf_right]
+basicConstraints = critical,CA:FALSE
+keyUsage = critical,digitalSignature,keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = IP:127.0.0.1
+authorityKeyIdentifier = keyid
+crlDistributionPoints = URI:http://127.0.0.1:$crlPort/ca.crl
+[leaf_wrong]
+basicConstraints = critical,CA:FALSE
+keyUsage = critical,digitalSignature,keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = DNS:wrong.example
+authorityKeyIdentifier = keyid
+crlDistributionPoints = URI:http://127.0.0.1:$crlPort/ca.crl
+[ca]
+default_ca = ca_default
+[ca_default]
+database = $tls/index.txt
+crlnumber = $tls/crlnumber
+certificate = $tls/ca.pem
+private_key = $tls/ca-key.pem
+default_md = sha256
+default_crl_days = 2
+"@
+        [System.IO.File]::WriteAllText("$tls/openssl.cnf", ($cnf -replace "`r`n", "`n"))
+        [System.IO.File]::WriteAllText("$tls/index.txt", '')
+        [System.IO.File]::WriteAllText("$tls/crlnumber", "01`n")
+        $issued = $true
+        function Ssl([string[]]$A) {
+            $o = (& $openssl @A 2>&1 | Out-String)
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "[CAP-15B] openssl $($A[0]) failed:`n$o"
+                return $false
+            }
+            return $true
+        }
+        $issued = (Ssl @('req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-sha256',
+            '-days', '2', '-config', "$tls/openssl.cnf", '-extensions', 'v3_ca',
+            '-keyout', "$tls/ca-key.pem", '-out', "$tls/ca.pem")) -and
+            (Ssl @('ca', '-gencrl', '-config', "$tls/openssl.cnf", '-out', "$tls/ca.crl.pem")) -and
+            (Ssl @('crl', '-in', "$tls/ca.crl.pem", '-outform', 'DER', '-out', "$tls/ca.crl"))
+        foreach ($leaf in 'right', 'wrong') {
+            if (-not $issued) { break }
+            $cn = if ($leaf -eq 'right') { '127.0.0.1' } else { 'wrong.example' }
+            $serial = if ($leaf -eq 'right') { '16' } else { '17' }
+            $issued = (Ssl @('req', '-new', '-newkey', 'rsa:2048', '-nodes', '-sha256',
+                '-config', "$tls/openssl.cnf", '-subj', "/CN=$cn",
+                '-keyout', "$tls/$leaf-key.pem", '-out', "$tls/$leaf.csr")) -and
+                (Ssl @('x509', '-req', '-in', "$tls/$leaf.csr", '-CA', "$tls/ca.pem",
+                    '-CAkey', "$tls/ca-key.pem", '-set_serial', $serial, '-days', '2',
+                    '-sha256', '-extfile', "$tls/openssl.cnf", '-extensions', "leaf_$leaf",
+                    '-out', "$tls/$leaf-cert.pem"))
+        }
+        Require $issued 'L2: the throwaway CA could not issue the certificate-name pair'
+        if ($issued) {
+            $crlLog = "$tls/wire-crl.jsonl"
+            $rightLog = "$tls/wire-right.jsonl"
+            $wrongLog = "$tls/wire-wrong.jsonl"
+            $witnesses = @()
+            $caCert = $null
+            $installed = $false
+            try {
+                $witnesses += Start-Process -FilePath $node.Source -PassThru -ArgumentList @(
+                    'test/cap15b/probe_server.js', "--port=$crlPort", '--ttl=300',
+                    "--log=$crlLog", "--crl=$tls/ca.crl")
+                foreach ($pair in @(@($rightPort, $rightLog, 'right'), @($wrongPort, $wrongLog, 'wrong'))) {
+                    $witnesses += Start-Process -FilePath $node.Source -PassThru -ArgumentList @(
+                        'test/cap15b/probe_server.js', "--port=$($pair[0])", '--ttl=300',
+                        "--log=$($pair[1])", "--tls-cert=$tls/$($pair[2])-cert.pem",
+                        "--tls-key=$tls/$($pair[2])-key.pem")
+                }
+                # readiness by TCP accept, never by a request: a request would
+                # be a line in the very logs this section counts
+                $ready = $true
+                foreach ($p in $crlPort, $rightPort, $wrongPort) {
+                    $up = $false
+                    for ($i = 0; $i -lt 100 -and -not $up; $i++) {
+                        $c = [System.Net.Sockets.TcpClient]::new()
+                        try { $up = $c.ConnectAsync('127.0.0.1', $p).Wait(200) -and $c.Connected }
+                        catch { $up = $false }
+                        finally { $c.Dispose() }
+                        if (-not $up) { Start-Sleep -Milliseconds 100 }
+                    }
+                    $ready = $ready -and $up
+                }
+                Require $ready 'L2: a certificate-name witness never accepted a connection'
+                if ($ready) {
+                    if ($trust -eq 'ssl_cert_file') {
+                        $env:SSL_CERT_FILE = "$tls/ca.pem"
+                        $installed = $true
+                    } elseif ($trust -eq 'machine_root_store') {
+                        $caCert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new("$tls/ca.pem")
+                        $store = [System.Security.Cryptography.X509Certificates.X509Store]::new('Root', 'LocalMachine')
+                        try {
+                            $store.Open('ReadWrite')
+                            $store.Add($caCert)
+                            $installed = $true
+                        } catch {
+                            Write-Host "[CAP-15B] the machine Root store refused the test CA: $($_.Exception.Message)"
+                        } finally { $store.Close() }
+                    } else {
+                        & sudo -n security add-trusted-cert -d -r trustRoot `
+                            -k /Library/Keychains/System.keychain "$tls/ca.pem" 2>&1 | Write-Host
+                        $installed = ($LASTEXITCODE -eq 0)
+                    }
+                    Row 'tls_name_trust_installed' (Bool $installed)
+                    Require $installed "L2: the throwaway CA could not be trusted through $trust"
+                    if ($installed) {
+                        $pairOut = Join-Path $work "live-tls-name-$target.json"
+                        Remove-Item -Force $pairOut -ErrorAction SilentlyContinue
+                        & $live "--trusted-right-port=$rightPort" "--trusted-wrong-port=$wrongPort" `
+                            "--out=$pairOut" 2>&1 | Write-Host
+                        $pairOk = ($LASTEXITCODE -eq 0)
+                        if (Test-Path $pairOut) {
+                            $pj = Get-Content -Raw $pairOut | ConvertFrom-Json
+                            foreach ($k in $nameRows) { Row $k "$($pj.$k)" }
+                        } else {
+                            foreach ($k in $nameRows) { Row $k 'no_evidence' }
+                        }
+                        Require $pairOk 'L2: the certificate-name pair failed'
+                        Require ("$($rows['live_tls_trusted_right_name'])" -ceq 'success') `
+                            'L2: the right-name CONTROL did not succeed, so the wrong-name row proves nothing'
+                        Require ("$($rows['live_tls_trusted_wrong_name'])" -ceq 'service_error:transport_failed') `
+                            'L2: a trusted certificate issued for another host was ACCEPTED'
+                        # THE INDEPENDENT RECORD: the wrong-name witness logged no
+                        # request, the right-name witness exactly one. The log is
+                        # written asynchronously, so the right-name line gets a
+                        # moment to land; nothing is decided by the wait
+                        $count = {
+                            param([string]$Log)
+                            if (Test-Path $Log) { @(Get-Content $Log | Where-Object { $_ -ne '' }).Count } else { 0 }
+                        }
+                        for ($i = 0; $i -lt 20 -and (& $count $rightLog) -lt 1; $i++) { Start-Sleep -Milliseconds 100 }
+                        $rightHits = & $count $rightLog
+                        $wrongHits = & $count $wrongLog
+                        Row 'tls_name_right_witness_requests' "$rightHits"
+                        Row 'tls_name_wrong_witness_requests' "$wrongHits"
+                        Row 'tls_name_crl_fetches' "$(& $count $crlLog)"
+                        Require ($wrongHits -eq 0) 'L2: the wrong-name witness received a request - the handshake completed'
+                        Require ($rightHits -eq 1) 'L2: the right-name witness did not receive exactly one request'
+                    }
+                }
+            } finally {
+                if ($trust -eq 'ssl_cert_file') {
+                    Remove-Item Env:SSL_CERT_FILE -ErrorAction SilentlyContinue
+                }
+                if ($trust -eq 'machine_root_store' -and $installed -and $null -ne $caCert) {
+                    $store = [System.Security.Cryptography.X509Certificates.X509Store]::new('Root', 'LocalMachine')
+                    try { $store.Open('ReadWrite'); $store.Remove($caCert) } catch { } finally { $store.Close() }
+                }
+                if ($trust -eq 'system_keychain' -and $installed) {
+                    & sudo -n security remove-trusted-cert -d "$tls/ca.pem" 2>&1 | Out-Null
+                    & sudo -n security delete-certificate -c $caName /Library/Keychains/System.keychain 2>&1 | Out-Null
+                }
+                foreach ($w in $witnesses) {
+                    if ($w -and -not $w.HasExited) {
+                        Stop-Process -Id $w.Id -Force -ErrorAction SilentlyContinue
+                    }
+                }
+            }
         }
     }
 }

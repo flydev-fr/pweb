@@ -28,9 +28,19 @@ program fetchlive;
     L8  the wire log carries EXACTLY the requests this program issued -
         nothing unrequested, no proxy hop, no second attempt
 
+    L9  a trusted certificate issued for ANOTHER host is refused, and one
+        issued for the host is accepted (ledger 15C-1: on Linux the v0.2.0
+        transport verified the chain and not the name)
+
   Usage:
     fetchlive --port=<n> --log=<wire log> --out=<evidence json>
               [--public-tls=<https url>]
+    fetchlive --trusted-right-port=<n> --trusted-wrong-port=<n>
+              --out=<evidence json>
+
+  The second form runs ONLY the L9 pair, and the gate runs it with a trust
+  scope of its own, so no other row of this program ever runs under a test
+  CA.
 
   --public-tls is RECORDED and NEVER GATES. A real certificate chain cannot
   be had from a local server, because TLS validation is not disableable
@@ -95,6 +105,8 @@ var
   LogPath: RawUtf8 = '';
   OutPath: RawUtf8 = '';
   PublicTls: RawUtf8 = '';
+  TrustedRightPort: Integer = 0;
+  TrustedWrongPort: Integer = 0;
   Rows: TRawUtf8DynArray;
   Failures: Integer = 0;
 
@@ -208,17 +220,91 @@ begin
       OutPath := Copy(a, 7, MaxInt)
     else if Copy(a, 1, 13) = '--public-tls=' then
       PublicTls := Copy(a, 14, MaxInt)
+    else if Copy(a, 1, 21) = '--trusted-right-port=' then
+      TrustedRightPort := StrToIntDef(string(Copy(a, 22, MaxInt)), 0)
+    else if Copy(a, 1, 21) = '--trusted-wrong-port=' then
+      TrustedWrongPort := StrToIntDef(string(Copy(a, 22, MaxInt)), 0)
     else
     begin
       WriteLn(StdErr, 'fetchlive: unknown argument: ', a);
       Halt(2);
     end;
   end;
+  if (TrustedRightPort > 0) or (TrustedWrongPort > 0) then
+  begin
+    if (TrustedRightPort <= 0) or (TrustedWrongPort <= 0) or (OutPath = '') then
+    begin
+      WriteLn(StdErr, 'fetchlive: the certificate-name pair needs both ',
+        '--trusted-right-port and --trusted-wrong-port, and --out');
+      Halt(2);
+    end;
+    exit;
+  end;
   if (Port <= 0) or (LogPath = '') or (OutPath = '') then
   begin
     WriteLn(StdErr, 'fetchlive: --port, --log and --out are required');
     Halt(2);
   end;
+end;
+
+{ --- L9: the certificate NAME, through the REAL decorator -----------------
+  Each row reads as the page would read it. The right name is the CONTROL:
+  without it, a refused wrong name would prove nothing but that the trust
+  never arrived. Every TLS failure is the fetch door's frozen
+  `transport_failed`; the door has no finer category and does not grow one
+  here. }
+type
+  TLiveInner = class(TInterfacedObject, IInvocationBridge)
+  public
+    function Invoke(const Context: TInvocationContext;
+      const Method: Utf8String; const Args: TPWebJson;
+      const Token: ICancellationToken): TPWebInvocationResult;
+  end;
+
+function TLiveInner.Invoke(const Context: TInvocationContext;
+  const Method: Utf8String; const Args: TPWebJson;
+  const Token: ICancellationToken): TPWebInvocationResult;
+begin
+  Result := PWebSuccessResult('42');
+end;
+
+function LiveVerdict(const R: TPWebInvocationResult): RawUtf8;
+var
+  data: RawUtf8;
+  at, stop: PtrInt;
+begin
+  if R.Kind = prkSuccess then
+    exit('success');
+  Result := RawUtf8(PWEB_ERROR_CODE_TEXT[R.Error.Code]);
+  data := RawUtf8(R.Error.Data);
+  at := Pos('"category":"', data);
+  if at > 0 then
+  begin
+    Inc(at, Length('"category":"'));
+    stop := PosEx('"', data, at);
+    if stop > at then
+      Result := Result + ':' + Copy(data, at, stop - at);
+  end;
+end;
+
+function RowTrustedName(APort: Integer; const ARow: RawUtf8): RawUtf8;
+var
+  inner, bridge: IInvocationBridge;
+  ctx: TInvocationContext;
+  host: RawUtf8;
+begin
+  host := '127.0.0.1:' + RawUtf8(IntToStr(APort));
+  inner := TLiveInner.Create;
+  bridge := TPWebFetchBridge.Create(inner, @PWebFetchNativeTransport,
+    ['https://' + host]);
+  ctx := Default(TInvocationContext);
+  ctx.WindowId := 'main';
+  ctx.PrincipalId := 'window:main';
+  ctx.PrincipalKind := pkWindow;
+  ctx.TrustedContent := True;
+  Result := LiveVerdict(bridge.Invoke(ctx, PWEB_METHOD_FETCH,
+    TPWebJson('{"url":"https://' + host + '/ready"}'), nil));
+  Row(ARow, Result);
 end;
 
 var
@@ -230,11 +316,35 @@ var
   req: TPWebFetchRequest;
   hits, lines: Integer;
   headersLower: RawUtf8;
+  nameRight, nameWrong: RawUtf8;
   body: RawByteString;
 
 begin
   ExitCode := 0;
   ParseArgs;
+  if TrustedRightPort > 0 then
+  begin
+    WriteLn('[CAP-15B] fetchlive: the certificate-name pair');
+    nameRight := RowTrustedName(TrustedRightPort, 'live_tls_trusted_right_name');
+    nameWrong := RowTrustedName(TrustedWrongPort, 'live_tls_trusted_wrong_name');
+    Require(nameRight = 'success',
+      'L9: the right-name CONTROL did not succeed - the trust never reached ' +
+      'the transport, so the wrong-name row proves nothing');
+    Require(nameWrong = 'service_error:transport_failed',
+      'L9: a trusted certificate issued for another host was accepted');
+    RowInt('live_failures', Failures);
+    FileFromString('{' + #10 + RawUtf8ArrayToCsv(Rows, ',' + #10) + #10 + '}' +
+      #10, Utf8ToString(OutPath));
+    if Failures > 0 then
+    begin
+      WriteLn(StdErr, '[CAP-15B] fetchlive FAILED: ', Failures, ' row(s)');
+      ExitCode := 1;
+    end
+    else
+      WriteLn('[CAP-15B] fetchlive PASS (the certificate-name pair)');
+    Flush(Output);
+    exit;
+  end;
   WriteLn('[CAP-15B] fetchlive against ', BaseUrl);
   Flush(Output);
 

@@ -468,16 +468,25 @@ environment variable; `PWEB_NATIVE_CSP` unchanged; `capability_policy_digest`
 `23b87da5…` and `navigation_policy_digest` `360d69f2…` re-measured unchanged
 on Windows. CAP-12 not begun; door B not reopened.
 
+**Re-pinned once after the closure, with its reason.** The fetch corrective -
+its own commit, `fix(fetch): verify the TLS hostname on Linux and refuse an
+escaped NUL` - moved exactly two of the five frozen units:
+`pweb.rpc.fetch.mormot.pas` (one assigned field, `HostNamesCsv`, and its
+comments) and `pweb.rpc.fetch.pas` (`HasEscapedNul` and its one call before
+`DecodeArgs`). K15 now pins their corrected bytes and still pins the other
+three unchanged; `capability_policy_digest` and `navigation_policy_digest`
+were re-measured unchanged (ledger 15C-29).
+
 ## KNOWN LIMITATIONS
 
-1. **CAP-15B's fetch transport has the TLS name gap on Linux** (ledger
-   15C-1): a trusted certificate issued for another host is accepted. It was
-   measured here and deliberately not fixed, because this shard freezes the
-   fetch units byte for byte; the fix is the one line the socket transport
-   now carries, plus a trusted-right-name / trusted-wrong-name live pair. It
-   should be the next thing done.
-2. The fetch decorator accepts an escaped NUL that mORMot rewrites to `?`
-   (15C-7); same owner.
+1. **Corrected after the closure: CAP-15B's TLS name gap on Linux** (ledger
+   15C-1). It was measured here and held back only by this shard's fetch
+   freeze; the fetch corrective sets `HostNamesCsv` in the transport and
+   runs a trusted-right-name / trusted-wrong-name pair as CAP-15B gate L2.
+   The exposure was Linux and v0.2.0 only: Windows (SChannel) and Darwin
+   (NSURLSession) verified the name all along (ledger 15C-29).
+2. **Corrected after the closure:** the fetch decorator refuses an escaped
+   NUL that mORMot rewrote to `?` (15C-7, 15C-29).
 3. Darwin: measured green on both macOS legs of run 34967337514; the ledger
    rows that waited for it (15C-12, 15C-19, 15C-21..15C-28) still read
    `ROADMAP` until the ledger's own closure moves them.
@@ -485,7 +494,8 @@ on Windows. CAP-12 not begun; door B not reopened.
    (15C-8), the safe direction.
 5. The generation-switch row is witnessed by composition rather than by a
    `pweb dev` run holding a socket (15C-13).
-6. The CAP-15B final artifact still reads NOT READY (15C-14).
+6. **Corrected after the closure:** the CAP-15B final artifact is closed PASS
+   on its own green runs 34480791403 and 34852822671 (15C-14).
 7. Windows CAP-10C0 R10 stopped in 7032 ms once (attempt 1 of run
    34967337514) against a 5000 ms grace, outside this shard and not
    reproduced on attempt 2; recorded above, not diagnosed.

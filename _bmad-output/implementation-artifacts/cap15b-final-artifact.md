@@ -1,8 +1,7 @@
 # CAP-15B — the native network door, built
 
 ```
-CAP-15B NOT READY
-the seven Darwin rows are measured; hosted CI has not yet been green on this HEAD
+CAP-15B PASS — NATIVE FETCH DOOR FROZEN
 ```
 
 The door CAP-15A ratified exists: `pweb.fetch`, behind the `network.fetch`
@@ -11,7 +10,40 @@ host, with `PWEB_NATIVE_CSP` unchanged. Everything mechanised here is green on
 the two targets this development host can reach — Windows x86_64 and Linux
 x86_64 under WSL — and green on the hosted Windows and Linux legs of run
 34463816748. The §10 Darwin measurement is **taken**, on both architectures.
-The one row still open is named at the end rather than implied.
+**Closure record.** Hosted CI is GREEN on the final CAP-15B commit
+`245ad806abdb7c7a988a66f533ee97ae331a10ce` twice: on its own branch, run
+**34480791403**, and on `main` after the merge, run **34852822671**. Verified
+in substance on run 34852822671: all six jobs `success`; step 183, the CAP-15B
+gates, passed on windows, linux, macos-x64 and macos-arm64;
+`[CAP-7F] aggregate PASS - platform-matrix.json written`;
+`capability_policy_digest` `23b87da5…` and `navigation_policy_digest`
+`360d69f2…` equal on all four targets; CAP-11A four identical sequences of
+205 steps, `69e199cc…`. The seven §10 Darwin rows and a green four-target
+aggregate have appeared together, which is the one thing this verdict waited
+for. The commit is tagged `v0.2.0`.
+
+The tag's own run, **34852821007**, failed on macos-arm64 step 183 on one row:
+`bound_chunked_bytes_seen = 9633792`, "the read overshot the bound by more
+than one delivery". It is the test's allowance and not the transport:
+`fetchlive` held the Darwin transport to the mORMot transport's 1 MiB delivery,
+while `darwinprobe`, measuring the same transport under rider 3, allows 4 MiB.
+CAP-15C measured the same row twice more and gave `fetchlive` `darwinprobe`'s
+allowance (ledger 15C-28). This closure was recorded late - it was owed since
+run 34852822671 and was found missing by CAP-15C (ledger 15C-14).
+
+**Found after the release, and corrected in its own commit** on the CAP-15C
+branch, `fix(fetch): verify the TLS hostname on Linux and refuse an escaped
+NUL` (ledger 15C-29, which names the exposure):
+
+- **the certificate NAME, on Linux only** (15C-1). v0.2.0's mORMot transport
+  verified a certificate's chain and not its name on Linux, because mORMot's
+  OpenSSL layer checks a name only when `TNetTlsContext.HostNamesCsv` is set.
+  Windows (SChannel ignores the field and checks the target name) and Darwin
+  (NSURLSession, a different unit) verified the name all along; the pair that
+  measures all three now runs in these gates as L2.
+- **an escaped NUL** (15C-7), which mORMot's JSON reader rewrote to `?` in a
+  URL, a header value or a body instead of the door refusing it, on all four
+  targets. The decorator now refuses it before decoding.
 
 ---
 
@@ -506,12 +538,9 @@ fixture file the synthesis did not carry. Ledger `15B-27`.
 ## KNOWN LIMITATIONS
 
 1. **The seven §10 Darwin rows are MEASURED** (ledger `15B-10`, closed) —
-   hosted run 34463816748, both architectures, `darwin_failures = 0`. What
-   remains outstanding is narrower and named: that measurement was taken on a
-   HEAD whose CAP-15B step then failed on one row, so it has to be reproduced
-   on the final HEAD together with a green aggregate. Nothing stands in for
-   the rows and the shard's PASS is still conditioned on seeing them beside a
-   green run.
+   hosted run 34463816748, both architectures, `darwin_failures = 0`. They now
+   stand beside a green four-target aggregate on the final HEAD - runs
+   34480791403 and 34852822671 - so nothing about them remains outstanding.
 2. `15B-11`: the Darwin proxy row can only say `no system proxy configured on
    the runner`. It is worded as what was measured, on what.
 3. The public-TLS row is **recorded and never gates** — a real certificate
@@ -540,6 +569,10 @@ fixture file the synthesis did not carry. Ledger `15B-27`.
    and *linkage*. What neither covers is **behaviour**: whether
    `NSURLSession` does what §10 requires is measured only by
    `darwinprobe` on a real macOS runner, which is limitation 1.
+7. **Two defects found after the release**, both corrected in the fetch
+   corrective on the CAP-15C branch and named in ledger 15C-29: the Linux
+   certificate-name gap of v0.2.0 (15C-1 - Windows and Darwin verified the
+   name all along) and the escaped NUL rewritten to `?` (15C-7).
 
 ## A NOTE ON THIS DOCUMENT'S SIZE
 
@@ -555,19 +588,22 @@ that nobody wrote a decision against reads as an ignored gate.
 ## VERDICT
 
 ```
-CAP-15B NOT READY
+CAP-15B PASS — NATIVE FETCH DOOR FROZEN
 ```
 
-Not because something is known to be wrong. Everything mechanised is green on
+It read NOT READY until the closure above, and not because something was
+known to be wrong. Everything mechanised is green on
 both reachable targets; the four measured defects CAP-15A found in its own
 transport are each answered by a named mechanism and a number (retry 1 hit;
 deadline 800 asked / 808–812 observed against 1609; bound 8454144 and 262144
 bytes against 32 MiB; proxy consulted by construction); and **the seven §10
 Darwin rows are measured**, on both architectures, with `darwin_failures = 0`.
 
-It is NOT READY for one reason, stated exactly: **hosted CI has not yet been
-green on the final HEAD.** The Darwin rows were taken on run 34463816748,
+It read NOT READY for one reason: **hosted CI had not yet been green on the
+final HEAD.** The Darwin rows were taken on run 34463816748,
 whose CAP-15B step then failed on a single row — a measurement bug, since
 fixed — so the rows and a green run have not yet appeared together, and the
 CAP-7F aggregate has still never run on a complete four-target set outside the
-local pre-flight. PASS needs one run that shows all three at once.
+local pre-flight. PASS needed one run that shows all three at once, and runs
+34480791403 and 34852822671 on `245ad80` are two - recorded at the top of this
+document, with the two defects found after the release and corrected since.

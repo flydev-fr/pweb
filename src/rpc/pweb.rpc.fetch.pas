@@ -809,6 +809,53 @@ begin
             ((Length(Lower) > 2) and (Copy(Lower, 1, 2) = 'x-'));
 end;
 
+// a NUL inside the arguments, RAW or ESCAPED (ledger 15C-7)
+// - MEASURED at CAP-15C: mORMot's JSON reader decodes an escaped NUL (a
+// backslash, a `u` and four zeros) as the byte `?`, so a URL, a header value
+// or a body carrying one reached the transport silently rewritten - a path
+// turned into a query, a value into a different value. A page's string is
+// carried exactly or refused, so it is refused, on the UNDECODED payload
+// - a RAW NUL is refused as well: it would end mORMot's walk of the buffer
+// - an escaped BACKSLASH followed by the letters u0000 is data and passes:
+// the walk steps over every escaped character as a unit
+// - the same walk as the socket door's HasEscapedNul, kept here because the
+// fetch decorator depends on no socket unit
+function HasEscapedNul(const Json: RawUtf8): Boolean;
+var
+  i, n: PtrInt;
+  inString: Boolean;
+begin
+  Result := False;
+  inString := False;
+  n := Length(Json);
+  i := 1;
+  while i <= n do
+  begin
+    if Json[i] = #0 then
+      exit(True);
+    if inString then
+    begin
+      if Json[i] = #92 then
+      begin
+        if (i + 5 <= n) and
+           (Json[i + 1] = 'u') and
+           (Json[i + 2] = '0') and
+           (Json[i + 3] = '0') and
+           (Json[i + 4] = '0') and
+           (Json[i + 5] = '0') then
+          exit(True);
+        Inc(i, 2); // the escaped character, whatever it is
+        continue;
+      end;
+      if Json[i] = '"' then
+        inString := False;
+    end
+    else if Json[i] = '"' then
+      inString := True;
+    Inc(i);
+  end;
+end;
+
 function HasControlByte(const S: RawUtf8): Boolean;
 var
   i: PtrInt;
@@ -1178,6 +1225,11 @@ begin
   // buffer: Args belongs to the invocation, not to this function
   payload := Args;
   UniqueRawUtf8(payload);
+  // a NUL, raw or escaped, is refused BEFORE the parser can rewrite it
+  // (ledger 15C-7) - and before a single argument is decoded
+  if HasEscapedNul(payload) then
+    exit(Refuse(Context, pecInvalidRequest,
+      'a NUL, raw or escaped, is refused rather than rewritten', 0));
   if not DecodeArgs(payload, decoded) then
     exit(Refuse(Context, pecInvalidRequest, 'malformed arguments', 0));
   if decoded.Unknown then

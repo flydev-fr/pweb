@@ -22,6 +22,14 @@
 //
 // Usage:
 //   node probe_server.js --port=<n> --log=<file> [--stdin-shutdown] [--ttl=<s>]
+//        [--tls-cert=<pem> --tls-key=<pem>] [--crl=<der file>]
+//
+// --tls-cert/--tls-key serve the SAME routes and the SAME log over TLS, for
+// the certificate-name pair only (ledger 15C-1): two witnesses whose
+// certificates one throwaway CA issued, one for 127.0.0.1 and one for another
+// host. --crl publishes that CA's revocation list at /ca.crl, because SChannel
+// checks revocation and a CA without one would fail the right-name CONTROL on
+// Windows for a reason that has nothing to do with the name.
 //
 // --stdin-shutdown is OPT-IN, and that is deliberate: a server that shut
 // down on a closed stdin by default would exit instantly under any runner
@@ -43,10 +51,12 @@
 //   GET  /setcookie          200 Set-Cookie: probe=1; Path=/
 //   GET  /headers            200, the allowlist-exercising response headers
 //   POST /sink               200, records the body length
+//   GET  /ca.crl             200 application/pkix-crl, the --crl file
 //   any  else                404
 'use strict';
 
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 
 function arg(name, fallback) {
@@ -56,6 +66,7 @@ function arg(name, fallback) {
 
 const port = parseInt(arg('port', '0'), 10);
 const logPath = arg('log', '');
+const crlPath = arg('crl', '');
 if (!Number.isInteger(port) || port <= 0 || port > 65535) {
   process.stderr.write('probe_server: --port=<1..65535> is required\n');
   process.exit(2);
@@ -89,7 +100,7 @@ function filler(n) {
   return Buffer.alloc(n, 0x61); // 'a'
 }
 
-const server = http.createServer((req, res) => {
+const handler = (req, res) => {
   const u = new URL(req.url, 'http://127.0.0.1');
   const path = u.pathname;
   const n = parseInt(u.searchParams.get('n') || '0', 10);
@@ -148,6 +159,15 @@ const server = http.createServer((req, res) => {
       pump();
       return;
     }
+    case '/ca.crl':
+      if (crlPath === '') {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('no');
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/pkix-crl' });
+      res.end(fs.readFileSync(crlPath));
+      return;
     case '/ready':
       res.writeHead(204);
       res.end();
@@ -195,7 +215,16 @@ const server = http.createServer((req, res) => {
       res.end('no');
       return;
   }
-});
+};
+
+// TLS is OPT-IN and changes nothing but the listener: the same handler, the
+// same routes, the same log, behind a certificate the gate issued
+const tlsCert = arg('tls-cert', '');
+const tlsKey = arg('tls-key', '');
+const server = tlsCert === ''
+  ? http.createServer(handler)
+  : https.createServer(
+      { cert: fs.readFileSync(tlsCert), key: fs.readFileSync(tlsKey) }, handler);
 
 server.on('clientError', (err, socket) => {
   try {

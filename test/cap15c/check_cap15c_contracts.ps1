@@ -528,9 +528,17 @@ if (-not $pm.Success) {
 }
 
 # --- K15: the freeze ----------------------------------------------------------------------
+#
+# RE-PINNED ONCE AFTER THE CAP-15C CLOSURE, with its reason (ledger 15C-29).
+# The fetch corrective - its own commit - moved exactly two of these units:
+# pweb.rpc.fetch.mormot.pas now assigns TNetTlsContext.HostNamesCsv (15C-1:
+# on Linux the zeroed context of v0.2.0 verified a certificate's chain and not
+# its name), and pweb.rpc.fetch.pas refuses a raw or escaped NUL before it
+# decodes (15C-7). Their CAP-15B closure pins were 24c7bfac... and eaddb32d...;
+# the other three units are the CAP-15B closure's bytes, unchanged.
 $frozen = [ordered]@{
-    'src/rpc/pweb.rpc.fetch.pas'                        = '24c7bfac26336544e24708a8d8c781180c4f4eddd0fb925471d6689d713be493'
-    'src/rpc/pweb.rpc.fetch.mormot.pas'                 = 'eaddb32dc5cec4a1be7ad8ef38cf99648f91c099157360a969d0a09ada8e72fe'
+    'src/rpc/pweb.rpc.fetch.pas'                        = '82aedb926a8a6a77633a6eb82aa3da74a285365602cd44101ce054960e4ec5fb'
+    'src/rpc/pweb.rpc.fetch.mormot.pas'                 = 'ec99cd5bce86921450a4089210935b2cc5d2d50b32818223be0801cced792fbc'
     'src/platform/macos/pweb.platform.cocoa.fetch.pas'  = '1fda306723431e1136db90b3d79f80e0b89d9c23d7110cf9331839be11a98143'
     'src/rpc/pweb.rpc.command.pas'                      = '2b279c63e97e1a09d9398f26b95b1f3abc51ca6ea62f4541391882553056b8cf'
     'src/security/pweb.navigation.policy.pas'           = 'cc90c0e7efe13d56ade5238d5c8eb17cbe7b463c7bd0c57dd26309f9b7070dbb'
