@@ -236,7 +236,7 @@ pattern), and `check_dev_trust` section 7.
 | `test/cap11a/collection-paths.json` records | - | +15 CAP-15C paths, same commit | CAP-15B's lesson |
 | CAP-10B1 React project inventory, held as literals in `test/cap10b2/run_cap10b2_gates.ps1` | `eabbc88d…`, 76 854 bytes, 16 files | `31244b06…`, 78 679 bytes, 16 files | the React template's `program.lpr` and `app.services.pas` grew inside `PWEB_NET`; measured identically in the Windows and Linux CAP-10B1 records |
 | `step-applicability.tsv` / `ci_sequence_digest` | 205 steps | 206 steps, measured on the CAP-15C hosted run | one step on four legs |
-| backlog census | 404 entries, 53 open | 425 entries, 59 open | ledger 15C-1..15C-21 |
+| backlog census | 404 entries, 53 open | 426 entries, 60 open | ledger 15C-1..15C-22 |
 
 ## REGRESSIONS
 
@@ -362,6 +362,25 @@ reading is confirmed by measurement.
 | macos-x64, 184, CAP-15C L1 | the first real run of the Darwin socket transport: open with `json.v2` selected, text, binary and 1 MiB echo (16 ms send), fragments reassembled, the server ping answered, server close 4001/`bye` as `remote`, the 3xx refused as a redirect, the 200 as a status, a missing subprotocol refused - then `EInvalidOp: Invalid floating point operation` raised inside a system framework, and no evidence written | `pweb.platform.cocoa.socket.pas` masks the FPU traps in its own initialization through the bridge's `pweb_cocoa_mask_fpu_traps`, as the WebView adapter does; K19 pins it (ledger 15C-21). A generated host links both adapters and was never exposed |
 | macos-x64, 184, `live_badproto` | `service_error:handshake_refused:upgrade` where Windows and Linux report `:subprotocol`: NSURLSession rejects a server-selected, unoffered subprotocol inside the handshake itself | recorded per target, not a failure: the door refuses either way |
 | macos-arm64, 183, CAP-15B L1 | a CAP-15B fetch row, not this door: `bound_chunked_bytes_seen = 9830400` against the 8 MiB bound, "the read overshot the bound by more than one delivery". The fetch units are frozen and byte-identical to `245ad80`, where this row passed on both hosted runs | recorded as an observation for the next run to re-measure; it is a CAP-15B row and CAP-15C does not touch it |
+
+## HOSTED RUN 34947294257 — THE FPU FIX HELD, AND IT UNCOVERED AN OWNERSHIP DEFECT
+
+Linux green again. The CAP-15B fetch read bound held on macos-arm64
+(`bound_chunked_bytes_seen = 8585216`, `response_bound_enforced_during_read =
+true`), so the previous run's overshoot did not reproduce.
+
+| leg / step | measured | disposition |
+|---|---|---|
+| macos-arm64, 184, CAP-15C L1 | no `EInvalidOp` any more - the FPU mask held - and the Darwin transport again opened, echoed text, binary and 1 MiB (9 ms send), reassembled fragments, answered the ping, surfaced 4001/`bye` and refused the redirect, the status and both subprotocol cases; then `EAccessViolation` inside a system library at the same point x64 had died | `PWebCocoaSocket` was the session's delegate AND owned the session, its task and its delegate queue, and released them in `dealloc` - which runs on the session's own delegate queue when invalidation drops the last reference, i.e. inside the session's teardown. The CAP-15B fetch half never does that. One `pweb_socket_teardown` now detaches and releases all three from the calling thread, for a refused open, a caught exception and release alike; K20 pins the shape and fired four ways on the old bridge (ledger 15C-22) |
+
+A first diagnosis blamed an unguarded `sink.closed` call. Reading the code
+refuted it - the close path already tested `stopping` under the object's
+lock - and the rule written for it was discarded because it could not fire on
+the code it was meant to catch. `socketlive` now prints each row that follows
+the refused handshakes before it runs, so a remaining crash names its row.
+macos-x64 and windows were still running when this was written; the push that
+carries the fix waits for them, because a push cancels an in-progress run on
+this branch.
 
 ## FREEZE
 

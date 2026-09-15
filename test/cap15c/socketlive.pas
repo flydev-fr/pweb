@@ -379,6 +379,15 @@ end;
 
 { ---------------- the rows ---------------- }
 
+procedure Step(const AName: RawUtf8);
+begin
+  // printed and flushed BEFORE the operation, so a process that dies inside
+  // one names the row it died in - on Darwin two hosted runs died in this
+  // stretch with no row to point at
+  WriteLn('[CAP-15C] step ', AName);
+  Flush(Output);
+end;
+
 procedure RowsInterop;
 var
   d: TPWebSocketBridge;
@@ -464,15 +473,18 @@ begin
   Row('live_notws', Verdict(Open(d, Ws('/notws?row=l_notws'))));
   Row('live_badproto', Verdict(Open(d, Ws('/badproto?row=l_badproto'), ',"protocols":["chat.v1"]')));
   Row('live_noproto', Verdict(Open(d, Ws('/noproto?row=l_noproto'), ',"protocols":["chat.v1"]')));
+  Step('l_redirect2');
   Require(Verdict(Open(d, Ws('/redirect?row=l_redirect2'))) =
     'service_error:handshake_refused:redirect', 'L7: a 3xx was not refused as a redirect');
 
   // L21 no cookie is kept
+  Step('l_setcookie');
   Open(d, Ws('/setcookie?row=l_setcookie'));
   r := Open(d, Ws('/echo?row=l_after_cookie'));
   CloseSock(d, IdOf(r));
 
   // L11 TLS validation cannot be turned off: a self-signed loopback chain
+  Step('l_tls');
   r := Invoke(d, PWEB_METHOD_SOCKET_OPEN, '{"url":"wss://127.0.0.1:' +
     RawUtf8(IntToStr(TlsPort)) + '/echo?row=l_tls"}');
   Row('live_tls_untrusted', Verdict(r));

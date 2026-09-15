@@ -47,6 +47,8 @@
 #       framework's enum - the one clang error class a non-Mac host can see
 #   K19 the Darwin socket adapter masks the FPU traps in its own initialization,
 #       because a program may link it without the WebView adapter
+#   K20 the socket delegate owns neither its session, its task nor its delegate
+#       queue - one teardown path invalidates and releases them
 #
 # Usage: pwsh test/cap15c/check_cap15c_contracts.ps1
 $ErrorActionPreference = 'Stop'
@@ -645,6 +647,47 @@ if (-not $init.Success) {
         'measured: EInvalidOp inside the framework on hosted macos-x64')
 }
 $report.Add('K19: the Darwin socket adapter masks the FPU traps in its own initialization')
+
+# --- K20: the socket delegate owns neither its session nor its delegate queue -----
+#
+# MEASURED on hosted run 34947294257: with the FPU traps masked, macos-arm64
+# died with `EAccessViolation` inside a system library at the same point
+# macos-x64 had died with `EInvalidOp` - a few milliseconds after a run of
+# REFUSED handshakes. `PWebCocoaSocket` was the session's delegate AND owned
+# the session, its task and its delegate queue, and its `dealloc` released all
+# three. After a refused open the session holds the last reference to its
+# delegate and drops it when invalidation completes, ON its own delegate
+# queue - so `dealloc` released the session and that queue from inside the
+# session's own teardown. The CAP-15B fetch half, measured green on Darwin,
+# never does that: its delegate owns nothing, and the calling thread
+# invalidates the session and releases the queue. The rule is that shape:
+# the socket's `dealloc` releases none of the three, and one teardown helper
+# releases them from the calling thread.
+$mmSock = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath 'src/platform/macos/pweb_cocoa_bridge.mm').Path) -replace "`r`n", "`n"
+$implAt = $mmSock.IndexOf('@implementation PWebCocoaSocket')
+if ($implAt -lt 0) {
+    Violation 'K20: the Cocoa bridge has no @implementation PWebCocoaSocket'
+} else {
+    $implText = $mmSock.Substring($implAt)
+    $dealloc = [regex]::Match($implText, '(?s)- \(void\)dealloc \{(.*?)\n\}')
+    if (-not $dealloc.Success) {
+        Violation 'K20: PWebCocoaSocket has no dealloc this rule can read'
+    } else {
+        foreach ($owned in 'session', 'queue', 'task') {
+            if ($dealloc.Groups[1].Value -match ('\[\s*' + $owned + '\s+release\s*\]')) {
+                Violation ("K20: PWebCocoaSocket's dealloc releases its $owned -- the session drops its " +
+                    'delegate on its own queue when invalidation completes, so this releases the session ' +
+                    'from inside its own teardown (measured: EAccessViolation on macos-arm64)')
+            }
+        }
+    }
+    $invalidates = [regex]::Matches($implText, 'invalidateAndCancel').Count
+    if (($implText -notmatch 'static void pweb_socket_teardown\(') -or ($invalidates -ne 1)) {
+        Violation ("K20: the socket section invalidates its session in $invalidates place(s), expected " +
+            'exactly one - inside pweb_socket_teardown - so every exit path releases the session the same way')
+    }
+}
+$report.Add('K20: the socket delegate releases no session, queue or task; one teardown path invalidates and releases them')
 
 # --- verdict ---------------------------------------------------------------------------------
 New-Item -ItemType Directory -Force build/cap15c | Out-Null

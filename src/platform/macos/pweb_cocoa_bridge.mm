@@ -2137,9 +2137,14 @@ static int64_t g_socket_max_message = 0;
 }
 
 - (void)dealloc {
-  [task release];
-  [session release];
-  [queue release];
+  /* THE SESSION, ITS TASK AND ITS DELEGATE QUEUE ARE NOT RELEASED HERE.
+     MEASURED on hosted run 34947294257: this object is the session's
+     delegate, the session drops that reference when invalidation completes,
+     and it does so ON the delegate queue - so a dealloc that released them
+     ran inside the session's own teardown (EAccessViolation on macos-arm64).
+     pweb_socket_teardown detaches and releases all three from the calling
+     thread, exactly as the fetch half's owner does; by the time this runs
+     they are already nil. */
   [selected release];
   if (rx != NULL) {
     dispatch_release(rx);
@@ -2341,6 +2346,35 @@ static int pweb_socket_offered(const char *protocols, NSString *chosen) {
   return 0;
 }
 
+/* THE ONE TEARDOWN PATH, used by a refused open, a caught exception and
+   release alike. It stops the object, DETACHES the session, its task and its
+   delegate queue under the object's lock - so a late callback that reads an
+   ivar messages nil rather than freed memory - and cancels, invalidates and
+   releases them here, on the calling thread. The session keeps itself and
+   its delegate alive until its outstanding callbacks are delivered; what it
+   must never meet is its delegate releasing it from inside that delivery,
+   which is what PWebCocoaSocket's dealloc used to do. It contains no block,
+   so it adds no compiler-generated helper to the object's exports. */
+static void pweb_socket_teardown(PWebCocoaSocket *s) {
+  NSURLSessionWebSocketTask *task = nil;
+  NSURLSession *session = nil;
+  NSOperationQueue *queue = nil;
+  @synchronized(s) {
+    s->stopping = 1;
+    task = s->task;
+    s->task = nil;
+    session = s->session;
+    s->session = nil;
+    queue = s->queue;
+    s->queue = nil;
+  }
+  [task cancel];
+  [session invalidateAndCancel];
+  [task release];
+  [session release];
+  [queue release];
+}
+
 int pweb_cocoa_socket_open(const pweb_cocoa_socket_request_t *request,
                            const pweb_cocoa_socket_sink_t *sink,
                            pweb_cocoa_cancel_fn cancel, void *cancel_opaque,
@@ -2451,11 +2485,7 @@ int pweb_cocoa_socket_open(const pweb_cocoa_socket_request_t *request,
         result = PWEB_COCOA_SOCKET_SUBPROTOCOL;
       }
       if (result != PWEB_COCOA_SOCKET_OK) {
-        @synchronized(s) {
-          s->stopping = 1;
-        }
-        [s->task cancel];
-        [s->session invalidateAndCancel];
+        pweb_socket_teardown(s);
         [s release];
         return result;
       }
@@ -2472,10 +2502,7 @@ int pweb_cocoa_socket_open(const pweb_cocoa_socket_request_t *request,
     } @catch (NSException *e) {
       (void)e;
       if (s != nil) {
-        @synchronized(s) {
-          s->stopping = 1;
-        }
-        [s->session invalidateAndCancel];
+        pweb_socket_teardown(s);
         [s release];
       }
       return PWEB_COCOA_SOCKET_CONNECT_FAILED;
@@ -2566,11 +2593,7 @@ void pweb_cocoa_socket_release(uint64_t handle) {
   }
   @autoreleasepool {
     @try {
-      @synchronized(s) {
-        s->stopping = 1;
-      }
-      [s->task cancel];
-      [s->session invalidateAndCancel];
+      pweb_socket_teardown(s);
       /* a room wait already on the receive queue observes `stopping` within
          one slice; waiting for the queue here is what lets the caller free
          the sink the moment this returns */
