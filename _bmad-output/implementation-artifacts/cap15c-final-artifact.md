@@ -1,17 +1,44 @@
 # CAP-15C — the native socket door, built
 
-CAP-15C NOT READY
+CAP-15C PASS — NATIVE SOCKET DOOR FROZEN
 
 Branch `phase/cap-15/c-native-socket-door`, from `245ad806abdb7c7a988a66f533ee97ae331a10ce`.
 Contract: `docs/cli-contract.md` §5, *The native socket door*. Checkpoint:
 `cap15c-checkpoint1.md` (PLAN READY, amended below). Spec:
 `spec-phase-15-cap15c-native-socket-door.md`.
 
-The verdict is NOT READY for the reasons the brief makes non-negotiable and
-nothing else: no hosted run has executed this branch, so the four-target
-contract rows, the seven Darwin rows and hosted CI green on the final HEAD are
-all still owed. Every row that can be measured on the two reachable targets
-was measured, and is recorded below as measured and where.
+**Closure record.** Hosted CI is GREEN on the final CAP-15C implementation
+commit `525231215d88f4d19ebdcb7580eae1b34c03736c`: run **34967337514**,
+attempt 2, all six jobs `success` - windows, linux, macos-x64, macos-arm64,
+macos release inventory, cap7 aggregate. Verified in substance rather than
+from the conclusion:
+
+- step 183 (CAP-15B) and step 184 (CAP-15C) RAN and passed on all four legs;
+- `live_failures = 0` and `live_client_close_code = 4000` on all four;
+  `darwin_socket_open_on_main_thread = 0` on both macOS legs; no
+  `wire records for` line and no `GATE FAILURE` on any leg, so the page's
+  4000/done and every native 1001 reached the witness;
+- `response_bound_enforced_during_read = true` on all four
+  (`bound_chunked_bytes_seen` 8519680 on both macOS legs, 8454144 on Windows
+  and Linux);
+- `[CAP-7F] aggregate PASS - platform-matrix.json written`, four targets
+  field by field; `capability_policy_digest` `23b87da5…` and
+  `navigation_policy_digest` `360d69f2…` equal on all four and unchanged;
+  CAP-11A four identical sequences of 206 steps, digest `b9e90409…`.
+
+Attempt 1 of the same run was red on one assertion group outside this shard:
+Windows CAP-10C0 R10, *Stop signal reaches application* -
+`obs_r10_signal_to_exit_ms = 7032` and `pweb` exit 5 after its 5000 ms grace,
+against 609-625 ms on the two runs before it and 625 / 875 ms on attempt 2.
+The commit changed nothing R10 compiles or runs on Windows, and the templates
+declare no `network` field, so the socket door is not in that application. The
+failed jobs were re-run, nothing was re-ratified, and it is recorded here as a
+one-off observation; the closure touches the artifact and the status only.
+
+The macOS dispositions still open in the ledger as "measured by the next macOS
+legs" - 15C-12, 15C-19 and 15C-21 through 15C-28 - are measured green by this run on
+both macOS legs; their rows are left to the ledger's own closure, not edited
+here.
 
 ---
 
@@ -177,10 +204,11 @@ program that names it (K10). Its seven rows - opens, redirects offered, proxy
 dictionary empty, cookie storage nil, should-set-cookies, open on main thread,
 maximum message size - are written by `socketlive` on macOS, required numeric
 by the aggregator, with the four configuration read-backs pinned; the other
-two targets say `not_applicable` by name. **Measured only in part: from hosted
-run 34941125057 on, the macOS legs open, echo, reassemble and refuse
-correctly, and neither has yet completed the live program - the hosted run
-sections below record each fault and its fix.**
+two targets say `not_applicable` by name. **Measured on both macOS legs of
+hosted run 34967337514: the live program complete with `live_failures = 0`,
+`darwin_socket_open_on_main_thread = 0`, the seven rows written and accepted by
+the aggregator - after the Darwin defects the hosted run sections below record,
+each with the source rule that now pins it (K18-K24).**
 
 ## SDKS
 
@@ -450,13 +478,18 @@ on Windows. CAP-12 not begun; door B not reopened.
    should be the next thing done.
 2. The fetch decorator accepts an escaped NUL that mORMot rewrites to `?`
    (15C-7); same owner.
-3. Darwin: nothing measured (15C-12).
+3. Darwin: measured green on both macOS legs of run 34967337514; the ledger
+   rows that waited for it (15C-12, 15C-19, 15C-21..15C-28) still read
+   `ROADMAP` until the ledger's own closure moves them.
 4. On Linux a trusted subframe document also closes the window's sockets
    (15C-8), the safe direction.
 5. The generation-switch row is witnessed by composition rather than by a
    `pweb dev` run holding a socket (15C-13).
 6. The CAP-15B final artifact still reads NOT READY (15C-14).
+7. Windows CAP-10C0 R10 stopped in 7032 ms once (attempt 1 of run
+   34967337514) against a 5000 ms grace, outside this shard and not
+   reproduced on attempt 2; recorded above, not diagnosed.
 
 ## VERDICT
 
-CAP-15C NOT READY
+CAP-15C PASS — NATIVE SOCKET DOOR FROZEN

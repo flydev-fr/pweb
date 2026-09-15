@@ -2,7 +2,7 @@
 title: 'CAP-15C — pweb.socket: the native WebSocket door'
 type: 'feature'
 created: '2026-09-14'
-status: 'in-review'
+status: 'done'
 baseline_commit: '245ad806abdb7c7a988a66f533ee97ae331a10ce'
 review_loop_iteration: 0
 context:
