@@ -432,3 +432,4 @@ RP-5	b4c32379	ACCEPTED	post-MVP mORMot repin	-	the ratification measurement itse
 15C-27	e4a8d258	ROADMAP	the CAP-15C hosted run	-	the Darwin rows run on a worker thread and the main-thread row is sticky; the next macOS legs measure it
 15C-28	e8dcdfbc	ROADMAP	the CAP-15C hosted run	-	fetchlive allows the Darwin delivery size darwinprobe already measures and allows; the next arm64 leg measures it
 15C-29	353d4e41	CLOSED	the CAP-15B fetch corrective	-	the fetch transport verifies the certificate name on Linux (C16, L2), Windows and Darwin are measured having verified it all along, and the decorator refuses an escaped NUL (C17); the exposure was Linux and v0.2.0 only
+15C-30	31a055b5	ROADMAP	the CAP-15B fetch corrective hosted run	-	every keychain command of the certificate-name pair is bounded and recorded; the next macOS legs say which cleanup command blocked and show the step ending

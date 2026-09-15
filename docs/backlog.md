@@ -1,16 +1,16 @@
 # The backlog
 
 `_bmad-output/implementation-artifacts/deferred-work.md` is append-only and
-carries **433 entries** from Phase 0 to CAP-15C. It is a
+carries **434 entries** from Phase 0 to CAP-15C. It is a
 ledger: it records what was found, in the words of the shard that found it,
 and it never edits itself. That makes it excellent evidence and a poor
 worklist — a reader who wants to know *what is still owed* has to resolve
 every supersession chain by hand, and three phase-closure artifacts answer
 that question for CAP-10 and CAP-11 only.
 
-This document is the worklist. Every one of the 433 entries is disposed of
-exactly once, with one verdict, an owner and a reason. **Sixty-three are open,**
-**and those sixty-three are listed here in full**; the other 370 are in
+This document is the worklist. Every one of the 434 entries is disposed of
+exactly once, with one verdict, an owner and a reason. **Sixty-four are open,**
+**and those sixty-four are listed here in full**; the other 370 are in
 `test/backlog/dispositions.tsv`, which is the table this document is written
 from and the one the gate reads.
 
@@ -18,7 +18,7 @@ from and the one the gate reads.
 |---|---:|---|
 | `FIX_NOW` | 4 | closed by this triage, one commit each, cited below |
 | `UPSTREAM` | 3 | the defect belongs to a third-party project and a report is written; two of the three also carry a local workaround, and `RP-2` deliberately does not |
-| `ROADMAP` | 56 | real work, deferred, with a named owner |
+| `ROADMAP` | 57 | real work, deferred, with a named owner |
 | `ACCEPTED` | 118 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
 | `CLOSED` | 252 | the thing the entry describes is done |
 
@@ -462,3 +462,4 @@ Fifty-seven rows: the four `FIX_NOW` items this triage closed, the three
 | `15C-26` | ROADMAP | the CAP-15C hosted run | a close the Darwin transport scheduled gets the mORMot release grace before teardown and K24 pins it; the witness on the next macOS legs says whether the frames arrive |
 | `15C-27` | ROADMAP | the CAP-15C hosted run | the Darwin rows run on a worker thread and the main-thread row is sticky; the next macOS legs measure it |
 | `15C-28` | ROADMAP | the CAP-15C hosted run | fetchlive allows the Darwin delivery size darwinprobe already measures and allows; the next arm64 leg measures it |
+| `15C-30` | ROADMAP | the CAP-15B fetch corrective hosted run | every keychain command of the certificate-name pair is bounded and recorded; the next macOS legs say which cleanup command blocked and show the step ending |

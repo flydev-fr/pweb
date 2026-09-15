@@ -184,6 +184,37 @@ if ((Test-Path $live) -and ($null -ne $node)) {
 # witness of its own - without it the control would fail on revocation, for a
 # reason that has nothing to do with the name.
 $nameRows = @('live_tls_trusted_right_name', 'live_tls_trusted_wrong_name')
+# A TRUST COMMAND NEVER HOLDS THE STEP. MEASURED on hosted run 35000616615:
+# both macOS legs measured the pair exactly as required and then sat in this
+# step until its 30-minute timeout, right after the pair's PASS line - and the
+# only commands after that line which Windows and Linux do not run are the
+# System-keychain cleanup, which ran unbounded with its output discarded
+# (ledger 15C-30). Every keychain command runs through this: a bound, a kill
+# on expiry where the runner user may kill it, and the outcome and the elapsed
+# milliseconds recorded as a row instead of assumed.
+function Invoke-BoundedCommand([string]$File, [string[]]$Arguments, [int]$TimeoutMs) {
+    $psi = [System.Diagnostics.ProcessStartInfo]::new($File)
+    foreach ($a in $Arguments) { $psi.ArgumentList.Add($a) }
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $p = [System.Diagnostics.Process]::Start($psi)
+    $p.StandardInput.Close()
+    $out = $p.StandardOutput.ReadToEndAsync()
+    $err = $p.StandardError.ReadToEndAsync()
+    if (-not $p.WaitForExit($TimeoutMs)) {
+        # a root-owned child may refuse the runner user's kill; the step moves
+        # on either way, and the row says what happened
+        try { $p.Kill($true) } catch { }
+        return [pscustomobject]@{ Outcome = 'timed_out'; Ms = $sw.ElapsedMilliseconds; Text = '' }
+    }
+    $p.WaitForExit()
+    $text = ("$($out.Result)" + "$($err.Result)").Trim()
+    $outcome = if ($p.ExitCode -eq 0) { 'ok' } else { "exit_$($p.ExitCode)" }
+    return [pscustomobject]@{ Outcome = $outcome; Ms = $sw.ElapsedMilliseconds; Text = $text }
+}
 $onCi = ($env:GITHUB_ACTIONS -eq 'true')
 $trust = if ($IsLinux) { 'ssl_cert_file' }
          elseif (-not $onCi) { 'not_run_outside_ci' }
@@ -322,9 +353,12 @@ default_crl_days = 2
                             Write-Host "[CAP-15B] the machine Root store refused the test CA: $($_.Exception.Message)"
                         } finally { $store.Close() }
                     } else {
-                        & sudo -n security add-trusted-cert -d -r trustRoot `
-                            -k /Library/Keychains/System.keychain "$tls/ca.pem" 2>&1 | Write-Host
-                        $installed = ($LASTEXITCODE -eq 0)
+                        $add = Invoke-BoundedCommand 'sudo' @('-n', 'security', 'add-trusted-cert',
+                            '-d', '-r', 'trustRoot', '-k', '/Library/Keychains/System.keychain',
+                            "$tls/ca.pem") 60000
+                        Row 'tls_name_trust_add' "$($add.Outcome):$($add.Ms)ms"
+                        if ($add.Text) { Write-Host "[CAP-15B] add-trusted-cert: $($add.Text)" }
+                        $installed = ($add.Outcome -eq 'ok')
                     }
                     Row 'tls_name_trust_installed' (Bool $installed)
                     Require $installed "L2: the throwaway CA could not be trusted through $trust"
@@ -372,8 +406,22 @@ default_crl_days = 2
                     try { $store.Open('ReadWrite'); $store.Remove($caCert) } catch { } finally { $store.Close() }
                 }
                 if ($trust -eq 'system_keychain' -and $installed) {
-                    & sudo -n security remove-trusted-cert -d "$tls/ca.pem" 2>&1 | Out-Null
-                    & sudo -n security delete-certificate -c $caName /Library/Keychains/System.keychain 2>&1 | Out-Null
+                    # BOUNDED (Invoke-BoundedCommand, ledger 15C-30). Each outcome
+                    # is a row and never a gate: the hosted runner is discarded
+                    # with the job, and a cleanup that could not finish is
+                    # recorded as exactly that, with how long it was given
+                    $rm = Invoke-BoundedCommand 'sudo' @('-n', 'security', 'remove-trusted-cert',
+                        '-d', "$tls/ca.pem") 20000
+                    Row 'tls_name_trust_remove' "$($rm.Outcome):$($rm.Ms)ms"
+                    $del = Invoke-BoundedCommand 'sudo' @('-n', 'security', 'delete-certificate',
+                        '-c', $caName, '/Library/Keychains/System.keychain') 20000
+                    Row 'tls_name_trust_delete' "$($del.Outcome):$($del.Ms)ms"
+                    foreach ($r in $rm, $del) {
+                        if ($r.Outcome -ne 'ok') {
+                            Write-Host ("[CAP-15B] NOTE: a keychain cleanup command ended " +
+                                "$($r.Outcome) after $($r.Ms) ms: $($r.Text)")
+                        }
+                    }
                 }
                 foreach ($w in $witnesses) {
                     if ($w -and -not $w.HasExited) {
