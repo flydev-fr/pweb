@@ -305,4 +305,33 @@ begin
   pweb_cocoa_socket_facts(@Result);
 end;
 
+
+{ THE FPU TRAPS, masked by the unit that decides to run NSURLSession's
+  WebSocket code in this process. MEASURED on macos-x64 of hosted run
+  34941125057: with the traps live, a program that linked this adapter and
+  not pweb.platform.cocoa died with `EInvalidOp: Invalid floating point
+  operation` raised inside a system framework, after the transport had
+  already opened, echoed and refused correctly. FPC leaves the FPU trapping
+  on exceptional results; Apple's frameworks compute through them legally.
+
+  pweb.platform.cocoa masks them in its initialization because linking that
+  unit IS the decision to host WebKit; linking THIS unit is the decision to
+  run the socket transport, so it calls the same bridge entry point -
+  fesetenv(FE_DFL_ENV), which knows the register on both x86_64 and aarch64 -
+  rather than relying on another unit having been linked. It is idempotent,
+  so a host that links both adapters masks twice and loses nothing. Never
+  math.SetExceptionMask, for the reason pweb.platform.cocoa records: math's
+  finalization restores the traps under units that finalise later.
+
+  Recorded rather than raised: a unit initialization that raises takes the
+  process down with a message nobody can attribute. }
+var
+  PWebCocoaSocketFpuMasked: Boolean = False;
+
+function pweb_cocoa_mask_fpu_traps: LongInt; cdecl;
+  external name 'pweb_cocoa_mask_fpu_traps';
+
+initialization
+  PWebCocoaSocketFpuMasked := pweb_cocoa_mask_fpu_traps = 0;
+
 end.

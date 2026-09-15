@@ -1,16 +1,16 @@
 # The backlog
 
 `_bmad-output/implementation-artifacts/deferred-work.md` is append-only and
-carries **424 entries** from Phase 0 to CAP-15C. It is a
+carries **425 entries** from Phase 0 to CAP-15C. It is a
 ledger: it records what was found, in the words of the shard that found it,
 and it never edits itself. That makes it excellent evidence and a poor
 worklist — a reader who wants to know *what is still owed* has to resolve
 every supersession chain by hand, and three phase-closure artifacts answer
 that question for CAP-10 and CAP-11 only.
 
-This document is the worklist. Every one of the 424 entries is disposed of
-exactly once, with one verdict, an owner and a reason. **Fifty-eight are open,**
-**and those fifty-eight are listed here in full**; the other 366 are in
+This document is the worklist. Every one of the 425 entries is disposed of
+exactly once, with one verdict, an owner and a reason. **Fifty-nine are open,**
+**and those fifty-nine are listed here in full**; the other 366 are in
 `test/backlog/dispositions.tsv`, which is the table this document is written
 from and the one the gate reads.
 
@@ -18,7 +18,7 @@ from and the one the gate reads.
 |---|---:|---|
 | `FIX_NOW` | 4 | closed by this triage, one commit each, cited below |
 | `UPSTREAM` | 3 | the defect belongs to a third-party project and a report is written; two of the three also carry a local workaround, and `RP-2` deliberately does not |
-| `ROADMAP` | 51 | real work, deferred, with a named owner |
+| `ROADMAP` | 52 | real work, deferred, with a named owner |
 | `ACCEPTED` | 118 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
 | `CLOSED` | 248 | the thing the entry describes is done |
 
@@ -457,3 +457,4 @@ Fifty-seven rows: the four `FIX_NOW` items this triage closed, the three
 | `15C-12` | ROADMAP | the CAP-15C hosted run | the Darwin socket transport is written, type-checked off a Mac and gated, and has not yet been measured on macOS |
 | `15C-14` | ROADMAP | the CAP-15B closure ritual | the CAP-15B final artifact still ends NOT READY although two hosted runs on 245ad80 were green, and the v0.2.0 tag run failed without investigation |
 | `15C-19` | ROADMAP | the CAP-15C hosted run | the export gate ignores only private-external text symbols and fails closed on an empty seam; whether nm -m names the block helpers private externals is measured by the next macOS legs |
+| `15C-21` | ROADMAP | the CAP-15C hosted run | the socket adapter masks the FPU traps in its own initialization and K19 pins it; the remaining Darwin rows are measured by the next macOS legs |

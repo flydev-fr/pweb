@@ -45,6 +45,8 @@
 #       run here, because no local chain runs an inline action
 #   K18 every Objective-C++ cancelWithCloseCode: argument is cast to the
 #       framework's enum - the one clang error class a non-Mac host can see
+#   K19 the Darwin socket adapter masks the FPU traps in its own initialization,
+#       because a program may link it without the WebView adapter
 #
 # Usage: pwsh test/cap15c/check_cap15c_contracts.ps1
 $ErrorActionPreference = 'Stop'
@@ -619,6 +621,30 @@ for ($i = 0; $i -lt $mmLines.Count; $i++) {
     }
 }
 $report.Add("K18: $closeSites cancelWithCloseCode: site(s) in the Cocoa bridge, each cast to NSURLSessionWebSocketCloseCode")
+
+# --- K19: the Darwin socket adapter masks the FPU traps itself ------------------
+#
+# MEASURED on macos-x64 of hosted run 34941125057: the Darwin socket transport
+# opened, echoed text, binary and 1 MiB, reassembled fragments and refused the
+# handshakes it must - and then `socketlive` died with `EInvalidOp: Invalid
+# floating point operation` raised inside a system framework. FPC leaves the
+# FPU trapping on exceptional results, and Apple's frameworks compute through
+# them legally. `pweb.platform.cocoa.pas` masks them in its initialization,
+# for the reason its comment gives - linking that unit IS the decision to host
+# WebKit in this process - but a program that links the socket adapter and not
+# the WebView adapter never ran that line. The same reasoning therefore applies
+# to the socket adapter: linking it IS the decision to run NSURLSession's
+# WebSocket code, so its own initialization calls the same bridge entry point.
+$cocoaSocket = StripComments (Read_ $darwin)
+$init = [regex]::Match($cocoaSocket, '(?s)\binitialization\b(.*?)\bend\.\s*$')
+if (-not $init.Success) {
+    Violation ("K19: $darwin has no initialization section -- a program that links the " +
+        'socket adapter without the WebView adapter runs NSURLSession with the FPU traps live')
+} elseif ($init.Groups[1].Value -notmatch '\bpweb_cocoa_mask_fpu_traps\b') {
+    Violation ("K19: $darwin does not call pweb_cocoa_mask_fpu_traps in its initialization -- " +
+        'measured: EInvalidOp inside the framework on hosted macos-x64')
+}
+$report.Add('K19: the Darwin socket adapter masks the FPU traps in its own initialization')
 
 # --- verdict ---------------------------------------------------------------------------------
 New-Item -ItemType Directory -Force build/cap15c | Out-Null

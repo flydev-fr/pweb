@@ -236,7 +236,7 @@ pattern), and `check_dev_trust` section 7.
 | `test/cap11a/collection-paths.json` records | - | +15 CAP-15C paths, same commit | CAP-15B's lesson |
 | CAP-10B1 React project inventory, held as literals in `test/cap10b2/run_cap10b2_gates.ps1` | `eabbc88d…`, 76 854 bytes, 16 files | `31244b06…`, 78 679 bytes, 16 files | the React template's `program.lpr` and `app.services.pas` grew inside `PWEB_NET`; measured identically in the Windows and Linux CAP-10B1 records |
 | `step-applicability.tsv` / `ci_sequence_digest` | 205 steps | 206 steps, measured on the CAP-15C hosted run | one step on four legs |
-| backlog census | 404 entries, 53 open | 424 entries, 58 open | ledger 15C-1..15C-20 |
+| backlog census | 404 entries, 53 open | 425 entries, 59 open | ledger 15C-1..15C-21 |
 
 ## REGRESSIONS
 
@@ -349,6 +349,19 @@ Neither is a product defect, and neither was fixed by loosening a claim.
 The QUEUE AND BACKPRESSURE figures above were measured at the three-second
 stall; the five-second stall only lengthens the window in which the block is
 observed.
+
+## HOSTED RUN 34941125057 — WINDOWS AND LINUX GREEN, THE FIRST DARWIN SOCKET
+
+Windows and Linux green end to end, CAP-15C included. The CAP-7M1 export
+gate PASSED on both macOS legs - `nm -m` does name the block helpers private
+externals, and the fail-closed branch read 34 seam entry points - so 15C-19's
+reading is confirmed by measurement.
+
+| leg / step | measured | disposition |
+|---|---|---|
+| macos-x64, 184, CAP-15C L1 | the first real run of the Darwin socket transport: open with `json.v2` selected, text, binary and 1 MiB echo (16 ms send), fragments reassembled, the server ping answered, server close 4001/`bye` as `remote`, the 3xx refused as a redirect, the 200 as a status, a missing subprotocol refused - then `EInvalidOp: Invalid floating point operation` raised inside a system framework, and no evidence written | `pweb.platform.cocoa.socket.pas` masks the FPU traps in its own initialization through the bridge's `pweb_cocoa_mask_fpu_traps`, as the WebView adapter does; K19 pins it (ledger 15C-21). A generated host links both adapters and was never exposed |
+| macos-x64, 184, `live_badproto` | `service_error:handshake_refused:upgrade` where Windows and Linux report `:subprotocol`: NSURLSession rejects a server-selected, unoffered subprotocol inside the handshake itself | recorded per target, not a failure: the door refuses either way |
+| macos-arm64, 183, CAP-15B L1 | a CAP-15B fetch row, not this door: `bound_chunked_bytes_seen = 9830400` against the 8 MiB bound, "the read overshot the bound by more than one delivery". The fetch units are frozen and byte-identical to `245ad80`, where this row passed on both hosted runs | recorded as an observation for the next run to re-measure; it is a CAP-15B row and CAP-15C does not touch it |
 
 ## FREEZE
 

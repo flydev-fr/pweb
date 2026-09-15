@@ -423,3 +423,4 @@ RP-5	b4c32379	ACCEPTED	post-MVP mORMot repin	-	the ratification measurement itse
 15C-18	ea138f54	CLOSED	CAP-15C	-	the three close codes are cast to the framework enum, and K18 refuses an uncast cancelWithCloseCode: in source on every host
 15C-19	d1510d4e	ROADMAP	the CAP-15C hosted run	-	the export gate ignores only private-external text symbols and fails closed on an empty seam; whether nm -m names the block helpers private externals is measured by the next macOS legs
 15C-20	1a9e0957	CLOSED	CAP-15C	-	the stall covers the measured buffer fill plus the required block; the requirement did not move and the local re-run blocked 5072 ms
+15C-21	36969104	ROADMAP	the CAP-15C hosted run	-	the socket adapter masks the FPU traps in its own initialization and K19 pins it; the remaining Darwin rows are measured by the next macOS legs
