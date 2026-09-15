@@ -238,7 +238,7 @@ pattern), and `check_dev_trust` section 7.
 | `test/cap11a/collection-paths.json` records | - | +15 CAP-15C paths, same commit | CAP-15B's lesson |
 | CAP-10B1 React project inventory, held as literals in `test/cap10b2/run_cap10b2_gates.ps1` | `eabbc88d…`, 76 854 bytes, 16 files | `31244b06…`, 78 679 bytes, 16 files | the React template's `program.lpr` and `app.services.pas` grew inside `PWEB_NET`; measured identically in the Windows and Linux CAP-10B1 records |
 | `step-applicability.tsv` / `ci_sequence_digest` | 205 steps | 206 steps, measured on the CAP-15C hosted run | one step on four legs |
-| backlog census | 404 entries, 53 open | 429 entries, 63 open | ledger 15C-1..15C-25 |
+| backlog census | 404 entries, 53 open | 432 entries, 66 open | ledger 15C-1..15C-28 |
 
 ## REGRESSIONS
 
@@ -409,6 +409,26 @@ with `live_failures = 0`, CAP-15B contracts, dev trust, divergence, and the
 backlog at 429 entries / 63 open. Nothing in the change reaches the Linux
 leg's compiled code: `socketlive`'s new block is `{$ifdef DARWIN}` and the
 gate runner's new function runs only on macOS after a failure.
+
+## HOSTED RUN 34958316754 — THE FIRST DARWIN SOCKET RUN TO REACH ITS END
+
+Windows and Linux green. **macos-x64 ran `socketlive` to its last row with no
+fault at all** - the K23 re-mask held (15C-25), and no crash report was
+written. Every client-side interop, bound, backpressure and lifecycle row
+passed on Darwin, including `live_bp_received = 1024` with no gap and the
+server blocked through the stall. What remained were three measured defects,
+none of them in the transport's decisions:
+
+| leg / step | measured | disposition |
+|---|---|---|
+| macos-x64, 184, CAP-15C L1 | `darwin_socket_open_on_main_thread = 1` - the only client-side failure | the harness, not the transport: every row ran on `socketlive`'s main thread. On Darwin the rows now run on a worker thread, as `darwinprobe` runs the fetch transport, and the bridge's row is sticky (ledger 15C-27) |
+| macos-x64, 184, CAP-15C L1 | the witness saw neither the page's 4000/done nor BeforeDrain's two 1001s, while the keeper's idle, revoke and navigation closes arrived | `cancelWithCloseCode:reason:` only schedules the frame, and the teardown cancelled the task at once when the decorator released right after closing. The Darwin release now gives a scheduled close the mORMot transport's `RELEASE_GRACE_MS` (300 ms), ended when the task settles; K24 pins the shape and the shared number and fired four ways first. The gate prints the witness's records for any close that still fails (ledger 15C-26) |
+| macos-arm64, 183, CAP-15B L1 | `bound_chunked_bytes_seen = 9699328`: an overshoot of 1310720 bytes, one NSURLSession delivery, against fetchlive's 1 MiB allowance - while `darwinprobe`, measuring the same transport, allows 4 MiB and saw 131072 | fetchlive now takes the allowance per transport, `darwinprobe`'s 4 MiB on Darwin; no frozen unit and no bound moves. Step 184 was skipped behind it, so the arm64 socket fix (15C-24) is still unmeasured (ledger 15C-28) |
+
+The local Windows chain carries the change: both builds with their Darwin
+type-checks (2 and 3 sources), CAP-15C contracts K1-K24, CAP-15C gates with
+`live_failures = 0`, CAP-15B gates with `bound_chunked_bytes_seen = 8454144`,
+CAP-15B contracts, dev trust, divergence, backlog 432 / 66.
 
 ## FREEZE
 

@@ -428,3 +428,6 @@ RP-5	b4c32379	ACCEPTED	post-MVP mORMot repin	-	the ratification measurement itse
 15C-23	12122b4e	ROADMAP	the CAP-15C hosted run	-	every socket entry point masks the calling thread's FPU traps and K21 pins it; whether the Darwin live rows now complete is measured by the next macOS legs
 15C-24	a7326403	ROADMAP	the CAP-15C hosted run	-	the task is only ever messaged through a copy retained under the lock and K22 pins it; the crash report the macOS gate now prints says whether the arm64 fault is gone
 15C-25	4437d895	ROADMAP	the CAP-15C hosted run	-	every sink call re-masks the FPU traps of the framework thread it ran on and K23 pins it; whether the x64 leg now completes is measured by the next macOS legs
+15C-26	d0311d60	ROADMAP	the CAP-15C hosted run	-	a close the Darwin transport scheduled gets the mORMot release grace before teardown and K24 pins it; the witness on the next macOS legs says whether the frames arrive
+15C-27	e4a8d258	ROADMAP	the CAP-15C hosted run	-	the Darwin rows run on a worker thread and the main-thread row is sticky; the next macOS legs measure it
+15C-28	e8dcdfbc	ROADMAP	the CAP-15C hosted run	-	fetchlive allows the Darwin delivery size darwinprobe already measures and allows; the next arm64 leg measures it

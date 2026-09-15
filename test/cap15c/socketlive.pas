@@ -866,6 +866,46 @@ begin
 end;
 {$endif DARWIN}
 
+procedure RunRows;
+begin
+  RowsInterop;
+  RowsBoundsAndDeadlines;
+  RowsBackpressure;
+  RowsLifecycle;
+  RowsPublic;
+  RowsTlsName;
+  {$ifdef DARWIN}
+  RowsDarwin;
+  {$endif DARWIN}
+end;
+
+{$ifdef DARWIN}
+// THE DOOR IS DRIVEN FROM A WORKER THREAD on Darwin, as a generated host's
+// scheduler drives it and as test/cap15b/darwinprobe.pas drives the fetch
+// transport. MEASURED on macos-x64 of hosted run 34958316754:
+// `darwin_socket_open_on_main_thread = 1`, because every row ran on the
+// program's main thread - which proves nothing about a host, and a Cocoa
+// main thread is exactly the thread a synchronous open must never hold.
+type
+  TRowsThread = class(TThread)
+  protected
+    procedure Execute; override;
+  end;
+
+procedure TRowsThread.Execute;
+begin
+  try
+    RunRows;
+  except
+    on E: Exception do
+    begin
+      WriteLn('[CAP-15C] FAIL: the rows raised ', E.ClassName, ': ', E.Message);
+      Inc(Failures);
+    end;
+  end;
+end;
+{$endif DARWIN}
+
 procedure ParseArgs;
 var
   i: Integer;
@@ -918,14 +958,15 @@ begin
     WriteLn(StdErr, 'socketlive: --port=<n> and --tls-port=<n> are required');
     Halt(2);
   end;
-  RowsInterop;
-  RowsBoundsAndDeadlines;
-  RowsBackpressure;
-  RowsLifecycle;
-  RowsPublic;
-  RowsTlsName;
   {$ifdef DARWIN}
-  RowsDarwin;
+  with TRowsThread.Create(False) do
+  try
+    WaitFor;
+  finally
+    Free;
+  end;
+  {$else}
+  RunRows;
   {$endif DARWIN}
   RowInt('live_failures', Failures);
   WriteOut;

@@ -2085,6 +2085,10 @@ int pweb_cocoa_fetch(const pweb_cocoa_fetch_request_t *request,
 
 #define PWEB_COCOA_SOCKET_SLICE_MS 20
 #define PWEB_COCOA_SOCKET_SETTLE_MS 2000
+/* THE RELEASE GRACE (ledger 15C-26): a close frame scheduled just before
+   release gets the mORMot transport's RELEASE_GRACE_MS to reach the wire,
+   ended early when the task settles. K24 pins it to the Pascal number. */
+#define PWEB_COCOA_SOCKET_RELEASE_GRACE_MS 300
 
 static int32_t g_socket_opens = 0;
 static int32_t g_socket_redirects = 0;
@@ -2108,10 +2112,14 @@ static int64_t g_socket_max_message = 0;
   int openOutcome;
   int stopping;
   int closeReported;
+  int closeSent;
+  int closeSettled;
+  dispatch_semaphore_t settleDone;
   NSString *selected;
 }
 - (void)armReceive;
 - (void)reportClosed:(int)cause code:(int)code reason:(NSString *)reason;
+- (void)settle;
 @end
 
 @implementation PWebCocoaSocket
@@ -2131,6 +2139,9 @@ static int64_t g_socket_max_message = 0;
     openOutcome = PWEB_COCOA_SOCKET_CONNECT_FAILED;
     stopping = 0;
     closeReported = 0;
+    closeSent = 0;
+    closeSettled = 0;
+    settleDone = dispatch_semaphore_create(0);
     selected = nil;
   }
   return self;
@@ -2152,7 +2163,22 @@ static int64_t g_socket_max_message = 0;
   if (openDone != NULL) {
     dispatch_release(openDone);
   }
+  if (settleDone != NULL) {
+    dispatch_release(settleDone);
+  }
   [super dealloc];
+}
+
+/* the task finished its close handshake, or its life: whatever close it had
+   scheduled has reached the wire or never will, so a release waiting out its
+   grace (ledger 15C-26) may go now. Signalled once. */
+- (void)settle {
+  @synchronized(self) {
+    if (!closeSettled) {
+      closeSettled = 1;
+      dispatch_semaphore_signal(settleDone);
+    }
+  }
 }
 
 /* every sink call happens under this object's lock and only while it is not
@@ -2303,6 +2329,7 @@ static int64_t g_socket_max_message = 0;
                                                encoding:NSUTF8StringEncoding]
                             autorelease];
   [self reportClosed:PWEB_COCOA_SOCKET_CAUSE_REMOTE code:(int)code reason:text];
+  [self settle];
 }
 
 /* THE REDIRECT REFUSAL: nil, counted, never followed */
@@ -2323,6 +2350,7 @@ static int64_t g_socket_max_message = 0;
                     task:(NSURLSessionTask *)t
     didCompleteWithError:(NSError *)error {
   (void)s;
+  [self settle];
   if (!opened) {
     if (openOutcome == PWEB_COCOA_SOCKET_CONNECT_FAILED) {
       NSURLResponse *response = [t response];
@@ -2432,7 +2460,11 @@ int pweb_cocoa_socket_open(const pweb_cocoa_socket_request_t *request,
     return PWEB_COCOA_SOCKET_CONNECT_FAILED;
   }
   g_socket_opens++;
-  g_socket_on_main = [NSThread isMainThread] ? 1 : 0;
+  /* STICKY: the row says whether ANY open ran on the main thread, not
+     whether the last one did */
+  if ([NSThread isMainThread]) {
+    g_socket_on_main = 1;
+  }
   @autoreleasepool {
     PWebCocoaSocket *s = nil;
     @try {
@@ -2595,6 +2627,9 @@ int pweb_cocoa_socket_send(uint64_t handle, int binary, const void *data,
         /* THE SEND DEADLINE IS WALL-CLOCK: past it the message may be half
            on the wire, so the connection is ended rather than trusted */
         if (pweb_fetch_now_ms() >= deadlineAt) {
+          @synchronized(s) {
+            s->closeSent = 1;
+          }
           [s->task cancelWithCloseCode:(NSURLSessionWebSocketCloseCode)1001 reason:nil];
           result = PWEB_COCOA_SOCKET_DEADLINE;
           break;
@@ -2624,6 +2659,10 @@ void pweb_cocoa_socket_close(uint64_t handle, int code, const char *reason) {
       if (reason != NULL && reason[0] != 0) {
         raw = [NSData dataWithBytes:reason length:strlen(reason)];
       }
+      /* SCHEDULED, NOT WRITTEN: release gives it the grace (ledger 15C-26) */
+      @synchronized(s) {
+        s->closeSent = 1;
+      }
       [s->task cancelWithCloseCode:(NSURLSessionWebSocketCloseCode)code
                             reason:raw];
     } @catch (NSException *e) {
@@ -2642,6 +2681,24 @@ void pweb_cocoa_socket_release(uint64_t handle) {
   }
   @autoreleasepool {
     @try {
+      /* THE RELEASE GRACE (ledger 15C-26). MEASURED on macos-x64 of hosted
+         run 34958316754: the page's 4000/done and BeforeDrain's 1001 never
+         reached the witness, because the decorator releases right after it
+         closes and the teardown cancelled the task while the close frame was
+         still only scheduled. A pending close gets the mORMot transport's
+         grace, ended the moment the task settles; a socket with no close
+         pending, or one already settled, waits for nothing. */
+      int pending = 0;
+      @synchronized(s) {
+        pending = s->closeSent && !s->closeSettled && s->task != nil;
+      }
+      if (pending) {
+        dispatch_semaphore_wait(
+            s->settleDone,
+            dispatch_time(DISPATCH_TIME_NOW,
+                          (int64_t)PWEB_COCOA_SOCKET_RELEASE_GRACE_MS *
+                              NSEC_PER_MSEC));
+      }
       pweb_socket_teardown(s);
       /* a room wait already on the receive queue observes `stopping` within
          one slice; waiting for the queue here is what lets the caller free

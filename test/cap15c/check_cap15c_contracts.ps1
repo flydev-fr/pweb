@@ -825,6 +825,57 @@ if ($sinkCalls -lt 3) {
 }
 $report.Add("K23: $sinkCalls sink call(s) in the Cocoa bridge, each followed by a re-mask of the FPU traps")
 
+# --- K24: a close frame sent just before release gets the release grace ---------------
+#
+# MEASURED on macos-x64 of hosted run 34958316754, the first Darwin run of
+# `socketlive` to reach its end: every client-side row passed, and the witness
+# saw neither the page's 4000/done nor the 1001 of the two sockets released by
+# BeforeDrain. `cancelWithCloseCode:reason:` only SCHEDULES the close frame;
+# the decorator calls Release straight after Close (ReleaseEntry), or as soon
+# as the page takes its close event (Receive), and `pweb_socket_teardown`
+# cancelled the task and invalidated its session at once - racing the frame
+# onto the wire. The mORMot transport gives a close queued just before release
+# RELEASE_GRACE_MS to reach the wire (`WsRelease`); the Darwin release now gives
+# the same grace, ended early by the task settling, and this rule pins both the
+# shape and that the two graces are one number.
+$mmK24 = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath 'src/platform/macos/pweb_cocoa_bridge.mm').Path) -replace "`r`n", "`n"
+$mormotK24 = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath 'src/rpc/pweb.rpc.socket.mormot.pas').Path)
+function Get-CBody([string]$Text, [string]$Name) {
+    $head = [regex]::Match($Text, '(?m)^(int|void)\s+' + [regex]::Escape($Name) + '\s*\([^)]*\)\s*\{')
+    if (-not $head.Success) { return $null }
+    $end = [regex]::Match($Text.Substring($head.Index), '(?m)^\}')
+    if (-not $end.Success) { return $null }
+    return $Text.Substring($head.Index, $end.Index + 1)
+}
+$graceMormot = [regex]::Match($mormotK24, 'RELEASE_GRACE_MS\s*=\s*(\d+)\s*;')
+$graceBridge = [regex]::Match($mmK24, '(?m)^#define\s+PWEB_COCOA_SOCKET_RELEASE_GRACE_MS\s+(\d+)\s*$')
+if (-not $graceMormot.Success) {
+    Violation 'K24: pweb.rpc.socket.mormot.pas no longer declares RELEASE_GRACE_MS'
+} elseif (-not $graceBridge.Success) {
+    Violation 'K24: the Cocoa bridge defines no PWEB_COCOA_SOCKET_RELEASE_GRACE_MS'
+} elseif ($graceBridge.Groups[1].Value -ne $graceMormot.Groups[1].Value) {
+    Violation "K24: the Darwin release grace is $($graceBridge.Groups[1].Value) ms and the mORMot one $($graceMormot.Groups[1].Value) ms"
+}
+$releaseBody = Get-CBody $mmK24 'pweb_cocoa_socket_release'
+if ($null -eq $releaseBody) {
+    Violation 'K24: the body of pweb_cocoa_socket_release could not be located'
+} else {
+    $teardownAt = $releaseBody.IndexOf('pweb_socket_teardown(')
+    $graceAt = $releaseBody.IndexOf('PWEB_COCOA_SOCKET_RELEASE_GRACE_MS')
+    if ($teardownAt -lt 0 -or $graceAt -lt 0 -or $graceAt -gt $teardownAt) {
+        Violation ('K24: pweb_cocoa_socket_release tears the task down without first giving a sent close ' +
+            'frame the release grace -- measured: 4000/done and 1001 never reached the witness on macos-x64')
+    }
+}
+$closeBody = Get-CBody $mmK24 'pweb_cocoa_socket_close'
+if ($null -eq $closeBody -or $closeBody -notmatch 'closeSent\s*=\s*1') {
+    Violation 'K24: pweb_cocoa_socket_close does not record that a close frame was scheduled'
+}
+if ($mmK24 -notmatch 'closeSettled\s*=\s*1') {
+    Violation 'K24: nothing in the Cocoa bridge records that a socket task settled, so the grace cannot end early'
+}
+$report.Add("K24: the Darwin release gives a scheduled close frame the mORMot transport's $($graceMormot.Groups[1].Value) ms grace before teardown")
+
 # --- verdict ---------------------------------------------------------------------------------
 New-Item -ItemType Directory -Force build/cap15c | Out-Null
 $lines = New-Object System.Collections.Generic.List[string]

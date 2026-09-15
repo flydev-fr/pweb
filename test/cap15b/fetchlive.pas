@@ -63,6 +63,21 @@ uses
   {$endif DARWIN}
   ;
 
+const
+  // ONE DELIVERY, per transport. "The bound plus one delivery" is only a
+  // bound once somebody says how large one delivery is, and on Darwin it is
+  // NSURLSession's to decide: test/cap15b/darwinprobe.pas measures it (rider
+  // 3) and allows 4 MiB. This program ran the same Darwin transport with the
+  // mORMot transport's 1 MiB and MEASURED, on macos-arm64, overshoots of
+  // 1441792 bytes and of 1310720 bytes (hosted run 34958316754) - one
+  // delivery each, larger than 1 MiB - while darwinprobe measured 131072 in
+  // the same run. The Darwin allowance is darwinprobe's, not a new number.
+  {$ifdef DARWIN}
+  ONE_DELIVERY_BYTES = 4 shl 20;
+  {$else}
+  ONE_DELIVERY_BYTES = 1 shl 20;
+  {$endif DARWIN}
+
 type
   TLiveToken = class(TInterfacedObject, ICancellationToken)
   public
@@ -281,11 +296,11 @@ begin
     'a 16 MiB chunked response was not refused at the bound');
   // THE ROW THAT MATTERS: the bound plus at most one delivery, never the
   // whole 16 MiB. The spike read 32 MiB whole before refusing
-  Require(resp.Bytes <= PWEB_FETCH_MAX_RESPONSE + (1 shl 20),
+  Require(resp.Bytes <= PWEB_FETCH_MAX_RESPONSE + ONE_DELIVERY_BYTES,
     'the read overshot the bound by more than one delivery');
   Row('response_bound_enforced_during_read',
     RawUtf8(BOOL_STR[(outcome = pfoTooLarge) and
-      (resp.Bytes <= PWEB_FETCH_MAX_RESPONSE + (1 shl 20))]));
+      (resp.Bytes <= PWEB_FETCH_MAX_RESPONSE + ONE_DELIVERY_BYTES)]));
   // (b) a DECLARED length over the bound. /bytes carries a real
   // Content-Length, so mORMot publishes it to the sink BEFORE the body loop
   // and the refusal costs ONE slice instead of sixteen megabytes

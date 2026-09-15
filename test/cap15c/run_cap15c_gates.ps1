@@ -274,9 +274,21 @@ $pong = First (Of 'l_ping') 'client_pong'
 Row 'wire_pong_payload' "$(if ($pong) { $pong.payload } else { 'none' })"
 Require ($pong -and $pong.payload -eq 'probe-1') 'L1: the server ping was not answered natively'
 
+# a wire check that fails prints what the witness DID record for its row, so
+# the reader of a hosted log sees the frames instead of inferring them
+function Show-Wire([string]$RowName) {
+    $items = @(Of $RowName)
+    Write-Host "[CAP-15C] wire records for ${RowName}: $($items.Count)"
+    foreach ($w in $items) {
+        if ($w.kind -eq 'upgrade') { Write-Host "    upgrade $($w.url)"; continue }
+        Write-Host "    $($w | ConvertTo-Json -Compress -Depth 4)"
+    }
+}
+
 # the page's close reached the wire with its code and reason
 $pc = First (Of 'l_handshake') 'client_close'
 Row 'wire_page_close' "$(if ($pc) { "$($pc.code)/$($pc.reason)" } else { 'none' })"
+if (-not ($pc -and $pc.code -eq 4000 -and $pc.reason -eq 'done')) { Show-Wire 'l_handshake' }
 Require ($pc -and $pc.code -eq 4000 -and $pc.reason -eq 'done') 'L1: the page close did not reach the wire as 4000/done'
 
 # BACKPRESSURE: reading stopped - the server's writes were blocked for most of
@@ -301,6 +313,7 @@ Require ($cf -and $cf.closed -eq $true -and $cf.total -lt 67108864) 'L1: a 64 Mi
 foreach ($n in 'l_idle', 'l_revoke', 'l_navigation', 'l_drain_a', 'l_drain_b') {
     $c = First (Of $n) 'client_close'
     Row "wire_${n}_close" "$(if ($c) { $c.code } else { 'none' })"
+    if (-not ($c -and $c.code -eq 1001)) { Show-Wire $n }
     Require ($c -and $c.code -eq 1001) "L1: $n did not close with 1001 on the wire"
 }
 Row 'idle_close_typed' (Bool ("$($rows['live_idle_category'])" -eq 'idle'))
