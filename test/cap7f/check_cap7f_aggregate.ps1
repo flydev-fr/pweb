@@ -627,7 +627,7 @@ $required = @(
     #     6.3.3). It is an OBSERVATION: WebView2 delivers bodies serially on
     #     the host GUI thread and WebKitGTK interleaves them, so the two
     #     numbers differ by design and a comparison would refuse the truth.
-    'blob_suite', 'blob_corpus_digest', 'blob_corpus_lines',
+    'blob_suite', 'blob_corpus_digest', 'blob_corpus_lines', 'blob_lifetime_rules',
     'blob_plane_available', 'blob_namespace', 'blob_url_prefix',
     'blob_whole_by_url', 'blob_csp_byte_identical', 'blob_range_206',
     'blob_range_declined_200', 'blob_range_416', 'blob_img',
@@ -1401,6 +1401,7 @@ $absolutePins = @{
     cap15c_failures                    = '0'
     # CAP-12B: the blob data plane, and every one of these is a claim four
     # targets could agree on while being wrong together.
+    blob_lifetime_rules                = 'true'
     blob_plane_available               = 'true'
     blob_namespace                     = '_pweb/blob'
     blob_url_prefix                    = 'pweb://app/_pweb/blob/'
@@ -1824,6 +1825,7 @@ $equalityFields = @(
     'blob_suite', 'blob_corpus_digest', 'blob_corpus_lines',
     'blob_namespace', 'blob_url_prefix', 'blob_url_prefix_sources',
     'blob_units_present', 'blob_csp_byte_identical', 'blob_release_order',
+    'blob_lifetime_rules',
     'blob_csp_violations', 'pack_refuses_pweb_prefix',
     'sdk_corpus', 'sdk_suite', 'sdk_digest', 'sdk_corpus_lines',
     'sdk_package_built', 'sdk_manifest_deterministic',

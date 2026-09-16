@@ -2339,6 +2339,7 @@ $evidence = [ordered]@{
     blob_suite                         = "$($c12b.blob_suite)"
     blob_corpus_digest                 = "$($c12b.blob_corpus_digest)"
     blob_corpus_lines                  = "$($c12b.blob_corpus_lines)"
+    blob_lifetime_rules                = "$($c12b.blob_lifetime_rules)"
     blob_plane_available               = "$($c12b.blob_plane_available)"
     blob_namespace                     = "$($c12b.blob_namespace)"
     blob_url_prefix                    = "$($c12b.blob_url_prefix)"

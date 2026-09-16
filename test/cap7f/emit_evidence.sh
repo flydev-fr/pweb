@@ -1801,7 +1801,7 @@ c12b_str() {
         "${c12b_file}" | head -n 1
 }
 for f in blob_suite blob_corpus_digest blob_corpus_lines \
-        blob_plane_available blob_namespace blob_url_prefix \
+        blob_lifetime_rules blob_plane_available blob_namespace blob_url_prefix \
         blob_whole_by_url blob_csp_byte_identical blob_range_206 \
         blob_range_declined_200 blob_range_416 blob_img \
         blob_body_bytes_256mib blob_upload_refused_typed \
@@ -2972,6 +2972,7 @@ cat > "${work}/evidence.json" <<EOF
   "blob_suite": "${blob_suite}",
   "blob_corpus_digest": "${blob_corpus_digest}",
   "blob_corpus_lines": "${blob_corpus_lines}",
+  "blob_lifetime_rules": "${blob_lifetime_rules}",
   "blob_plane_available": "${blob_plane_available}",
   "blob_namespace": "${blob_namespace}",
   "blob_url_prefix": "${blob_url_prefix}",

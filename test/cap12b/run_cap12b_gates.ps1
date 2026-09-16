@@ -82,6 +82,24 @@ if (Test-Path $suite) {
         $text = ([System.IO.File]::ReadAllText($corpus) -replace "`r`n", "`n")
         Row 'blob_corpus_digest' (Sha256Text $text)
         Row 'blob_corpus_lines' ((($text -split "`n") | Where-Object { $_ -ne '' }).Count)
+        # THE THREE LIFETIME RULES, NAMED. The digest above catches a corpus
+        # that DIVERGED between targets; it cannot catch one that changed
+        # everywhere at once, and "a blob survives a revocation" is exactly
+        # the kind of regression that would. So the three lines the CAP-12A
+        # contract owes are asserted by name as well.
+        $lifecycle = @('lifecycle.document_replaced=ok',
+                       'lifecycle.shutdown_order=ok',
+                       'lifecycle.revocation=ok')
+        $haveAll = $true
+        foreach ($l in $lifecycle) {
+            if (($text -split "`n") -notcontains $l) {
+                $haveAll = $false
+                Write-Host "  the decision corpus is missing: $l"
+            }
+        }
+        Require $haveAll ('S1: the corpus does not carry all three lifetime ' +
+            'verdicts - document replacement, the CAP-9 shutdown order and revocation')
+        Row 'blob_lifetime_rules' (Bool $haveAll)
     } else {
         Require $false 'S1: the suite wrote no decision corpus'
         Row 'blob_corpus_digest' ''
@@ -91,6 +109,7 @@ if (Test-Path $suite) {
     Row 'blob_suite' 'FAIL'
     Row 'blob_corpus_digest' ''
     Row 'blob_corpus_lines' '0'
+    Row 'blob_lifetime_rules' 'false'
 }
 
 # --- L1: the live harness -----------------------------------------------------
