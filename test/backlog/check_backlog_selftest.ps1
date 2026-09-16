@@ -1,5 +1,5 @@
-# THE BACKLOG GATE'S NEGATIVE SELF-TEST: nineteen perturbations, each of which
-# check_backlog.ps1 must refuse, and each of which is byte-restored afterwards.
+# THE BACKLOG GATE'S NEGATIVE SELF-TEST: twenty-three perturbations, each of
+# which check_backlog.ps1 must refuse, and each of which is byte-restored after.
 #
 # A gate that has only ever been seen to PASS has an unproven failure path, and
 # this repository has measured that class often enough to have a rule about it.
@@ -37,6 +37,9 @@ $targets = [ordered]@{
     c15ps   = 'test/cap15a/run_cap15a.ps1'
     policy  = 'src/security/pweb.navigation.policy.pas'
     ciwf    = '.github/workflows/ci.yml'
+    c12sh   = 'test/cap12a/run_cap12a.sh'
+    c12ps   = 'test/cap12a/run_cap12a.ps1'
+    assets  = 'src/assets/pweb.assets.intf.pas'
 }
 $backup = @{}
 foreach ($k in $targets.Keys) {
@@ -75,7 +78,7 @@ try {
         throw ('the gate does not pass on the unperturbed tree, so no leg below ' +
             'would mean anything; fix that first')
     }
-    Write-Host '[backlog] baseline PASS; nineteen perturbations follow'
+    Write-Host '[backlog] baseline PASS; twenty-three perturbations follow'
 
     # Rewrite one row of the disposition table, addressed by its key, so a leg
     # says what it changes rather than depending on a substring that could
@@ -239,6 +242,38 @@ try {
         [System.IO.File]::WriteAllText($p,
             $t.Replace("'connect-src ''self''; ", "'connect-src  ''self''; "))
     } 'the CAP-15A shim needle occurs'
+
+    # --- the four CAP-12A containment claims --------------------------------
+    # Same argument as the 15A legs above, on the section this shard added: a
+    # check that has only ever been seen to pass has an unproven failure path.
+    Leg 'CAP-12A undone: a workflow names the throwaway-store instrument' {
+        $p = Join-Path $repoRoot '.github/workflows/ci.yml'
+        $t = [System.IO.File]::ReadAllText($p)
+        [System.IO.File]::WriteAllText($p,
+            $t + "`n# pwsh test/cap" + "12a/run_cap12a.ps1`n")
+    } 'CAP-12A REGRESSED'
+
+    Leg 'CAP-12A undone: a shipped unit names the instrument' {
+        $p = Join-Path $repoRoot 'src/assets/pweb.assets.intf.pas'
+        $t = [System.IO.File]::ReadAllText($p)
+        [System.IO.File]::WriteAllText($p,
+            $t + "`n// see test/cap" + "12a for the measurements`n")
+    } 'CAP-12A REGRESSED'
+
+    Leg 'CAP-12A undone: the runner deletes bare again' {
+        $p = Join-Path $repoRoot 'test/cap12a/run_cap12a.sh'
+        $t = [System.IO.File]::ReadAllText($p)
+        [System.IO.File]::WriteAllText($p, $t.Replace(
+            'pweb_rm_tree "${unitdir}" "${repo_root}/build"',
+            ('rm -' + 'rf -- "${unitdir}"')))
+    } 'a bare recursive delete is in'
+
+    Leg 'CAP-12A undone: the Windows runner deletes without an allowed root' {
+        $p = Join-Path $repoRoot 'test/cap12a/run_cap12a.ps1'
+        $t = [System.IO.File]::ReadAllText($p)
+        [System.IO.File]::WriteAllText($p,
+            $t.Replace('refusing to delete outside', 'deleting anywhere'))
+    } 'no longer validates its delete target'
 }
 finally { Restore }
 

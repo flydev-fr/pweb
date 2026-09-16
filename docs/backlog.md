@@ -1,25 +1,25 @@
 # The backlog
 
 `_bmad-output/implementation-artifacts/deferred-work.md` is append-only and
-carries **434 entries** from Phase 0 to CAP-15C. It is a
+carries **439 entries** from Phase 0 to CAP-12A. It is a
 ledger: it records what was found, in the words of the shard that found it,
 and it never edits itself. That makes it excellent evidence and a poor
 worklist — a reader who wants to know *what is still owed* has to resolve
 every supersession chain by hand, and three phase-closure artifacts answer
 that question for CAP-10 and CAP-11 only.
 
-This document is the worklist. Every one of the 434 entries is disposed of
-exactly once, with one verdict, an owner and a reason. **Sixty-four are open,**
-**and those sixty-four are listed here in full**; the other 370 are in
+This document is the worklist. Every one of the 439 entries is disposed of
+exactly once, with one verdict, an owner and a reason. **Sixty-seven are open,**
+**and those sixty-seven are listed here in full**; the other 372 are in
 `test/backlog/dispositions.tsv`, which is the table this document is written
 from and the one the gate reads.
 
 | verdict | count | what it means |
 |---|---:|---|
 | `FIX_NOW` | 4 | closed by this triage, one commit each, cited below |
-| `UPSTREAM` | 3 | the defect belongs to a third-party project and a report is written; two of the three also carry a local workaround, and `RP-2` deliberately does not |
-| `ROADMAP` | 57 | real work, deferred, with a named owner |
-| `ACCEPTED` | 118 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
+| `UPSTREAM` | 4 | the defect belongs to a third-party project and a report is written or owed; three of the four also carry a local workaround, and `RP-2` deliberately does not |
+| `ROADMAP` | 59 | real work, deferred, with a named owner |
+| `ACCEPTED` | 120 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
 | `CLOSED` | 252 | the thing the entry describes is done |
 
 `ACCEPTED` is not a synonym for ignored. It is the verdict for an entry whose
@@ -305,6 +305,15 @@ measurement rather than by reading, and PWeb is exposed to neither: it declares
 its own correctly-typed externals. Each report is a standalone file with every
 PWeb-specific detail stripped, quoting only mORMot's own files.
 
+Two further `UPSTREAM` entries have no file here. `RP-2` is the `imvCurrency`
+result-register defect, whose report lives at
+[`docs/upstream/mormot-imvcurrency-rax-sysv-x64.md`](upstream/mormot-imvcurrency-rax-sysv-x64.md)
+and which is deliberately NOT worked around. `12A-1` is CAP-12A's WebKitGTK
+finding — `webkit_uri_scheme_request_get_http_body()` faults the UI process for
+a blob-backed request body — and its report is **owed rather than written**: it
+waits on a hosted Linux leg to pin the version range, which is CAP-12B entry
+condition 6.3.2.
+
 | entry | report | subject |
 |---|---|---|
 | `9A-3` | [`docs/upstream/mormot-quickjs-js-setmaxstacksize-signature.md`](upstream/mormot-quickjs-js-setmaxstacksize-signature.md) | `JS_SetMaxStackSize` is declared with `JSContext` where the shipped C takes `JSRuntime *`, so the binding writes the stack bound into an unrelated field of a live object — measured as an access violation under allocation pressure |
@@ -315,11 +324,24 @@ are written to be posted as they stand.
 
 ---
 
-## ROADMAP — 40 items, by owner
+## ROADMAP — 59 items, by owner
 
 The full reasons are in the table; this is the shape of what is owed.
 
-**CAP-12 owns eight.** The blob and `Range` plane brings the deferred macOS
+**CAP-12A has changed what two of the nine below will cost, and neither is
+closed yet — both stay `ROADMAP` until CAP-12B ships.** `7M1-5`, the deferred
+macOS chunked delivery, loses the reason it gave: the ratified plane is
+**Range-based rather than streaming-based**, a bounded ranged window *is* a
+whole body, and the synchronous `startURLSchemeTask:` handler may stay as it
+is, so CAP-12B closes the row without reopening the `WKURLSchemeTask` race
+surface. `9B1-6`, the carrier-side materialisation cap the frozen
+`IAssetStore` cannot express, is **routed around rather than fixed** — the blob
+plane does not go through `TryRead` — so it stays owed in full, for the module
+and manifest path it was actually found on. CAP-12A added one item of its own,
+`12A-4`. The reasoning is in
+`_bmad-output/implementation-artifacts/cap12a-decision-artifact.md`.
+
+**CAP-12 owns nine.** The blob and `Range` plane brings the deferred macOS
 delivery with it (`7M1-5`) and the carrier-side materialisation cap the frozen
 `IAssetStore` cannot express (`9B1-6`); the cross-target comparison the CAP-11A
 matrix now makes cheap finishes the ABI, fcntl and runtime facts no job compares
@@ -393,9 +415,9 @@ than appended to an append-only ledger:
 
 ## The open work, in full
 
-Fifty-seven rows: the four `FIX_NOW` items this triage closed, the three
-`UPSTREAM` reports, and the fifty on the roadmap. Everything else — 110
-`ACCEPTED` and 210 `CLOSED` — is in `test/backlog/dispositions.tsv`.
+Sixty-seven rows: the four `FIX_NOW` items this triage closed, the four
+`UPSTREAM` entries, and the fifty-nine on the roadmap. Everything else — 120
+`ACCEPTED` and 252 `CLOSED` — is in `test/backlog/dispositions.tsv`.
 
 | key | verdict | owner | reason |
 |---|---|---|---|
@@ -463,3 +485,6 @@ Fifty-seven rows: the four `FIX_NOW` items this triage closed, the three
 | `15C-27` | ROADMAP | the CAP-15C hosted run | the Darwin rows run on a worker thread and the main-thread row is sticky; the next macOS legs measure it |
 | `15C-28` | ROADMAP | the CAP-15C hosted run | fetchlive allows the Darwin delivery size darwinprobe already measures and allows; the next arm64 leg measures it |
 | `15C-30` | ROADMAP | the CAP-15B fetch corrective hosted run | every keychain command of the certificate-name pair is bounded and recorded; the next macOS legs say which cleanup command blocked and show the step ending |
+| `12A-1` | UPSTREAM | WebKitGTK, after CAP-12B pins the version range | `webkit_uri_scheme_request_get_http_body()` faults the UI process for a blob-backed request body on 2.52.6, with a same-size typed-array body unharmed; the gdb backtrace puts the fault three frames inside libwebkit2gtk with the caller doing nothing but the call |
+| `12A-4` | ROADMAP | CAP-12B, then a separate `app.pwb` decision | the frozen MIME table carries no audio or video type, so the asset plane cannot serve media with a correct type; the blob plane routes around it with `TBlobInfo.ContentType` and does not extend the table |
+| `12A-5` | ROADMAP | the shard that runs the macOS leg | four CAP-12A rows on WKWebView are derived rather than measured and `test/cap12a/cap12a_probe.mm` has never been compiled; it is CAP-12B entry condition 6.3.1 |

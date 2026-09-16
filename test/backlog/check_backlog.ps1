@@ -109,6 +109,11 @@ $shards = [ordered]@{
     'spec-phase-15-cap15a-network-door-ratification.md'    = '15A'
     'spec-phase-15-cap15b-native-fetch-door.md'            = '15B'
     'spec-phase-15-cap15c-native-socket-door.md'           = '15C'
+    # CAP-12A is a MEASUREMENT shard: it wrote no spec and changed no
+    # production file, so its entries are sourced to the decision artifact
+    # that carries the measurements. The key means the same thing here as
+    # everywhere else - the shard that found it.
+    'cap12a-decision-artifact.md'                          = '12A'
 }
 
 # THE CLOSED SET. `CLOSED` means the thing the entry describes is done;
@@ -555,6 +560,92 @@ else {
             "$policySrc, not once -- both runners die on that assertion, so " +
             'the "one run per macOS architecture" cost in reopening condition 1 ' +
             'has quietly become "repair the instrument first"')
+    }
+}
+
+# --- 5c. the CAP-12A containment claims, re-measured in the tree --------------
+# CAP-12A asserts three things about test/cap12a in its artifact and its
+# README, and the argument of section 5b applies unchanged: four documents
+# saying a thing and nothing enforcing it is the shape this repository refuses
+# everywhere else. All of these are text reads - nothing below runs, builds or
+# compiles anything, which is what lets them sit in this gate at all.
+$cap12aDir = 'test/cap12a'
+if (Test-Path -LiteralPath $cap12aDir) {
+    # (1) NEVER A CI STEP. A run of that instrument puts a THROWAWAY STORE
+    # behind the production pweb://app seam, and a gate that does that is a
+    # gate that can normalise it.
+    $ci12 = @()
+    if (Test-Path -LiteralPath '.github') {
+        foreach ($f in (Get-ChildItem -Path '.github' -Recurse -File -ErrorAction SilentlyContinue)) {
+            if ([System.IO.File]::ReadAllText($f.FullName) -match ('test/cap' + '12a')) {
+                $ci12 += $f.FullName.Substring($repoRoot.Length + 1).Replace('\', '/')
+            }
+        }
+    }
+    $facts['cap12a_named_in_ci'] = ($ci12 -join ',')
+    if ($ci12.Count -gt 0) {
+        Violation ('CAP-12A REGRESSED: ' + ($ci12 -join ', ') + ' names ' +
+            'test/cap12a -- a run of that instrument puts a throwaway store ' +
+            'behind the production pweb://app seam')
+    }
+
+    # (2) NOTHING SHIPPED REACHES IT. The spike is self-contained: no unit,
+    # tool, example or SDK file names it. `docs/` is deliberately excluded -
+    # the ledger row 12A-5 names the uncompiled macOS probe on purpose.
+    $prod12 = @()
+    foreach ($d in 'src', 'tools', 'examples', 'sdk') {
+        if (-not (Test-Path -LiteralPath $d)) { continue }
+        foreach ($f in (Get-ChildItem -Path $d -Recurse -File -ErrorAction SilentlyContinue)) {
+            if ([System.IO.File]::ReadAllText($f.FullName) -match ('cap' + '12a')) {
+                $prod12 += $f.FullName.Substring($repoRoot.Length + 1).Replace('\', '/')
+            }
+        }
+    }
+    $facts['cap12a_named_in_product'] = ($prod12 -join ',')
+    if ($prod12.Count -gt 0) {
+        Violation ('CAP-12A REGRESSED: ' + ($prod12 -join ', ') + ' names ' +
+            'cap12a -- the measurement instrument must stay out of everything ' +
+            'the product builds or ships')
+    }
+
+    # (3) The two POSIX runners delete through the guard, and the PowerShell
+    # runner validates its target against an allowed root and parses. Same
+    # claim, same shape and same reason as 15A-13 above; the needles are built
+    # by concatenation so this gate's own text cannot satisfy them.
+    $needle12 = '(^|[^\w])rm\s+-' + 'rf'
+    foreach ($sh in "$cap12aDir/run_cap12a.sh", "$cap12aDir/run_cap12a_macos.sh") {
+        if (-not (Test-Path -LiteralPath $sh)) { Violation "CAP-12A: $sh is missing"; continue }
+        $c12 = [System.IO.File]::ReadAllText($sh)
+        $bare12 = $false
+        foreach ($ln in ($c12 -split "`r?`n")) {
+            if ($ln -match '^\s*#') { continue }
+            if ($ln -match $needle12) { $bare12 = $true; break }
+        }
+        if ($bare12) {
+            Violation ("CAP-12A: a bare recursive delete is in $sh -- every " +
+                'removal goes through pweb' + 'rmtree.sh')
+        }
+        if ($c12 -notmatch 'pweb' + 'rmtree\.sh') {
+            Violation "CAP-12A: $sh does not source $rmGuard"
+        }
+    }
+    $ps12 = "$cap12aDir/run_cap12a.ps1"
+    if (-not (Test-Path -LiteralPath $ps12)) {
+        Violation "CAP-12A: $ps12 is missing"
+    }
+    else {
+        $c12ps = [System.IO.File]::ReadAllText($ps12)
+        if ($c12ps -notmatch 'refusing to delete outside') {
+            Violation ("CAP-12A: $ps12 no longer validates its delete target " +
+                'against an allowed root before removing it')
+        }
+        $errs12 = $null
+        $null = [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path -LiteralPath $ps12).Path, [ref]$null, [ref]$errs12)
+        $facts['cap12a_ps_parse_errors'] = $(if ($null -eq $errs12) { 0 } else { $errs12.Count })
+        if ($facts['cap12a_ps_parse_errors'] -gt 0) {
+            Violation ("CAP-12A: $ps12 does not parse -- " + $errs12[0].Message)
+        }
     }
 }
 
