@@ -159,6 +159,70 @@ static unsigned long pweb_apply_security_headers(NSMutableDictionary *headers,
   return applied;
 }
 
+/* CAP-12B: copy a C string into a fixed seam buffer, or leave it empty.
+ *
+ * TRUNCATION IS NEVER THE ANSWER on this seam. A method or a Range value that
+ * does not fit is carried as the EMPTY string, which the translator reads as
+ * "GET" and "no range" respectively - both of which are the safe reading. A
+ * truncated `Range` would be a DIFFERENT range, and a truncated method could
+ * turn a PUT into a P. */
+static void pweb_copy_bounded(char *dst, size_t cap, const char *src) {
+  if ((dst == NULL) || (cap == 0)) {
+    return;
+  }
+  dst[0] = '\0';
+  if (src == NULL) {
+    return;
+  }
+  const size_t n = strlen(src);
+  if (n + 1 > cap) {
+    return;
+  }
+  memcpy(dst, src, n + 1);
+}
+
+/* CAP-12B: read an NSInputStream request body into one NSData.
+ *
+ * NEVER TAKEN IN ANY MEASUREMENT this project has made: both macOS targets
+ * reported HTTPBodyStream nil for a typed-array body at 1, 16 and 256 MiB
+ * (hosted run 35085891349). It exists so that an engine that starts using the
+ * stream form turns into a bounded read rather than a body that silently
+ * arrives empty - which is what WKWebView does today for a Blob-backed body,
+ * and is the worse of the two failures because nothing reports it.
+ *
+ * The bound is twice the largest body measured crossing intact. Hitting it
+ * clears *complete, and the receipt Pascal composes says so. */
+static NSData *pweb_drain_body_stream(NSInputStream *stream, int32_t *complete) {
+  static const int64_t kMaxBody = (int64_t)512 * 1024 * 1024;
+  if (stream == nil) {
+    return nil;
+  }
+  NSMutableData *out = [NSMutableData data];
+  uint8_t buf[256 * 1024];
+  [stream open];
+  for (;;) {
+    const NSInteger n = [stream read:buf maxLength:sizeof(buf)];
+    if (n < 0) {
+      if (complete != NULL) {
+        *complete = 0;
+      }
+      break;
+    }
+    if (n == 0) {
+      break;
+    }
+    [out appendBytes:buf length:(NSUInteger)n];
+    if ((int64_t)[out length] >= kMaxBody) {
+      if (complete != NULL) {
+        *complete = 0;
+      }
+      break;
+    }
+  }
+  [stream close];
+  return out;
+}
+
 @interface PWebCocoaSchemeHandler : NSObject <WKURLSchemeHandler>
 /* Shared entry point: the WKURLSchemeHandler protocol method and the
    deterministic stub driver both funnel through these two. */
@@ -361,6 +425,14 @@ static PWebCocoaSchemeHandler *g_handler = nil;
      a Pascal-side constant today, but a header line that could displace
      Content-Type would be a sniffing hole reachable by editing one string, and
      an ordering that makes that impossible costs nothing. */
+  /* CAP-12B: whatever THIS ANSWER adds, before the two body facts below and
+     after the policy above. Only a blob answer ever adds anything, so an
+     asset response carries exactly the header set it always did. It reuses
+     pweb_apply_security_headers because the format is the same CRLF-separated
+     `Name: Value` block - one parser, one set of rules about a malformed
+     line - and its count is deliberately ignored: an extra header that did
+     not parse is a header a page does not get, never a response refused. */
+  (void)pweb_apply_security_headers(headers, asset->extra_headers);
   [headers setObject:mime forKey:@"Content-Type"];
   /* CAP-10C2: the engine must not answer a later request for this URL out of
      its own cache. The WebView2 adapter has sent this since CAP-4W; the two
@@ -374,9 +446,22 @@ static PWebCocoaSchemeHandler *g_handler = nil;
   [headers setObject:@"no-store" forKey:@"Cache-Control"];
   [headers setObject:[NSString stringWithFormat:@"%lld", (long long)[data length]]
               forKey:@"Content-Length"];
+  /* CAP-12B: the status Pascal decided. Zero or negative reads as 200, so a
+     path that fills nothing serves exactly what it used to - which is what
+     keeps the asset branch byte-identical without it having to say 200.
+     The reason phrase is carried too but NOT passed here:
+     -[NSHTTPURLResponse initWithURL:statusCode:HTTPVersion:headerFields:]
+     has no parameter for one and derives it from the code, so a phrase
+     given here would be a phrase nobody could read back. It rides in the
+     seam struct because the Windows and Linux adapters both need one, and
+     one field the three share is one fewer per-engine shape. */
+  int32_t status = asset->status;
+  if (status <= 0) {
+    status = 200;
+  }
   NSHTTPURLResponse *response =
       [[[NSHTTPURLResponse alloc] initWithURL:[[task request] URL]
-                                   statusCode:200
+                                   statusCode:(NSInteger)status
                                   HTTPVersion:@"HTTP/1.1"
                                  headerFields:headers] autorelease];
   /* THE DELIVERY IS ITS OWN @try, and that is the whole reason the claim and
@@ -428,7 +513,8 @@ static PWebCocoaSchemeHandler *g_handler = nil;
       /* THE URI IS THE WHOLE URI. No path accessor is ever consulted: a
          path-only view of pweb://evil/x reads as /x and would hand a
          wrong-authority request through as a legitimate asset. */
-      NSURL *url = [[task request] URL];
+      NSURLRequest *req = [task request];
+      NSURL *url = [req URL];
       NSString *absolute = (url != nil) ? [url absoluteString] : nil;
       const char *absolute_c =
           (absolute != nil) ? [absolute UTF8String] : NULL;
@@ -437,9 +523,56 @@ static PWebCocoaSchemeHandler *g_handler = nil;
         return;
       }
 
+      /* CAP-12B: the rest of the request, read ONCE and handed over with the
+         URL. Everything here is bounded and none of it decides anything -
+         the verdict is still entirely Pascal's. */
+      pweb_cocoa_request_t request;
+      memset(&request, 0, sizeof(request));
+      request.absolute_url = absolute_c;
+      request.body_complete = 1;
+      NSString *method = [req HTTPMethod];
+      if (method != nil) {
+        pweb_copy_bounded(request.method, sizeof(request.method),
+                          [method UTF8String]);
+      }
+      NSDictionary *fields = [req allHTTPHeaderFields];
+      if (fields != nil) {
+        id range = [fields objectForKey:@"Range"];
+        if ([range isKindOfClass:[NSString class]]) {
+          pweb_copy_bounded(request.range, sizeof(request.range),
+                            [(NSString *)range UTF8String]);
+        }
+      }
+      /* THE BODY IS NOT COPIED when the engine handed it over as an NSData,
+         which MEASURED is every case at 1, 16 and 256 MiB: `[body bytes]` is
+         one contiguous buffer and crosses as a pointer.
+
+         `bodyData` is held in this scope for as long as the resolve call
+         runs, which is what keeps that pointer valid - the pointer is never
+         stored anywhere and Pascal keeps nothing from it. */
+      NSData *bodyData = [req HTTPBody];
+      if (bodyData != nil) {
+        request.body = [bodyData bytes];
+        request.body_length = (int64_t)[bodyData length];
+      } else {
+        NSInputStream *bodyStream = [req HTTPBodyStream];
+        if (bodyStream != nil) {
+          /* THE PATH THE MEASUREMENT NEVER TOOK, written and bounded anyway.
+             Both macOS targets reported HTTPBodyStream nil for a typed-array
+             body at every size, so nothing in this project has ever executed
+             the lines below; they exist so that an engine change turns into a
+             bounded read rather than a body that silently arrives empty. */
+          bodyData = pweb_drain_body_stream(bodyStream, &request.body_complete);
+          if (bodyData != nil) {
+            request.body = [bodyData bytes];
+            request.body_length = (int64_t)[bodyData length];
+          }
+        }
+      }
+
       pweb_cocoa_asset_t asset;
       memset(&asset, 0, sizeof(asset));
-      const int verdict = resolve(handle, absolute_c, &asset);
+      const int verdict = resolve(handle, &request, &asset);
       if (verdict < 0) {
         /* the handle did not resolve: a released or never-claimed handler.
            No Pascal code ran, and none can. */

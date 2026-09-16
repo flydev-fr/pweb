@@ -107,6 +107,61 @@ extern "C" {
    and the CSP) is about 400 bytes. */
 #define PWEB_COCOA_SECURITY_HEADERS_MAX 1024
 
+/* CAP-12B. Four more fixed buffers, for exactly the reasons the two above
+   are fixed: no second cross-boundary allocation, no second ownership rule,
+   and anything that does not fit is a Pascal-side REFUSAL rather than a
+   truncation. */
+
+/* Longest reason phrase, INCLUDING the NUL. The set is closed and short:
+   "OK", "Partial Content", "Not Found", "Method Not Allowed",
+   "Range Not Satisfiable". */
+#define PWEB_COCOA_REASON_MAX 64
+
+/* Longest block of response headers a particular ANSWER adds on top of the
+   native policy, INCLUDING the NUL. Only a blob answer ever adds any:
+   Accept-Ranges, Content-Range and Allow, about 60 bytes at their longest. */
+#define PWEB_COCOA_EXTRA_HEADERS_MAX 512
+
+/* Longest request method, INCLUDING the NUL. */
+#define PWEB_COCOA_METHOD_MAX 32
+
+/* Longest Range header value carried across, INCLUDING the NUL. A value
+   longer than this is not a range, so it is carried as the empty string and
+   the answer is the whole resource - which is what an unreadable Range
+   means anyway. */
+#define PWEB_COCOA_RANGE_MAX 256
+
+/* CAP-12B: what the bridge read off ONE request, handed to Pascal.
+
+   It exists because the blob branch needs three things the asset branch
+   never did - the method, the `Range` header and the request body - and
+   because the alternative was three more callbacks out of the seam.
+
+   MEASURED on both macOS targets, hosted run 35085891349: `Range` arrives
+   through -[NSURLRequest allHTTPHeaderFields] on every ranged request
+   (36 of them), and a typed-array request body arrives as HTTPBody - an
+   NSData - at 1, 16 AND 256 MiB, byte-exact and pattern-verified, with
+   HTTPBodyStream nil in every one of those cases.
+
+   body/body_length: the request body, NOT COPIED when the engine handed it
+            over as an NSData - `[body bytes]` is already one contiguous
+            buffer, so a 256 MiB upload crosses this seam as a pointer. The
+            pointer is valid only for the duration of the resolve call, and
+            Pascal keeps nothing from it: CAP-12B counts and checksums the
+            bytes and then refuses the upload by name, because the SDK
+            upload API is CAP-12C's.
+   body_complete: 0 when the bridge could not read the body to its end -
+            over the bound, or a stream that failed. NEVER a silent short
+            read: the receipt Pascal composes carries this flag. */
+typedef struct pweb_cocoa_request {
+  const char *absolute_url;
+  char method[PWEB_COCOA_METHOD_MAX];
+  char range[PWEB_COCOA_RANGE_MAX];
+  const void *body;
+  int64_t body_length;
+  int32_t body_complete;
+} pweb_cocoa_request_t;
+
 /* One resolved asset, handed from Pascal to the bridge.
 
    bytes  : a pweb_cocoa_alloc() block the BRIDGE owns once resolve returns
@@ -126,12 +181,27 @@ extern "C" {
             response headers ask, and it would drift the first time one of the
             three was edited. MEASURED (M3): the header fields of this
             NSHTTPURLResponse ARE enforced on pweb://app, and a weaker bundle
-            <meta> policy cannot relax a single row of them. */
+            <meta> policy cannot relax a single row of them.
+
+   CAP-12B adds the three fields an answer other than "200 OK" needs.
+   status : the HTTP status. 0 or negative is read as 200, so a Pascal
+            path that fills nothing still serves exactly what it used to.
+            The asset branch sets 200; the blob branch sets 200, 206, 404,
+            405 or 416.
+   reason : the reason phrase, NUL-terminated. Empty is read as "OK".
+   extra_headers: CRLF-separated `Name: Value` lines this ANSWER adds -
+            Accept-Ranges, Content-Range, Allow - or empty. They are applied
+            AFTER the native policy and BEFORE Content-Type, Cache-Control
+            and Content-Length, so the two facts about the body still win
+            and no extra line can ever displace the Content-Type. */
 typedef struct pweb_cocoa_asset {
   void *bytes;
   int64_t length;
   char content_type[PWEB_COCOA_CONTENT_TYPE_MAX];
   char security_headers[PWEB_COCOA_SECURITY_HEADERS_MAX];
+  int32_t status;
+  char reason[PWEB_COCOA_REASON_MAX];
+  char extra_headers[PWEB_COCOA_EXTRA_HEADERS_MAX];
 } pweb_cocoa_asset_t;
 
 /* Counters the Pascal gates assert on. Every field is monotonic within a
@@ -163,8 +233,13 @@ typedef struct pweb_cocoa_stats {
 /* The ONE callback out of the bridge.
 
    handle       : the generation-checked Pascal handle, or 0 when disowned.
-   absolute_url : [[task request] URL] absoluteString - the WHOLE absolute
-                  URL, never a path accessor and never a rebuilt string.
+   request      : what the bridge read off this request. `absolute_url` is
+                  [[task request] URL] absoluteString - the WHOLE absolute
+                  URL, never a path accessor and never a rebuilt string -
+                  and it stays the field every verdict is rendered from.
+                  CAP-12B added the rest of the struct; the callback is
+                  still ONE call and there is still no second callback out
+                  of the seam.
    asset        : filled by Pascal on success.
 
    Returns:
@@ -178,7 +253,8 @@ typedef struct pweb_cocoa_stats {
    MUST NOT raise, MUST NOT block, and MUST leave *asset zeroed for every
    outcome other than 1 - including the ones it reaches by way of its own
    internal failure. */
-typedef int (*pweb_cocoa_resolve_fn)(uint64_t handle, const char *absolute_url,
+typedef int (*pweb_cocoa_resolve_fn)(uint64_t handle,
+                                     const pweb_cocoa_request_t *request,
                                      pweb_cocoa_asset_t *asset);
 
 /* Allocate / release a response body. Pairing the allocator with the

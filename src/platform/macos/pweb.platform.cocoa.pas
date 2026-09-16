@@ -147,6 +147,11 @@ uses
   pweb.lib.webview.types,
   pweb.assets.intf,
   pweb.assets.support,
+  // CAP-12B: the reserved-prefix branch. This adapter knows NEITHER the
+  // blob URL grammar nor the store's - it hands a logical path, a method
+  // and a Range header to the translator and writes back what it says.
+  pweb.blobs.intf,
+  pweb.blobs.protocol,
   // CAP-8B: the ONE navigation classifier and the ONE native security policy.
   // This adapter renders no verdict of its own; it translates events into
   // TPWebNavRequest and translates the answer back, exactly as its Windows and
@@ -165,6 +170,20 @@ const
   // truncated Content-Security-Policy is a DIFFERENT policy, silently weaker
   // than the one that was ratified
   PWEB_COCOA_SECURITY_HEADERS_MAX = 1024;
+
+  { CAP-12B: four more fixed seam buffers, each of which must equal its
+    #define in pweb_cocoa_bridge.h. Anything that does not fit is a
+    REFUSAL or an empty field, never a truncation - a truncated Range is
+    a DIFFERENT range and a truncated method could turn a PUT into a P. }
+
+  /// longest reason phrase the seam carries, INCLUDING the NUL
+  PWEB_COCOA_REASON_MAX = 64;
+  /// longest per-answer extra header block, INCLUDING the NUL
+  PWEB_COCOA_EXTRA_HEADERS_MAX = 512;
+  /// longest request method, INCLUDING the NUL
+  PWEB_COCOA_METHOD_MAX = 32;
+  /// longest Range header value, INCLUDING the NUL
+  PWEB_COCOA_RANGE_MAX = 256;
 
   /// entries in the diagnostic navigation-decision ring
   PWEB_COCOA_NAV_OBSERVED_RING = 256;
@@ -211,6 +230,25 @@ type
     pcrForeign
   );
 
+  /// pweb_cocoa_request_t - what the bridge read off ONE request
+  // - CAP-12B. The blob branch needs the method, the `Range` header and the
+  // request body; the alternative was three more callbacks out of the seam,
+  // and the seam's whole discipline is that there is ONE
+  // - MEASURED on both macOS targets (hosted run 35085879887 family): Range
+  // arrives through allHTTPHeaderFields, and a typed-array body arrives as
+  // HTTPBody - one contiguous NSData - at 1, 16 and 256 MiB, so Body below
+  // is a POINTER INTO THE ENGINE'S BUFFER and not a copy. It is valid only
+  // for the duration of the resolve call and nothing keeps it
+  PPWebCocoaRequest = ^TPWebCocoaRequest;
+  TPWebCocoaRequest = record
+    AbsoluteUrl: PAnsiChar;
+    Method: array[0 .. PWEB_COCOA_METHOD_MAX - 1] of AnsiChar;
+    Range: array[0 .. PWEB_COCOA_RANGE_MAX - 1] of AnsiChar;
+    Body: Pointer;
+    BodyLength: Int64;
+    BodyComplete: LongInt;
+  end;
+
   /// pweb_cocoa_asset_t
   PPWebCocoaAsset = ^TPWebCocoaAsset;
   TPWebCocoaAsset = record
@@ -222,6 +260,13 @@ type
     // PWEB_NATIVE_CSP keeps exactly one home; the bridge refuses to serve an
     // asset whose block is empty.
     SecurityHeaders: array[0 .. PWEB_COCOA_SECURITY_HEADERS_MAX - 1] of AnsiChar;
+    // CAP-12B: the three fields an answer other than "200 OK" needs. Status
+    // 0 reads as 200 on the bridge side, so the asset branch is unchanged
+    // whether it fills them or not - and it does fill them, so that one
+    // reader of this record never has to know which branch wrote it.
+    Status: LongInt;
+    Reason: array[0 .. PWEB_COCOA_REASON_MAX - 1] of AnsiChar;
+    ExtraHeaders: array[0 .. PWEB_COCOA_EXTRA_HEADERS_MAX - 1] of AnsiChar;
   end;
 
   /// pweb_cocoa_stats_t
@@ -304,7 +349,7 @@ type
   /// pweb_cocoa_resolve_fn
   // - 1 serve, 0 refuse, -1 the handle did not resolve
   TPWebCocoaResolveFn = function(AHandle: TPWebCocoaHandle;
-    AUrl: PAnsiChar; AAsset: PPWebCocoaAsset): LongInt; cdecl;
+    ARequest: PPWebCocoaRequest; AAsset: PPWebCocoaAsset): LongInt; cdecl;
 
   /// pweb_cocoa_nav_fn
   // - 1 allow, 0 cancel, -1 the handle did not resolve
@@ -339,7 +384,13 @@ type
     fReadback: TPWebCocoaReadback; // what Attach saw on THIS view
     fAttached: Boolean;
   public
-    constructor Create(const AStore: IAssetStore);
+    constructor Create(const AStore: IAssetStore); overload;
+    /// CAP-12B: the same handler with the blob data plane behind it
+    // - the blob store is optional and the RESERVATION is not: a handler
+    // built without one still answers `_pweb/` from the reserved branch,
+    // so no asset store can be consulted under that prefix either way
+    constructor Create(const AStore: IAssetStore; const ABlobs: IBlobStore;
+      const AOwner: RawUtf8); overload;
     destructor Destroy; override;
     /// prove the pre-create seam RAN for this webview, or raise
     procedure Attach(AWebView: webview_t);
@@ -704,6 +755,12 @@ type
   TPWebCocoaSlot = record
     Handler: TCocoaAssetHandler; // nil when free
     Store: IAssetStore;          // held so the callback never touches Handler
+    // CAP-12B: the blob plane and the principal it belongs to, held in the
+    // slot for exactly the reason the asset store is - the resolve callback
+    // must never dereference the handler object, which may be being torn
+    // down on another thread
+    Blobs: IBlobStore;
+    Owner: RawUtf8;
     Generation: QWord;           // bumped on BOTH claim and release
   end;
 
@@ -845,7 +902,8 @@ end;
 { ---- the generation-checked handle registry ---- }
 
 function PWebCocoaClaimSlot(AHandler: TCocoaAssetHandler;
-  const AStore: IAssetStore): TPWebCocoaHandle;
+  const AStore: IAssetStore; const ABlobs: IBlobStore;
+  const AOwner: RawUtf8): TPWebCocoaHandle;
 var
   i: PtrInt;
 begin
@@ -861,6 +919,8 @@ begin
         PWebCocoaRegistry[i].Generation := PWebCocoaNextGeneration;
         PWebCocoaRegistry[i].Handler := AHandler;
         PWebCocoaRegistry[i].Store := AStore;
+        PWebCocoaRegistry[i].Blobs := ABlobs;
+        PWebCocoaRegistry[i].Owner := AOwner;
         Result := (PWebCocoaNextGeneration shl PWEB_COCOA_SLOT_BITS) or
                   QWord(i + 1);
         exit;
@@ -903,6 +963,38 @@ begin
     PWebCocoaRegistry[slot].Generation := PWebCocoaNextGeneration;
     PWebCocoaRegistry[slot].Handler := nil;
     PWebCocoaRegistry[slot].Store := nil;
+    PWebCocoaRegistry[slot].Blobs := nil;
+    PWebCocoaRegistry[slot].Owner := '';
+  finally
+    LeaveCriticalSection(PWebCocoaLock);
+  end;
+end;
+
+// CAP-12B: the whole plane behind a handle, in ONE lock acquisition.
+// - the asset store, the blob store and the principal are three facts about
+// the same slot, and reading them in three trips would let a Detach land
+// between two of them: the callback would then serve an asset store that is
+// going away against an owner that is already gone
+// - the interface references are taken under the lock and keep both stores
+// alive for the duration of the call even if the handler is detached
+function PWebCocoaPlaneOf(AHandle: TPWebCocoaHandle; out AStore: IAssetStore;
+  out ABlobs: IBlobStore; out AOwner: RawUtf8): Boolean;
+var
+  slot: PtrInt;
+begin
+  Result := False;
+  AStore := nil;
+  ABlobs := nil;
+  AOwner := '';
+  EnterCriticalSection(PWebCocoaLock);
+  try
+    slot := PWebCocoaSlotOfLocked(AHandle);
+    if slot < 0 then
+      exit;
+    AStore := PWebCocoaRegistry[slot].Store;
+    ABlobs := PWebCocoaRegistry[slot].Blobs;
+    AOwner := PWebCocoaRegistry[slot].Owner;
+    Result := True;
   finally
     LeaveCriticalSection(PWebCocoaLock);
   end;
@@ -1360,43 +1452,112 @@ begin
     Result := -1; // longer than anything canonical can be: refuse
 end;
 
+// CAP-12B: copy a bounded seam field out into a Pascal string. The field is
+// NUL-terminated by the bridge and the scan is bounded by the buffer, so a
+// field the bridge failed to terminate reads as its whole capacity rather
+// than walking off the struct.
+function PWebCocoaField(P: PAnsiChar; ACapacity: PtrInt): RawUtf8;
+var
+  n: PtrInt;
+begin
+  Result := '';
+  if (P = nil) or
+     (ACapacity <= 0) then
+    exit;
+  n := 0;
+  while (n < ACapacity) and
+        (P[n] <> #0) do
+    Inc(n);
+  if n > 0 then
+    FastSetString(Result, P, n);
+end;
+
+// CAP-12B: write a bounded seam field, or leave it empty.
+// - TRUNCATION IS NEVER THE ANSWER: a reason phrase or a header block that
+// does not fit is carried as the empty string, which the bridge reads as
+// "OK" and "no extra headers" - both safe readings - rather than as a
+// different phrase or a half-written header
+function PWebCocoaSetField(Dest: PAnsiChar; ACapacity: PtrInt;
+  const AValue: RawUtf8): Boolean;
+begin
+  Result := False;
+  if (Dest = nil) or
+     (ACapacity <= 0) then
+    exit;
+  Dest[0] := #0;
+  if Length(AValue) >= ACapacity then
+    exit;
+  if AValue <> '' then
+    Move(pointer(AValue)^, Dest^, Length(AValue));
+  Dest[Length(AValue)] := #0;
+  Result := True;
+end;
+
+// CAP-12B: the extra response headers one blob answer carries
+function PWebCocoaBlobHeaders(const Exchange: TPWebBlobExchange): RawUtf8;
+begin
+  Result := '';
+  if Exchange.AcceptRanges then
+    Result := 'Accept-Ranges: bytes';
+  if Exchange.ContentRange <> '' then
+  begin
+    if Result <> '' then
+      Result := Result + #13#10;
+    Result := Result + 'Content-Range: ' + Exchange.ContentRange;
+  end;
+  if Exchange.ExtraHeaders <> '' then
+  begin
+    if Result <> '' then
+      Result := Result + #13#10;
+    Result := Result + Exchange.ExtraHeaders;
+  end;
+end;
+
 function PWebCocoaResolveCallback(AHandle: TPWebCocoaHandle;
-  AUrl: PAnsiChar; AAsset: PPWebCocoaAsset): LongInt; cdecl;
+  ARequest: PPWebCocoaRequest; AAsset: PPWebCocoaAsset): LongInt; cdecl;
 var
   store: IAssetStore;
-  uri, mime, headers: RawUtf8;
+  blobs: IBlobStore;
+  owner, uri, mime, headers, logical: RawUtf8;
   asset: TAssetResponse;
+  blob: TPWebBlobExchange;
   body: Pointer;
   size, len: PtrInt;
+  resolved: Boolean;
 begin
   Result := PWEB_COCOA_VERDICT_REFUSE;
   body := nil;
   try
-    if AAsset = nil then
+    if (AAsset = nil) or
+       (ARequest = nil) then
       exit;
     AAsset^.Bytes := nil;
     AAsset^.Length := 0;
     AAsset^.ContentType[0] := #0;
     AAsset^.SecurityHeaders[0] := #0;
+    AAsset^.Status := 0;
+    AAsset^.Reason[0] := #0;
+    AAsset^.ExtraHeaders[0] := #0;
     // THE URL IS READ FIRST, before the handle is resolved, so that every
     // task the bridge started produces exactly one accounting row: an
     // observation, or a nonconforming tick. The runtime gate asserts
     // observed + nonconforming = tasks_started, which is only a real
     // assertion if no path can return without contributing to one of them.
-    len := PWebCocoaBoundedLen(AUrl);
+    len := PWebCocoaBoundedLen(ARequest^.AbsoluteUrl);
     if len <= 0 then
     begin
       PWebCocoaRecordNonconforming;
       // an unresolved handle still has to be reported AS one, so the bridge
       // can count it separately even when the URL was unusable
-      if PWebCocoaStoreOf(AHandle) = nil then
+      if not PWebCocoaPlaneOf(AHandle, store, blobs, owner) then
         Result := PWEB_COCOA_VERDICT_UNRESOLVED;
       exit;
     end;
     // the WHOLE URI, copied out of WebKit's storage immediately
-    FastSetString(uri, AUrl, len);
-    store := PWebCocoaStoreOf(AHandle);
-    if store = nil then
+    FastSetString(uri, ARequest^.AbsoluteUrl, len);
+    resolved := PWebCocoaPlaneOf(AHandle, store, blobs, owner);
+    if (not resolved) or
+       (store = nil) then
     begin
       // a released or never-claimed handle: no store is consulted, no
       // verdict is rendered, and the bridge counts the attempt
@@ -1404,6 +1565,65 @@ begin
       Result := PWEB_COCOA_VERDICT_UNRESOLVED;
       exit;
     end;
+    // CAP-12B: THE RESERVED BRANCH, BEFORE THE ASSET STORE. A path whose
+    // first segment is `_pweb` is the runtime's, and it is answered from
+    // here whatever the bundle contains - which is what makes the
+    // reservation a property of the namespace rather than of the archive.
+    if PWebParseAppUri(uri, logical) and
+       PWebBlobIsReserved(logical) then
+    begin
+      blob := Default(TPWebBlobExchange);
+      blob.LogicalPath := logical;
+      blob.Owner := owner;
+      blob.Method := PWebCocoaField(@ARequest^.Method[0],
+        PWEB_COCOA_METHOD_MAX);
+      blob.RangeHeader := PWebCocoaField(@ARequest^.Range[0],
+        PWEB_COCOA_RANGE_MAX);
+      if (blob.Method <> '') and
+         (blob.Method <> 'GET') then
+      begin
+        // THE BODY IS HASHED WHERE IT LIES. The bridge handed over a
+        // pointer into the engine's own NSData, so a 256 MiB upload is
+        // counted and checksummed without a copy and without this frame
+        // ever owning it. Nothing keeps the pointer past this call.
+        blob.RequestBodyComplete := ARequest^.BodyComplete <> 0;
+        blob.RequestBodyBytes := ARequest^.BodyLength;
+        if (ARequest^.Body <> nil) and
+           (ARequest^.BodyLength > 0) then
+          blob.RequestBodyCrc := crc32c(0, ARequest^.Body,
+            PtrInt(ARequest^.BodyLength));
+      end;
+      PWebBlobServe(blobs, blob);
+      headers := PWebCocoaSecurityHeaders;
+      if (headers = '') or
+         (Length(headers) >= PWEB_COCOA_SECURITY_HEADERS_MAX) or
+         (Length(blob.ContentType) >= PWEB_COCOA_CONTENT_TYPE_MAX) then
+      begin
+        PWebCocoaRecordObservation(uri, 'refuse');
+        exit;
+      end;
+      PWebCocoaRecordObservation(uri, 'serve');
+      if not PWebCocoaCopyBody(blob.Body, body, size) then
+        exit;
+      AAsset^.Bytes := body;
+      AAsset^.Length := size;
+      body := nil;
+      PWebCocoaSetField(@AAsset^.ContentType[0],
+        PWEB_COCOA_CONTENT_TYPE_MAX, blob.ContentType);
+      PWebCocoaSetField(@AAsset^.SecurityHeaders[0],
+        PWEB_COCOA_SECURITY_HEADERS_MAX, headers);
+      AAsset^.Status := blob.Status;
+      PWebCocoaSetField(@AAsset^.Reason[0], PWEB_COCOA_REASON_MAX,
+        blob.Reason);
+      // an extra header block that does not fit is DROPPED, never
+      // truncated: the answer is still correct without Accept-Ranges,
+      // and half a Content-Range would not be
+      PWebCocoaSetField(@AAsset^.ExtraHeaders[0],
+        PWEB_COCOA_EXTRA_HEADERS_MAX, PWebCocoaBlobHeaders(blob));
+      Result := PWEB_COCOA_VERDICT_SERVE;
+      exit;
+    end;
+    // THE FROZEN ASSET PATH, unchanged below this line
     if not PWebCocoaResolveAssetUri(uri, store, asset) then
     begin
       PWebCocoaRecordObservation(uri, 'refuse');
@@ -1445,6 +1665,11 @@ begin
     AAsset^.ContentType[Length(mime)] := #0;
     Move(pointer(headers)^, AAsset^.SecurityHeaders[0], Length(headers));
     AAsset^.SecurityHeaders[Length(headers)] := #0;
+    // CAP-12B: stated rather than left to the bridge's `0 reads as 200`
+    // default, so one reader of this record never has to know which branch
+    // filled it. ExtraHeaders stays empty: only a blob answer adds any.
+    AAsset^.Status := 200;
+    PWebCocoaSetField(@AAsset^.Reason[0], PWEB_COCOA_REASON_MAX, 'OK');
     body := nil;             // handed over: no longer ours to release
     Result := PWEB_COCOA_VERDICT_SERVE;
   except
@@ -1464,6 +1689,9 @@ begin
       AAsset^.Length := 0;
       AAsset^.ContentType[0] := #0;
       AAsset^.SecurityHeaders[0] := #0;
+      AAsset^.Status := 0;
+      AAsset^.Reason[0] := #0;
+      AAsset^.ExtraHeaders[0] := #0;
     end;
     Result := PWEB_COCOA_VERDICT_REFUSE;
   end;
@@ -1735,9 +1963,21 @@ end;
 
 constructor TCocoaAssetHandler.Create(const AStore: IAssetStore);
 begin
+  Create(AStore, nil, '');
+end;
+
+constructor TCocoaAssetHandler.Create(const AStore: IAssetStore;
+  const ABlobs: IBlobStore; const AOwner: RawUtf8);
+begin
   inherited Create;
   if AStore = nil then
     raise EPWebCocoaAssetHandler.Create('asset store is nil');
+  // a blob store with no owner would resolve against an entry created with
+  // an empty owner - the same guard the two sibling adapters carry
+  if (ABlobs <> nil) and
+     (AOwner = '') then
+    raise EPWebCocoaAssetHandler.Create(
+      'a blob store needs the principal it serves');
   fThreadId := GetCurrentThreadId; // Cocoa/WebKit calls are GUI-affine
   // AGAIN, on the thread that will actually host WebKit. The initialization
   // block below masks the traps on whichever thread loads the unit - normally
@@ -1757,7 +1997,7 @@ begin
   if pweb_cocoa_install(@PWebCocoaResolveCallback) = 0 then
     raise EPWebCocoaAssetHandler.Create(
       'the pre-create pweb://app seam could not be installed');
-  fHandle := PWebCocoaClaimSlot(Self, AStore);
+  fHandle := PWebCocoaClaimSlot(Self, AStore, ABlobs, AOwner);
   if fHandle = 0 then
     raise EPWebCocoaAssetHandler.CreateFmt(
       'more than %d live pweb://app handlers in one process',

@@ -85,6 +85,11 @@ uses
   pweb.lib.webview.types,
   pweb.assets.intf,
   pweb.assets.support,
+  // CAP-12B: the reserved-prefix branch. This adapter knows NEITHER the
+  // blob URL grammar nor the store's - it hands a logical path, a method
+  // and a Range header to the translator and writes back what it says.
+  pweb.blobs.intf,
+  pweb.blobs.protocol,
   pweb.navigation.policy;
 
 type
@@ -92,10 +97,19 @@ type
 
   { Serves IAssetStore content on pweb://app/* for one webview.
     Create on the GUI thread after webview_create; Detach on the GUI
-    thread before webview_destroy (Destroy calls Detach as a guard). }
+    thread before webview_destroy (Destroy calls Detach as a guard).
+
+    CAP-12B adds a SECOND store and a branch that runs before the first
+    one. The blob store is optional: a handler built without one still
+    reserves the prefix - a request under `_pweb/` is answered 404 and
+    the asset store is never consulted - so the reservation is a
+    property of the namespace rather than of whether the plane happens
+    to be wired. }
   TWebView2AssetHandler = class
   private
     fStore: IAssetStore;
+    fBlobs: IBlobStore;
+    fOwner: RawUtf8;      // the principal this webview serves
     fController: Pointer; // borrowed - never AddRef/Release
     fCore: IInterface; // owned ICoreWebView2
     fEnvironment: IInterface; // owned ICoreWebView2Environment
@@ -107,6 +121,10 @@ type
     fFilterAdded: Boolean;
   public
     constructor Create(AWebView: webview_t; const AStore: IAssetStore);
+      overload;
+    /// CAP-12B: the same handler with the blob data plane behind it
+    constructor Create(AWebView: webview_t; const AStore: IAssetStore;
+      const ABlobs: IBlobStore; const AOwner: RawUtf8); overload;
     destructor Destroy; override;
     // idempotent; must run on the GUI thread before webview_destroy
     procedure Detach;
@@ -252,15 +270,56 @@ type
     // slots passed opaquely - no method is called through this side
   end;
 
+  { CAP-12B: the request body, as the engine offers it.
+
+    The IID and the two slots are ISequentialStream's, which is what
+    IStream derives from: `get_Content` hands back an `IStream*`, and the
+    first two slots after IUnknown on that vtable ARE Read and Write. No
+    QueryInterface happens - the pointer is stored as it comes - so this
+    declaration is an ABI statement about a vtable rather than a claim
+    about which interface the object implements. Only Read is ever
+    called; the rest of IStream is not declared at all, because a slot
+    this unit does not call is a slot it must not describe. }
+  IPWebRequestStream = interface(IUnknown)
+    ['{0c733a30-2a1c-11ce-ade5-00aa0044773d}']
+    function Read(pv: Pointer; cb: LongWord;
+      pcbRead: PLongWord): HRESULT; stdcall;
+    function Stub_Write: HRESULT; stdcall;
+  end;
+
+  { CAP-12B: the request header set, for exactly one header.
+
+    MEASURED (CAP-12A §1/M2): `Range` reaches this collection on the
+    pweb custom scheme and a 206 answered from it is honoured by
+    fetch(). Nothing else is read here: the plane takes no parameter
+    from a header it did not ratify, and none at all from a query
+    string - which PWebParseAppUri cuts before this handler sees it. }
+  ICoreWebView2HttpRequestHeaders = interface(IUnknown)
+    ['{e86cac0e-5523-465c-b536-8fb9fc8c8c60}']
+    function GetHeader(name: PWideChar;
+      out value: PWideChar): HRESULT; stdcall;
+    function Stub_GetHeaders: HRESULT; stdcall;
+    function Contains(name: PWideChar;
+      out contains: Integer): HRESULT; stdcall;
+    function Stub_SetHeader: HRESULT; stdcall;
+    function Stub_RemoveHeader: HRESULT; stdcall;
+    function Stub_GetIterator: HRESULT; stdcall;
+  end;
+
   ICoreWebView2WebResourceRequest = interface(IUnknown)
     ['{97055cd4-512c-4264-8b5f-e3f446cea6a5}']
     function get_Uri(out uri: PWideChar): HRESULT; stdcall;
     function Stub_put_Uri: HRESULT; stdcall;
-    function Stub_get_Method: HRESULT; stdcall;
+    // CAP-12B promotes three slots from stubs to declarations. The ORDER
+    // is untouched - it is the pinned 1.0.1587.40 vtable and the
+    // signature-pin gate compares it - and every other slot stays a
+    // never-called stub.
+    function get_Method(out method: PWideChar): HRESULT; stdcall;
     function Stub_put_Method: HRESULT; stdcall;
-    function Stub_get_Content: HRESULT; stdcall;
+    function get_Content(out content: IPWebRequestStream): HRESULT; stdcall;
     function Stub_put_Content: HRESULT; stdcall;
-    function Stub_get_Headers: HRESULT; stdcall;
+    function get_Headers(
+      out headers: ICoreWebView2HttpRequestHeaders): HRESULT; stdcall;
   end;
 
   ICoreWebView2WebResourceRequestedEventArgs = interface(IUnknown)
@@ -755,8 +814,21 @@ begin
   end;
 end;
 
-function BuildHeaders(const AContentType: RawUtf8): WideString;
+function BuildHeaders(const AContentType: RawUtf8;
+  const AExtra: RawUtf8 = ''): WideString;
+var
+  extra: RawUtf8;
 begin
+  // CAP-12B: AExtra carries whatever the blob branch adds - Accept-Ranges,
+  // Content-Range, Allow - and it is appended AFTER the policy block for
+  // the same reason the macOS bridge orders its dictionary that way: a
+  // header line that could displace Content-Type would be a sniffing hole
+  // reachable by editing one string. An empty AExtra reproduces the
+  // pre-CAP-12B block byte for byte, which is what keeps every asset
+  // response identical.
+  extra := AExtra;
+  if extra <> '' then
+    extra := #13#10 + extra;
   // CAP-8B: the native security headers ride EVERY response this
   // handler produces, the deterministic 404 included. MEASURED
   // (findings W4 / W4a): response-header CSP is fully enforced by this
@@ -768,7 +840,126 @@ begin
   // the one shared policy, byte-identical on all four targets
   Result := WideString(Utf8ToSynUnicode(
     'Content-Type: ' + AContentType + #13#10 + 'Cache-Control: no-store' +
-    #13#10 + PWebNativeSecurityHeaders));
+    #13#10 + PWebNativeSecurityHeaders + extra));
+end;
+
+{ ---- CAP-12B: the reserved-prefix branch ---- }
+
+const
+  /// most request-body bytes this adapter will read from one request
+  // - it is a COUNT, not a buffer: the bytes are hashed and discarded as
+  // they arrive, so the bound is about how long the GUI thread may be
+  // held rather than about memory. 512 MiB is twice the largest body
+  // CAP-12A measured crossing this engine intact (256 MiB, 2 557 ms), so
+  // the ratified transport size has a factor of two of headroom and an
+  // unbounded PUT still ends
+  PWEB_WV2_MAX_REQUEST_BODY = Int64(512) * 1024 * 1024;
+  /// one read from the engine's request stream
+  PWEB_WV2_BODY_CHUNK = 256 * 1024;
+
+// Drain the request body, counting and checksumming it without keeping
+// it. CAP-12A §6.2 ratifies `fetch(PUT pweb://...)` with a typed-array
+// body as the JS->native transport; CAP-12B builds that path and wires
+// no consumer onto it, so the bytes are proven to arrive and then
+// refused by name. A body path that is never drained is a body path
+// that has never run.
+procedure ReadRequestBody(const ARequest: ICoreWebView2WebResourceRequest;
+  var Exchange: TPWebBlobExchange);
+var
+  content: IPWebRequestStream;
+  buf: array[0 .. PWEB_WV2_BODY_CHUNK - 1] of Byte;
+  got: LongWord;
+  hr: HRESULT;
+begin
+  Exchange.RequestBodyBytes := 0;
+  Exchange.RequestBodyCrc := 0;
+  Exchange.RequestBodyComplete := True;
+  content := nil;
+  if (ARequest = nil) or
+     (ARequest.get_Content(content) <> S_OK) or
+     (content = nil) then
+    exit; // no body is a complete body of zero bytes, not a failure
+  repeat
+    got := 0;
+    hr := content.Read(@buf[0], PWEB_WV2_BODY_CHUNK, @got);
+    if (hr <> S_OK) and
+       (hr <> S_FALSE) then
+    begin
+      Exchange.RequestBodyComplete := False;
+      break;
+    end;
+    if got = 0 then
+      break;
+    Exchange.RequestBodyCrc :=
+      crc32c(Exchange.RequestBodyCrc, @buf[0], got);
+    Inc(Exchange.RequestBodyBytes, got);
+    if Exchange.RequestBodyBytes >= PWEB_WV2_MAX_REQUEST_BODY then
+    begin
+      // the bound is reported, never silently absorbed
+      Exchange.RequestBodyComplete := False;
+      break;
+    end;
+  until False;
+end;
+
+function ReadRangeHeader(
+  const ARequest: ICoreWebView2WebResourceRequest): RawUtf8;
+var
+  headers: ICoreWebView2HttpRequestHeaders;
+  valueW: PWideChar;
+begin
+  Result := '';
+  headers := nil;
+  if (ARequest = nil) or
+     (ARequest.get_Headers(headers) <> S_OK) or
+     (headers = nil) then
+    exit;
+  valueW := nil;
+  // GetHeader answers E_INVALIDARG for a header that is not present, so
+  // an absent Range and a failed read are the same thing here and both
+  // mean "no range" - which the translator answers with the whole blob.
+  if (headers.GetHeader('Range', valueW) <> S_OK) or
+     (valueW = nil) then
+    exit;
+  Result := RawUnicodeToUtf8(valueW, StrLenW(valueW));
+  CoTaskFree(valueW);
+end;
+
+function ReadRequestMethod(
+  const ARequest: ICoreWebView2WebResourceRequest): RawUtf8;
+var
+  methodW: PWideChar;
+begin
+  Result := '';
+  methodW := nil;
+  if (ARequest = nil) or
+     (ARequest.get_Method(methodW) <> S_OK) or
+     (methodW = nil) then
+    exit;
+  Result := RawUnicodeToUtf8(methodW, StrLenW(methodW));
+  CoTaskFree(methodW);
+end;
+
+// The extra response headers one blob answer carries, in the order the
+// translator decided them. Everything here is a header the ASSET path
+// has never sent, so an asset response is byte-identical to what it was.
+function BlobExtraHeaders(const Exchange: TPWebBlobExchange): RawUtf8;
+begin
+  Result := '';
+  if Exchange.AcceptRanges then
+    Result := 'Accept-Ranges: bytes';
+  if Exchange.ContentRange <> '' then
+  begin
+    if Result <> '' then
+      Result := Result + #13#10;
+    Result := Result + 'Content-Range: ' + Exchange.ContentRange;
+  end;
+  if Exchange.ExtraHeaders <> '' then
+  begin
+    if Result <> '' then
+      Result := Result + #13#10;
+    Result := Result + Exchange.ExtraHeaders;
+  end;
 end;
 
 function TResourceRequestedHandler.Invoke(sender: IUnknown;
@@ -779,8 +970,9 @@ var
   uriW: PWideChar;
   uri, logical: RawUtf8;
   asset: TAssetResponse;
+  blob: TPWebBlobExchange;
   stream: Pointer;
-  ok: Boolean;
+  ok, parsed: Boolean;
   headers: WideString;
   status: Integer;
   reason: WideString;
@@ -805,24 +997,57 @@ begin
     CoTaskFree(uriW);
     // filter is pweb://app/* already; re-verify and translate anyway -
     // a wrong scheme/authority is never trusted, only answered 404
-    ok := PWebParseAppUri(uri, logical) and
-          fOwner.fStore.TryRead(logical, asset);
-    if ok then
+    parsed := PWebParseAppUri(uri, logical);
+    // CAP-12B: THE RESERVED BRANCH, BEFORE THE ASSET STORE. A path whose
+    // first segment is `_pweb` is the runtime's, and it is answered from
+    // here whatever the bundle contains - which is what makes the
+    // reservation a property of the namespace rather than of the archive.
+    if parsed and
+       PWebBlobIsReserved(logical) then
     begin
-      status := 200;
-      reason := 'OK';
-      headers := BuildHeaders(asset.ContentType);
-      body := pointer(asset.Content);
-      bodyLen := Length(asset.Content);
+      blob := Default(TPWebBlobExchange);
+      blob.LogicalPath := logical;
+      blob.Owner := fOwner.fOwner;
+      blob.Method := ReadRequestMethod(request);
+      blob.RangeHeader := ReadRangeHeader(request);
+      if (blob.Method <> '') and
+         (blob.Method <> 'GET') then
+        // read BEFORE the refusal is composed: the receipt names what
+        // actually arrived, and that number is the evidence the JS->native
+        // transport works at all
+        ReadRequestBody(request, blob);
+      PWebBlobServe(fOwner.fBlobs, blob);
+      status := blob.Status;
+      reason := WideString(Utf8ToSynUnicode(blob.Reason));
+      headers := BuildHeaders(blob.ContentType, BlobExtraHeaders(blob));
+      body := pointer(blob.Body);
+      bodyLen := Length(blob.Body);
     end
     else
     begin
-      // deterministic 404: constant body, no path, no reason detail
-      status := 404;
-      reason := 'Not Found';
-      headers := BuildHeaders('text/plain; charset=utf-8');
-      body := nil;
-      bodyLen := 0;
+      // THE FROZEN ASSET PATH, byte for byte what it was before CAP-12B:
+      // same two calls in the same order, the same 200, the same
+      // deterministic 404, and BuildHeaders with no extra block emits
+      // exactly the header string it always did.
+      ok := parsed and
+            fOwner.fStore.TryRead(logical, asset);
+      if ok then
+      begin
+        status := 200;
+        reason := 'OK';
+        headers := BuildHeaders(asset.ContentType);
+        body := pointer(asset.Content);
+        bodyLen := Length(asset.Content);
+      end
+      else
+      begin
+        // deterministic 404: constant body, no path, no reason detail
+        status := 404;
+        reason := 'Not Found';
+        headers := BuildHeaders('text/plain; charset=utf-8');
+        body := nil;
+        bodyLen := 0;
+      end;
     end;
     stream := SHCreateMemStream(body, bodyLen);
     if stream = nil then
@@ -847,6 +1072,13 @@ end;
 
 constructor TWebView2AssetHandler.Create(AWebView: webview_t;
   const AStore: IAssetStore);
+begin
+  Create(AWebView, AStore, nil, '');
+end;
+
+constructor TWebView2AssetHandler.Create(AWebView: webview_t;
+  const AStore: IAssetStore; const ABlobs: IBlobStore;
+  const AOwner: RawUtf8);
 var
   core: ICoreWebView2;
   core2: ICoreWebView2_2;
@@ -858,8 +1090,19 @@ begin
     raise EPWebWebView2AssetHandler.Create('webview handle is nil');
   if AStore = nil then
     raise EPWebWebView2AssetHandler.Create('asset store is nil');
+  // A BLOB STORE WITHOUT AN OWNER COULD SERVE NOBODY'S BLOBS OR
+  // EVERYBODY'S, and the second is what happens if the check is left
+  // out: OpenBlob is owner-scoped, so an empty owner would match an
+  // entry created with an empty owner - which is exactly the accident
+  // the store's own pbcInvalidOwner refuses at the other end.
+  if (ABlobs <> nil) and
+     (AOwner = '') then
+    raise EPWebWebView2AssetHandler.Create(
+      'a blob store needs the principal it serves');
   fThreadId := GetCurrentThreadId; // WebView2 objects are STA-affine
   fStore := AStore;
+  fBlobs := ABlobs;
+  fOwner := AOwner;
   fController := webview_get_native_handle(AWebView,
     WEBVIEW_NATIVE_HANDLE_KIND_BROWSER_CONTROLLER);
   if fController = nil then

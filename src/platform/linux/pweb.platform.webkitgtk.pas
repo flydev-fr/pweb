@@ -177,6 +177,11 @@ uses
   pweb.lib.webview.types,
   pweb.assets.intf,
   pweb.assets.support,
+  // CAP-12B: the reserved-prefix branch. This adapter knows NEITHER the
+  // blob URL grammar nor the store's - it hands a logical path, a method
+  // and a Range header to the translator and writes back what it says.
+  pweb.blobs.intf,
+  pweb.blobs.protocol,
   // CAP-8B: the ONE classifier and the ONE header set. This adapter
   // translates native events into its request record and its answer back
   // into WebKit calls; it decides nothing of its own.
@@ -254,12 +259,21 @@ type
   TWebKitGtkAssetHandler = class
   private
     fStore: IAssetStore;
+    fBlobs: IBlobStore;
+    fOwner: RawUtf8;        // the principal this webview serves
     fContext: Pointer; // borrowed WebKitWebContext - never unref'd
     fRegistration: Pointer; // PPWebGtkRegistration, owned by GLib
     fThreadId: TThreadID; // GUI thread that created us
     fAttached: Boolean;
   public
-    constructor Create(AWebView: webview_t; const AStore: IAssetStore);
+    constructor Create(AWebView: webview_t;
+      const AStore: IAssetStore); overload;
+    /// CAP-12B: the same handler with the blob data plane behind it
+    // - the blob store is optional and the RESERVATION is not: a handler
+    // built without one still answers `_pweb/` from the reserved branch,
+    // so no asset store can be consulted under that prefix either way
+    constructor Create(AWebView: webview_t; const AStore: IAssetStore;
+      const ABlobs: IBlobStore; const AOwner: RawUtf8); overload;
     destructor Destroy; override;
     // idempotent; disowns the scheme callback so it can never reach a
     // destroyed handler
@@ -456,6 +470,40 @@ function webkit_uri_scheme_request_get_uri(
   request: Pointer): PAnsiChar; cdecl;
   external WEBKITGTK_LIB name 'webkit_uri_scheme_request_get_uri';
 
+{ ---- CAP-12B: the three request facts the blob branch reads ----
+
+  MEASURED (CAP-12A §1/M2, M3) on this engine, at the CI baseline
+  webkit2gtk-4.1 2.52.6: the method and the SoupMessageHeaders arrive,
+  `Range` is readable through soup_message_headers_get_one, and a
+  typed-array request body arrives as a GInputStream at 1, 16 and
+  256 MiB, byte-exact.
+
+  AND ONE OF THEM FAULTS. `webkit_uri_scheme_request_get_http_body()`
+  SEGFAULTS the UI process for any BLOB-BACKED request body - a `Blob`,
+  a `File` or a `FormData` - on this version. An identically sized
+  typed-array body goes through the same call unharmed, so it is the
+  body KIND and not the size. The finding is CAP-12A ledger `12A-1`, it
+  is confirmed against the CI baseline by CAP-12B, and the report is in
+  docs/upstream/. The product's workaround is not a mask over the
+  defect: it is the transport CAP-12A §6.2 ratified anyway - a
+  typed-array body and nothing else - and the SDK is forbidden from
+  producing any other kind. }
+
+function webkit_uri_scheme_request_get_http_method(
+  request: Pointer): PAnsiChar; cdecl;
+  external WEBKITGTK_LIB
+  name 'webkit_uri_scheme_request_get_http_method';
+
+function webkit_uri_scheme_request_get_http_headers(
+  request: Pointer): Pointer; cdecl;
+  external WEBKITGTK_LIB
+  name 'webkit_uri_scheme_request_get_http_headers';
+
+function webkit_uri_scheme_request_get_http_body(
+  request: Pointer): Pointer; cdecl;
+  external WEBKITGTK_LIB
+  name 'webkit_uri_scheme_request_get_http_body';
+
 // webkit_uri_scheme_request_finish is deliberately NOT declared: it
 // carries no headers, so no asset may complete through it any more, and a
 // hand-declared external nobody calls is one nobody notices drifting.
@@ -547,6 +595,17 @@ function g_memory_input_stream_new_from_data(data: Pointer; len: TGSSize;
   destroy: TGDestroyNotify): Pointer; cdecl;
   external GIO_LIB name 'g_memory_input_stream_new_from_data';
 
+/// CAP-12B: draining the request body, one bounded read at a time
+// - the bytes are counted and checksummed as they arrive and never kept,
+// so the read is O(1) in memory whatever the page sent
+function g_input_stream_read(stream: Pointer; buffer: Pointer;
+  count: TGSize; cancellable: Pointer; error: PPointer): TGSSize; cdecl;
+  external GIO_LIB name 'g_input_stream_read';
+
+procedure g_input_stream_close(stream: Pointer; cancellable: Pointer;
+  error: PPointer); cdecl;
+  external GIO_LIB name 'g_input_stream_close';
+
 /// the OS external opener - the URI as DATA, never a shell string
 // - already this unit's library, so CAP-8B ships nothing new
 function g_app_info_launch_default_for_uri(uri: PAnsiChar;
@@ -579,6 +638,13 @@ function soup_message_headers_new(
 procedure soup_message_headers_append(hdrs: Pointer;
   header_name: PAnsiChar; header_value: PAnsiChar); cdecl;
   external SOUP_LIB name 'soup_message_headers_append';
+
+/// CAP-12B: the ONE request header the blob branch reads
+// - _get_one and not _get_list: a repeated `Range` is not a range, and
+// this plane takes no parameter from a header it did not ratify
+function soup_message_headers_get_one(hdrs: Pointer;
+  header_name: PAnsiChar): PAnsiChar; cdecl;
+  external SOUP_LIB name 'soup_message_headers_get_one';
 
 // --- libglib-2.0.so.0 ---
 
@@ -980,16 +1046,211 @@ begin
   g_error_free(err);
 end;
 
+{ CAP-12B: ONE response path for this engine.
+
+  Before this shard the tail of PWebGtkSchemeRequest built the response
+  inline, because there was one kind of response to build. The blob
+  branch adds four more statuses and three more headers, and a second
+  copy of this sequence is exactly how two answers on one engine start
+  disagreeing about which headers ride which response.
+
+  The ASSET path calls it with status 200, reason `OK` and an empty
+  extra set, which reproduces the pre-CAP-12B response byte for byte -
+  the CAP-4/7L corpora compare those bytes and are the check that it
+  really does. }
+procedure PWebGtkFinishServed(request: Pointer; status: Integer;
+  reason: PAnsiChar; const mime: RawUtf8; const content: RawByteString;
+  const extra: TPWebGtkHeaders);
+var
+  body, stream, response, soupHeaders: Pointer;
+  size, i: PtrInt;
+  headers: TPWebGtkHeaders;
+begin
+  // the body becomes GIO's: a heap copy owned by the input stream and
+  // released through g_free long after this frame is gone
+  if not PWebGtkCopyBody(content, body, size) then
+  begin
+    PWebGtkFinishRefused(request);
+    exit;
+  end;
+  stream := g_memory_input_stream_new_from_data(body, TGSSize(size),
+    @PWebGtkFreeBody);
+  if stream = nil then
+  begin
+    PWebGtkReleaseBody(body); // ownership never transferred
+    PWebGtkFinishRefused(request);
+    exit;
+  end;
+  // CAP-8B. Everything from here answers ONE question: does this asset
+  // reach the page carrying its native policy, or not at all?
+  // webkit_uri_scheme_request_finish - the shape the pre-CAP-8B adapter
+  // used - carries no headers, so the completion goes through a
+  // WebKitURISchemeResponse instead and that call is gone entirely.
+  //
+  // The split runs FIRST, while the only thing that could raise is
+  // Pascal string work and there is no GLib object to leak. Every
+  // failure below refuses the asset rather than serving it bare: a
+  // trusted HTML document without frame-src 'none' is exactly the
+  // situation the CSP exists to prevent, and on THIS engine that
+  // directive is the primary subframe defence rather than defence in
+  // depth (findings L2 - the navigation hook cannot identify the frame
+  // being navigated).
+  if not PWebGtkSplitHeaderBlock(
+           PWebNativeSecurityHeaders, headers) then
+  begin
+    g_object_unref(stream);
+    PWebGtkFinishRefused(request);
+    exit;
+  end;
+  response := webkit_uri_scheme_response_new(stream, TGInt64(size));
+  if response = nil then
+  begin
+    g_object_unref(stream);
+    PWebGtkFinishRefused(request);
+    exit;
+  end;
+  webkit_uri_scheme_response_set_content_type(response, PAnsiChar(mime));
+  webkit_uri_scheme_response_set_status(response, status, reason);
+  soupHeaders := soup_message_headers_new(SOUP_MESSAGE_HEADERS_RESPONSE);
+  if soupHeaders = nil then
+  begin
+    g_object_unref(response);
+    g_object_unref(stream);
+    PWebGtkFinishRefused(request);
+    exit;
+  end;
+  // Content-Type must ride the HTTP HEADER SET too, not only the response
+  // object's content-type property: with X-Content-Type-Options: nosniff
+  // attached - and it is attached to EVERY response - WebKit validates a
+  // script's MIME type against the response HEADERS, and a header set
+  // without Content-Type reads as "no script MIME type" and refuses the
+  // bundle's own JS. MEASURED by the CAP-8B real-window matrix (the first
+  // executable of this path): "Refused to execute pweb://app/assets/
+  // driver.js as script ... its Content-Type is not a script MIME type".
+  // The other two adapters already carry the header (BuildHeaders on
+  // Windows, serveTask: on macOS); this is the Linux half of that parity.
+  soup_message_headers_append(soupHeaders, 'Content-Type',
+    PAnsiChar(mime));
+  // CAP-10C2: the engine must not answer a later request for this URL out
+  // of its own cache. The WebView2 adapter has sent this since CAP-4W and
+  // the two WebKit adapters did not. MEASURED here, on this adapter, with
+  // the dev host and three archives and no CLI involved: without the
+  // header the handler is asked for `assets/app.js` EXACTLY ONCE, at the
+  // first document load, and every later re-navigation re-runs the page
+  // against the previous bundle's JavaScript - the archive changes, the
+  // window does not. With it the store is asked on every navigation and
+  // the page tracks the archive (42 -> 47 -> 42 over three generations).
+  // Not a development affordance: `app.pwb` is a replaceable, privileged
+  // bundle and an engine cache is not something this runtime can
+  // invalidate.
+  soup_message_headers_append(soupHeaders, 'Cache-Control', 'no-store');
+  for i := 0 to headers.Count - 1 do
+    soup_message_headers_append(soupHeaders,
+      PAnsiChar(headers.Items[i].Name), PAnsiChar(headers.Items[i].Value));
+  // CAP-12B: and last, whatever this particular answer adds - and only a
+  // blob answer ever adds anything, so an asset response is unchanged
+  for i := 0 to extra.Count - 1 do
+    soup_message_headers_append(soupHeaders,
+      PAnsiChar(extra.Items[i].Name), PAnsiChar(extra.Items[i].Value));
+  // transfer full: the response owns the header set from here, and
+  // nothing between its creation and this call can raise
+  webkit_uri_scheme_response_set_http_headers(response, soupHeaders);
+  webkit_uri_scheme_request_finish_with_response(request, response);
+  g_object_unref(response); // the request holds its own reference
+  g_object_unref(stream); // and the response holds its own
+end;
+
+{ CAP-12B: drain the request body, counting and checksumming it without
+  keeping it.
+
+  IT IS NEVER CALLED FOR A BLOB-BACKED BODY, and it cannot be: a `Blob`,
+  a `File` or a `FormData` SEGFAULTS webkit_uri_scheme_request_get_http_body
+  on the CI baseline 2.52.6 (ledger 12A-1, and CAP-12B re-measured it on
+  the hosted runner). There is no API to ask which kind a body is before
+  asking for it, so there is no test to write here - what protects the
+  process is the OTHER end: the SDK never produces one, and CAP-12A §6.2
+  ratified a typed-array body as the only transport for that reason. The
+  `except` below is the last line rather than the defence. }
+procedure PWebGtkReadRequestBody(request: Pointer;
+  var Exchange: TPWebBlobExchange);
+const
+  CHUNK = 256 * 1024;
+  /// twice the largest body CAP-12A measured crossing this engine intact
+  MAX_BODY = Int64(512) * 1024 * 1024;
+var
+  stream: Pointer;
+  buf: array[0 .. CHUNK - 1] of Byte;
+  got: TGSSize;
+begin
+  Exchange.RequestBodyBytes := 0;
+  Exchange.RequestBodyCrc := 0;
+  Exchange.RequestBodyComplete := True;
+  stream := nil;
+  try
+    stream := webkit_uri_scheme_request_get_http_body(request);
+    if stream = nil then
+      exit; // no body is a complete body of zero bytes, not a failure
+    repeat
+      got := g_input_stream_read(stream, @buf[0], TGSize(CHUNK), nil, nil);
+      if got < 0 then
+      begin
+        Exchange.RequestBodyComplete := False;
+        break;
+      end;
+      if got = 0 then
+        break;
+      Exchange.RequestBodyCrc :=
+        crc32c(Exchange.RequestBodyCrc, @buf[0], got);
+      Inc(Exchange.RequestBodyBytes, got);
+      if Exchange.RequestBodyBytes >= MAX_BODY then
+      begin
+        Exchange.RequestBodyComplete := False;
+        break;
+      end;
+    until False;
+  except
+    Exchange.RequestBodyComplete := False;
+  end;
+  if stream <> nil then
+  begin
+    g_input_stream_close(stream, nil, nil);
+    g_object_unref(stream); // get_http_body returns a full reference
+  end;
+end;
+
+// the extra headers one blob answer carries, in the translator's order
+function PWebGtkBlobHeaders(
+  const Exchange: TPWebBlobExchange): TPWebGtkHeaders;
+
+  procedure Add(const AName, AValue: RawUtf8);
+  begin
+    if (AValue = '') or
+       (Result.Count >= PWEB_GTK_MAX_HEADERS) then
+      exit;
+    Result.Items[Result.Count].Name := AName;
+    Result.Items[Result.Count].Value := AValue;
+    Inc(Result.Count);
+  end;
+
+begin
+  Result.Count := 0;
+  if Exchange.AcceptRanges then
+    Add('Accept-Ranges', 'bytes');
+  Add('Content-Range', Exchange.ContentRange);
+  if Exchange.ExtraHeaders = PWEB_BLOB_ALLOW_HEADER then
+    Add('Allow', 'GET');
+end;
+
 procedure PWebGtkSchemeRequest(request: Pointer; user_data: Pointer); cdecl;
 var
   reg: PPWebGtkRegistration;
   owner: TWebKitGtkAssetHandler;
-  rawUri: PAnsiChar;
-  uri, mime: RawUtf8;
+  rawUri, rawMethod, rawRange: PAnsiChar;
+  uri, mime, logical: RawUtf8;
   asset: TAssetResponse;
-  body, stream, response, soupHeaders: Pointer;
-  size, i: PtrInt;
-  headers: TPWebGtkHeaders;
+  blob: TPWebBlobExchange;
+  soupReqHeaders: Pointer;
+  noExtra: TPWebGtkHeaders;
 begin
   try
     reg := PPWebGtkRegistration(user_data);
@@ -1016,100 +1277,48 @@ begin
     // the WHOLE URI, copied out of WebKit's storage immediately. Never
     // webkit_uri_scheme_request_get_path: it drops the authority.
     FastSetString(uri, rawUri, StrLen(rawUri));
+    // CAP-12B: THE RESERVED BRANCH, BEFORE THE ASSET STORE. A path whose
+    // first segment is `_pweb` is the runtime's, and it is answered from
+    // here whatever the bundle contains - which is what makes the
+    // reservation a property of the namespace rather than of the archive.
+    if PWebParseAppUri(uri, logical) and
+       PWebBlobIsReserved(logical) then
+    begin
+      blob := Default(TPWebBlobExchange);
+      blob.LogicalPath := logical;
+      blob.Owner := owner.fOwner;
+      rawMethod := webkit_uri_scheme_request_get_http_method(request);
+      if rawMethod <> nil then
+        FastSetString(blob.Method, rawMethod, StrLen(rawMethod));
+      soupReqHeaders := webkit_uri_scheme_request_get_http_headers(request);
+      if soupReqHeaders <> nil then
+      begin
+        rawRange := soup_message_headers_get_one(soupReqHeaders, 'Range');
+        if rawRange <> nil then
+          FastSetString(blob.RangeHeader, rawRange, StrLen(rawRange));
+      end;
+      if (blob.Method <> '') and
+         (blob.Method <> 'GET') then
+        // read BEFORE the refusal is composed: the receipt names what
+        // actually arrived, and that number is the evidence the JS->native
+        // transport works at all
+        PWebGtkReadRequestBody(request, blob);
+      PWebBlobServe(owner.fBlobs, blob);
+      PWebGtkFinishServed(request, blob.Status, PAnsiChar(blob.Reason),
+        blob.ContentType, blob.Body, PWebGtkBlobHeaders(blob));
+      exit;
+    end;
+    // THE FROZEN ASSET PATH, unchanged: the same resolve, the same
+    // constant refusal on a miss, and the same 200 with no extra header
     if not PWebGtkResolveAssetUri(uri, owner.fStore, asset) then
     begin
       PWebGtkFinishRefused(request);
       exit;
     end;
-    // the body becomes GIO's: a heap copy owned by the input stream and
-    // released through g_free long after this frame is gone
-    if not PWebGtkCopyBody(asset.Content, body, size) then
-    begin
-      PWebGtkFinishRefused(request);
-      exit;
-    end;
-    stream := g_memory_input_stream_new_from_data(body, TGSSize(size),
-      @PWebGtkFreeBody);
-    if stream = nil then
-    begin
-      PWebGtkReleaseBody(body); // ownership never transferred
-      PWebGtkFinishRefused(request);
-      exit;
-    end;
     mime := PWebGtkContentType(asset);
-    // CAP-8B. Everything from here answers ONE question: does this asset
-    // reach the page carrying its native policy, or not at all?
-    // webkit_uri_scheme_request_finish - the shape the pre-CAP-8B adapter
-    // used - carries no headers, so the completion goes through a
-    // WebKitURISchemeResponse instead and that call is gone entirely.
-    //
-    // The split runs FIRST, while the only thing that could raise is
-    // Pascal string work and there is no GLib object to leak. Every
-    // failure below refuses the asset rather than serving it bare: a
-    // trusted HTML document without frame-src 'none' is exactly the
-    // situation the CSP exists to prevent, and on THIS engine that
-    // directive is the primary subframe defence rather than defence in
-    // depth (findings L2 - the navigation hook cannot identify the frame
-    // being navigated).
-    if not PWebGtkSplitHeaderBlock(
-             PWebNativeSecurityHeaders, headers) then
-    begin
-      g_object_unref(stream);
-      PWebGtkFinishRefused(request);
-      exit;
-    end;
-    response := webkit_uri_scheme_response_new(stream, TGInt64(size));
-    if response = nil then
-    begin
-      g_object_unref(stream);
-      PWebGtkFinishRefused(request);
-      exit;
-    end;
-    webkit_uri_scheme_response_set_content_type(response, PAnsiChar(mime));
-    webkit_uri_scheme_response_set_status(response, PWEB_GTK_STATUS_OK,
-      PWEB_GTK_REASON_OK);
-    soupHeaders := soup_message_headers_new(SOUP_MESSAGE_HEADERS_RESPONSE);
-    if soupHeaders = nil then
-    begin
-      g_object_unref(response);
-      g_object_unref(stream);
-      PWebGtkFinishRefused(request);
-      exit;
-    end;
-    // Content-Type must ride the HTTP HEADER SET too, not only the response
-    // object's content-type property: with X-Content-Type-Options: nosniff
-    // attached - and it is attached to EVERY response - WebKit validates a
-    // script's MIME type against the response HEADERS, and a header set
-    // without Content-Type reads as "no script MIME type" and refuses the
-    // bundle's own JS. MEASURED by the CAP-8B real-window matrix (the first
-    // executable of this path): "Refused to execute pweb://app/assets/
-    // driver.js as script ... its Content-Type is not a script MIME type".
-    // The other two adapters already carry the header (BuildHeaders on
-    // Windows, serveTask: on macOS); this is the Linux half of that parity.
-    soup_message_headers_append(soupHeaders, 'Content-Type',
-      PAnsiChar(mime));
-    // CAP-10C2: the engine must not answer a later request for this URL out
-    // of its own cache. The WebView2 adapter has sent this since CAP-4W and
-    // the two WebKit adapters did not. MEASURED here, on this adapter, with
-    // the dev host and three archives and no CLI involved: without the
-    // header the handler is asked for `assets/app.js` EXACTLY ONCE, at the
-    // first document load, and every later re-navigation re-runs the page
-    // against the previous bundle's JavaScript - the archive changes, the
-    // window does not. With it the store is asked on every navigation and
-    // the page tracks the archive (42 -> 47 -> 42 over three generations).
-    // Not a development affordance: `app.pwb` is a replaceable, privileged
-    // bundle and an engine cache is not something this runtime can
-    // invalidate.
-    soup_message_headers_append(soupHeaders, 'Cache-Control', 'no-store');
-    for i := 0 to headers.Count - 1 do
-      soup_message_headers_append(soupHeaders,
-        PAnsiChar(headers.Items[i].Name), PAnsiChar(headers.Items[i].Value));
-    // transfer full: the response owns the header set from here, and
-    // nothing between its creation and this call can raise
-    webkit_uri_scheme_response_set_http_headers(response, soupHeaders);
-    webkit_uri_scheme_request_finish_with_response(request, response);
-    g_object_unref(response); // the request holds its own reference
-    g_object_unref(stream); // and the response holds its own
+    noExtra.Count := 0;
+    PWebGtkFinishServed(request, PWEB_GTK_STATUS_OK, PWEB_GTK_REASON_OK,
+      mime, asset.Content, noExtra);
   except
     // fail closed: a constant refusal beats letting an exception cross
     // the C frame
@@ -1124,6 +1333,13 @@ end;
 
 constructor TWebKitGtkAssetHandler.Create(AWebView: webview_t;
   const AStore: IAssetStore);
+begin
+  Create(AWebView, AStore, nil, '');
+end;
+
+constructor TWebKitGtkAssetHandler.Create(AWebView: webview_t;
+  const AStore: IAssetStore; const ABlobs: IBlobStore;
+  const AOwner: RawUtf8);
 var
   controller, security: Pointer;
   reg: PPWebGtkRegistration;
@@ -1133,8 +1349,16 @@ begin
     raise EPWebWebKitGtkAssetHandler.Create('webview handle is nil');
   if AStore = nil then
     raise EPWebWebKitGtkAssetHandler.Create('asset store is nil');
+  // a blob store with no owner would resolve against an entry created
+  // with an empty owner - see the Windows sibling for the same guard
+  if (ABlobs <> nil) and
+     (AOwner = '') then
+    raise EPWebWebKitGtkAssetHandler.Create(
+      'a blob store needs the principal it serves');
   fThreadId := GetCurrentThreadId; // GTK/WebKit calls are GUI-affine
   fStore := AStore;
+  fBlobs := ABlobs;
+  fOwner := AOwner;
   controller := webview_get_native_handle(AWebView,
     WEBVIEW_NATIVE_HANDLE_KIND_BROWSER_CONTROLLER);
   if controller = nil then

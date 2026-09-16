@@ -41,7 +41,11 @@ const TARGET_SOURCE = {
 
 let target = '';
 let work = 'build/cap12a';
-let factsPath = '';
+// THE FACTS FILE IS A DEFAULT, NOT AN OPTION THE CALLER MUST REMEMBER. The
+// first hosted run wrote it and then reported `webkitgtk_version: undecided`,
+// because the workflow did not pass --facts - and 6.3.2 is a question ABOUT a
+// version, so an undecided version is the row not being answered at all.
+let factsPath = 'build/cap12b/entry/facts.txt';
 let outPath = '';
 for (let i = 2; i < process.argv.length; i++) {
   const a = process.argv[i];

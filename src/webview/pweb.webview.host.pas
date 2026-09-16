@@ -117,6 +117,7 @@ uses
   pweb.webview.binding,
   pweb.assets.intf,
   pweb.assets.bundle,
+  pweb.blobs.intf, // CAP-12B: the blob data plane's contract, not a store
   pweb.imagepath, // CAP-10E: the kernel-resolved trusted location
   {$ifdef DARWIN}
   pweb.platform.cocoa
@@ -209,6 +210,18 @@ type
     /// CAP-15C: the native socket door's two lifecycle seams, or nil
     DocumentReplacing: TPWebHostDocumentProc;
     BeforeDrain: TPWebHostNotifyProc;
+    /// CAP-12B: the blob data plane served under pweb://app/_pweb/blob/,
+    /// or nil for an application that does not use it
+    // - THE COMPOSITION CREATES IT, because one store has to reach both
+    // the platform handler here and the fetch door's decorator, which is
+    // built before this host runs. What the host owns is the ORDER: the
+    // plane is closed before the binding closes and the scheduler
+    // drains, every blob of the window goes on a document replacement,
+    // and the reference is dropped only after the handler is detached
+    // - the RESERVATION does not depend on it. A host with no blob store
+    // still answers `_pweb/` from the reserved branch, so no asset store
+    // can ever be consulted under that prefix
+    Blobs: IBlobStore;
     {$ifdef PWEB_DEV}
     /// CAP-14B: the DEV composition's one view seam, or nil
     // - a development composition sets it to install its console channel;
@@ -331,6 +344,13 @@ var
   // names - read on the GUI thread by the navigation hook below
   HostDocumentReplacing: TPWebHostDocumentProc;
   HostDocumentWindow: RawUtf8;
+  /// CAP-12B: the blob plane of the running host and the principal that
+  // owns its blobs - read on the GUI thread by the same hook
+  // - a document replacement ENDS a window's blobs. A navigation, a
+  // reload and a development generation switch all arrive here, which is
+  // why there is one hook and not three
+  HostBlobs: IBlobStore;
+  HostBlobOwner: RawUtf8;
   /// CAP-10C1: how the teardown tells the auto-close thread it is no longer
   // needed, or nil when the bound is not armed
   // - MEASURED at CAP-10C0: while PWEB_SMOKE_AUTOCLOSE_MS is armed the
@@ -464,8 +484,37 @@ end;
   the classifier has already answered - and it must not block, because its
   caller is the navigation decision on the GUI thread. An exception never
   leaves it: the guard's own barrier is the second line, this is the first. }
+{ CAP-12B: end the blob plane through its runtime seam if it has one.
+
+  A store that carries only IBlobStore is still ended - by releasing the
+  one principal this host serves - so a composition that supplies some
+  other implementation cannot leave blobs resolvable past the drain
+  merely by not implementing the supporting interface. }
+procedure PWebHostCloseBlobs(const ABlobs: IBlobStore);
+var
+  runtime: IBlobStoreRuntime;
+begin
+  if ABlobs = nil then
+    exit;
+  if Supports(ABlobs, IBlobStoreRuntime, runtime) then
+    runtime.Close
+  else
+    ABlobs.ReleaseOwner(HostBlobOwner);
+end;
+
 procedure PWebHostTrustedDocument;
 begin
+  try
+    // CAP-12B FIRST, and the order is the argument: the blobs of the
+    // document being replaced stop resolving BEFORE anything else is
+    // told the document is changing, so no seam can hand the incoming
+    // document a token the outgoing one minted. ReleaseOwner is bounded,
+    // takes one lock and touches no engine, so it is safe on the GUI
+    // thread where this hook runs.
+    if HostBlobs <> nil then
+      HostBlobs.ReleaseOwner(HostBlobOwner);
+  except
+  end;
   try
     if Assigned(HostDocumentReplacing) then
       HostDocumentReplacing(HostDocumentWindow);
@@ -989,7 +1038,8 @@ begin
     // THE ONE FORCED ORDERING DIFFERENCE: Cocoa's pweb://app seam is armed
     // by CONSTRUCTION, and only a webview created after it can be served.
     // Attach below proves the seam actually ran for the view that came back.
-    assetHandler := TCocoaAssetHandler.Create(assets);
+    assetHandler := TCocoaAssetHandler.Create(assets, Options.Blobs,
+      Options.PrincipalId);
     {$endif DARWIN}
 
     w := WebViewCheckCreated(webview_create(0, nil));
@@ -1032,9 +1082,11 @@ begin
       // native seam, then navigate - never any injected HTML
       {$ifndef DARWIN}
       {$ifdef LINUX}
-      assetHandler := TWebKitGtkAssetHandler.Create(w, assets);
+      assetHandler := TWebKitGtkAssetHandler.Create(w, assets, Options.Blobs,
+        Options.PrincipalId);
       {$else}
-      assetHandler := TWebView2AssetHandler.Create(w, assets);
+      assetHandler := TWebView2AssetHandler.Create(w, assets, Options.Blobs,
+        Options.PrincipalId);
       {$endif LINUX}
       {$endif DARWIN}
       // CAP-8B: the guard is installed AFTER the handler that can serve
@@ -1042,6 +1094,12 @@ begin
       // any, so no document ever commits unclassified
       // CAP-15C: the document seam is armed BEFORE the guard, so the very
       // first navigation already passes through it
+      // CAP-12B: and so is the blob plane's, for the same reason - the
+      // very first navigation must already be able to end a window's
+      // blobs, because in a development generation switch it is exactly
+      // the navigation that replaces the document
+      HostBlobs := Options.Blobs;
+      HostBlobOwner := Options.PrincipalId;
       HostDocumentReplacing := Options.DocumentReplacing;
       HostDocumentWindow := Options.WindowId;
       PWebNavTrustedDocumentHook := PWebHostTrustedDocument;
@@ -1144,6 +1202,26 @@ begin
       // first: no navigation decision may reach a door that is going away
       PWebNavTrustedDocumentHook := nil;
       HostDocumentReplacing := nil;
+      // CAP-12B: the blob plane closes in the SAME position and for the
+      // same reason - every blob of every principal becomes unresolvable
+      // before the binding closes and the scheduler drains. It is not the
+      // end of the STORE: the reference is dropped in the `finally` below,
+      // after the platform handler has been detached, so a scheme task
+      // that is mid-window still holds its own bytes and no new one can
+      // start. Closing the plane before the handler stops serving is what
+      // makes "released" observable from the page rather than a race.
+      HostBlobs := nil;
+      if Options.Blobs <> nil then
+        try
+          PWebHostCloseBlobs(Options.Blobs);
+        except
+          on E: Exception do
+          begin
+            WriteLn(StdErr, HostLogPrefix, ': FAIL blob plane Close: ',
+              E.Message);
+            Result := 1;
+          end;
+        end;
       if Assigned(Options.BeforeDrain) then
         try
           Options.BeforeDrain();

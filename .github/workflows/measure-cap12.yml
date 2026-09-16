@@ -194,6 +194,48 @@ jobs:
           case "${ms}" in ''|*[!0-9]*) ms=600000 ;; esac
           test/cap12a/run_cap12a_macos.sh --timeout-ms "${ms}"
 
+      # THE SEAM THOSE FOUR ROWS JUSTIFY, COMPILED ON BOTH ARCHITECTURES.
+      # §6.5 answers "what must the macOS synchronous handler become" with
+      # "almost nothing" - read allHTTPHeaderFields for Range, answer 206 on
+      # the NSHTTPURLResponse the adapter already builds, read the body for an
+      # upload - and the entry condition is the evidence for it. A seam
+      # justified by a measurement and never put through a compiler is half
+      # an answer, and the two macOS legs are the only place in this project
+      # that can compile the Objective-C++ half at all.
+      - name: Install pinned FPC and select the pinned Xcode
+        if: ${{ matrix.target != 'linux' }}
+        timeout-minutes: 20
+        uses: ./.github/actions/cap-7m0-install-pinned-fpc-and-select-the-pinned-xcode
+
+      - name: Fetch pinned webview/webview (exact SHA, checksum verified)
+        if: ${{ matrix.target != 'linux' }}
+        timeout-minutes: 10
+        uses: ./.github/actions/fetch-pinned-webview-webview-exact-sha-checksum-verified
+
+      - name: Fetch pinned mORMot2 (exact SHA + sha256-pinned statics)
+        if: ${{ matrix.target != 'linux' }}
+        timeout-minutes: 20
+        uses: ./.github/actions/fetch-pinned-mormot2-exact-sha-sha256-pinned-statics
+
+      - name: Compile the macOS seam - the bridge object and the adapter
+        if: ${{ matrix.target != 'linux' }}
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          set -eu
+          tools/build-macos-bridge.sh
+          static='deps/mormot2/static/x86_64-darwin'
+          if [ "$(uname -m)" = 'arm64' ]; then
+            static='deps/mormot2/static/aarch64-darwin'
+          fi
+          mkdir -p build/cap12b/fpc-macos
+          fpc -MObjFPC -Sh -B -FUbuild/cap12b/fpc-macos \
+            -Fusrc/assets -Fusrc/lib -Fusrc/security -Fusrc/platform/macos \
+            -Fideps/mormot2/src -Fudeps/mormot2/src/core \
+            -Fudeps/mormot2/src/lib -Fudeps/mormot2/src/crypt \
+            "-Fl${static}" \
+            src/platform/macos/pweb.platform.cocoa.pas
+
       # ------------------------------------------------------- the typed rows
 
       # ALWAYS, and it cannot fail the job: a run whose instrument died still
