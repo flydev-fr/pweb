@@ -1,16 +1,16 @@
 # The backlog
 
 `_bmad-output/implementation-artifacts/deferred-work.md` is append-only and
-carries **448 entries** from Phase 0 to the second mORMot repin. It is a
+carries **450 entries** from Phase 0 to the second mORMot repin. It is a
 ledger: it records what was found, in the words of the shard that found it,
 and it never edits itself. That makes it excellent evidence and a poor
 worklist — a reader who wants to know *what is still owed* has to resolve
 every supersession chain by hand, and three phase-closure artifacts answer
 that question for CAP-10 and CAP-11 only.
 
-This document is the worklist. Every one of the 448 entries is disposed of
+This document is the worklist. Every one of the 450 entries is disposed of
 exactly once, with one verdict, an owner and a reason. **Sixty-four are open,**
-**and those sixty-four are listed here in full**; the other 384 are in
+**and those sixty-four are listed here in full**; the other 386 are in
 `test/backlog/dispositions.tsv`, which is the table this document is written
 from and the one the gate reads.
 
@@ -20,7 +20,7 @@ from and the one the gate reads.
 | `UPSTREAM` | 1 | the defect belongs to a third-party project and a report is written or owed. Three mORMot entries left this bucket on 2026-09-16, when upstream fixed all three and the pin moved onto the fixes |
 | `ROADMAP` | 59 | real work, deferred, with a named owner |
 | `ACCEPTED` | 123 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
-| `CLOSED` | 261 | the thing the entry describes is done |
+| `CLOSED` | 263 | the thing the entry describes is done |
 
 `ACCEPTED` is not a synonym for ignored. It is the verdict for an entry whose
 honest answer is a measurement — that WebView2 raises no navigation event for a
@@ -361,13 +361,14 @@ tampering (`7M0-5`), an `[InstallDelete]` in the fixed profile against the first
 pin bump (`6B4-7`), and hash-pinning or vendoring the WebView2 SDK nuget the
 upstream cmake fetches unverified (`P1-1`).
 
-**Harness hygiene owns four**, all named and all mechanical — the fifth,
+**Harness hygiene owns three**, all named and all mechanical — the fifth,
 `7M0-6`'s seven unguarded recursive deletes, was promoted to `FIX_NOW` and is
 closed above: the four copies of
 `Invoke-Bounded` (`6B2-3`), the `set -e`-unreachable failure paths in
-`prove_cap10b1.sh` (`B2-10`), the CAP-9A runner's case-sensitivity and its
-unremoved `mktemp -d` (`9B1-8`), and `pwebqjspack.pas` still reading `ParamStr`
-where the bundler now reads the kernel (`P6U-2`).
+`prove_cap10b1.sh` (`B2-10`), and `pwebqjspack.pas` still reading `ParamStr`
+where the bundler now reads the kernel (`P6U-2`). The CAP-9A runner's
+case-sensitivity and its unremoved `mktemp -d` (`9B1-8`) were closed by the
+second mORMot repin, the next shard to touch `test/cap9a`.
 
 **Security surface owns six** and none of them is a live exposure: an opt-in
 strict mode so a mistyped principal id fails loudly instead of to ceiling rights
@@ -414,7 +415,7 @@ than appended to an append-only ledger:
 
 Sixty-four rows: the four `FIX_NOW` items this triage closed, the one
 `UPSTREAM` entry, and the fifty-nine on the roadmap. Everything else — 123
-`ACCEPTED` and 261 `CLOSED` — is in `test/backlog/dispositions.tsv`.
+`ACCEPTED` and 263 `CLOSED` — is in `test/backlog/dispositions.tsv`.
 
 | key | verdict | owner | reason |
 |---|---|---|---|
@@ -447,7 +448,6 @@ Sixty-four rows: the four `FIX_NOW` items this triage closed, the one
 | `9A-2` | ROADMAP | CAP-12 | the Promise-returning `pweb.invoke` was measured at Checkpoint 1 and not chosen; it needs a job pump and cross-enqueue JSValue rooting the pinned wrapper does not expose. It is the same ratification 9B1-2 waits on, and a shard wanting async-first plugin scripts owns both |
 | `9B1-6` | ROADMAP | CAP-12 | module and manifest size bounds are checked after the carrier has already materialised the asset, because the frozen `TryRead` has no size, HEAD or streaming form. The real fix is a carrier-side materialisation cap, which needs `IAssetStore` ratification and belongs with the blob plane |
 | `9B1-7` | ROADMAP | the shard that ratifies a module-source validator | module source shares the path validator, so a raw C1 control byte is refused even inside a comment or a string literal. Deterministic and fail-closed, but stricter than JavaScript requires, and whether module source gets its own validator is a decision to ratify rather than a second copy of a security validator to grow |
-| `9B1-8` | ROADMAP | the shard that next touches `test/cap9a` | `run_quickjsfoundation.ps1` extracts `MARKER_PASS` case-sensitively and then tests it with `-match`, and `run_quickjsfoundation.sh` never removes its `mktemp -d`. Both shapes were corrected in the CAP-9B1 runners; the CAP-9A pair is untouched |
 | `9B2-5` | ROADMAP | the shard that next revisits the CAP-9A script surface | the `PostScript`/`WaitScript`/`Eval` mailbox path gained no pending-job gate, and adding one would move the frozen CAP-9A corpus. It is the diagnostic surface rather than the production call API, and that shard should decide whether to extend the gate or retire the path |
 | `9C2-3` | ROADMAP | CAP-13 | no `plugins.zip`, generated registry or `LICENSE.quickjs` enters the three Windows installer profiles. CAP-10 was named as the owner of deciding which generated applications include plugins and closed without doing it, so the decision now travels with the installers |
 | `B1-5` | ROADMAP | CAP-12 | `examples/08-release`, `examples/07-quickjs` and the CAP-8 harnesses still compose the runtime by hand rather than through `pweb.webview.host`, so there are two compositions of one runtime and only one is exercised by a generated project. Migrating them re-baselines three frozen closure digests, which belongs to a shard whose gates already re-measure them |
@@ -482,3 +482,4 @@ Sixty-four rows: the four `FIX_NOW` items this triage closed, the one
 | `12A-1` | UPSTREAM | WebKitGTK; the report is written, the version range is pinned | `webkit_uri_scheme_request_get_http_body()` faults the UI process for a blob-backed request body on 2.52.6, with a same-size typed-array body unharmed; the gdb backtrace puts the fault three frames inside libwebkit2gtk with the caller doing nothing but the call |
 | `12B-2` | ROADMAP | CAP-12C | the JS->native upload transport is built, drained and proven byte-exact on three engines and refused by name with a receipt; CAP-12C turns the refusal into a store write behind the already-ratified `IBlobWriter` and adds the two SDK functions |
 | `12B-3` | ROADMAP | the shard that wants blobs larger than one window | in v1 a blob is at most the 8 MiB window, which is why no whole-body answer needs ranging; the ranged path is built and proven and the clamp lives in one place, and the ceiling should be raised together with a file-backed store |
+| `RP2-6` | ROADMAP | the MORMOT-REPIN-2 closure | owed to the hosted run of the shard's final HEAD: macOS CAP-9 without the `JS_SetMaxStackSize` re-declaration (with the new depth probe and declarations check), the aarch64-darwin compile of the widened `pas_malloc_usable_size`, macOS CAP-10 to CAP-15, the two macOS `sdk_inventory_digest` values, and Windows CAP-10D0 L2b, which this host's `build/` cannot copy |

@@ -7,7 +7,9 @@
 > The binding now reads `procedure JS_SetMaxStackSize(rt: JSRuntime;
 > stack_size: PtrUInt)`. PWeb's pin moved onto `66d7d51c1` the same day, its
 > private re-declaration is gone, and the stack, memory and interrupt limits
-> are measured safe through the pinned binding. The report below is kept as
+> are measured safe through the pinned binding on Windows and Linux; a
+> runtime set to 1 MB allows about four times the recursion depth of one set
+> to 256 KB, so the call does reach the runtime. The report below is kept as
 > it was filed.
 
 **Project:** synopse/mORMot2

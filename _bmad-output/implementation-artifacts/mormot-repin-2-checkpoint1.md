@@ -10,9 +10,9 @@ was changed to reach these numbers. The one commit on the branch at this
 checkpoint, `291eb32d0c6feb9f1f414f91e9afe54cf8953e07`, changes the `commit =`
 line of `mormot.lock` and nothing else. It is the measurement vehicle: the
 two macOS targets can only be reached through a hosted run, and a hosted run
-builds whatever the lock names. Its run, **35141256648**, is expected to go red
-at the first pin-derived literal (CAP-9C1 C30), and it did on Windows and
-Linux — after the Currency step had run on every leg.
+builds whatever the lock names. Its run, **35141256648**, was expected to go
+red at the first pin-derived literal (CAP-9C1 C30), and it did on all four
+legs, each after its Currency step had run.
 
 Hosts: the Windows dev host (FPC 3.2.2 x86_64-win64, the toolchain `fpc.lock`
 pins for the hosted Windows leg; MSVC from Visual Studio 18), and WSL
@@ -36,8 +36,10 @@ The three hashes in the brief were resolved in the upstream tree, not trusted:
 is on `master`'s **first-parent** line (16th from the tip when measured;
 `da7e1c2f` is 122nd). So the smallest commit on the line the pin sits on that
 carries all three is **`66d7d51c1fd21bd222b360382ed8e2b4f656aaad`** itself —
-`2.4.16907`, `git describe` `2.4-stable-2584-g66d7d51c1`. The next seventeen
-commits on `master` (TLS 1.3, futex shutdown, TSynLog) are not taken.
+`2.4.16907`, `git describe` `2.4-stable-2584-g66d7d51c1`. The seventeen commits
+`master` carried after it when measured — fifteen on the first-parent line,
+plus one commit from each of two merged pull requests (#586, #589) — are not
+taken (TLS 1.3, futex shutdown, TSynLog).
 
 ### The delta from `da7e1c2f`
 
@@ -45,12 +47,13 @@ commits on `master` (TLS 1.3, futex shutdown, TSynLog) are not taken.
 
 | area | files | lines | what matters to PWeb |
 |---|---:|---:|---|
-| `src/core` | 14 | +2717 / −672 | `mormot.core.interfaces.pas` +7/−5 (the Currency fix, and `a5b75dde` int64 clamp refactoring); `mormot.core.base.asmx64.inc` +1258/−8 (SSSE3 JSON number parsing — new x64 asm, which is why the Win64 unwind gate and the whole Windows chain were re-run rather than assumed); `datetime`, `text`, `variants`, `unicode`, `fpcx64mm`, `os`/`os.posix.inc` refactoring |
+| `src/core` | 14 | +2717 / −672 | `mormot.core.interfaces.pas` +7/−5 (the Currency fix, and `a5b75dde` int64 clamp refactoring); `mormot.core.base.asmx64.inc` +1258/−8: `GetExtendedSsse3`, one `nostackframe` leaf routine with no call, no push and no non-volatile register or XMM6–15 on Win64, so it needs no unwind entry. `mormot.core.text` now routes text-to-float parsing through it wherever `ASMX64NOTPIC` is defined and the CPU has SSSE3 — Windows and Linux x64, every hosted runner of those included — so the scalar path is no longer the one those legs run, and the whole chain on both platforms is what exercised the new one (JSON numbers across the suites, the Double argument of `cur-one-double`, the SDK wire parity); `datetime`, `text`, `variants`, `unicode`, `fpcx64mm`, `os`/`os.posix.inc` refactoring |
 | `src/lib` | 3 | +18 / −16 | `mormot.lib.quickjs.pas` +10/−11 — **only** `37fa86b4` and `66d7d51c`; `mormot.lib.static.pas` +7/−4 (`66d7d51c`); `mormot.lib.openssl11.full.inc` 1 line |
 | static bindings (`static/`) | 0 | — | byte-identical, `dev.sha256` included |
 | `res/` | 3 | +13 / −13 | `res/static/liblizard/lib/{fse,huf,lizard_common}.h` — prototype text only (`int` → `size_t`), from `66d7d51c`. `res/static/libquickjs` untouched |
 | the QuickJS binding's other half, `src/script` | 0 | — | untouched |
 | `src/mormot.defines.inc`, `mormot.uses.inc` | 0 | — | untouched (so `test/cap7f/mormot-defines.tsv` holds) |
+| `src/mormot.commit.inc`, `src/mormot.commit-num.inc` | 2 | +2 / −2 | upstream's version constants (`2.4.16776` → `2.4.16907`); staged into every SDK root with the rest of `src/`, so part of why `sdk_inventory_digest` moves |
 | `src/net`, `src/crypt`, `src/db`, `src/orm` | 14 | | TLS/DNS/DHCP/SQL work; `mormot.net.sock.posix.inc` and `mormot.net.http.pas` are on CAP-15's path and are covered by its gates |
 | `test/` (upstream's own) | 5 | | not compiled by PWeb |
 
@@ -234,3 +237,30 @@ instead:
   place. The hosted legs of the final HEAD run the same rows without it.
 - macOS `sdk_inventory_digest`. Every leg of the measurement run stopped at
   C30, before CAP-10D2, so both macOS values come from the final HEAD's run.
+
+---
+
+## Amended after the review
+
+The checkpoint's numbers stand. The shard's review found that one proof they
+were cited for was weaker than written, and that one reported defect had no
+probe at all. Both now have gates:
+
+- **q22 could not see the stack limit.** Its 256 KB is also QuickJS's own
+  `JS_DEFAULT_STACK_SIZE` (`quickjs.h:420`), and CAP-9B2's 128 KB row only
+  asserts that the host fails, so M3's table held with the call deleted.
+  CAP-9A now measures the recursion depth under 256 KB and under the shipped
+  1 MB default on a second runtime, and requires the second to exceed twice
+  the first, with no corpus line added. The result is 494 against 1983 frames
+  on Windows. Built from a scratch copy of `src/script` with the call
+  deleted, both runtimes stop at 494 and the harness fails on that
+  expectation. `quickjs_corpus_digest` is unchanged.
+- **9A-4 had no probe, and 9A-3's compile guard covers only a typed
+  revert.** `test/cap9a/check_pinned_bindings.ps1`, called by both CAP-9A
+  runners, reads `JS_SetMaxStackSize` and the three `pas_*` size declarations
+  from the pin. It refuses each in its pre-fix form on every run. Pointed at
+  `da7e1c2f`'s two files, it refuses the three declarations that were wrong
+  there.
+- The aarch64-darwin comment now makes the argument that is actually true:
+  signedness changes nothing at the call boundary. It no longer claims that
+  no request reaches the sign bit.

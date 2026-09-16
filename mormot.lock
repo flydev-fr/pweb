@@ -26,10 +26,12 @@
 # matrix over arities 0/1/2 is 5/5 on all four targets, each on its own leg's
 # compiler (it was 5/5, 1/5, 1/5 and 0/5 at the previous pin); CallMethod still
 # carries exactly one RUNTIME_FUNCTION on Win64 and the unwind matrix is 12/12;
-# and the CAP-9 resource-limit matrices pass with the pinned JS_SetMaxStackSize
-# called directly, so PWeb's private re-declaration of it is gone. test/cap3u
-# and the CAP-9 harnesses are the permanent gates over all three, against the
-# pristine dependency.
+# and, on Windows and Linux, the CAP-9 resource-limit matrices pass with the
+# pinned JS_SetMaxStackSize called directly - a runtime at the 1 MB default
+# allows about four times the recursion depth of one at 256 KB - so PWeb's
+# private re-declaration of it is gone. test/cap3u, the CAP-9 harnesses and
+# test/cap9a/check_pinned_bindings.ps1 are the permanent gates over all three,
+# against the pristine dependency.
 #
 # This commit also carries both halves of the CAP-3U finding the previous move
 # (2026-09-08, from b1a129b0) was made for: 790154af ("core: ensure

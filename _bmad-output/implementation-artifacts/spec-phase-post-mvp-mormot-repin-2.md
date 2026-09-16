@@ -2,7 +2,7 @@
 title: 'MORMOT-REPIN-2 — the mORMot pin onto the three upstream binding fixes'
 type: 'chore'
 created: '2026-09-16'
-status: 'in-progress'
+status: 'in-review'
 route: 'dispatch'
 baseline_commit: '4aed789bb029fb5f4e2bd4d14749268a7d82358a'
 review_loop_iteration: 0
@@ -70,11 +70,11 @@ tooling.
 - [x] Checkpoint 1 measured and recorded -- `mormot-repin-2-checkpoint1.md`.
 - [x] `src/script/pweb.script.quickjs.pas` -- remove the shadow, align the darwin export -- the binding is fixed upstream.
 - [x] pin-derived literals -- C30 prefix and the six `LICENSE.quickjs` sites -- the provenance line moved, the licence text did not.
-- [ ] `mormot.lock` -- candidate commit, comment citing the three commits and the forum post.
-- [ ] `test/cap3u/currency-expectations.tsv` -- all rows `must_pass` from the hosted measurement run.
-- [ ] ledger, dispositions, backlog gate and document -- `RP-2`, `9A-3`, `9A-4` resolved upstream; the Currency limitation retired.
-- [ ] docs and upstream reports -- resolved, commits named.
-- [ ] final artifact -- CANDIDATE / STATICS / CURRENCY / QUICKJS SHADOWS / DELTA / SUPERSESSIONS / REGRESSIONS / VERDICT.
+- [x] `mormot.lock` -- candidate commit, comment citing the three commits and the forum post.
+- [x] `test/cap3u/currency-expectations.tsv` -- all rows `must_pass` from the hosted measurement run.
+- [x] ledger, dispositions, backlog gate and document -- `RP-2`, `9A-3`, `9A-4` resolved upstream; the Currency limitation retired.
+- [x] docs and upstream reports -- resolved, commits named.
+- [x] final artifact -- CANDIDATE / STATICS / CURRENCY / QUICKJS SHADOWS / DELTA / SUPERSESSIONS / REGRESSIONS / VERDICT.
 
 **Acceptance Criteria:**
 - Given the final HEAD, when the four-target CI runs, then every leg and the aggregate are green and the watcher's gates are unaffected.
@@ -85,6 +85,47 @@ tooling.
 The measurement vehicle is commit `291eb32` on the shard branch: it moves only
 the `commit =` line, so the hosted run on it measures the unpatched Currency
 return on the two macOS legs, which no host here can reach.
+
+Implemented directly rather than through a dispatched subagent: every step
+depended on a measurement taken moments before, and the checkpoint was PLAN
+READY with default proposals, so the build continued in the same run.
+
+Surprises, all recorded in the final artifact: the brief's `PtrUInt` for
+`pas_malloc` is `PtrInt` in the tree; the aarch64-darwin export block still
+returned a 32-bit `pas_malloc_usable_size`; the CAP-10D2 contract refuses an
+uncommitted shipped path, so the final chains ran on a committed HEAD; and
+four local-harness mismatches (a `cmd` body, an unsigned `pwsh` shim, a long
+`RUNNER_TEMP`, an inline-step comment) were corrected and their steps re-run.
+
+## Spec Change Log
+
+## Review Triage Log
+
+Pass 1 — three layers over the diff from `4aed789` (101 kB): blind hunter 14 findings, edge-case hunter 4, verification gap 1 gap + 2 other. No intent_gap and no bad_spec, so no loopback; every surviving finding was a patch, applied here.
+
+| # | layer | finding | verdict | evidence / route |
+|---|---|---|---|---|
+| 1 | blind | README, `pipeline-contract.md`, `pweb.cli.sdkroot.pas` still name only `896f1c1c`/`790154af` | false | all three state that the pin carries those commits and why the Windows patch went, which stays true at `66d7d51c`; none claims the SysV/AArch64 register was right |
+| 2 | blind | the Currency row of `post-migration-amendments.tsv` still says only Windows gates | low | true, and readers of the table would be misled; no gate reads the column (`check_migration_map.ps1` uses 0, 1, 3) — patched, migration map re-run PASS |
+| 3 | blind | the delta table sums to 39 of 41 files | low | the two `mormot.commit*.inc` files were missing — patched in checkpoint and artifact |
+| 4 | blind | "16th from the tip" vs "seventeen commits after" | low | both true of different sets (15 first-parent + 2 PR commits) — wording patched |
+| 5 | blind | the SSSE3 float parser is a default runtime change the artifact justified wrongly | low | verified: `GetExtendedSsse3` is a `nostackframe` leaf with no call, push, non-volatile register or XMM6–15, routed under `ASMX64NOTPIC` + SSSE3 — wording patched |
+| 6 | blind | "no request reaches the sign bit" is asserted, not shown | low | the per-runtime limit check can wrap; the true argument is that signedness does not change the ABI — patched in the unit comment, ledger and report; a forum note on upstream's `PtrInt` is the owner's call |
+| 7 | blind | the darwin comment says unsigned while `pas_realloc` is `PtrInt`; the widened export was never compiled for aarch64-darwin | low | comment patched; the compile is owed to the hosted run (`RP2-6`) |
+| 8 | blind | macOS results written as done (ledger, lock) | medium | true for RP2-2, RP2-5 and the lock comment — reworded, and the owed work is an open row, `RP2-6` |
+| 9 | blind | "every value below was measured" overstates the supersession table | low | sources now named per row, local vs hosted pairing stated — patched in the artifact |
+| 10 | blind | the regressions table marks CAP-10 PASS on Windows with L2b unrun, and omits the collection steps | low | patched |
+| 11 | blind | the checkpoint said red on Windows and Linux, later all four | low | written before the macOS legs finished — patched |
+| 12 | blind | the negative evidence has no command; the compile guard is overstated | medium | the two negative legs are written out with their commands in the artifact, and both properties now have permanent gates (`check_pinned_bindings.ps1`, the q22 depth probe); the compile guard is described as covering a typed revert only |
+| 13 | blind | `cap3u_currency.pas` blames `790154af` for arm64's 0/5 | low | true, AArch64 was never touched by it — patched; `run_currency.ps1` names the pins |
+| 14 | blind | the final HEAD is not named; the spec reads done while AC1 is pending | low | the commit table names every commit; status stays `in-review` until the hosted run |
+| 15 | edge | the five Currency cases miss negative, `High(Currency)` and stack-passed arguments | low — rejected | the frozen intent fixes the probe at arities 0/1/2; the fix is value-independent (`fistp` of an exact Int64, the x0 value kept); new cases would need four new hosted measurements |
+| 16 | edge | macOS supersessions and no-shadow rows unmeasured while the backlog says nothing is owed | medium | same as 8 — `RP2-6` |
+| 17 | edge | the 9A-4 probe was read once and nothing re-checks it | medium | true — `test/cap9a/check_pinned_bindings.ps1` on every leg, refusing each rule's pre-fix form, and refusing the old pin's three wrong declarations |
+| 18 | edge | the amendment row is stale | low | same as 2 |
+| 19 | verification | no test observes that the configured stack limit is applied | medium | verified: 256 KB is `JS_DEFAULT_STACK_SIZE`; CAP-9A now compares depths at 256 KB and at the 1 MB default (494 vs 1983 frames), Expect only; with the call deleted both are 494 and the harness fails; `quickjs_corpus_digest` unchanged |
+| 20 | verification | the amendment row is stale | low | same as 2 |
+| 21 | verification | stale "runtime-typed" comments in the unit and in CAP-9A | low | patched |
 
 ## Verification
 

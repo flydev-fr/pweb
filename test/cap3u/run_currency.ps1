@@ -9,8 +9,8 @@
 #
 # WHY IT RUNS AT ALL. The 2026-09-08 pin move took upstream 790154af, which
 # changed how mORMot's SHARED x64 CallMethod reads a Currency result. Win64
-# went from 0/5 unpatched at the previous pin to 5/5 at this one, and that is
-# half of why the CAP-3U patch could be removed. The 2026-09-16 move took
+# went from 0/5 unpatched at b1a129b0 to 5/5 at da7e1c2f, and that is half of
+# why the CAP-3U patch could be removed. The 2026-09-16 move took
 # 6a27c07f, which fixed the SysV x64 and AArch64 halves without moving the
 # Win64 one: still 5/5 here, and now 5/5 on the other three legs too. This
 # gate is what keeps all of it true.

@@ -4,14 +4,16 @@ program cap3u_currency;
   four targets.
 
   WHY THIS EXISTS. mORMot's CallMethod reads a Currency result out of a
-  register that depends on the ABI, and the pinned upstream got that wrong in
-  two steps that this program measured:
+  register that depends on the ABI, and this program measured two upstream
+  steps of getting it right:
 
     790154af (2026-08-12) "core: ensure imvCurrency is returned in rax on
       x86-64" - taken by the 2026-09-08 pin move. It fixed Win64 (0/5 -> 5/5)
       and, because the asm block is shared by the whole x64 ABI, left SysV x64
-      reading RAX where FPC leaves nothing it means: 1/5 on linux-x86_64 and
-      macos-x86_64, and macos-arm64 - AAPCS64, its own CallMethod - at 0/5.
+      reading RAX, where FPC leaves nothing it means: 1/5 on linux-x86_64 and
+      macos-x86_64. macos-arm64 was measured at 0/5 at that pin too, but not
+      because of 790154af - AAPCS64 has its own CallMethod, which that commit
+      never touched and which had always read the result from d0.
     6a27c07f (2026-09-16) "core: fixed currency result in
       mormot.core.interfaces" - written in answer to that measurement and
       taken by the 2026-09-16 pin move. FPC on SysV x64 leaves a Currency in

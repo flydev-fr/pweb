@@ -7,8 +7,10 @@
 > `mormot.lib.static.pas` now exports `pas_malloc(size: PtrInt)`,
 > `pas_calloc(n, size: PtrUInt)` with an overflow check,
 > `pas_realloc(P; Size: PtrInt)` and `pas_malloc_usable_size(P): PtrUInt` -
-> pointer-width throughout, which is the ABI this report asked for (the size
-> is signed where `size_t` is not, and no request reaches the sign bit). The
+> pointer-width throughout, which is the ABI this report asked for. Two sizes
+> are `PtrInt` where `size_t` is unsigned, although the commit's own subject
+> says "PtrUInt / size_t everywhere"; that changes nothing at the call
+> boundary, where all 64 register bits arrive either way. The
 > same commit changed the three liblizard header prototypes to `size_t`; the
 > `2.4-stable` static archive was built before it. PWeb's pin moved onto this
 > commit the same day. The report below is kept as it was filed.
