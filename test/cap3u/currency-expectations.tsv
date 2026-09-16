@@ -4,34 +4,34 @@
 #              a FAIL fails the leg.
 # `observe`    the case is run and recorded, and fails nothing. It is the
 #              verdict for a case whose behaviour is a known upstream defect.
-#              Turning one into `must_pass` is a deliberate act.
+#              Turning one into `must_pass` - or back - is a deliberate act.
 #
-# RATIFIED FROM HOSTED RUN 34241426338 (commit c1955928390707c165e00f75ac29d4a3327996b8,
-# 2026-09-08, all four legs green). Every row below is now a measurement taken
-# on the leg's OWN compiler; nothing here is inferred from another target or
-# from the dev host. What the run measured:
+# RATIFIED FROM HOSTED RUN 35141256648 (commit 291eb32d0c6feb9f1f414f91e9afe54cf8953e07,
+# 2026-09-16), the measurement run of the 2026-09-16 mORMot pin move: that
+# commit moves only the `commit =` line of mormot.lock onto
+# 66d7d51c1fd21bd222b360382ed8e2b4f656aaad, so every leg built the UNPATCHED
+# candidate, and every leg ran this step before it stopped at the first
+# pin-derived literal elsewhere. What it measured, each on its own compiler:
 #
-#   windows-x86_64  5/5   FPC 3.2.2 x86_64-win64
-#   linux-x86_64    1/5   FPC 3.2.2+dfsg-32, the Ubuntu 24.04 package
-#   macos-x86_64    1/5   FPC 3.2.2 [2021/05/16] x86_64
-#   macos-arm64     0/5   FPC 3.2.2 [2021/05/16] aarch64
+#   windows-x86_64  5/5   FPC 3.2.2 x86_64-win64               (5/5 before)
+#   linux-x86_64    5/5   FPC 3.2.2+dfsg-32, Ubuntu 24.04       (1/5 before)
+#   macos-x86_64    5/5   FPC 3.2.2 [2021/05/16] x86_64         (1/5 before)
+#   macos-arm64     5/5   FPC 3.2.2 [2021/05/16] aarch64        (0/5 before)
 #
-# So `cur-zero-arg` is promoted to `must_pass` on linux-x86_64 and
-# macos-x86_64. The dev-host Linux measurement that made this row `observe`
-# in the first place used FPC 3.2.3; the hosted leg's own 3.2.2 agrees with
-# it, which is the check that was owed.
+# "Before" is hosted run 34241426338 at da7e1c2f, which is what this table
+# declared until now: every row `must_pass` on windows-x86_64, `cur-zero-arg`
+# alone on the two SysV x64 targets, nothing on macos-arm64.
 #
-# THE TWO SysV x64 TARGETS BEHAVE IDENTICALLY, as `ABISYSVX64` predicts:
-# 1/5 each, the no-argument case right and the four with arguments returning
-# a leftover pointer read out of RAX.
+# WHAT CHANGED UPSTREAM is 6a27c07fc6c9f796711076561c293e68eb6b6398 ("core:
+# fixed currency result in mormot.core.interfaces"), written in answer to this
+# project's report: on FPC SysV x64 the result is now popped out of x87 ST0,
+# where FPC leaves a Currency, and on AArch64 the x0 value is no longer
+# overwritten from d0. The Win64 path was already right and did not move. The
+# dev host agrees on the two targets it reaches: 5/5 on Windows, and 5/5 on
+# Linux under FPC 3.2.3.
 #
-# macos-arm64 IS WORSE, AND IS ITS OWN STORY. AAPCS64 has its own CallMethod
-# and 0/5: even `cur-zero-arg` returns 0. Its four failing values
-# (0, 122123.9552, 0, 469104505686851.584, 124921.5376) are the SAME values
-# Win64 produced at the previous pin unpatched, which says the aarch64 path
-# still reads the result from a floating-point register. Nothing on this leg
-# may be promoted, and `RP-2`'s upstream report now covers three ABIs rather
-# than one.
+# So every row is `must_pass`, and a Currency-returning service is no longer a
+# documented limitation of the pin on any target.
 target	case	expectation
 windows-x86_64	cur-zero-arg	must_pass
 windows-x86_64	cur-one-int	must_pass
@@ -39,17 +39,17 @@ windows-x86_64	cur-one-cur	must_pass
 windows-x86_64	cur-one-double	must_pass
 windows-x86_64	cur-two-int	must_pass
 linux-x86_64	cur-zero-arg	must_pass
-linux-x86_64	cur-one-int	observe
-linux-x86_64	cur-one-cur	observe
-linux-x86_64	cur-one-double	observe
-linux-x86_64	cur-two-int	observe
+linux-x86_64	cur-one-int	must_pass
+linux-x86_64	cur-one-cur	must_pass
+linux-x86_64	cur-one-double	must_pass
+linux-x86_64	cur-two-int	must_pass
 macos-x86_64	cur-zero-arg	must_pass
-macos-x86_64	cur-one-int	observe
-macos-x86_64	cur-one-cur	observe
-macos-x86_64	cur-one-double	observe
-macos-x86_64	cur-two-int	observe
-macos-arm64	cur-zero-arg	observe
-macos-arm64	cur-one-int	observe
-macos-arm64	cur-one-cur	observe
-macos-arm64	cur-one-double	observe
-macos-arm64	cur-two-int	observe
+macos-x86_64	cur-one-int	must_pass
+macos-x86_64	cur-one-cur	must_pass
+macos-x86_64	cur-one-double	must_pass
+macos-x86_64	cur-two-int	must_pass
+macos-arm64	cur-zero-arg	must_pass
+macos-arm64	cur-one-int	must_pass
+macos-arm64	cur-one-cur	must_pass
+macos-arm64	cur-one-double	must_pass
+macos-arm64	cur-two-int	must_pass

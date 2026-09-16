@@ -3,42 +3,36 @@ program cap3u_currency;
 { CAP-3U Currency return matrix, over the PRISTINE PINNED dependency, on all
   four targets.
 
-  WHY THIS EXISTS. Upstream 790154af ("core: ensure imvCurrency is returned in
-  rax on x86-64", 2026-08-12) removed the `cmp cl, imvCurrency / je @d` pair
-  from mORMot's CallMethod, so an interface-based service returning Currency
-  now takes its result from RAX rather than from XMM0. That asm block is
-  shared by the WHOLE x64 ABI - Win64 and SysV alike - and it was written for
-  the Win64 half. The 2026-09-08 pin move MEASURED what it does on each:
+  WHY THIS EXISTS. mORMot's CallMethod reads a Currency result out of a
+  register that depends on the ABI, and the pinned upstream got that wrong in
+  two steps that this program measured:
 
-    windows-x86_64  5/5 at the new pin, 0/5 at the old one unpatched, 5/5 at
-                    the old one with the removed CAP-3U patch. Fixed, and the
-                    reason the patch could go.
-    linux-x86_64    1/5 at the new pin, 0/5 at the old one: only the
-                    no-argument case is right, and the four with arguments
-                    read a leftover pointer out of RAX. BROKEN AT BOTH PINS -
-                    the pin move improves it and cannot have caused it.
-                    (Measured under FPC 3.2.3; the hosted leg builds with the
-                    distro 3.2.2, which is why the Linux rows are `observe`
-                    rather than a prediction dressed up as a gate.)
-    macos-x86_64    unmeasured - shares ABISYSVX64 with Linux, so the same
-                    question, but a question is not an answer.
-    macos-arm64     unmeasured - AAPCS64 is a DIFFERENT ABI with its own
-                    CallMethod, so nothing about Linux predicts it.
+    790154af (2026-08-12) "core: ensure imvCurrency is returned in rax on
+      x86-64" - taken by the 2026-09-08 pin move. It fixed Win64 (0/5 -> 5/5)
+      and, because the asm block is shared by the whole x64 ABI, left SysV x64
+      reading RAX where FPC leaves nothing it means: 1/5 on linux-x86_64 and
+      macos-x86_64, and macos-arm64 - AAPCS64, its own CallMethod - at 0/5.
+    6a27c07f (2026-09-16) "core: fixed currency result in
+      mormot.core.interfaces" - written in answer to that measurement and
+      taken by the 2026-09-16 pin move. FPC on SysV x64 leaves a Currency in
+      x87 ST0, which the asm now pops with fistp; AArch64 now keeps the x0
+      value instead of reading d0. Measured unpatched: 5/5 on all four
+      targets, each on its own leg's compiler.
 
-  WHAT THIS PROGRAM IS. A typed observation, not a verdict. It runs the five
-  cases, prints what each one did, and holds the run to
-  `test/cap3u/currency-expectations.tsv` - which declares `must_pass` only
-  where a PASS has actually been measured on the toolchain the leg uses, and
-  `observe` everywhere else. An `observe` row records; it never fails a leg.
-  Ratifying an `observe` into a `must_pass` is a deliberate act, taken once a
-  hosted run has measured it.
+  WHAT THIS PROGRAM IS. The permanent gate over that result register, against
+  the pristine dependency. It runs the five cases (arities 0/1/2), prints what
+  each one did, writes the corpus, and holds the run to
+  `test/cap3u/currency-expectations.tsv`. Since the 2026-09-16 move every row
+  there is `must_pass`, so any case that regresses fails its leg. The
+  `observe` verdict is still understood: it is how a row records a known
+  upstream defect without failing anything, and demoting a row to it is a
+  deliberate act that needs a measurement and a ledger entry.
 
-  PWeb's own bridge is NOT changed by any of this. `SupportedInputType` in
-  src/rpc/pweb.rpc.mormot.pas accepts `imvCurrency`, so a service that returns
-  Currency is inside the supported surface and is documented as a known
-  limitation of this pin on SysV x64 - it is not worked around here, because a
-  workaround in the bridge would hide the defect from the report that should
-  fix it upstream. }
+  PWeb's own bridge was never changed by any of this. `SupportedInputType` in
+  src/rpc/pweb.rpc.mormot.pas has always accepted `imvCurrency`; while the
+  register was wrong that was a documented limitation of the pin, deliberately
+  not worked around in the bridge so the defect stayed visible to the report
+  that fixed it. }
 
 {$I mormot.defines.inc}
 

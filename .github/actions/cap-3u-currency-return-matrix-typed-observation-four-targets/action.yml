@@ -7,13 +7,16 @@
 # block the WHOLE x64 ABI executes, and nothing measured what it did to the
 # other half.
 #
-# What was measured before the move landed: windows-x86_64 5/5 (0/5 at the
-# previous pin unpatched), linux-x86_64 1/5 (0/5 at the previous pin), both
-# macOS targets not measured at all. So Windows gates on all five cases and
-# every other row is a typed OBSERVATION - run, printed, written into
-# build/cap3u/currency-corpus.txt, and failing nothing. The declaration lives
-# in test/cap3u/currency-expectations.tsv, which the program refuses to run
-# without and which must cover all four targets.
+# What that move measured: 5/5 on windows-x86_64, 1/5 on linux-x86_64 and
+# macos-x86_64, 0/5 on macos-arm64 - so only the rows that passed gated, and
+# the rest were typed OBSERVATIONS that failed nothing. The 2026-09-16 pin move
+# took upstream 6a27c07f, written in answer to that measurement, and the
+# unpatched candidate measured 5/5 on all four legs; every row is now
+# `must_pass`. The step keeps its name because a step name is part of the
+# ci_sequence_digest every leg compares - "typed observation" describes what
+# the program still CAN record, not what any row records today. The
+# declaration lives in test/cap3u/currency-expectations.tsv, which the program
+# refuses to run without and which must cover all four targets.
 
 name: 'CAP-3U Currency return matrix (typed observation, four targets)'
 description: 'CAP-11A: the body of the "CAP-3U Currency return matrix (typed observation, four targets)" step of the one platform-leg sequence.'

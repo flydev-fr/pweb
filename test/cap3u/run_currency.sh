@@ -4,16 +4,16 @@
 # Builds test/cap3u/cap3u_currency.pas against the PRISTINE pinned mORMot and
 # runs it. The program itself decides what gates: it reads
 # test/cap3u/currency-expectations.tsv and fails only on a case the table
-# declares `must_pass` for THIS target. Every other case is recorded.
+# declares `must_pass` for THIS target - since the 2026-09-16 pin move, all
+# five on every target.
 #
 # WHY IT RUNS HERE AT ALL. The 2026-09-08 pin move took upstream 790154af,
 # which changed how mORMot's SHARED x64 CallMethod reads a Currency result -
-# a Win64 fix applied to an asm block that SysV x64 also executes. Windows
-# measured 5/5 after the move against 0/5 before it; Linux measured 1/5 after
-# and 0/5 before, i.e. a defect that predates the move and that the move
-# improves. macOS was unmeasured until hosted run 34241426338, which measured
-# all four legs on their own compilers: 5/5, 1/5, 1/5 and 0/5. This gate is
-# what keeps measuring them.
+# a Win64 fix applied to an asm block that SysV x64 also executes. Hosted run
+# 34241426338 measured all four legs on their own compilers at that pin: 5/5,
+# 1/5, 1/5 and 0/5. Upstream 6a27c07f answered that measurement - FPC SysV x64
+# leaves the result in x87 ST0, AArch64 in x0 - and the 2026-09-16 move took
+# it. This gate is what keeps the result register right on all three ABIs.
 #
 # Writes: build/cap3u/currency-corpus.txt (written by the program) and a log.
 set -euo pipefail
