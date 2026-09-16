@@ -115,7 +115,13 @@ uses
   mormot.core.json,
   mormot.crypt.core,
   pweb.rpc.intf,
-  pweb.rpc.support;
+  pweb.rpc.support,
+  // CAP-12B: the headline consumer of the blob data plane. A response over
+  // the inline cap stops being a typed refusal and becomes a handle the
+  // page reads by URL. The URL itself is built in pweb.blobs.protocol -
+  // this unit knows a store and a token, never a namespace.
+  pweb.blobs.intf,
+  pweb.blobs.protocol;
 
 const
   { The canonical fetch method, spelled ONCE for the whole repository. It
@@ -305,8 +311,18 @@ type
     FTransport: TPWebFetchTransport;
     FObserver: TPWebFetchObserver;
     FOrigins: TPWebFetchOrigins;
+    FBlobs: IBlobStore;
     function Fetch(const Context: TInvocationContext; const Args: TPWebJson;
       const Token: ICancellationToken): TPWebInvocationResult;
+    { CAP-12B: a response over the inline cap, handed to the blob plane.
+
+      Answers True when the envelope is this function's to write, and
+      False when the caller must keep the CAP-15B refusal it always gave -
+      which is exactly the case where no blob store was installed. }
+    function OfferBlob(const Context: TInvocationContext;
+      const Body: RawByteString; const Headers: RawUtf8;
+      out Envelope: RawUtf8;
+      out Refusal: TPWebInvocationResult): Boolean;
     function Refuse(const Context: TInvocationContext;
       ACode: TPWebErrorCode; const AMessage: Utf8String;
       UrlBytes: PtrInt): TPWebInvocationResult;
@@ -318,7 +334,17 @@ type
       does not install this decorator at all (build-contract §7.5). }
     constructor Create(const AInner: IInvocationBridge;
       ATransport: TPWebFetchTransport; const AOrigins: array of RawUtf8;
-      AObserver: TPWebFetchObserver = nil);
+      AObserver: TPWebFetchObserver = nil); overload;
+    { CAP-12B: the same decorator with the blob data plane behind it.
+
+      ABlobs = nil is the CAP-15B behaviour, verbatim: a response between
+      the inline cap and the response ceiling is answered
+      `response_too_large_to_inline`. With a store it becomes a success
+      envelope carrying a BlobHandle, and `truncated` still never means
+      "some of the body is here" - that is what the handle is for. }
+    constructor Create(const AInner: IInvocationBridge;
+      ATransport: TPWebFetchTransport; const AOrigins: array of RawUtf8;
+      AObserver: TPWebFetchObserver; const ABlobs: IBlobStore); overload;
     function Invoke(const Context: TInvocationContext;
       const Method: Utf8String; const Args: TPWebJson;
       const Token: ICancellationToken): TPWebInvocationResult;
@@ -1172,6 +1198,13 @@ end;
 constructor TPWebFetchBridge.Create(const AInner: IInvocationBridge;
   ATransport: TPWebFetchTransport; const AOrigins: array of RawUtf8;
   AObserver: TPWebFetchObserver);
+begin
+  Create(AInner, ATransport, AOrigins, AObserver, nil);
+end;
+
+constructor TPWebFetchBridge.Create(const AInner: IInvocationBridge;
+  ATransport: TPWebFetchTransport; const AOrigins: array of RawUtf8;
+  AObserver: TPWebFetchObserver; const ABlobs: IBlobStore);
 var
   detail: RawUtf8;
   refusal: TPWebFetchOriginsRefusal;
@@ -1191,6 +1224,105 @@ begin
   FInner := AInner;
   FTransport := ATransport;
   FObserver := AObserver;
+  FBlobs := ABlobs;
+end;
+
+{ CAP-12B: the one header value this unit reads back out of a response
+  block for a purpose other than reporting it.
+
+  A blob is served with the type it was SEALED with - TBlobInfo.ContentType,
+  never PWebAssetMimeType, which MEASURED carries no audio or video type at
+  all - so the type of a fetched body has to survive the trip. A response
+  with no content-type, or one carrying a control byte, gets
+  application/octet-stream: the plane would rather serve a body the page has
+  to interpret than a type an engine can be talked into sniffing around. }
+function ResponseContentType(const Raw: RawUtf8): RawUtf8;
+var
+  i, lineStart, colon: PtrInt;
+  line, name, value: RawUtf8;
+begin
+  Result := PWEB_BLOB_FALLBACK_TYPE;
+  lineStart := 1;
+  while lineStart <= Length(Raw) do
+  begin
+    i := lineStart;
+    while (i <= Length(Raw)) and
+          (Raw[i] <> #13) and
+          (Raw[i] <> #10) do
+      Inc(i);
+    line := Copy(Raw, lineStart, i - lineStart);
+    lineStart := i + 1;
+    if (lineStart <= Length(Raw)) and
+       (Raw[i] = #13) and
+       (Raw[lineStart] = #10) then
+      Inc(lineStart);
+    colon := Pos(':', line);
+    if colon <= 1 then
+      continue;
+    name := AsciiLower(Copy(line, 1, colon - 1));
+    if name <> 'content-type' then
+      continue;
+    value := Copy(line, colon + 1, MaxInt);
+    while (value <> '') and
+          (value[1] = ' ') do
+      Delete(value, 1, 1);
+    while (value <> '') and
+          (value[Length(value)] = ' ') do
+      SetLength(value, Length(value) - 1);
+    if (value = '') or
+       (Length(value) > PWEB_BLOB_MAX_CONTENT_TYPE_BYTES) then
+      exit;
+    for i := 1 to Length(value) do
+      if value[i] < ' ' then
+        exit; // a control byte in a header value is a second header
+    Result := value;
+    exit;
+  end;
+end;
+
+function TPWebFetchBridge.OfferBlob(const Context: TInvocationContext;
+  const Body: RawByteString; const Headers: RawUtf8;
+  out Envelope: RawUtf8;
+  out Refusal: TPWebInvocationResult): Boolean;
+var
+  token: RawUtf8;
+  ceiling: TPWebBlobCeiling;
+  mime: RawUtf8;
+begin
+  Envelope := '';
+  Refusal := Default(TPWebInvocationResult);
+  Result := False;
+  // NO STORE, NO OFFER. An application that did not install the plane keeps
+  // the CAP-15B answer byte for byte, which is what makes this shard
+  // additive rather than a change of contract for every existing host.
+  if FBlobs = nil then
+    exit;
+  Result := True;
+  mime := ResponseContentType(Headers);
+  if PWebBlobPut(FBlobs, RawUtf8(Context.PrincipalId), Body, mime,
+       token, ceiling) then
+  begin
+    // THE HANDLE, AND NOT THE BYTES. `bytes` is still the wire length and
+    // `truncated` is still false, because nothing was truncated: the body
+    // is whole, in the plane, at a URL only this principal can read.
+    Envelope := '{"token":"' + token + '"' +
+      ',"url":"' + PWebBlobUrl(token) + '"' +
+      ',"size":' + RawUtf8(IntToStr(Length(Body))) +
+      ',"type":' + QuotedStrJson(mime) + '}';
+    exit;
+  end;
+  // A CEILING IS ANSWERED BY NAME. `blob_store_unavailable` is the one
+  // category that does not name a ceiling, and it means exactly what it
+  // says: the plane is closing, or the principal is one the store will not
+  // charge. Never native text, and never the CAP-15B refusal in disguise -
+  // a page that hit a ceiling has a different problem from a page whose
+  // response was simply too big to inline.
+  if Assigned(FObserver) then
+    FObserver(Context, pfdFailed, 0, Length(Body));
+  Refusal := PWebErrorResult(pecServiceError,
+    'the response could not be placed on the blob plane',
+    ErrorData(PWebBlobCeilingCategory(ceiling),
+      '"bytes":' + RawUtf8(IntToStr(Length(Body)))));
 end;
 
 function TPWebFetchBridge.AllowlistDigest: RawUtf8;
@@ -1216,9 +1348,10 @@ var
   request: TPWebFetchRequest;
   response: TPWebFetchResponse;
   origin: TPWebFetchOrigin;
-  detail, bodyText, bodyB64, envelope: RawUtf8;
+  detail, bodyText, bodyB64, envelope, blobJson: RawUtf8;
+  refusal: TPWebInvocationResult;
   outcome: TPWebFetchOutcome;
-  i: PtrInt;
+  i, inlineMax: PtrInt;
   allowed: Boolean;
 begin
   // mORMot's parser unescapes IN PLACE, so it must never walk the caller's
@@ -1374,13 +1507,26 @@ begin
   // --- the envelope --------------------------------------------------------
   bodyText := PWEB_JSON_NULL;
   bodyB64 := PWEB_JSON_NULL;
-  if IsValidUtf8(response.Body) then
+  blobJson := PWEB_JSON_NULL;
+  inlineMax := PWEB_FETCH_MAX_TEXT_INLINE;
+  if not IsValidUtf8(response.Body) then
+    inlineMax := PWEB_FETCH_MAX_BASE64_INLINE;
+  if Length(response.Body) > inlineMax then
   begin
-    if Length(response.Body) > PWEB_FETCH_MAX_TEXT_INLINE then
+    if Assigned(FObserver) then
+      FObserver(Context, pfdCompleted, Length(request.Url),
+        Length(response.Body));
+    // CAP-12B, AND IT IS THE HEADLINE. Between the inline cap and the
+    // response ceiling the answer used to be `response_too_large_to_inline`
+    // - a typed refusal, correct and useless. With the blob plane installed
+    // it becomes a SUCCESS carrying a handle, and the page reads the bytes
+    // by URL through the same three production handlers that serve its
+    // assets. What has NOT changed: `truncated` is still false in every
+    // envelope, because nothing is ever truncated - a body too large to
+    // inline is either on the plane or refused by name.
+    if not OfferBlob(Context, response.Body, response.Headers,
+             blobJson, refusal) then
     begin
-      if Assigned(FObserver) then
-        FObserver(Context, pfdCompleted, Length(request.Url),
-          Length(response.Body));
       // NEVER a success with a null body: a `status: 200` envelope carrying
       // `truncated: false` and no bytes is precisely the silently
       // half-working shape this repository refuses
@@ -1388,27 +1534,16 @@ begin
         'the response is too large to inline',
         ErrorData(PWEB_FETCH_CAT_NO_INLINE,
           '"bytes":' + RawUtf8(IntToStr(Length(response.Body))) +
-          ',"inlineMax":' + RawUtf8(IntToStr(PWEB_FETCH_MAX_TEXT_INLINE)) +
+          ',"inlineMax":' + RawUtf8(IntToStr(inlineMax)) +
           ',"responseMax":' + RawUtf8(IntToStr(PWEB_FETCH_MAX_RESPONSE)))));
     end;
-    bodyText := QuotedStrJson(RawUtf8(response.Body));
+    if blobJson = '' then
+      exit(refusal); // a ceiling, answered by the name of the ceiling
   end
+  else if IsValidUtf8(response.Body) then
+    bodyText := QuotedStrJson(RawUtf8(response.Body))
   else
-  begin
-    if Length(response.Body) > PWEB_FETCH_MAX_BASE64_INLINE then
-    begin
-      if Assigned(FObserver) then
-        FObserver(Context, pfdCompleted, Length(request.Url),
-          Length(response.Body));
-      exit(PWebErrorResult(pecServiceError,
-        'the response is too large to inline',
-        ErrorData(PWEB_FETCH_CAT_NO_INLINE,
-          '"bytes":' + RawUtf8(IntToStr(Length(response.Body))) +
-          ',"inlineMax":' + RawUtf8(IntToStr(PWEB_FETCH_MAX_BASE64_INLINE)) +
-          ',"responseMax":' + RawUtf8(IntToStr(PWEB_FETCH_MAX_RESPONSE)))));
-    end;
     bodyB64 := '"' + BinToBase64(response.Body) + '"';
-  end;
 
   if Assigned(FObserver) then
     FObserver(Context, pfdCompleted, Length(request.Url),
@@ -1416,15 +1551,20 @@ begin
 
   // `truncated` is FALSE in every envelope this contract defines. It is
   // reserved for a future streaming form and never means "some of the body
-  // is here" - the over-cap cases above are typed refusals precisely so that
-  // it cannot come to mean that
+  // is here" - the over-cap cases above are a typed refusal or a handle,
+  // precisely so that it cannot come to mean that
   envelope := '{"status":' + RawUtf8(IntToStr(response.Status)) +
     ',"ms":' + RawUtf8(IntToStr(response.Ms)) +
     ',"bytes":' + RawUtf8(IntToStr(Length(response.Body))) +
     ',"truncated":false' +
     ',"headers":' + BuildResponseHeaders(response.Headers) +
     ',"bodyText":' + bodyText +
-    ',"bodyBase64":' + bodyB64 + '}';
+    ',"bodyBase64":' + bodyB64 +
+    // CAP-12B: present in EVERY envelope, null unless the body went to the
+    // plane. A field that appears only sometimes is a field every caller
+    // has to feature-detect, and the SDK would then be describing two
+    // shapes of success rather than one.
+    ',"blob":' + blobJson + '}';
   Result := PWebSuccessResult(TPWebJson(envelope));
 end;
 

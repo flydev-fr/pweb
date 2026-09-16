@@ -61,6 +61,18 @@ const
   // enough to sit in front of every request
   PWEB_BLOB_PATH_PREFIX = '_pweb/blob/';
 
+  /// the WHOLE URL a page fetches a blob from
+  // - the ONE place in the tree where the store's spelling and the URL's
+  // meet. A producer - the fetch door today, the SDK upload API in
+  // CAP-12C - hands back a URL rather than a token plus instructions on
+  // how to build one, because a second place that concatenated this
+  // prefix would be a second answer to the namespace question CAP-12A
+  // §2 settled
+  // - it is `pweb://app/...` and NOT `pweb://blob/...`: an origin is
+  // scheme + host + port, and `connect-src 'self'` in the ratified CSP
+  // refuses a second authority before a request for it exists
+  PWEB_BLOB_URL_PREFIX = 'pweb://app/' + PWEB_BLOB_PATH_PREFIX;
+
   /// the longest body one response may carry, in bytes
   // - CAP-12A §5.3, MEASURED: WebView2 delivers response bodies SERIALLY
   // on the host's GUI thread, so a body's production-plus-drain time is
@@ -169,6 +181,10 @@ function PWebBlobIsReserved(const LogicalPath: RawUtf8): Boolean;
 /// the token of a `_pweb/blob/<token>` path, or '' for anything else
 function PWebBlobPathToken(const LogicalPath: RawUtf8): RawUtf8;
 
+/// the URL a page reads one blob from, or '' for a malformed token
+// - a producer hands this back; nothing else in the tree concatenates it
+function PWebBlobUrl(const Token: RawUtf8): RawUtf8;
+
 { Read one `Range` header value against a known total.
 
   THE GRAMMAR, ratified by CAP-12B as ONE rule on four engines:
@@ -216,6 +232,19 @@ function PWebBlobServe(const Store: IBlobStore;
 // principal's token and a released token are ONE answer from outside
 function PWebBlobNotFoundBody: RawByteString;
 
+/// seal one whole buffer as a blob in one call
+// - the shape every CAP-12B producer actually needs: it has the bytes, it
+// wants a token. Create, append, seal and - on any refusal - abandon, with
+// no producer left holding a writer it forgot to give back
+// - it lives beside the translator rather than beside a store because a
+// producer must never name an IMPLEMENTATION: the fetch door holds an
+// IBlobStore and has no idea whether the bytes end up in memory or, one
+// shard from now, in a file
+// - Ceiling names which bound refused, or pbcNone
+function PWebBlobPut(const Store: IBlobStore; const Owner: RawUtf8;
+  const Content: RawByteString; const ContentType: RawUtf8;
+  out Token: RawUtf8; out Ceiling: TPWebBlobCeiling): Boolean;
+
 implementation
 
 function PWebBlobIsReserved(const LogicalPath: RawUtf8): Boolean;
@@ -247,6 +276,16 @@ begin
     exit;
   Result := Copy(LogicalPath, P + 1, PWEB_BLOB_TOKEN_CHARS);
   if not PWebBlobValidToken(Result) then
+    Result := '';
+end;
+
+function PWebBlobUrl(const Token: RawUtf8): RawUtf8;
+begin
+  // a malformed token never becomes a URL: a producer that got one has a
+  // defect, and handing the page a URL that can only 404 would hide it
+  if PWebBlobValidToken(Token) then
+    Result := PWEB_BLOB_URL_PREFIX + Token
+  else
     Result := '';
 end;
 
@@ -452,6 +491,11 @@ begin
           Exchange.ContentType := 'text/plain; charset=utf-8';
           Exchange.Body := 'range not satisfiable';
           Exchange.ContentRange := 'bytes */' + U64(info.Size);
+          // ACCEPT-RANGES STAYS ON A 416, deliberately. What was wrong was
+          // the range, not the capability: the resource IS rangeable, and a
+          // 416 that withdrew the advertisement would tell a page to stop
+          // trying rather than to try a range that exists. The
+          // Content-Range above gives it the length it needs to compute one.
           exit;
         end;
       prvSingle:
@@ -514,6 +558,56 @@ begin
     Exchange.Body := PWebBlobNotFoundBody;
     Exchange.ContentRange := '';
     Exchange.AcceptRanges := False;
+  end;
+end;
+
+{ ---- the one-call producer helper ---- }
+
+function PWebBlobPut(const Store: IBlobStore; const Owner: RawUtf8;
+  const Content: RawByteString; const ContentType: RawUtf8;
+  out Token: RawUtf8; out Ceiling: TPWebBlobCeiling): Boolean;
+var
+  writer: IBlobWriter;
+  bounds: IBlobBounds;
+begin
+  Token := '';
+  Ceiling := pbcNone;
+  Result := False;
+  if Store = nil then
+  begin
+    Ceiling := pbcClosed;
+    exit;
+  end;
+  // the typed create when the store offers one, the ratified create
+  // otherwise - a store that carries only IBlobStore still works, it
+  // just cannot say which ceiling refused
+  if Supports(Store, IBlobBounds, bounds) then
+  begin
+    if not bounds.CreateBlobTyped(Owner, Length(Content), writer, Ceiling) then
+      exit;
+  end
+  else if not Store.CreateBlob(Owner, Length(Content), writer) then
+  begin
+    Ceiling := pbcClosed;
+    exit;
+  end;
+  try
+    if (Content <> '') and
+       not writer.Append(pointer(Content), Length(Content)) then
+    begin
+      Ceiling := pbcBlobBytes;
+      writer.Abandon;
+      exit;
+    end;
+    if not writer.Seal(ContentType, Token) then
+    begin
+      Ceiling := pbcClosed;
+      writer.Abandon;
+      exit;
+    end;
+    Result := True;
+  finally
+    writer := nil;
   end;
 end;
 

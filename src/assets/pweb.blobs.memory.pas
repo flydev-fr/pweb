@@ -73,6 +73,10 @@ type
         Data: RawByteString;   // the store's own reference; dropped at retire
         Reserved: Int64;       // what the owner is charged, >= Filled
         Filled: Int64;         // bytes appended so far
+        // created with SizeHint > 0: the reservation is a CEILING and the
+        // writer may not exceed it. A blob created with SizeHint = 0 grows
+        // instead, and pays for every growth against the same ceilings
+        Hinted: Boolean;
         Sealed: Boolean;
         Retired: Boolean;
         Readers: Integer;      // live IBlobReader views
@@ -132,15 +136,6 @@ type
     /// tokens made unresolvable since construction - DIAGNOSTIC
     property Released: Int64 read fReleased;
   end;
-
-/// seal one whole buffer as a blob in one call
-// - the shape every CAP-12B producer actually needs: it has the bytes,
-// it wants a token. Create, append, seal and - on any refusal - abandon,
-// with no producer left holding a writer it forgot to give back
-// - Ceiling names which bound refused, or pbcNone
-function PWebBlobPut(const Store: IBlobStore; const Owner: RawUtf8;
-  const Content: RawByteString; const ContentType: RawUtf8;
-  out Token: RawUtf8; out Ceiling: TPWebBlobCeiling): Boolean;
 
 implementation
 
@@ -504,6 +499,7 @@ begin
     e.Owner := Owner;
     e.Reserved := SizeHint; // charged from this instant, not from Seal
     e.Filled := 0;
+    e.Hinted := SizeHint > 0;
     e.Writers := 1;
     if SizeHint > 0 then
       // ONE ALLOCATION FOR A KNOWN SIZE. The producer that matters -
@@ -554,10 +550,19 @@ begin
     begin
       // A RESERVATION IS A CEILING, not a hint about how much to
       // allocate: a producer that declared 8 MiB and sends 9 is refused
-      // here rather than quietly re-charged. A blob created with
-      // SizeHint = 0 grows instead, and pays for every growth against
-      // the same ceilings a create would.
+      // here rather than quietly re-charged, because the ceiling decision
+      // was taken once at create time against the numbers as they were
+      // then and re-taking it per append is how a bound stops being one.
+      if e.Hinted then
+        exit;
+      // A blob created with SizeHint = 0 grows instead, and pays for
+      // every growth against the same ceilings a create would - INCLUDING
+      // the per-blob one, which is checked on the RESULTING size rather
+      // than on the increment. Charging only the increment would let a
+      // blob walk past MaxBlobBytes in steps that each fit.
       grow := e.Filled + Count - e.Reserved;
+      if e.Reserved + grow > fLimits.MaxBlobBytes then
+        exit;
       if not ChargeLocked(e.Owner, grow, ceiling) then
         exit;
       Inc(e.Reserved, grow);
@@ -860,56 +865,6 @@ begin
     Result := Length(fEntries);
   finally
     fLock.Release;
-  end;
-end;
-
-{ ---- the one-call producer helper ---- }
-
-function PWebBlobPut(const Store: IBlobStore; const Owner: RawUtf8;
-  const Content: RawByteString; const ContentType: RawUtf8;
-  out Token: RawUtf8; out Ceiling: TPWebBlobCeiling): Boolean;
-var
-  writer: IBlobWriter;
-  bounds: IBlobBounds;
-begin
-  Token := '';
-  Ceiling := pbcNone;
-  Result := False;
-  if Store = nil then
-  begin
-    Ceiling := pbcClosed;
-    exit;
-  end;
-  // the typed create when the store offers one, the ratified create
-  // otherwise - a store that carries only IBlobStore still works, it
-  // just cannot say which ceiling refused
-  if Supports(Store, IBlobBounds, bounds) then
-  begin
-    if not bounds.CreateBlobTyped(Owner, Length(Content), writer, Ceiling) then
-      exit;
-  end
-  else if not Store.CreateBlob(Owner, Length(Content), writer) then
-  begin
-    Ceiling := pbcClosed;
-    exit;
-  end;
-  try
-    if (Content <> '') and
-       not writer.Append(pointer(Content), Length(Content)) then
-    begin
-      Ceiling := pbcBlobBytes;
-      writer.Abandon;
-      exit;
-    end;
-    if not writer.Seal(ContentType, Token) then
-    begin
-      Ceiling := pbcClosed;
-      writer.Abandon;
-      exit;
-    end;
-    Result := True;
-  finally
-    writer := nil;
   end;
 end;
 

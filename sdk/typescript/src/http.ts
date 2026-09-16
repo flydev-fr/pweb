@@ -20,6 +20,7 @@
  */
 import { invoke } from "./invoke.js";
 import { PWebError } from "./errors.js";
+import type { PWebBlobHandle } from "./blob.js";
 import type { JsonValue } from "./types.js";
 
 /** The runtime-owned method name, spelled once. Applications call
@@ -80,9 +81,16 @@ export interface PWebFetchRequest {
  *   body is valid UTF-8, base64 otherwise.
  * - `truncated` is `false` in every envelope this contract defines. It is
  *   reserved for a future streaming form and NEVER means "some of the body
- *   is here": a response too large to inline is a typed `service_error`
- *   with category `response_too_large_to_inline`, not a success with a null
- *   body. */
+ *   is here": a response too large to inline is either on the blob plane
+ *   (see `blob`) or a typed `service_error`, never a success with a null
+ *   body.
+ * - `blob` (CAP-12B) is non-null when the body was too large to inline and
+ *   the runtime placed it on the blob data plane instead. `bodyText` and
+ *   `bodyBase64` are both null in that case and `bytes` is still the wire
+ *   length; the bytes are at `blob.url`, readable with `readBlob`. When the
+ *   application does not have the blob plane installed, a body over the
+ *   inline cap is still the `response_too_large_to_inline` refusal it has
+ *   always been — so a caller that handles both is correct everywhere. */
 export interface PWebFetchResponse {
   readonly status: number;
   readonly ms: number;
@@ -91,6 +99,7 @@ export interface PWebFetchResponse {
   readonly headers: Readonly<Record<string, string>>;
   readonly bodyText: string | null;
   readonly bodyBase64: string | null;
+  readonly blob: PWebBlobHandle | null;
 }
 
 /**

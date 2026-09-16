@@ -266,6 +266,13 @@ const
   // be served on every target
   PWEB_BLOB_MAX_CONTENT_TYPE_BYTES = 255;
 
+  /// the type a blob gets when its producer could not name one
+  // - `application/octet-stream` is a REFUSAL TO GUESS, not a default: the
+  // asset plane's MIME table is never consulted for a blob, and a body
+  // whose own source said nothing about its type is a body the page has to
+  // interpret rather than one an engine may sniff around
+  PWEB_BLOB_FALLBACK_TYPE = 'application/octet-stream';
+
   /// the typed service_error categories the plane answers a ceiling with
   // - `service_error.data` is the only sanctioned application-defined
   // domain-error channel; the nine-code taxonomy is unchanged

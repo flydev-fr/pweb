@@ -56,6 +56,8 @@ export type {
   PWebSocketErrorEvent,
   PWebSocketCloseEvent,
 } from "./socket.js";
+export { readBlob, isPWebBlobHandle } from "./blob.js";
+export type { PWebBlobHandle, PWebBlobReadOptions } from "./blob.js";
 export { PWebError, toPWebError } from "./errors.js";
 export {
   PWEB_ERROR_CODES,

@@ -36,8 +36,23 @@ program pwebbundle;
   policy owned by this CLI, exactly as the sourcemap exclusion is; the
   writer is untouched, so no production host links it.
 
+  CAP-12B adds the LAST of the family, and it is a PATH rule rather than
+  a content one: a logical path whose first segment is `_pweb` is
+  refused. That prefix is the runtime's own URL space - the blob data
+  plane lives at `pweb://app/_pweb/blob/<token>` - and every platform
+  handler tests it BEFORE consulting any asset store, so a bundle that
+  carried one would pack, verify, build and then be unreachable. Refusing
+  it here means a developer learns that at pack time instead of never.
+
+  It is deliberately NOT in the CAP-14A HTML tokenizer: that scanner
+  decides which HTML CONSTRUCTS the native CSP would refuse to execute,
+  and a document referencing `pweb://app/_pweb/blob/...` in a `src` is a
+  same-origin relative reference it accepts and should. A path
+  reservation belongs in the walk, beside the sourcemap exclusion.
+
   THERE IS NO OVERRIDE. The CSP will not run it, so a flag that packed
   it anyway would be a lie told at build time and paid for at run time.
+  The same is true of the reservation: the handler will not serve it.
 
   The manifest stamps
   protocol from PWEB_PROTOCOL_VERSION and minRuntime from
@@ -75,6 +90,7 @@ uses
   pweb.assets.intf,
   pweb.assets.support,
   pweb.assets.htmlpolicy,  // CAP-14A: what the native CSP will not run
+  pweb.blobs.protocol,     // CAP-12B: the reserved runtime path segment
   pweb.assets.bundle;
 
 type
@@ -374,7 +390,7 @@ var
   // the four CSP violation classes, and the two refusals to JUDGE -
   // counted apart because they earn a different closing sentence: one
   // says no option can help, the other says fix the document
-  csp, unjudged, netFields: Integer;
+  csp, unjudged, netFields, reserved: Integer;
 
   // CAP-14A: one document, scanned once. True when the native CSP would
   // run everything in it. Every finding is printed - cause, logical path
@@ -564,6 +580,22 @@ begin
   csp := 0;
   unjudged := 0;
   netFields := 0;
+  reserved := 0;
+  // CAP-12B: the reserved runtime prefix, BEFORE the classification pass -
+  // it is the cheapest refusal here and the only one that is a property of
+  // the path alone, so a dist carrying one hears about it first
+  for i := 0 to High(inputs) do
+    if PWebBlobIsReserved(inputs[i].Logical) then
+    begin
+      WriteLn(StdErr, 'pwebbundle: reserved_prefix_in_bundle: ',
+        inputs[i].Logical, ': the first path segment `',
+        PWEB_BLOB_RESERVED_SEGMENT, '` is reserved for the runtime''s own ',
+        'URL space - every platform handler answers it before any asset ',
+        'store is consulted, so this file would pack and then be ',
+        'unreachable');
+      Inc(reserved);
+      Inc(bad);
+    end;
   for i := 0 to High(inputs) do
     case PWebBundleClassifyName(inputs[i].Logical) of
       pbcSecret:
@@ -605,6 +637,9 @@ begin
     if not ScanRootJson(inputs[i].Logical, inputs[i].Native) then
       Inc(bad);
   end;
+  if reserved > 0 then
+    WriteLn(StdErr, 'pwebbundle: ', reserved, ' file(s) under the reserved ',
+      'runtime prefix; there is no option that packs them anyway');
   if netFields > 0 then
     WriteLn(StdErr, 'pwebbundle: ', netFields, ' network/policy field(s) in ',
       'a bundled manifest; there is no option that packs them anyway');
