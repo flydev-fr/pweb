@@ -1,0 +1,244 @@
+# CAP-12B: THE ENTRY-CONDITION INSTRUMENT. It measures, and it gates nothing.
+#
+# cap12a-decision-artifact.md §6.3 names three things CAP-12B must not begin
+# without, and two of them cannot be measured on the development host: there is
+# no Darwin on it, and its WebKitGTK is not the CI baseline. This workflow is
+# how they get measured. It runs the CAP-12A instrument - unchanged, the same
+# `test/cap12a` runners a human runs by hand - on the three hosted targets that
+# can reach an engine the dev host cannot, and reduces each raw report to the
+# typed §6.3 rows in `test/cap12b/measure/entry_rows.js`.
+#
+#   6.3.1  the four macOS rows, on macos-x64 AND macos-arm64:
+#          Range through -[NSURLRequest allHTTPHeaderFields]; a 206 with
+#          Content-Range on an NSHTTPURLResponse read back by fetch(); WHICH of
+#          HTTPBody and HTTPBodyStream carries a typed-array body at 1, 16 and
+#          256 MiB; and a whole 8 MiB body served synchronously.
+#          `test/cap12a/cap12a_probe.mm` had never been compiled anywhere when
+#          CAP-12A closed, which is why §6.3.1 says its first run is a
+#          debugging session. It is budgeted as one.
+#   6.3.2  the WebKitGTK blob-backed-body fault, against the CI BASELINE
+#          version rather than the dev host's 2.52.6. Same fault -> the
+#          workaround ships and the UPSTREAM report is owed; no fault -> the
+#          finding narrows to a version range and the workaround still ships,
+#          because the product must run on both.
+#
+# 6.3.3 - the 8 MiB window against a REAL store on WebView2 - is NOT here. It
+# needs the production handler and a real IBlobStore behind it, which is
+# CAP-12B's own code on the one target the dev host does reach; measuring it
+# here would measure the spike's throwaway store again.
+#
+# IT IS NOT PART OF THE MATRIX. `ci.yml` does not call it, `platform-leg.yml`
+# does not call it, nothing `needs:` it, it declares no `workflow_call`, and it
+# can therefore not be made a required check by being wired into one. Its
+# output is an artifact of typed rows and nothing reads it back as an input.
+#
+# WHY `push` IS A TRIGGER ALONGSIDE THE BUTTON, and it is the same measurement
+# CAP-11B's watcher records rather than a preference: GitHub only offers
+# `workflow_dispatch` for workflows present on the DEFAULT branch, and this
+# repository's shard branches are never merged to `main` before their closure.
+# A dispatch-only file could not be run even once on the branch that introduces
+# it. The `paths:` filter is this instrument's own sources, so a commit that
+# changes the instrument runs the instrument and nothing else does.
+#
+# THE CONTAINMENT CLAIM CAP-12A MADE STILL HOLDS, and it is narrower than it
+# used to read. "test/cap12a is never a CI step" is a claim about the ONE step
+# sequence - `ci.yml`, `platform-leg.yml` and `.github/actions/**` - because
+# what it exists to prevent is a GATE putting a throwaway store behind the
+# production `pweb://app` seam and thereby normalising it. A dispatch-only
+# measurement that no leg calls and no check requires is not that.
+# `test/backlog/check_backlog.ps1` §5c enforces exactly that narrower claim and
+# names this file as the one exception.
+
+name: Measure CAP-12 entry conditions
+
+on:
+  workflow_dispatch:
+    inputs:
+      timeout_ms:
+        description: 'watchdog for one instrument run, in milliseconds'
+        type: string
+        required: false
+        default: '600000'
+  push:
+    paths:
+      - '.github/workflows/measure-cap12.yml'
+      - 'test/cap12a/**'
+      - 'test/cap12b/measure/**'
+
+concurrency:
+  group: measure-cap12-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_name != 'main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    name: measure ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Backstops only, and well under the platform leg's: the Linux job
+          # builds ONE library and runs a 25-second instrument, and the two
+          # macOS jobs compile one translation unit and run the same page.
+          - target: linux
+            runner: ubuntu-24.04
+            timeout: 40
+          - target: macos-x64
+            runner: macos-15-intel
+            timeout: 40
+          - target: macos-arm64
+            runner: macos-15
+            timeout: 40
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.timeout }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # ------------------------------------------------ the Linux instrument
+
+      - name: Guard - no floating upstream ref in the Linux build/gate path
+        if: ${{ matrix.target == 'linux' }}
+        uses: ./.github/actions/guard-no-floating-upstream-ref-in-the-linux-build-gate-path
+
+      - name: Install the ratified WebKitGTK stack and FPC (distro packages)
+        if: ${{ matrix.target == 'linux' }}
+        timeout-minutes: 15
+        uses: ./.github/actions/install-the-ratified-webkitgtk-stack-and-fpc-distro-packages
+
+      - name: Fetch pinned webview/webview (exact SHA, checksum verified)
+        if: ${{ matrix.target == 'linux' }}
+        timeout-minutes: 10
+        uses: ./.github/actions/fetch-pinned-webview-webview-exact-sha-checksum-verified
+
+      - name: Fetch pinned mORMot2 (exact SHA + sha256-pinned statics)
+        if: ${{ matrix.target == 'linux' }}
+        timeout-minutes: 20
+        uses: ./.github/actions/fetch-pinned-mormot2-exact-sha-sha256-pinned-statics
+
+      - name: CAP-7L build libwebview.so from pinned source (cmake + gcc)
+        if: ${{ matrix.target == 'linux' }}
+        timeout-minutes: 15
+        uses: ./.github/actions/cap-7l-build-libwebview-so-from-pinned-source-cmake-gcc
+
+      # THE BASELINE VERSION IS THE POINT OF 6.3.2, so it is read from the
+      # runner that is about to fault (or not) rather than assumed from the
+      # install step's log.
+      - name: Record the runner's engine facts
+        if: ${{ matrix.target == 'linux' }}
+        shell: bash
+        run: |
+          set -eu
+          mkdir -p build/cap12b/entry
+          {
+            echo "webkitgtk_version=$(pkg-config --modversion webkit2gtk-4.1)"
+            echo "gtk_version=$(pkg-config --modversion gtk+-3.0)"
+            echo "os_version=$(. /etc/os-release && echo "${PRETTY_NAME}")"
+            echo "arch=$(uname -m)"
+            echo "toolchain=fpc $(fpc -iV)"
+          } > build/cap12b/entry/facts.txt
+          cat build/cap12b/entry/facts.txt
+
+      - name: Run the CAP-12A instrument on the hosted WebKitGTK
+        if: ${{ matrix.target == 'linux' }}
+        timeout-minutes: 20
+        shell: bash
+        env:
+          PWEB_CAP12B_TIMEOUT_MS: ${{ github.event_name == 'workflow_dispatch' && inputs.timeout_ms || '600000' }}
+        run: |
+          set -eu
+          ms="${PWEB_CAP12B_TIMEOUT_MS:-600000}"
+          case "${ms}" in ''|*[!0-9]*) ms=600000 ;; esac
+          xvfb-run -a test/cap12a/run_cap12a.sh --timeout-ms "${ms}"
+
+      # ------------------------------------------------ the macOS instrument
+
+      # NODE IS INSTALLED RATHER THAN ASSUMED. The two macOS legs bill at ten
+      # times the Linux rate, and an image whose preinstalled node moved is not
+      # worth a wasted run to discover.
+      - name: Install Node
+        if: ${{ matrix.target != 'linux' }}
+        timeout-minutes: 10
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '20'
+
+      - name: Record the runner's engine facts
+        if: ${{ matrix.target != 'linux' }}
+        shell: bash
+        run: |
+          set -eu
+          mkdir -p build/cap12b/entry
+          {
+            echo "os_version=$(sw_vers -productName) $(sw_vers -productVersion)"
+            echo "arch=$(uname -m)"
+            echo "toolchain=$(clang++ --version | head -n 1)"
+          } > build/cap12b/entry/facts.txt
+          cat build/cap12b/entry/facts.txt
+
+      # THE FIRST COMPILE OF cap12a_probe.mm ANYWHERE. §6.3.1 budgets it as a
+      # debugging session, so the build and run logs are uploaded below whether
+      # this step passes or fails - a compile error is the measurement on the
+      # first attempt.
+      - name: Compile and run cap12a_probe.mm in a real window
+        if: ${{ matrix.target != 'linux' }}
+        timeout-minutes: 25
+        shell: bash
+        env:
+          PWEB_CAP12B_TIMEOUT_MS: ${{ github.event_name == 'workflow_dispatch' && inputs.timeout_ms || '600000' }}
+        run: |
+          set -eu
+          ms="${PWEB_CAP12B_TIMEOUT_MS:-600000}"
+          case "${ms}" in ''|*[!0-9]*) ms=600000 ;; esac
+          test/cap12a/run_cap12a_macos.sh --timeout-ms "${ms}"
+
+      # ------------------------------------------------------- the typed rows
+
+      # ALWAYS, and it cannot fail the job: a run whose instrument died still
+      # has rows to report, and every one of them is `undecided` with the
+      # reason attached. That is the whole difference between "the engine
+      # cannot" and "nobody looked", and a step that skipped on failure would
+      # collapse it.
+      - name: Reduce the report to the typed §6.3 rows
+        if: always()
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: bash
+        env:
+          PWEB_CAP12B_TARGET: ${{ matrix.target }}
+        run: |
+          set -eu
+          node test/cap12b/measure/entry_rows.js --target "${PWEB_CAP12B_TARGET}"
+
+      - name: Publish the rows to the job summary
+        if: always()
+        continue-on-error: true
+        shell: bash
+        env:
+          PWEB_CAP12B_TARGET: ${{ matrix.target }}
+        run: |
+          set -eu
+          f="build/cap12b/entry/${PWEB_CAP12B_TARGET}.json"
+          {
+            echo "### CAP-12B entry conditions - ${PWEB_CAP12B_TARGET}"
+            echo
+            echo '```json'
+            if [ -f "${f}" ]; then cat "${f}"; else echo "{\"error\":\"no ${f}\"}"; fi
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload the measurement
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: measure-cap12-${{ matrix.target }}
+          if-no-files-found: warn
+          retention-days: 90
+          overwrite: true
+          path: |
+            build/cap12b/entry/
+            build/cap12a/*.json
+            build/cap12a/*.log
+            build/cap12a/csp.txt

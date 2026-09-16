@@ -44,6 +44,7 @@
 #include <cstring>
 #include <ctime>
 #include <string>
+#include <unistd.h>
 #include <vector>
 
 // ------------------------------------------------------------------ clock
@@ -437,7 +438,11 @@ static void phase_end(void) {
 enum TaskState { TS_NEW = 0, TS_SERVING = 1, TS_DONE = 2 };
 
 @interface TaskBox : NSObject
-@property(nonatomic, assign) id<WKURLSchemeTask> task;
+// unsafe_unretained, SPELLED OUT: under ARC `assign` on an object property
+// means exactly this and says so less clearly. The task belongs to WebKit for
+// as long as it is unterminated, and `is_live` - not a retain here - is what
+// keeps a deferred delivery off a task that has already been stopped.
+@property(nonatomic, unsafe_unretained) id<WKURLSchemeTask> task;
 @property(nonatomic, assign) int state;
 @property(nonatomic, assign) int generation;
 @end
@@ -675,6 +680,13 @@ static void deliver_chunk(TaskBox *box, const BlobPlan plan, int index,
     int chunks = 0;
     bool patternOk = true;
     int firstByte = -1;
+    // WHICH CARRIER, PER ROW AND BY NAME. The process-cumulative counters in
+    // engine_facts cannot say which of HTTPBody and HTTPBodyStream carried a
+    // body at ONE size, and `chunks == 1` cannot either - a stream read in a
+    // single pass produces exactly one chunk too. CAP-12A entry condition
+    // 6.3.1 asks the question per size, so the answer is recorded per row.
+    const char *carrier = body != nil ? "HTTPBody"
+                        : (bodyStream != nil ? "HTTPBodyStream" : "none");
     if (body != nil) {
       received = (int64_t)[body length];
       chunks = 1;
@@ -704,10 +716,11 @@ static void deliver_chunk(TaskBox *box, const BlobPlan plan, int index,
     char json[320];
     snprintf(json, sizeof(json),
              "{\"received\":%lld,\"chunks\":%d,\"first_byte\":%d,"
-             "\"pattern_ok\":%s,\"read_us\":0}",
+             "\"pattern_ok\":%s,\"read_us\":0,\"carrier\":\"%s\"}",
              (long long)received, chunks, firstByte,
-             patternOk ? "true" : "false");
+             patternOk ? "true" : "false", carrier);
     NSData *out = [NSData dataWithBytes:json length:strlen(json)];
+    mark("m3.carrier", carrier, received);
     mark("m3.finished", "", received);
     if (claim(box)) {
       @try {
@@ -858,6 +871,32 @@ static void deliver_chunk(TaskBox *box, const BlobPlan plan, int index,
 
 @end
 
+// ----------------------------------------------------- leaving the run loop
+
+// NOT `-[NSApplication terminate:]`, and the difference is the whole report.
+// `terminate:` asks the delegate and then calls `exit()`, so `-[NSApplication
+// run]` never returns and everything after it in main - the JSON this
+// instrument exists to write - is dead code. `stop:` sets a flag the run loop
+// reads AFTER it finishes processing the current event, so a dummy event is
+// posted to guarantee there is one even when nothing else is pending; this is
+// the same shape upstream webview's cocoa backend uses for webview_terminate,
+// which is how the other two legs already return from their run loops.
+static void stop_app(void) {
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [NSApp stop:nil];
+    NSEvent *wake = [NSEvent otherEventWithType:NSEventTypeApplicationDefined
+                                       location:NSMakePoint(0, 0)
+                                  modifierFlags:0
+                                      timestamp:0
+                                   windowNumber:0
+                                        context:nil
+                                        subtype:0
+                                          data1:0
+                                          data2:0];
+    [NSApp postEvent:wake atStart:YES];
+  });
+}
+
 // ------------------------------------------------------- the message bridge
 
 @interface Cap12aBridge : NSObject <WKScriptMessageHandler>
@@ -885,7 +924,7 @@ static void deliver_chunk(TaskBox *box, const BlobPlan plan, int index,
       g_report_json = [(NSString *)body copy];
       mark("page.report", "", (int64_t)[g_report_json length]);
     }
-    [NSApp terminate:nil];
+    stop_app();
   }
 }
 
@@ -1001,7 +1040,10 @@ int main(int argc, const char *argv[]) {
                    dispatch_get_main_queue(), ^{
       fprintf(stderr, "CAP12A_FAIL reason=watchdog fired after %d ms\n",
               timeoutMs);
-      [NSApp terminate:nil];
+      // the run loop is LEFT rather than the process killed, so a timed-out
+      // run still writes its timeline - which is the only thing that can say
+      // WHERE it stopped
+      stop_app();
     });
 
     [NSApp run];

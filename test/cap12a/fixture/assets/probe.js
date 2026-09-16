@@ -571,6 +571,15 @@ function run() {
       return rangeRow('m2c', 'pweb://app/_pweb/blob/whole-1048576',
         'bytes=0-99', 1048576, 0);
     }],
+    // CAP-12B entry condition 6.3.1, fourth row: a WHOLE 8 MiB body, which is
+    // the window §5.3 bounds a single response to. It is a plain drain rather
+    // than a ranged one deliberately - the question is whether an engine that
+    // serves this synchronously, inside one handler call, still behaves at the
+    // ceiling the plane is designed around. Every engine answers it, so the
+    // three legs stay comparable and the macOS row stops being derived.
+    ['m2.whole_8m', function () {
+      return drainRow('m2w8', 'pweb://app/_pweb/blob/whole-8388608', false);
+    }],
     ['media_support', function () { return mediaSupportRow(); }],
     ['m1.image_by_url', function () {
       return imageRow('m1.image_by_url', 'pweb://app/_pweb/blob/png');

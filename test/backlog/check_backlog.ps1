@@ -571,14 +571,27 @@ else {
 # compiles anything, which is what lets them sit in this gate at all.
 $cap12aDir = 'test/cap12a'
 if (Test-Path -LiteralPath $cap12aDir) {
-    # (1) NEVER A CI STEP. A run of that instrument puts a THROWAWAY STORE
-    # behind the production pweb://app seam, and a gate that does that is a
-    # gate that can normalise it.
+    # (1) NEVER A CI STEP -- and CAP-12B narrows what that sentence measures,
+    # because the claim it protects is narrower than the sweep that used to
+    # implement it. What must never happen is a GATE putting a throwaway store
+    # behind the production pweb://app seam, since a gate that does that is a
+    # gate that can normalise it. The gate surface is the ONE step sequence:
+    # `ci.yml`, `platform-leg.yml` and every composite action they call.
+    #
+    # `.github/workflows/measure-cap12.yml` is the single exception and it is
+    # named, not pattern-matched. It is how CAP-12A's §6.3 entry conditions get
+    # measured at all: two of the three need a macOS or a baseline-WebKitGTK
+    # host the development machine does not have. It is dispatch-only, no leg
+    # calls it, nothing `needs:` it, and the three assertions below hold it to
+    # that - so it cannot become a required check by being wired into one.
+    $cap12aMeasure = '.github/workflows/measure-cap12.yml'
     $ci12 = @()
     if (Test-Path -LiteralPath '.github') {
         foreach ($f in (Get-ChildItem -Path '.github' -Recurse -File -ErrorAction SilentlyContinue)) {
+            $rel12 = $f.FullName.Substring($repoRoot.Length + 1).Replace('\', '/')
+            if ($rel12 -eq $cap12aMeasure) { continue }
             if ([System.IO.File]::ReadAllText($f.FullName) -match ('test/cap' + '12a')) {
-                $ci12 += $f.FullName.Substring($repoRoot.Length + 1).Replace('\', '/')
+                $ci12 += $rel12
             }
         }
     }
@@ -587,6 +600,32 @@ if (Test-Path -LiteralPath $cap12aDir) {
         Violation ('CAP-12A REGRESSED: ' + ($ci12 -join ', ') + ' names ' +
             'test/cap12a -- a run of that instrument puts a throwaway store ' +
             'behind the production pweb://app seam')
+    }
+
+    # (1b) THE EXCEPTION IS HELD TO ITS SHAPE. Three assertions, each refusing
+    # one way the measurement workflow could stop being out of sequence.
+    $facts['cap12a_measure_workflow'] = [bool](Test-Path -LiteralPath $cap12aMeasure)
+    if (Test-Path -LiteralPath $cap12aMeasure) {
+        $m12 = [System.IO.File]::ReadAllText($cap12aMeasure) -replace "`r`n", "`n"
+        if ($m12 -match '(?m)^\s*workflow_call:') {
+            Violation ("CAP-12A: $cap12aMeasure declares workflow_call -- the " +
+                'measurement instrument must not be callable from the one ' +
+                'step sequence')
+        }
+        if ($m12 -notmatch '(?m)^\s*workflow_dispatch:') {
+            Violation ("CAP-12A: $cap12aMeasure declares no workflow_dispatch " +
+                '-- it exists to be run on purpose, never on a schedule of ' +
+                'its own')
+        }
+        foreach ($caller12 in '.github/workflows/ci.yml',
+                              '.github/workflows/platform-leg.yml') {
+            if (-not (Test-Path -LiteralPath $caller12)) { continue }
+            if ([System.IO.File]::ReadAllText($caller12) -match 'measure-cap12') {
+                Violation ("CAP-12A: $caller12 references the CAP-12 " +
+                    'measurement workflow -- it is out of sequence by ' +
+                    'construction and must stay so')
+            }
+        }
     }
 
     # (2) NOTHING SHIPPED REACHES IT. The spike is self-contained: no unit,

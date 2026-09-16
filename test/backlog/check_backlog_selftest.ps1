@@ -1,4 +1,4 @@
-# THE BACKLOG GATE'S NEGATIVE SELF-TEST: twenty-three perturbations, each of
+# THE BACKLOG GATE'S NEGATIVE SELF-TEST: twenty-six perturbations, each of
 # which check_backlog.ps1 must refuse, and each of which is byte-restored after.
 #
 # A gate that has only ever been seen to PASS has an unproven failure path, and
@@ -39,6 +39,7 @@ $targets = [ordered]@{
     ciwf    = '.github/workflows/ci.yml'
     c12sh   = 'test/cap12a/run_cap12a.sh'
     c12ps   = 'test/cap12a/run_cap12a.ps1'
+    c12mwf  = '.github/workflows/measure-cap12.yml'
     assets  = 'src/assets/pweb.assets.intf.pas'
 }
 $backup = @{}
@@ -78,7 +79,7 @@ try {
         throw ('the gate does not pass on the unperturbed tree, so no leg below ' +
             'would mean anything; fix that first')
     }
-    Write-Host '[backlog] baseline PASS; twenty-three perturbations follow'
+    Write-Host '[backlog] baseline PASS; twenty-six perturbations follow'
 
     # Rewrite one row of the disposition table, addressed by its key, so a leg
     # says what it changes rather than depending on a substring that could
@@ -274,6 +275,33 @@ try {
         [System.IO.File]::WriteAllText($p,
             $t.Replace('refusing to delete outside', 'deleting anywhere'))
     } 'no longer validates its delete target'
+
+    # --- CAP-12B: the one named exception, held to its shape -----------------
+    # Narrowing (1) from "no file under .github/" to "no file in the ONE step
+    # sequence" bought the measurement workflow an exemption, and an exemption
+    # nothing checks is how a dispatch-only instrument quietly becomes a gate.
+    # These three legs are the price of the narrowing.
+    Leg 'CAP-12B undone: the measurement workflow becomes callable' {
+        $p = Join-Path $repoRoot '.github/workflows/measure-cap12.yml'
+        $t = [System.IO.File]::ReadAllText($p) -replace "`r`n", "`n"
+        [System.IO.File]::WriteAllText($p,
+            $t.Replace("on:`n  workflow_dispatch:",
+                "on:`n  workflow_call:`n  workflow_dispatch:"))
+    } 'declares workflow_call'
+
+    Leg 'CAP-12B undone: the measurement workflow loses its button' {
+        $p = Join-Path $repoRoot '.github/workflows/measure-cap12.yml'
+        $t = [System.IO.File]::ReadAllText($p) -replace "`r`n", "`n"
+        [System.IO.File]::WriteAllText($p,
+            $t.Replace("  workflow_dispatch:`n", "  schedule_placeholder:`n"))
+    } 'declares no workflow_dispatch'
+
+    Leg 'CAP-12B undone: the one sequence references the instrument' {
+        $p = Join-Path $repoRoot '.github/workflows/ci.yml'
+        $t = [System.IO.File]::ReadAllText($p)
+        [System.IO.File]::WriteAllText($p,
+            $t + "`n# see measure-cap" + "12.yml for the entry conditions`n")
+    } 'references the CAP-12 measurement workflow'
 }
 finally { Restore }
 
