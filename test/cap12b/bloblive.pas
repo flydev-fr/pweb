@@ -365,6 +365,19 @@ begin
     Result := ADefault;
 end;
 
+{$ifdef DARWIN}
+// the same refusal every other Cocoa live harness makes: WebKit's own
+// floating-point work traps under FPC's default FPU mask, so no WebView is
+// created unless the seam reports the traps masked
+procedure CheckCocoaRuntimeUsable;
+begin
+  if PWebCocoaFpuTrapsMasked then
+    exit;
+  WriteLn(StdErr, LOG_PREFIX, ': COCOA RUNTIME UNUSABLE (fpu traps still enabled)');
+  raise Exception.Create('FPU traps could not be masked - no WebView created');
+end;
+{$endif DARWIN}
+
 var
   w: webview_t;
   store: IAssetStore;
@@ -417,6 +430,7 @@ begin
       Blobs := TPWebMemoryBlobStore.Create;
       BlobsRuntime := Blobs as IBlobStoreRuntime;
       {$ifdef DARWIN}
+      CheckCocoaRuntimeUsable;
       // the ONE forced ordering difference: the Cocoa seam is armed by
       // CONSTRUCTION, so the handler exists before the webview does
       handler := TLiveHandler.Create(store, Blobs, OWNER);

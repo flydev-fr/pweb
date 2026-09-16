@@ -49,6 +49,36 @@ SDK files, and its self-test plants a network primitive in `blob.ts` and
 requires the refusal. Every script-bodied step of the Windows leg was then
 replayed locally from `platform-leg.yml` itself before the next push.
 
+**The same run also found the macOS defect, and it was in the harness build,
+not in the plane.** Both macOS legs failed the CAP-12B step while compiling
+the live harness:
+
+```
+Error: Illegal parameter: -k
+```
+
+`build_cap12b.ps1` had hand-typed the Darwin link flags, and a hand-typed
+list would also have missed `-k-no_fixup_chains`, without which every
+aarch64 link against the webview dylib fails. The script also threw at that
+first failure, so the bundler was never built and the pack gate reported a
+second red for the same cause. The harness now links through
+`tools/macos-buildenv.sh` exactly as `test/cap8b/run_nav_matrix.sh` does
+(`pweb_macos_init_fpc`, then `PWEB_MACOS_FPC_FLAGS` and
+`PWEB_MACOS_FPC_LINK_BRIDGE`, then the versioned dylib staged beside the
+binary). The script now tries every artifact before it fails, and the
+harness refuses to create a WebView unless the Cocoa seam reports the FPU
+traps masked, as every other Cocoa live harness does. The Cocoa unit is now
+type-checked with `-dDARWIN -Cn` on every non-Mac leg, and the live
+harness's Darwin branch is type-checked the same way on Linux. That follows
+CAP-15B's approach, and both checks pass on this host and under WSL. The
+check cannot reach the link itself, which only a Mac performs.
+
+Everything else in that run that reached CAP-12B was green. The **Linux**
+CAP-12B step passed on the hosted WebKitGTK (window `50 ms`, asset beside it
+`4 ms`). On **macOS arm64**, S1 ran before the link failure and passed with
+`blob_corpus_digest = 5d0ce4b9…93bc`, which is byte-identical to Windows and
+Linux.
+
 ---
 
 ## 0. COVERAGE, STATED BEFORE THE CONCLUSIONS
@@ -56,9 +86,9 @@ replayed locally from `platform-leg.yml` itself before the next push.
 | target | headless suite | live plane | how |
 |---|---|---|---|
 | **Windows x64 / WebView2** | **MEASURED** | **MEASURED** | this host; `test/cap12b/run_cap12b_gates.ps1`, verdict PASS |
-| **Linux x64 / WebKitGTK 2.52.6** | **MEASURED** | **MEASURED** | WSL + `xvfb-run`, same gate script, verdict PASS |
+| **Linux x64 / WebKitGTK 2.52.6** | **MEASURED** | **MEASURED** | WSL + `xvfb-run`, same gate script, verdict PASS; and on the hosted leg of run `35102099474`, verdict PASS |
 | **macOS x64 / WKWebView** | **compiles; UNMEASURED live** | **OUTSTANDING** | the Objective-C++ seam **and** the Pascal adapter compile on the hosted runner (`measure-cap12.yml`, run `35089828854`: `pweb_cocoa_bridge.o arch=x86_64 minos=12.0`, 23 073 lines of Pascal); the live harness runs on the hosted CI leg |
-| **macOS arm64 / WKWebView** | as above (`arch=arm64`, 19 919 lines) | **OUTSTANDING** | as above |
+| **macOS arm64 / WKWebView** | **MEASURED** on run `35102099474` (S1 PASS, same corpus digest) | **OUTSTANDING** | seam as above (`arch=arm64`, 19 919 lines); that run's live-harness link was refused, and the fix is described above |
 
 **The adapters already passed the whole existing matrix on four targets.**
 Hosted run `35089829631` on commit `a57b14e` — the store, the translator,
@@ -387,6 +417,7 @@ rather than discovering it later.
 | CAP-12B contracts | PASS — **5/5 perturbations refused** |
 | CAP-12B gates, Windows | PASS |
 | CAP-12B gates, Linux (WSL + xvfb) | PASS |
+| CAP-12B Darwin type check (`-dDARWIN -Cn`) | PASS — the Cocoa unit on Windows and Linux, and the live harness on Linux |
 
 The two CAP-12B corpus digests agree across targets to the byte:
 `blob_corpus_digest = 5d0ce4b9ba06421aed2ed67761e11ecbe2066ce930b0f47b9ce17faee1c093bc`,
