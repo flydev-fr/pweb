@@ -64,6 +64,11 @@ if ($passConst.Count -ne 1) {
 $passMarker = $passConst[0].Matches[0].Groups[1].Value
 Write-Host "[CAP-9A] canonical pass marker: $passMarker"
 
+# the pinned mORMot declarations this harness's plugins rely on (ledger 9A-3,
+# 9A-4, resolved upstream and pinned 2026-09-16), each proven to fire
+pwsh -NoProfile -File test/cap9a/check_pinned_bindings.ps1
+if ($LASTEXITCODE -ne 0) { throw 'CAP-9A: the pinned mORMot binding declarations check FAILED' }
+
 # --- build quickjsfoundation.exe against the PRISTINE dependency -------------
 New-Item -ItemType Directory -Force build/cap9a/qf-fpc, build/cap9a/qf-bin | Out-Null
 fpc -Px86_64 -Twin64 -MObjFPC -Sh -B -Xm `
@@ -94,7 +99,9 @@ if (-not (Test-Path $corpus)) {
 if (-not (Test-Path $abiPas)) {
     throw "CAP-9A: the Pascal ABI line set was not written -- see $log"
 }
-if (-not ($out -match [regex]::Escape($passMarker))) {
+# -cmatch, not -match: the marker was extracted -CaseSensitive, so it must
+# be tested the same way - the bash sibling's grep -qF is case-sensitive too
+if (-not ($out -cmatch [regex]::Escape($passMarker))) {
     throw "CAP-9A quickjsfoundation FAILED (exit $code) -- see $log"
 }
 if ($code -ne 0) {

@@ -46,9 +46,12 @@
     re-declaration. Upstream 37fa86b4 fixed the binding in answer to this
     project's report, so the re-declaration is gone and the pinned import
     is called directly - with FEngine.rt, a JSRuntime, which FPC refuses
-    to pass where a JSContext is declared. The call site is therefore a
-    compile-time gate on the upstream signature, and the CAP-9A and
-    CAP-9B2 limit matrices are the runtime one.
+    to pass where a JSContext is declared, so a revert to the old
+    signature cannot compile. test/cap9a/check_pinned_bindings.ps1 reads
+    the pinned declaration on every leg, and CAP-9A's q22 depth probe
+    proves the configured limit reaches the runtime (the 1 MB default
+    allows about four times the frames of 256 KB, which is also QuickJS's
+    own default).
   - Lifecycle: the transport (this plugin) drives Quiesce -> Close on
     its source; Unload then stops the thread and the engine is destroyed
     ON ITS OWNING THREAD in Execute's epilogue. A late worker completion
@@ -171,7 +174,7 @@ type
   TPWebQuickJSLimits = record
     TimeoutSeconds: Cardinal;   // default CPU bound per Evaluate (interrupt)
     MemoryLimitBytes: PtrUInt;  // JS_SetMemoryLimit on the runtime
-    StackLimitBytes: PtrUInt;   // runtime-typed JS_SetMaxStackSize
+    StackLimitBytes: PtrUInt;   // the pinned JS_SetMaxStackSize
     InvokeWaitMs: Integer;      // defensive cap of the bounded native wait
   end;
 
@@ -533,8 +536,10 @@ implementation
   This block was widened first, when the pin still read `cardinal` and
   `integer`; the pin move of 2026-09-16 brought upstream level with it and
   pas_malloc_usable_size, the one signature still 32-bit here, followed.
-  size stays unsigned (size_t) where mormot.lib.static says PtrInt: the
-  width is the ABI, and no request reaches the sign bit. }
+  Signedness is mixed exactly as upstream's is - pas_malloc unsigned,
+  pas_realloc PtrInt - and it does not matter to the ABI: the caller's 64
+  register bits arrive whole either way, and GetMem/ReallocMem take them as
+  an unsigned size. }
 function pas_malloc(size: PtrUInt): pointer; cdecl;
   public name '_pas_malloc';
 begin

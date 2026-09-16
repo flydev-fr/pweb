@@ -46,7 +46,8 @@ program quickjsfoundation;
     q19 engine destroyed on its owning thread; other plugin unaffected
     q20 infinite loop interrupted by TimeoutValue; other plugin fine
     q21 engine reusable after the interrupt
-    q22 deep recursion -> safe JS error under the runtime-typed stack cap
+    q22 deep recursion -> safe JS error under the configured stack limit,
+        and that limit decides the depth (256 KB vs the 1 MB default)
     q23 over-allocation -> safe error under JS_SetMemoryLimit; disposable
     q24 5x create/evaluate/destroy churn clean
     q25 forged identity fields in Args change nothing
@@ -930,13 +931,32 @@ begin
   Expect(JsonStrField(dense, 'code') = 'forbidden', 'q25 forged args');
 end;
 
+{ how many nested JavaScript calls the engine allows before its own stack
+  guard throws - the number the configured StackLimitBytes decides }
+function StackDepth(APlugin: TPWebQuickJSPlugin): Integer;
+var
+  dense, err, depth: RawUtf8;
+begin
+  Result := -1;
+  dense := RunPlugin(APlugin,
+    '(function(){var d=0;var f=function(){d++;f();};' +
+    'try{f();}catch(e){}return JSON.stringify({depth:d});})()', err, 5);
+  if err <> '' then
+    exit;
+  depth := JsonRawField(dense, 'depth');
+  if depth <> '' then
+    Result := GetInteger(pointer(depth));
+end;
+
 procedure QLimits;
 var
   dense, err, addDense, addErr: RawUtf8;
   json: RawUtf8;
   limits: TPWebQuickJSLimits;
-  srcLimits2: IInvocationSource;
+  srcLimits2, srcLimits3: IInvocationSource;
   lim: TPWebSourceLimits;
+  stackPlugin: TPWebQuickJSPlugin;
+  depthSmall, depthLarge: Integer;
 begin
   // q20/q21: infinite loop on the reporting plugin, interrupted by the
   // pinned TimeoutValue interrupt while the calculator plugin keeps
@@ -970,7 +990,7 @@ begin
   srcLimits2 := gScheduler.RegisterSource(lim);
   limits := PWEB_QUICKJS_DEFAULT_LIMITS;
   limits.MemoryLimitBytes := 16 shl 20; // 16 MB
-  limits.StackLimitBytes := 256 * 1024; // 256 KB, runtime-typed call
+  limits.StackLimitBytes := 256 * 1024; // 256 KB - also QuickJS's own default
   gLimitsPlugin := TPWebQuickJSPlugin.Create(srcLimits2,
     MakeContext(PRIN_REP), limits, gSnapCb);
   try
@@ -984,6 +1004,12 @@ begin
     Emit('q22 recursion safe=' + YesNo(ContainedSafely(err, dense)));
     Expect(ContainedSafely(err, dense),
       'q22 deep recursion neither threw nor errored (or hung)');
+    // q22 contains the recursion, but 256 KB is also JS_DEFAULT_STACK_SIZE
+    // in the pinned quickjs.h, so it cannot tell a limit that reached the
+    // runtime from one that did not. The depth measured here is compared
+    // below with a runtime configured for 1 MB. Expect only: the frozen
+    // corpus gains no line.
+    depthSmall := StackDepth(gLimitsPlugin);
     dense := RunPlugin(gLimitsPlugin,
       '(function(){try{var a=[];for(;;){a.push(new Array(4096).fill(1));}}' +
       'catch(e){return JSON.stringify({caught:true});}return "unreached";})()',
@@ -999,6 +1025,35 @@ begin
       'q23 limits engine not destroyed on its own thread');
     FreeAndNil(gLimitsPlugin);
   end;
+
+  // q22, discriminating: the shipped default limit (1 MB) on a runtime of
+  // its own. A configured limit that reaches the runtime gives it several
+  // times the frames the 256 KB one allowed; one that does not leaves both
+  // at QuickJS's default and the two depths equal. The plugin thread's own
+  // stack is FPC's 4 MiB default, so 1 MB is reached before the thread's end.
+  lim := Default(TPWebSourceLimits);
+  lim.MaxConcurrent := 1;
+  lim.MaxQueueSize := 4;
+  srcLimits3 := gScheduler.RegisterSource(lim);
+  stackPlugin := TPWebQuickJSPlugin.Create(srcLimits3,
+    MakeContext(PRIN_REP), PWEB_QUICKJS_DEFAULT_LIMITS, gSnapCb);
+  try
+    Expect(stackPlugin.WaitReady(15000),
+      'q22 stack plugin bootstrap failed: ' + stackPlugin.InitError);
+    depthLarge := StackDepth(stackPlugin);
+  finally
+    stackPlugin.Unload;
+    Expect(stackPlugin.EngineDestroyedOnOwnThread,
+      'q22 stack engine not destroyed on its own thread');
+    FreeAndNil(stackPlugin);
+  end;
+  WriteLn('[CAP-9A] q22 stack depth: ', depthSmall, ' frames at 256 KB, ',
+    depthLarge, ' frames at ', PWEB_QUICKJS_DEFAULT_LIMITS.StackLimitBytes,
+    ' bytes');
+  Expect((depthSmall > 0) and (depthLarge > 2 * depthSmall),
+    'q22 the configured stack limit does not decide the recursion depth (' +
+    IntStr(depthSmall) + ' frames at 256 KB, ' + IntStr(depthLarge) +
+    ' at the 1 MB default) - JS_SetMaxStackSize is not reaching the runtime');
 end;
 
 procedure QBackpressure;

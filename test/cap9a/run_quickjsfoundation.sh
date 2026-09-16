@@ -44,7 +44,11 @@ cd -- "${repo_root}"
 die() { printf '[CAP-9A] %s\n' "$*" >&2; exit 1; }
 step() { printf '\n[CAP-9A] === %s\n' "$*"; }
 
+# shellcheck source=tools/pwebrmtree.sh
+. "${repo_root}/tools/pwebrmtree.sh"
+
 command -v fpc >/dev/null 2>&1 || die 'required tool not found: fpc'
+command -v pwsh >/dev/null 2>&1 || die 'required tool not found: pwsh'
 
 work="${repo_root}/build/cap9a"
 mkdir -p -- "${work}"
@@ -68,6 +72,12 @@ pass_marker="$(sed -n "s/^  MARKER_PASS = '\\([^']*\\)';\$/\\1/p" \
 [ "$(printf '%s\n' "${pass_marker}" | wc -l)" -eq 1 ] ||
     die 'expected exactly one MARKER_PASS constant in quickjsfoundation.pas'
 printf '[CAP-9A] canonical pass marker: %s\n' "${pass_marker}"
+
+# the pinned mORMot declarations this harness's plugins rely on (ledger 9A-3,
+# 9A-4, resolved upstream and pinned 2026-09-16), each proven to fire
+step 'the pinned mORMot binding declarations'
+pwsh -NoProfile -File test/cap9a/check_pinned_bindings.ps1 ||
+    die 'the pinned mORMot binding declarations check FAILED'
 
 os_name="$(uname -s)"
 outdir="${work}/qf-bin"
@@ -162,10 +172,17 @@ json="${work}/quickjsfoundation-${target}.json"
 rm -f -- "${json}"
 
 step "run the headless Q1-Q30 matrix (${target})"
+# from a directory the harness does not live in (it resolves everything from
+# its own image), created under build/ and removed through the one guarded
+# delete - the run directory used to be a mktemp -d nobody removed
+runcwd="${work}/run-cwd"
+pweb_rm_tree "${runcwd}" "${repo_root}/build"
+mkdir -p -- "${runcwd}"
 set +e
-( cd -- "$(mktemp -d)" && "${exe}" ) > "${qlog}" 2>&1
+( cd -- "${runcwd}" && "${exe}" ) > "${qlog}" 2>&1
 code=$?
 set -e
+pweb_rm_tree "${runcwd}" "${repo_root}/build"
 cat "${qlog}"
 
 [ -f "${corpus}" ] ||
