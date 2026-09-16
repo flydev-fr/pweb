@@ -1,26 +1,26 @@
 # The backlog
 
 `_bmad-output/implementation-artifacts/deferred-work.md` is append-only and
-carries **439 entries** from Phase 0 to CAP-12A. It is a
+carries **448 entries** from Phase 0 to the second mORMot repin. It is a
 ledger: it records what was found, in the words of the shard that found it,
 and it never edits itself. That makes it excellent evidence and a poor
 worklist — a reader who wants to know *what is still owed* has to resolve
 every supersession chain by hand, and three phase-closure artifacts answer
 that question for CAP-10 and CAP-11 only.
 
-This document is the worklist. Every one of the 439 entries is disposed of
-exactly once, with one verdict, an owner and a reason. **Sixty-seven are open,**
-**and those sixty-seven are listed here in full**; the other 372 are in
+This document is the worklist. Every one of the 448 entries is disposed of
+exactly once, with one verdict, an owner and a reason. **Sixty-four are open,**
+**and those sixty-four are listed here in full**; the other 384 are in
 `test/backlog/dispositions.tsv`, which is the table this document is written
 from and the one the gate reads.
 
 | verdict | count | what it means |
 |---|---:|---|
 | `FIX_NOW` | 4 | closed by this triage, one commit each, cited below |
-| `UPSTREAM` | 4 | the defect belongs to a third-party project and a report is written or owed; three of the four also carry a local workaround, and `RP-2` deliberately does not |
+| `UPSTREAM` | 1 | the defect belongs to a third-party project and a report is written or owed. Three mORMot entries left this bucket on 2026-09-16, when upstream fixed all three and the pin moved onto the fixes |
 | `ROADMAP` | 59 | real work, deferred, with a named owner |
-| `ACCEPTED` | 121 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
-| `CLOSED` | 255 | the thing the entry describes is done |
+| `ACCEPTED` | 123 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
+| `CLOSED` | 261 | the thing the entry describes is done |
 
 `ACCEPTED` is not a synonym for ignored. It is the verdict for an entry whose
 honest answer is a measurement — that WebView2 raises no navigation event for a
@@ -298,29 +298,26 @@ is how a green tree becomes four red legs.
 
 ---
 
-## UPSTREAM — two reports, ready to post
+## UPSTREAM — one open, three resolved upstream
 
-Both are defects in the pinned `synopse/mORMot2` bindings, both were found by
-measurement rather than by reading, and PWeb is exposed to neither: it declares
-its own correctly-typed externals. Each report is a standalone file with every
-PWeb-specific detail stripped, quoting only mORMot's own files.
+The one open `UPSTREAM` entry is `12A-1`, CAP-12A's WebKitGTK finding —
+`webkit_uri_scheme_request_get_http_body()` faults the UI process for a
+blob-backed request body. Its report is
+[`docs/upstream/webkitgtk-uri-scheme-request-get-http-body-blob.md`](upstream/webkitgtk-uri-scheme-request-get-http-body-blob.md).
 
-Two further `UPSTREAM` entries have no file here. `RP-2` is the `imvCurrency`
-result-register defect, whose report lives at
-[`docs/upstream/mormot-imvcurrency-rax-sysv-x64.md`](upstream/mormot-imvcurrency-rax-sysv-x64.md)
-and which is deliberately NOT worked around. `12A-1` is CAP-12A's WebKitGTK
-finding — `webkit_uri_scheme_request_get_http_body()` faults the UI process for
-a blob-backed request body — and its report is **owed rather than written**: it
-waits on a hosted Linux leg to pin the version range, which is CAP-12B entry
-condition 6.3.2.
+**The three `synopse/mORMot2` reports were posted and all three were fixed
+upstream on 2026-09-16**, in answer to
+<https://synopse.info/forum/viewtopic.php?pid=45803#p45803>. The second mORMot
+repin moved `mormot.lock` onto `66d7d51c1fd21bd222b360382ed8e2b4f656aaad`, the
+smallest commit that carries all three, and each entry is now `CLOSED` by an
+entry of that shard (`RP2-1` to `RP2-3`). Each report keeps its original text
+under a *resolved upstream* header naming the commit.
 
-| entry | report | subject |
-|---|---|---|
-| `9A-3` | [`docs/upstream/mormot-quickjs-js-setmaxstacksize-signature.md`](upstream/mormot-quickjs-js-setmaxstacksize-signature.md) | `JS_SetMaxStackSize` is declared with `JSContext` where the shipped C takes `JSRuntime *`, so the binding writes the stack bound into an unrelated field of a live object — measured as an access violation under allocation pressure |
-| `9A-4` | [`docs/upstream/mormot-static-pas-malloc-size-t.md`](upstream/mormot-static-pas-malloc-size-t.md) | `pas_malloc(size: cardinal)` and `pas_malloc_usable_size(...): integer` against a C side that calls them with `size_t`, so an over-4 GiB request is silently truncated to its low 32 bits on every 64-bit target |
-
-Neither has been submitted. Posting them is the owner's call, and the reports
-are written to be posted as they stand.
+| entry | report | fixed by | what PWeb removed |
+|---|---|---|---|
+| `RP-2` | [`docs/upstream/mormot-imvcurrency-rax-sysv-x64.md`](upstream/mormot-imvcurrency-rax-sysv-x64.md) | `6a27c07fc6c9` — the `imvCurrency` result read from x87 ST0 on FPC SysV x64 and from x0 on AArch64 | the documented limitation: a service method returning `Currency` is right on all four targets, measured 5/5 unpatched on each leg's own compiler, and every Currency row now gates |
+| `9A-3` | [`docs/upstream/mormot-quickjs-js-setmaxstacksize-signature.md`](upstream/mormot-quickjs-js-setmaxstacksize-signature.md) | `37fa86b45130` — `JS_SetMaxStackSize(rt: JSRuntime; …)` | the private re-declaration in `src/script/pweb.script.quickjs.pas` |
+| `9A-4` | [`docs/upstream/mormot-static-pas-malloc-size-t.md`](upstream/mormot-static-pas-malloc-size-t.md) | `66d7d51c1fd2` — the `pas_*` exports pointer-width | nothing: PWeb carried no workaround where `mormot.lib.static` is linked, and the aarch64-darwin export block it provides where upstream ships none now matches the pin |
 
 ---
 
@@ -415,9 +412,9 @@ than appended to an append-only ledger:
 
 ## The open work, in full
 
-Sixty-seven rows: the four `FIX_NOW` items this triage closed, the four
-`UPSTREAM` entries, and the fifty-nine on the roadmap. Everything else — 120
-`ACCEPTED` and 252 `CLOSED` — is in `test/backlog/dispositions.tsv`.
+Sixty-four rows: the four `FIX_NOW` items this triage closed, the one
+`UPSTREAM` entry, and the fifty-nine on the roadmap. Everything else — 123
+`ACCEPTED` and 261 `CLOSED` — is in `test/backlog/dispositions.tsv`.
 
 | key | verdict | owner | reason |
 |---|---|---|---|
@@ -425,9 +422,6 @@ Sixty-seven rows: the four `FIX_NOW` items this triage closed, the four
 | `8B-7` | FIX_NOW · closed by `0029fc5` | this triage | `RepoRootFromExecutable` was duplicated across the CAP-8A, CAP-8B and CAP-8C hosts and had since grown a fourth copy. It is security-adjacent path resolution and the copies could drift independently; they are now one shared test helper with a contract check that keeps them one |
 | `B1-8` | FIX_NOW · closed by `5656508` | this triage | `create_help_digest` differed between Windows and POSIX for a compile-time ASCII constant, and the ledger recorded that nobody knew why. The cause is now found and closed, and the field is compared across four targets again instead of being recorded per target |
 | `B2-15` | FIX_NOW · closed by `e90cc74` | this triage | the generated `.gitattributes` opened `* -text` and never opted `.cfg` back in, so `frontend/pas2js.cfg` was treated as binary in every generated Pas2JS project and a Windows edit could commit CRLF into a compiler configuration. The template parity gate made it a supersession rather than a one-line change, which is why it waited |
-| `9A-3` | UPSTREAM | synopse/mORMot2 | `mormot.lib.quickjs.pas` declares `JS_SetMaxStackSize(ctx: JSContext; ...)` where the pinned C takes `JSRuntime*`; calling the pinned binding was measured to corrupt the context. PWeb re-declares it correctly unit-local, so no PWeb path is affected. Report: `docs/upstream/mormot-quickjs-js-setmaxstacksize-signature.md` |
-| `9A-4` | UPSTREAM | synopse/mORMot2 | `mormot.lib.static.pas` declares `pas_malloc(size: cardinal)` and `pas_malloc_usable_size(...): integer` where the pinned QuickJS C calls them with `size_t`, truncating an over-4 GiB request to its low 32 bits on 64-bit targets. Unreachable in PWeb under the per-plugin memory ceiling. Report: `docs/upstream/mormot-static-pas-malloc-size-t.md` |
-| `RP-2` | UPSTREAM | synopse/mORMot2 | upstream `790154af` edits the `ABIX64` `CallMethod` block Win64 and SysV x64 SHARE, so removing the `imvCurrency` XMM0 read fixed Windows (0/5 to 5/5 over arities 0/1/2) and left Linux reading a leftover pointer out of RAX (0/5 to 1/5 — only the no-argument case is right). Hosted run 34241426338 widened it: macos-x86_64 is identical to Linux at 1/5, and macos-arm64 — a different ABI with its own CallMethod, untouched by that commit — is 0/5 with the same five values Win64 produced before it, so the result register is wrong on three ABIs and on aarch64 apparently always was. It predates the pin move and the pin move improves it. NOT worked around in the bridge, deliberately: a workaround would hide the defect from the report that should fix it. Report: `docs/upstream/mormot-imvcurrency-rax-sysv-x64.md` |
 | `P1-1` | ROADMAP | next webview pin review | upstream's cmake fetches the WebView2 SDK nuget by version with no URL_HASH, so the integrity of that build input rests on nuget version immutability alone. Vendoring it or hash-pinning it is PWeb's move, not upstream's, and it belongs with the next pin bump |
 | `P5-1` | ROADMAP | CI cost owner | the pinned pas2js archive is still fetched on every run with no cache; only the FPC disk image is cached. 11A-4 bounded the fetch, but CAP-11A's freeze forbade changing WHAT CI runs and 11A-14 sent caching to whoever next owns the matrix's cost |
 | `P6-2` | ROADMAP | long-path shard | the Ansi-argv half is closed by P6U-1. The unprefixed `FindFirstFileW` MAX_PATH bound in the bundler's directory walk stands; failures are loud build errors, never silent corruption. Same family as 6B3-4 |

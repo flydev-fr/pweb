@@ -1,5 +1,17 @@
 # `imvCurrency` is read from RAX on the SysV x64 ABI too, and there it is wrong
 
+> **RESOLVED UPSTREAM.** Fixed by
+> [`6a27c07fc6c9f796711076561c293e68eb6b6398`](https://github.com/synopse/mORMot2/commit/6a27c07fc6c9f796711076561c293e68eb6b6398)
+> *(core: fixed currency result in mormot.core.interfaces)*, 2026-09-16, in
+> answer to this report ([forum](https://synopse.info/forum/viewtopic.php?pid=45803#p45803)).
+> On FPC SysV x64 the result is now popped from x87 ST0 (`fistp`), which is
+> where FPC leaves a `Currency` — not XMM0, as proposed below — and on AArch64
+> the `imvCurrency` case no longer goes to the d0 branch. Measured on the
+> unpatched fix, the same five cases on the same four compilers: **5/5 on
+> windows-x86_64, linux-x86_64, macos-x86_64 and macos-arm64**. PWeb's pin
+> moved onto `66d7d51c1`, which carries it, the same day. The report below is
+> kept as it was filed.
+
 **Project:** synopse/mORMot2
 **Unit:** `src/core/mormot.core.interfaces.pas` (`CallMethod`, the `ABIX64`
 assembler)

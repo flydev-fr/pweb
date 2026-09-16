@@ -1,5 +1,15 @@
 # `JS_SetMaxStackSize` is declared with `JSContext` where the C takes `JSRuntime *`
 
+> **RESOLVED UPSTREAM.** Fixed by
+> [`37fa86b451304c15bacd34cf673cb4f0c40f0235`](https://github.com/synopse/mORMot2/commit/37fa86b451304c15bacd34cf673cb4f0c40f0235)
+> *(lib: fixed JS_SetMaxStackSize() definition)*, 2026-09-16, in answer to
+> this report ([forum](https://synopse.info/forum/viewtopic.php?pid=45803#p45803)).
+> The binding now reads `procedure JS_SetMaxStackSize(rt: JSRuntime;
+> stack_size: PtrUInt)`. PWeb's pin moved onto `66d7d51c1` the same day, its
+> private re-declaration is gone, and the stack, memory and interrupt limits
+> are measured safe through the pinned binding. The report below is kept as
+> it was filed.
+
 **Project:** synopse/mORMot2
 **Unit:** `src/lib/mormot.lib.quickjs.pas`
 **Severity:** memory corruption — calling the binding writes a pointer-sized

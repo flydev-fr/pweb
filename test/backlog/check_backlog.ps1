@@ -104,6 +104,7 @@ $shards = [ordered]@{
     'spec-phase-11-cap11a-ci-matrix.md'                    = '11A'
     'spec-phase-11-cap11b-upstream-watcher.md'             = '11B'
     'spec-phase-post-mvp-mormot-repin.md'                  = 'RP'
+    'spec-phase-post-mvp-mormot-repin-2.md'                = 'RP2'
     'spec-phase-14-cap14a-bundler-csp-refusal.md'          = '14A'
     'spec-phase-14-cap14b-dev-console-surface.md'          = '14B'
     'spec-phase-15-cap15a-network-door-ratification.md'    = '15A'

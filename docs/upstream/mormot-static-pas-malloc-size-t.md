@@ -1,5 +1,18 @@
 # The `pas_*` heap exports are declared with 32-bit sizes where the C calls them with `size_t`
 
+> **RESOLVED UPSTREAM.** Fixed by
+> [`66d7d51c1fd21bd222b360382ed8e2b4f656aaad`](https://github.com/synopse/mORMot2/commit/66d7d51c1fd21bd222b360382ed8e2b4f656aaad)
+> *(lib: fixed pas_malloc() wrapper definition)*, 2026-09-16, in answer to
+> this report ([forum](https://synopse.info/forum/viewtopic.php?pid=45803#p45803)).
+> `mormot.lib.static.pas` now exports `pas_malloc(size: PtrInt)`,
+> `pas_calloc(n, size: PtrUInt)` with an overflow check,
+> `pas_realloc(P; Size: PtrInt)` and `pas_malloc_usable_size(P): PtrUInt` -
+> pointer-width throughout, which is the ABI this report asked for (the size
+> is signed where `size_t` is not, and no request reaches the sign bit). The
+> same commit changed the three liblizard header prototypes to `size_t`; the
+> `2.4-stable` static archive was built before it. PWeb's pin moved onto this
+> commit the same day. The report below is kept as it was filed.
+
 **Project:** synopse/mORMot2
 **Unit:** `src/lib/mormot.lib.static.pas`
 **Severity:** silent truncation — an allocation request above 4 GiB returns an
