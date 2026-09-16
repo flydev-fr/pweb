@@ -979,6 +979,12 @@ jobs:
         with:
           target: ${{ inputs.target }}
 
+      - name: CAP-12B blob data plane gates (S1, L1, P1, B1, C1-C9) + evidence
+        timeout-minutes: 45
+        uses: ./.github/actions/cap-12b-blob-data-plane-gates-s1-l1-p1-b1-c1-c9-evidence
+        with:
+          target: ${{ inputs.target }}
+
       - name: Backlog disposition - every ledger entry has a verdict
         if: ${{ inputs.target == 'windows' }}
         timeout-minutes: 5

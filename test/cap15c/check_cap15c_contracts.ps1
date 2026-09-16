@@ -536,8 +536,22 @@ if (-not $pm.Success) {
 # its name), and pweb.rpc.fetch.pas refuses a raw or escaped NUL before it
 # decodes (15C-7). Their CAP-15B closure pins were 24c7bfac... and eaddb32d...;
 # the other three units are the CAP-15B closure's bytes, unchanged.
+#
+# RE-PINNED AGAIN BY CAP-12B, for ONE unit and for the reason that shard
+# exists. `pweb.rpc.fetch.pas` is the headline consumer of the blob data
+# plane: a declared-origin response between the 1 MiB inline cap and the
+# 8 MiB response ceiling used to be the typed refusal
+# `response_too_large_to_inline`, and is now a SUCCESS carrying a BlobHandle
+# the page reads by URL. Its CAP-15C pin was
+# 82aedb926a8a6a77633a6eb82aa3da74a285365602cd44101ce054960e4ec5fb.
+#
+# WHAT DID NOT MOVE, and that is the half worth saying: the transport, the
+# Darwin transport, the command layer and - above all -
+# `pweb.navigation.policy.pas` carry the same bytes they did at the CAP-15C
+# closure. `PWEB_NATIVE_CSP` is the premise the whole blob namespace rests
+# on, and this line is one of the places that proves CAP-12B did not touch it.
 $frozen = [ordered]@{
-    'src/rpc/pweb.rpc.fetch.pas'                        = '82aedb926a8a6a77633a6eb82aa3da74a285365602cd44101ce054960e4ec5fb'
+    'src/rpc/pweb.rpc.fetch.pas'                        = 'a158a35aaf247f0c494b779d08953eb10ca38af57144d7fd8d917cebe8ff50e9'
     'src/rpc/pweb.rpc.fetch.mormot.pas'                 = 'ec99cd5bce86921450a4089210935b2cc5d2d50b32818223be0801cced792fbc'
     'src/platform/macos/pweb.platform.cocoa.fetch.pas'  = '1fda306723431e1136db90b3d79f80e0b89d9c23d7110cf9331839be11a98143'
     'src/rpc/pweb.rpc.command.pas'                      = '2b279c63e97e1a09d9398f26b95b1f3abc51ca6ea62f4541391882553056b8cf'

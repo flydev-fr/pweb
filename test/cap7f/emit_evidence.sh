@@ -1782,6 +1782,39 @@ for f in socket_suite socket_corpus_digest socket_door_available \
     eval "${f}=\"\$(c15c_str ${f})\""
 done
 
+# --- CAP-12B: the blob data plane -------------------------------------------
+# build/cap12b/cli-<target>.json is ONE record: the headless contract and its
+# decision corpus, the live plane through the PRODUCTION handler in a real
+# window - whole and ranged reads offset-verified, the <img>, the typed-array
+# upload bodies proven byte-exact by two independent checksums, the three
+# indistinguishable refusals, the 8 MiB window against a real store, and
+# every blob gone after a document replacement - plus the pack-time
+# reservation proven to fire and the one place the URL prefix is built.
+#
+# This block exists in BOTH emitters, for the reason the CAP-10E block below
+# spells out: rows added to one and not the other cost a whole hosted run.
+c12b_file="${repo_root}/build/cap12b/cli-${target}.json"
+[ -f "${c12b_file}" ] ||
+    die "cap12b/cli-${target}.json missing -- the CAP-12B gates have not run in this workspace"
+c12b_str() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+        "${c12b_file}" | head -n 1
+}
+for f in blob_suite blob_corpus_digest blob_corpus_lines \
+        blob_plane_available blob_namespace blob_url_prefix \
+        blob_whole_by_url blob_csp_byte_identical blob_range_206 \
+        blob_range_declined_200 blob_range_416 blob_img \
+        blob_body_bytes_256mib blob_upload_refused_typed \
+        blob_foreign_token_unknown blob_released_unresolvable \
+        blob_window_ok blob_window_ms blob_window_asset_ms \
+        blob_concurrent_bounded blob_asset_unchanged \
+        blob_reserved_intercepted blob_released_on_navigation \
+        blob_release_order blob_csp_violations \
+        pack_refuses_pweb_prefix pack_clean_dist_unaffected \
+        blob_url_prefix_sources blob_units_present; do
+    eval "${f}=\"\$(c12b_str ${f})\""
+done
+
 # --- CAP-10E: the kernel-resolved image path --------------------------------
 # TWO records, and both are required rather than optional: the RUNTIME one
 # (test/cap10e/run_cap10e_gates.sh) says what a real host at a real
@@ -2936,6 +2969,35 @@ cat > "${work}/evidence.json" <<EOF
   "socket_composition_listener_members": "${socket_composition_listener_members}",
   "socket_composition_client_sockets": "${socket_composition_client_sockets}",
   "cap15c_failures": "${cap15c_failures}",
+  "blob_suite": "${blob_suite}",
+  "blob_corpus_digest": "${blob_corpus_digest}",
+  "blob_corpus_lines": "${blob_corpus_lines}",
+  "blob_plane_available": "${blob_plane_available}",
+  "blob_namespace": "${blob_namespace}",
+  "blob_url_prefix": "${blob_url_prefix}",
+  "blob_whole_by_url": "${blob_whole_by_url}",
+  "blob_csp_byte_identical": "${blob_csp_byte_identical}",
+  "blob_range_206": "${blob_range_206}",
+  "blob_range_declined_200": "${blob_range_declined_200}",
+  "blob_range_416": "${blob_range_416}",
+  "blob_img": "${blob_img}",
+  "blob_body_bytes_256mib": "${blob_body_bytes_256mib}",
+  "blob_upload_refused_typed": "${blob_upload_refused_typed}",
+  "blob_foreign_token_unknown": "${blob_foreign_token_unknown}",
+  "blob_released_unresolvable": "${blob_released_unresolvable}",
+  "blob_window_ok": "${blob_window_ok}",
+  "blob_window_ms": "${blob_window_ms}",
+  "blob_window_asset_ms": "${blob_window_asset_ms}",
+  "blob_concurrent_bounded": "${blob_concurrent_bounded}",
+  "blob_asset_unchanged": "${blob_asset_unchanged}",
+  "blob_reserved_intercepted": "${blob_reserved_intercepted}",
+  "blob_released_on_navigation": "${blob_released_on_navigation}",
+  "blob_release_order": "${blob_release_order}",
+  "blob_csp_violations": "${blob_csp_violations}",
+  "pack_refuses_pweb_prefix": "${pack_refuses_pweb_prefix}",
+  "pack_clean_dist_unaffected": "${pack_clean_dist_unaffected}",
+  "blob_url_prefix_sources": "${blob_url_prefix_sources}",
+  "blob_units_present": "${blob_units_present}",
   "github_sha": "${github_sha}",
   "github_run_id": "${github_run_id}",
   "waivers": [${waivers}]

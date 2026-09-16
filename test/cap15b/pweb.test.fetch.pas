@@ -800,7 +800,13 @@ begin
   Check(Pos('"bodyText":"{\"ok\":true}"', r.Value) > 0, 'no bodyText');
   Check(Pos('"bodyBase64":null', r.Value) > 0, 'bodyBase64 is not null');
   Check(Pos('"bytes":11', r.Value) > 0, 'no byte count');
-  Record_('response|envelope|status=200,truncated=false,text=1,base64=0');
+  // CAP-12B: `blob` is in EVERY envelope and null in all but one case - the
+  // body that went to the blob data plane instead of inline. A field that
+  // appeared only sometimes would be a field every caller has to feature-
+  // detect, and this decorator carries no blob store at all, so the value
+  // here is the one an application without the plane always sees.
+  Check(Pos('"blob":null', r.Value) > 0, 'blob is not present and null');
+  Record_('response|envelope|status=200,truncated=false,text=1,base64=0,blob=0');
   // E2: a body that is not valid UTF-8 crosses as base64, never as text
   FakeReset;
   FakeBody := RawByteString(#$FF#$FE#$00#$01);

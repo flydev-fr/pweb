@@ -71,6 +71,12 @@ function Build([string]$Source, [string[]]$Extra) {
 
 Build 'test/cap12b/cap12btests.pas' @()
 Build 'test/cap12b/bloblive.pas' $liveLink
+# THE BUNDLER IS BUILT HERE TOO, because the pack-time half of the reserved
+# prefix is a CAP-12B claim and a gate that borrowed another shard's binary
+# would be a gate that passes when that shard is not built.
+Build 'tools/bundler/pwebbundle.pas' @('-Fudeps/mormot2/src/rest',
+    '-Fudeps/mormot2/src/db', '-Fudeps/mormot2/src/orm',
+    '-Fudeps/mormot2/src/soa', '-Fudeps/mormot2/src/app')
 
 # the engine library must sit beside the live binary, exactly as every other
 # live harness in this repository stages it

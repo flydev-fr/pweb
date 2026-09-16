@@ -604,6 +604,41 @@ $required = @(
     'socket_composition_rpc_ok', 'socket_composition_rpc_result',
     'socket_composition_listener_members', 'socket_composition_client_sockets',
     'cap15c_failures',
+    # CAP-12B: the blob data plane.
+    #
+    # COMPARED (in $equalityFields): the decision corpus digest, the
+    # namespace, the URL prefix and the one source that builds it - every one
+    # of them a property of platform-independent logic, so a disagreement
+    # means one target took a different branch.
+    #
+    # PINNED ABSOLUTELY (in $absolutePins): the plane is available, a blob
+    # comes back byte-exact carrying the shipped CSP, a single and a suffix
+    # range are answered 206 at the requested OFFSET, a declined range is
+    # answered 200 whole, an unsatisfiable one 416, an <img> decodes, a
+    # 256 MiB typed-array body arrives byte-exact and is refused by name, a
+    # foreign token is indistinguishable from an unknown one, a released one
+    # is gone, the CAP-9 order held, no blob survived a navigation, no asset
+    # response changed and the bundler refuses the reserved prefix. Four
+    # targets could agree perfectly that a blob survived its window.
+    #
+    # PER-TARGET, required present and compared on none:
+    #   blob_window_ms / blob_window_asset_ms
+    #     the 8 MiB window against a real store (CAP-12A entry condition
+    #     6.3.3). It is an OBSERVATION: WebView2 delivers bodies serially on
+    #     the host GUI thread and WebKitGTK interleaves them, so the two
+    #     numbers differ by design and a comparison would refuse the truth.
+    'blob_suite', 'blob_corpus_digest', 'blob_corpus_lines',
+    'blob_plane_available', 'blob_namespace', 'blob_url_prefix',
+    'blob_whole_by_url', 'blob_csp_byte_identical', 'blob_range_206',
+    'blob_range_declined_200', 'blob_range_416', 'blob_img',
+    'blob_body_bytes_256mib', 'blob_upload_refused_typed',
+    'blob_foreign_token_unknown', 'blob_released_unresolvable',
+    'blob_window_ok', 'blob_window_ms', 'blob_window_asset_ms',
+    'blob_concurrent_bounded', 'blob_asset_unchanged',
+    'blob_reserved_intercepted', 'blob_released_on_navigation',
+    'blob_release_order', 'blob_csp_violations',
+    'pack_refuses_pweb_prefix', 'pack_clean_dist_unaffected',
+    'blob_url_prefix_sources', 'blob_units_present',
     # CAP-14B: the development console surface.
     #
     # COMPARED (below, in $equalityFields): console_mechanism, console_levels,
@@ -1364,11 +1399,43 @@ $absolutePins = @{
     handshake_redirects_followed       = '0'
     socket_composition_listener_members = '0'
     cap15c_failures                    = '0'
+    # CAP-12B: the blob data plane, and every one of these is a claim four
+    # targets could agree on while being wrong together.
+    blob_plane_available               = 'true'
+    blob_namespace                     = '_pweb/blob'
+    blob_url_prefix                    = 'pweb://app/_pweb/blob/'
+    blob_whole_by_url                  = 'true'
+    blob_csp_byte_identical            = 'true'
+    blob_range_206                     = 'true'
+    blob_range_declined_200            = 'true'
+    blob_range_416                     = 'true'
+    blob_img                           = 'true'
+    blob_body_bytes_256mib             = 'true'
+    blob_upload_refused_typed          = 'true'
+    blob_foreign_token_unknown         = 'true'
+    blob_released_unresolvable         = 'true'
+    blob_window_ok                     = 'true'
+    blob_concurrent_bounded            = 'true'
+    blob_asset_unchanged               = 'true'
+    blob_reserved_intercepted          = 'true'
+    blob_released_on_navigation        = 'true'
+    # the CAP-9 order, spelled rather than implied: the plane closes BEFORE
+    # the binding closes and the scheduler drains, and the store holds
+    # nothing once its last reader has gone
+    blob_release_order                 = 'cap9'
+    blob_csp_violations                = '0'
+    pack_refuses_pweb_prefix           = 'true'
+    pack_clean_dist_unaffected         = 'true'
+    # THE URL NAMESPACE IS BUILT IN EXACTLY ONE PLACE. A second one would be
+    # a second answer to the question CAP-12A §2 settled, and it is the kind
+    # of duplication that reads as harmless right up until the two disagree.
+    blob_url_prefix_sources            = 'src/assets/pweb.blobs.protocol.pas'
+    blob_units_present                 = 'true'
     cap14b_gates                       = 'PASS'
 }
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
 $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
-    'socket_suite',
+    'socket_suite', 'blob_suite',
     'build_corpus', 'build_suite', 'build_option_matrix',
     'build_help_matrix', 'gate_quoting_space_path',
     # CAP-10D1: the packaging verdict and the suite behind it
@@ -1750,6 +1817,14 @@ $equalityFields = @(
     'bundler_refuses_socket_field', 'frame_bound_both_directions',
     'sockets_per_host_bound', 'socket_policy_absent_forbidden',
     'handshake_redirects_followed', 'cap15c_failures',
+    # CAP-12B: the blob plane's DECISIONS, never its timings. The corpus
+    # digest is the strongest of these: 31 lines of platform-independent
+    # verdicts, hashed, so a target that took a different branch anywhere in
+    # the store, the grammars or the exchange disagrees here by one byte.
+    'blob_suite', 'blob_corpus_digest', 'blob_corpus_lines',
+    'blob_namespace', 'blob_url_prefix', 'blob_url_prefix_sources',
+    'blob_units_present', 'blob_csp_byte_identical', 'blob_release_order',
+    'blob_csp_violations', 'pack_refuses_pweb_prefix',
     'sdk_corpus', 'sdk_suite', 'sdk_digest', 'sdk_corpus_lines',
     'sdk_package_built', 'sdk_manifest_deterministic',
     'sdk_archive_deterministic', 'sdk_inventory_deterministic',

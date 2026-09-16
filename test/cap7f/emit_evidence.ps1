@@ -1257,6 +1257,26 @@ if (-not (Test-Path $c15cFile)) {
 }
 $c15c = Get-Content $c15cFile -Raw | ConvertFrom-Json
 
+# --- CAP-12B: the blob data plane -------------------------------------------
+# build/cap12b/cli-<target>.json is ONE record: the headless contract and its
+# decision corpus, the live plane through the PRODUCTION handler in a real
+# window - whole and ranged reads offset-verified, the <img>, the typed-array
+# upload bodies proven byte-exact by two independent checksums, the three
+# indistinguishable refusals, the 8 MiB window against a real store, and
+# every blob gone after a document replacement - plus the pack-time
+# reservation proven to fire and the one place the URL prefix is built.
+#
+# This block exists in BOTH emitters, for the reason the CAP-10E block spells
+# out: rows added to one and not the other cost a whole hosted run.
+$c12bFile = Join-Path $repoRoot 'build/cap12b/cli-windows-x86_64.json'
+if (-not (Test-Path $c12bFile)) {
+    throw '[CAP-7F] cap12b/cli-windows-x86_64.json missing -- the CAP-12B gates have not run in this workspace'
+}
+$c12b = Get-Content $c12bFile -Raw | ConvertFrom-Json
+if ("$($c12b.verdict)" -cne 'PASS') {
+    throw "[CAP-7F] the CAP-12B record carries verdict $($c12b.verdict)"
+}
+
 # --- CAP-10E: the kernel-resolved image path --------------------------------
 # TWO records, and both are required rather than optional: the RUNTIME one
 # (test/cap10e/run_cap10e_gates.ps1) says what a real host at a real
@@ -2313,6 +2333,38 @@ $evidence = [ordered]@{
     socket_composition_listener_members = "$($c15c.socket_composition_listener_members)"
     socket_composition_client_sockets  = "$($c15c.socket_composition_client_sockets)"
     cap15c_failures                    = "$($c15c.cap15c_failures)"
+    # CAP-12B: the blob data plane. The headless contract and its corpus, the
+    # live plane through the PRODUCTION handler, the pack-time reservation
+    # proven to fire, and the one place the URL prefix is built.
+    blob_suite                         = "$($c12b.blob_suite)"
+    blob_corpus_digest                 = "$($c12b.blob_corpus_digest)"
+    blob_corpus_lines                  = "$($c12b.blob_corpus_lines)"
+    blob_plane_available               = "$($c12b.blob_plane_available)"
+    blob_namespace                     = "$($c12b.blob_namespace)"
+    blob_url_prefix                    = "$($c12b.blob_url_prefix)"
+    blob_whole_by_url                  = "$($c12b.blob_whole_by_url)"
+    blob_csp_byte_identical            = "$($c12b.blob_csp_byte_identical)"
+    blob_range_206                     = "$($c12b.blob_range_206)"
+    blob_range_declined_200            = "$($c12b.blob_range_declined_200)"
+    blob_range_416                     = "$($c12b.blob_range_416)"
+    blob_img                           = "$($c12b.blob_img)"
+    blob_body_bytes_256mib             = "$($c12b.blob_body_bytes_256mib)"
+    blob_upload_refused_typed          = "$($c12b.blob_upload_refused_typed)"
+    blob_foreign_token_unknown         = "$($c12b.blob_foreign_token_unknown)"
+    blob_released_unresolvable         = "$($c12b.blob_released_unresolvable)"
+    blob_window_ok                     = "$($c12b.blob_window_ok)"
+    blob_window_ms                     = "$($c12b.blob_window_ms)"
+    blob_window_asset_ms               = "$($c12b.blob_window_asset_ms)"
+    blob_concurrent_bounded            = "$($c12b.blob_concurrent_bounded)"
+    blob_asset_unchanged               = "$($c12b.blob_asset_unchanged)"
+    blob_reserved_intercepted          = "$($c12b.blob_reserved_intercepted)"
+    blob_released_on_navigation        = "$($c12b.blob_released_on_navigation)"
+    blob_release_order                 = "$($c12b.blob_release_order)"
+    blob_csp_violations                = "$($c12b.blob_csp_violations)"
+    pack_refuses_pweb_prefix           = "$($c12b.pack_refuses_pweb_prefix)"
+    pack_clean_dist_unaffected         = "$($c12b.pack_clean_dist_unaffected)"
+    blob_url_prefix_sources            = "$($c12b.blob_url_prefix_sources)"
+    blob_units_present                 = "$($c12b.blob_units_present)"
     github_sha                      = $sha
     github_run_id                   = "$runId"
     waivers                         = @(

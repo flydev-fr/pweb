@@ -1,0 +1,44 @@
+name: 'CAP-12B blob data plane gates (S1, L1, P1, B1, C1-C9) + evidence'
+description: 'CAP-11A: the body of the "CAP-12B blob data plane gates (S1, L1, P1, B1, C1-C9) + evidence" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: all targets
+      shell: bash
+      run: |
+        # ALL THREE SCRIPTS RUN, AND THE STEP FAILS AFTERWARDS - the CAP-14A
+        # rule. The contracts come first because they are checkout-only, but
+        # an `&&` between them would stop the gates writing
+        # build/cap12b/cli-<target>.json, and the aggregate could then only
+        # report "artifact absent" for a leg whose real cause was one row.
+        #
+        # THE LIVE HARNESS OPENS A REAL WINDOW, so the Linux leg runs the
+        # gates under xvfb. Windows and macOS have a session of their own -
+        # the same assumption every real-GUI gate in this sequence already
+        # makes.
+        set +e
+        mkdir -p build
+        pwsh -NoProfile -File test/cap12b/check_cap12b_contracts.ps1 2>&1 |
+          tee build/cap12b-contracts.log
+        c=${PIPESTATUS[0]}
+        pwsh -NoProfile -File test/cap12b/build_cap12b.ps1 2>&1 |
+          tee build/cap12b-build.log
+        b=${PIPESTATUS[0]}
+        if [ "${PWEB_CI_TARGET}" = 'linux' ]; then
+          export WEBKIT_DISABLE_COMPOSITING_MODE=1
+          export WEBKIT_DISABLE_DMABUF_RENDERER=1
+          export GDK_BACKEND=x11
+          export LIBGL_ALWAYS_SOFTWARE=1
+          xvfb-run -a pwsh -NoProfile -File test/cap12b/run_cap12b_gates.ps1 2>&1 |
+            tee build/cap12b-gates.log
+        else
+          pwsh -NoProfile -File test/cap12b/run_cap12b_gates.ps1 2>&1 |
+            tee build/cap12b-gates.log
+        fi
+        g=${PIPESTATUS[0]}
+        set -e
+        test "$c" -eq 0 -a "$b" -eq 0 -a "$g" -eq 0
