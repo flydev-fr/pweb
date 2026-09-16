@@ -98,6 +98,15 @@ is what §4 rests on.
 `libwebkit2gtk-4.1-dev`: `pkg-config --modversion webkit2gtk-4.1` reports
 **2.52.6**, gtk+-3.0 3.24.41 — the dev host's version exactly.
 
+That version reached the *typed row* only on the second measurement run
+(`35089828854`), and the reason is recorded rather than tidied away: the
+first run wrote the runner's facts file and then called the row emitter
+without pointing it at one, so a question **about a version** came back
+`webkitgtk_version: undecided`. The emitter now defaults to the path the
+workflow writes, and the row reads
+`webkit2gtk-4.1 2.52.6, gtk+-3.0 3.24.41`. The fault rows below were
+measured identically on both runs.
+
 | row | hosted `ubuntu-24.04`, webkit2gtk-4.1 2.52.6 |
 |---|---|
 | `POST` **`Blob`**, 1 MiB | **faults** — the page sees `TypeError: Load failed`, the handler records `req.exception Access violation` |

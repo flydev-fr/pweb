@@ -34,8 +34,8 @@ below rest on them.
 |---|---|---|---|
 | **Windows x64 / WebView2** | **MEASURED** | **MEASURED** | this host; `test/cap12b/run_cap12b_gates.ps1`, verdict PASS |
 | **Linux x64 / WebKitGTK 2.52.6** | **MEASURED** | **MEASURED** | WSL + `xvfb-run`, same gate script, verdict PASS |
-| **macOS x64 / WKWebView** | **compiles; UNMEASURED live** | **OUTSTANDING** | the seam and the adapter compile on the hosted runner (measure-cap12.yml); the live harness runs on the hosted CI leg |
-| **macOS arm64 / WKWebView** | as above | **OUTSTANDING** | as above |
+| **macOS x64 / WKWebView** | **compiles; UNMEASURED live** | **OUTSTANDING** | the Objective-C++ seam **and** the Pascal adapter compile on the hosted runner (`measure-cap12.yml`, run `35089828854`: `pweb_cocoa_bridge.o arch=x86_64 minos=12.0`, 23 073 lines of Pascal); the live harness runs on the hosted CI leg |
+| **macOS arm64 / WKWebView** | as above (`arch=arm64`, 19 919 lines) | **OUTSTANDING** | as above |
 
 The macOS **engine** rows of §6.3.1 *are* measured — on the hosted
 measurement run, through CAP-12A's instrument. What is outstanding is the
@@ -75,7 +75,9 @@ why "never a `Blob`, a `File` or a `FormData`" is now justified on three
 engines rather than one.
 
 **6.3.2 — the CI baseline is the same version and the same fault.**
-`ubuntu-24.04` resolves `webkit2gtk-4.1` at **2.52.6**, and
+`ubuntu-24.04` resolves `webkit2gtk-4.1` at **2.52.6** (typed row, run
+`35089828854`; the fault rows themselves were identical on run
+`35085891349` before it), and
 `webkit_uri_scheme_request_get_http_body()` faults for all three blob-backed
 kinds while typed arrays at 1, 16 and 256 MiB go through the same call
 byte-exact. So the branch §6.3.2 named is taken: **the workaround ships and
