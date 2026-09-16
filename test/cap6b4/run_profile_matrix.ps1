@@ -508,10 +508,24 @@ try {
     New-Item -ItemType Directory -Force (Split-Path -Parent $DrainReport) | Out-Null
     if (Test-Path -LiteralPath $DrainReport) { Remove-Item -Force -LiteralPath $DrainReport }
 
-    function Invoke-DrainBeforeUninstall {
-        param([string]$Row)
+    # THE SAME DRAIN RUNS BEFORE THE TWO SWITCHES THAT RECLAIM A FIXED TREE.
+    # S5 (fixed -> normal) and S6 (fixed -> offline) each follow a fixed-profile
+    # smoke, and each has failed with D1-16's own signature: on hosted run
+    # 33981222264 S5, and on run 35127169228 S6 - `RestartManager found an
+    # application using one of our files: Microsoft Edge WebView2`, then
+    # `Setup was unable to automatically close all applications`, the silent
+    # default Abort, Inno's rollback and `setup exited 5`. On the second, S4's
+    # smoke had reported PASS at 17:32:14.87 and the setup's RmGetList still
+    # found the tree's browser at 17:32:17.75, 2.9 s later. The switch rows
+    # prove what a setup does to an installation that is NOT running; a browser
+    # left over from this script's own smoke is harness lifecycle, which is
+    # what the CAP-6b3 helper exists for. It is called with the measured U3
+    # bounds unchanged (8 s graceful, then path-scoped termination, 90 s in
+    # all), and its rows land in the same report.
+    function Invoke-InstallDrain {
+        param([string]$Row, [string]$Order)
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add("drain row=$Row root=$InstallDir order=before_uninstall")
+        $lines.Add("drain row=$Row root=$InstallDir order=$Order")
         # ONE root, both images: the installed application and, for the fixed
         # profile only, the browser that lives inside its own tree. An Evergreen
         # profile's browser is the machine's and is outside this root by
@@ -553,8 +567,18 @@ try {
         # was holding what.
         if ($outcome -eq 'still_holding') {
             Write-Host ("##[warning]${Row}: processes still hold $InstallDir after the drain; " +
-                'the uninstall proceeds and the residue measure decides')
+                "the step after it ($Order) proceeds and its own assertions decide")
         }
+    }
+
+    function Invoke-DrainBeforeUninstall {
+        param([string]$Row)
+        Invoke-InstallDrain $Row 'before_uninstall'
+    }
+
+    function Invoke-DrainBeforeSwitch {
+        param([string]$Row)
+        Invoke-InstallDrain $Row 'before_switch'
     }
 
     function Invoke-Uninstall {
@@ -766,6 +790,7 @@ try {
     # =======================================================================
     # S5 - fixed -> normal: Evergreen proven FIRST, then the tree is reclaimed
     # =======================================================================
+    Invoke-DrainBeforeSwitch 'S5'
     $s5 = Invoke-Setup $facts.NormalSetup 300000 'S5'
     if ($s5.Text -notmatch 'PWEB_WV2PROV exit=0') {
         throw 'S5: the setup log does not show the Evergreen provisioning gate passing FIRST'
@@ -839,6 +864,7 @@ try {
     # =======================================================================
     # S6 - fixed -> offline
     # =======================================================================
+    Invoke-DrainBeforeSwitch 'S6'
     $s6 = Invoke-Setup $facts.OfflineSetup 300000 'S6'
     if ($s6.Text -notmatch 'PWEB_WV2PROV exit=0') {
         throw 'S6: the setup log does not show the Evergreen provisioning gate passing FIRST'

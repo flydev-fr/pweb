@@ -1,16 +1,47 @@
 # CAP-12B — the blob data plane: built, and proven where it can be proven
 
 ```
-CAP-12B PASS — BLOB DATA PLANE FROZEN
-hosted CI green on the final HEAD 5e4554b8acab6605833e058177e926dc7734d12c
-run 35108018300, all six jobs, the CAP-12B live plane measured on four targets
+CAP-12B NOT READY
+the plane is measured green on four targets (run 35108018300, commit 5e4554b)
+the run after it was red on Windows, in CAP-6b4, and the fix moves the HEAD
+PASS waits for a green hosted run on the new final HEAD
 ```
 
-**Closure record.** Hosted CI is GREEN on the final CAP-12B implementation
-commit `5e4554b8acab6605833e058177e926dc7734d12c`: run **35108018300**,
-attempt 1, all six jobs `success` — windows, linux, macos-x64, macos-arm64,
-macos release inventory, cap7 aggregate. I checked what the run actually
-proved, not just its green status:
+**Why the closure was withdrawn.** A closure was recorded on run
+`35108018300` as commit `78dec5e`. Pushing that commit started run
+`35127169228`, and its **Windows** leg failed at step 80, the CAP-6b4 profile
+matrix:
+
+```
+CAP-6b4 S4 PASS (offline -> fixed: ...)              17:32:14.87
+RmGetList finished successfully.                      17:32:17.906
+RestartManager found an application using one of our files: Microsoft Edge WebView2   (x5)
+Setup was unable to automatically close all applications.
+Defaulting to Abort for suppressed message box
+Rolling back changes.
+S6: setup exited 5
+```
+
+`78dec5e` changed one Markdown file, and its code is byte-identical to the
+green run's. This is ledger D1-16's residue in a row its drain did not cover:
+the fixed-profile smoke's browser outlived the app by at least 2.9 s, and the
+next switch (S6, fixed → offline) could not reclaim a tree that a live process
+still held. S5 failed the same way on run `33981222264`, before this shard
+existed. CAP-12B did not cause it, but PASS needs a green final HEAD, so it is
+fixed here rather than re-run and hoped away (ledger `12B-4`,
+CLOSED):
+`test/cap6b4/run_profile_matrix.ps1` now runs the CAP-6b3 path-scoped drain
+before S5 and S6 as well as before every uninstall, with the measured U3
+bounds unchanged. It reports and never refuses. CAP-11A FL2 still reads its
+order, the CAP-6b4 and CAP-6b1 contracts pass, and both of its branches were
+exercised on this host against a real process inside a scratch install root:
+one process was waited for, and one was terminated by path.
+
+**The four-target measurement of the plane.** Run **35108018300** on
+implementation commit `5e4554b8acab6605833e058177e926dc7734d12c`, attempt 1,
+had all six jobs `success`: windows, linux, macos-x64, macos-arm64, macos
+release inventory, cap7 aggregate. I checked what the run actually proved,
+not just its green status:
 
 - step 185, `CAP-12B blob data plane gates (S1, L1, P1, B1, C1-C9) +
   evidence`, **ran** and passed on all four legs, after CAP-15B (183) and
@@ -62,8 +93,10 @@ That is the shape §6.3.3 measured on this host (WebView2 38–42 ms, the asset
 about 5–6 ms after the window), scaled by slower shared runners. The bound
 in this shard is one window; it is not a latency promise.
 
-Nothing under `src/` or `test/` changed for this closure. The ledger rows
-`12B-1` (ACCEPTED), `12B-2` and `12B-3` (ROADMAP) stand as written.
+None of the plane's code has changed since that run. The only later code
+change is the CAP-6b4 harness drain above. The ledger rows `12B-1`
+(ACCEPTED), `12B-2` and `12B-3` (ROADMAP) stand as written, and `12B-4` is
+CLOSED.
 
 **What this shard did.** It turned CAP-12A's decision into a data plane:
 bytes the runtime holds for one principal, addressed by a 128-bit token,
@@ -477,6 +510,7 @@ rather than discovering it later.
 | CAP-12B gates, Windows | PASS |
 | CAP-12B gates, Linux (WSL + xvfb) | PASS |
 | CAP-12B Darwin type check (`-dDARWIN -Cn`) | PASS — the Cocoa unit on Windows and Linux, and the live harness on Linux |
+| CAP-6b4 profile matrix drain before S5/S6 (`12B-4`) | CAP-11A FL2, CAP-6b4 and CAP-6b1 contracts PASS. The drain's wait and terminate branches were both exercised against a real in-root process. The matrix itself installs and uninstalls on the machine and runs on the hosted Windows leg |
 
 The two CAP-12B corpus digests agree across targets to the byte:
 `blob_corpus_digest = 5d0ce4b9ba06421aed2ed67761e11ecbe2066ce930b0f47b9ce17faee1c093bc`,
@@ -538,7 +572,7 @@ The two CAP-12B corpus digests agree across targets to the byte:
 ## 12. VERDICT
 
 ```
-CAP-12B PASS — BLOB DATA PLANE FROZEN
+CAP-12B NOT READY
 ```
 
 - **§6.1's eight items** are built and measured on four targets.
@@ -549,9 +583,14 @@ CAP-12B PASS — BLOB DATA PLANE FROZEN
 - **The regressions are green.** Both frozen policy digests are
   byte-identical on all four targets.
 - **The supersessions** are recorded old → new.
-- **Hosted CI is green on the final HEAD**
-  (`5e4554b8acab6605833e058177e926dc7734d12c`, run `35108018300`). Its
-  substance, not just its green status, was checked against this document
-  (closure record, top).
+- **Hosted CI was green on implementation commit `5e4554b`** (run
+  `35108018300`), with its substance checked against this document, not
+  just its green status (top).
+
+**Missing: a green hosted run on the final HEAD.** The run after
+`35108018300` was red on Windows in CAP-6b4 (`S6: setup exited 5`), which is
+the pre-existing D1-16 race, now fixed in the harness (`12B-4`). The verdict
+becomes `CAP-12B PASS — BLOB DATA PLANE FROZEN` when the run on the HEAD that
+carries that fix is green and its substance has been checked.
 
 CAP-12C is not begun.

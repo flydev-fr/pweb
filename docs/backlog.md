@@ -20,7 +20,7 @@ from and the one the gate reads.
 | `UPSTREAM` | 4 | the defect belongs to a third-party project and a report is written or owed; three of the four also carry a local workaround, and `RP-2` deliberately does not |
 | `ROADMAP` | 59 | real work, deferred, with a named owner |
 | `ACCEPTED` | 121 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
-| `CLOSED` | 254 | the thing the entry describes is done |
+| `CLOSED` | 255 | the thing the entry describes is done |
 
 `ACCEPTED` is not a synonym for ignored. It is the verdict for an entry whose
 honest answer is a measurement — that WebView2 raises no navigation event for a
