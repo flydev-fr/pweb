@@ -1,13 +1,48 @@
 # CAP-12B — the blob data plane: built, and proven where it can be proven
 
 ```
-CAP-12B NOT READY
-the plane is measured green on four targets (run 35108018300, commit 5e4554b)
-the run after it was red on Windows, in CAP-6b4, and the fix moves the HEAD
-PASS waits for a green hosted run on the new final HEAD
+CAP-12B PASS — BLOB DATA PLANE FROZEN
+hosted CI green on the final HEAD 75e0f7c429e680621d74953d642fc4c083d70ca1
+run 35130141163, all six jobs, the CAP-12B live plane measured on four targets
 ```
 
-**Why the closure was withdrawn.** A closure was recorded on run
+**Closure record.** Hosted CI is GREEN on the final CAP-12B implementation
+commit `75e0f7c429e680621d74953d642fc4c083d70ca1`: run **35130141163**,
+attempt 1, all six jobs `success` — windows, linux, macos-x64, macos-arm64,
+macos release inventory, cap7 aggregate. I checked what the run actually
+proved, not just its green status:
+
+- **step 185**, `CAP-12B blob data plane gates (S1, L1, P1, B1, C1-C9) +
+  evidence`, **ran** and passed on all four legs, after CAP-15C (184). Each
+  leg's gate log carries `bloblive: CAP-12B LIVE PASS target=<target>` and
+  `[CAP-12B] PASS`;
+- every record `build/cap12b/cli-<target>.json` reads `verdict = PASS`,
+  `violations = 0`, and **no row on any of the four targets reads `false`**.
+  The boolean rows are those listed for run `35108018300` below. Also on all
+  four: `blob_release_order = cap9` and `blob_csp_violations = 0`;
+- **one cross-target corpus**: `blob_suite = PASS`, and
+  `blob_corpus_digest = 5d0ce4b9ba06421aed2ed67761e11ecbe2066ce930b0f47b9ce17faee1c093bc`
+  (31 lines) is identical on Windows, Linux, macOS x64 and macOS arm64.
+  `fetch_corpus_digest = 64eb3db2…8176` is equal on all four;
+- **step 80, the CAP-6b4 profile matrix, passed on Windows**, the leg that
+  runs it; the other three skip it by applicability. The drain added by
+  `12B-4` found work to do on this run, which confirms the diagnosis:
+  `drain row=S5 sweeps=11 graceful=True terminated=0` (about 5 s of waiting)
+  and `drain row=S6 sweeps=3 graceful=True terminated=0` (about 1 s). Leftover
+  browser processes were present before both switches and exited on their
+  own, and nothing was killed. `u3_drain_rows = 10` (was 6);
+- `[CAP-7F] aggregate PASS - platform-matrix.json written`, with
+  `github_sha = 75e0f7c…`. `capability_policy_digest` (`23b87da5…4bddb2f`)
+  and `navigation_policy_digest` (`360d69f2…c7212e`) are equal on all four
+  and **unchanged**, so `PWEB_NATIVE_CSP` did not move. The CAP-11A line
+  reads `CAP11A_SEQUENCE_PASS steps=207
+  digest=0379943652198e3a178387454dd08204cafa254bbcc458569e5515bbcafd5a3b`.
+
+Run `35127169228`, the one withdrawn below, now reads `cancelled`: its
+Windows job had already failed, and the push of `75e0f7c` cancelled the
+three legs still running.
+
+**The first closure attempt, withdrawn.** A closure was recorded on run
 `35108018300` as commit `78dec5e`. Pushing that commit started run
 `35127169228`, and its **Windows** leg failed at step 80, the CAP-6b4 profile
 matrix:
@@ -37,11 +72,10 @@ order, the CAP-6b4 and CAP-6b1 contracts pass, and both of its branches were
 exercised on this host against a real process inside a scratch install root:
 one process was waited for, and one was terminated by path.
 
-**The four-target measurement of the plane.** Run **35108018300** on
-implementation commit `5e4554b8acab6605833e058177e926dc7734d12c`, attempt 1,
-had all six jobs `success`: windows, linux, macos-x64, macos-arm64, macos
-release inventory, cap7 aggregate. I checked what the run actually proved,
-not just its green status:
+**The run before the fix, `35108018300`, on commit
+`5e4554b8acab6605833e058177e926dc7734d12c`**, attempt 1, also had all six
+jobs `success`. It was checked the same way, and its plane code is identical
+to the final HEAD's:
 
 - step 185, `CAP-12B blob data plane gates (S1, L1, P1, B1, C1-C9) +
   evidence`, **ran** and passed on all four legs, after CAP-15B (183) and
@@ -76,27 +110,29 @@ not just its green status:
   identical sequences of **207** steps, `CAP11A_SEQUENCE_PASS steps=207
   digest=0379943652198e3a178387454dd08204cafa254bbcc458569e5515bbcafd5a3b`.
 
-The 8 MiB window (entry condition 6.3.3) on the hosted runners, from the same
-records. These are **observations, never thresholds**. `asset` is the
-ordinary asset request the page launched beside the blob:
+The 8 MiB window (entry condition 6.3.3) on the hosted runners, from the
+records of both green runs. Values are `blob_window_ms` / `blob_window_asset_ms`
+in ms. These are **observations, never thresholds**. `asset` is the ordinary
+asset request the page launched beside the blob:
 
-| target | `blob_window_ms` | `blob_window_asset_ms` |
+| target | run `35108018300` | run `35130141163` (final) |
 |---|---|---|
-| windows (WebView2) | 131 | 149 |
-| linux (WebKitGTK 2.52.6) | 39 | 3 |
-| macos-x64 (WKWebView) | 82 | 95 |
-| macos-arm64 (WKWebView) | 205 | 214 |
+| windows (WebView2) | 131 / 149 | 79 / 96 |
+| linux (WebKitGTK 2.52.6) | 39 / 3 | 58 / 4 |
+| macos-x64 (WKWebView) | 82 / 95 | 23 / 38 |
+| macos-arm64 (WKWebView) | 205 / 214 | 13 / 22 |
 
 On the three targets whose engine delivers on the GUI thread (WebView2, and
-WKWebView on both Macs), the asset arrives **9–18 ms after** the window. WebKitGTK serves the asset first.
-That is the shape §6.3.3 measured on this host (WebView2 38–42 ms, the asset
-about 5–6 ms after the window), scaled by slower shared runners. The bound
-in this shard is one window; it is not a latency promise.
+WKWebView on both Macs), the asset arrives **9–18 ms after** the window in
+both runs. WebKitGTK serves the asset first. That is the shape §6.3.3
+measured on this host (WebView2 38–42 ms, the asset about 5–6 ms after the
+window). The window itself varies by up to 16× between two runs of the same
+code on the same runner image, which is exactly why it is recorded and
+never gated. The bound in this shard is one window; it is not a latency
+promise.
 
-None of the plane's code has changed since that run. The only later code
-change is the CAP-6b4 harness drain above. The ledger rows `12B-1`
-(ACCEPTED), `12B-2` and `12B-3` (ROADMAP) stand as written, and `12B-4` is
-CLOSED.
+The ledger rows `12B-1` (ACCEPTED), `12B-2` and `12B-3` (ROADMAP) stand as
+written, and `12B-4` is CLOSED.
 
 **What this shard did.** It turned CAP-12A's decision into a data plane:
 bytes the runtime holds for one principal, addressed by a 128-bit token,
@@ -176,10 +212,10 @@ Linux.
 
 | target | headless suite | live plane | how |
 |---|---|---|---|
-| **Windows x64 / WebView2** | **MEASURED** | **MEASURED** | this host; `test/cap12b/run_cap12b_gates.ps1`, verdict PASS; and the hosted leg of run `35108018300`, verdict PASS |
-| **Linux x64 / WebKitGTK 2.52.6** | **MEASURED** | **MEASURED** | WSL + `xvfb-run`, same gate script, verdict PASS; and the hosted legs of runs `35102099474` and `35108018300`, verdict PASS |
-| **macOS x64 / WKWebView** | **MEASURED** on run `35108018300` | **MEASURED** on run `35108018300` | the Objective-C++ seam **and** the Pascal adapter first compiled on the hosted measurement run (`measure-cap12.yml`, run `35089828854`: `pweb_cocoa_bridge.o arch=x86_64 minos=12.0`, 23 073 lines of Pascal); the live harness passed on the hosted CI leg |
-| **macOS arm64 / WKWebView** | **MEASURED** on runs `35102099474` and `35108018300` | **MEASURED** on run `35108018300` | seam as above (`arch=arm64`, 19 919 lines); run `35102099474` refused the live harness's link, and the fix is described above |
+| **Windows x64 / WebView2** | **MEASURED** | **MEASURED** | this host; `test/cap12b/run_cap12b_gates.ps1`, verdict PASS; and the hosted legs of runs `35108018300` and `35130141163`, verdict PASS |
+| **Linux x64 / WebKitGTK 2.52.6** | **MEASURED** | **MEASURED** | WSL + `xvfb-run`, same gate script, verdict PASS; and the hosted legs of runs `35102099474`, `35108018300` and `35130141163`, verdict PASS |
+| **macOS x64 / WKWebView** | **MEASURED** on runs `35108018300` and `35130141163` | **MEASURED** on runs `35108018300` and `35130141163` | the Objective-C++ seam **and** the Pascal adapter first compiled on the hosted measurement run (`measure-cap12.yml`, run `35089828854`: `pweb_cocoa_bridge.o arch=x86_64 minos=12.0`, 23 073 lines of Pascal); the live harness passed on the hosted CI leg |
+| **macOS arm64 / WKWebView** | **MEASURED** on runs `35102099474`, `35108018300` and `35130141163` | **MEASURED** on runs `35108018300` and `35130141163` | seam as above (`arch=arm64`, 19 919 lines); run `35102099474` refused the live harness's link, and the fix is described above |
 
 **The adapters already passed the whole existing matrix on four targets.**
 Hosted run `35089829631` on commit `a57b14e` — the store, the translator,
@@ -493,7 +529,7 @@ rather than discovering it later.
 | `capability_policy_digest` | `23b87da5…4bddb2f`, **unchanged** |
 | CAP-7F divergence sweep | PASS — 222 platform conditionals, all inside the allowlist |
 | CAP-7F always-false conditional sweep | PASS — 206 symbols, 99 files, 0 hits |
-| CAP-7F schema agreement | PASS — 916 fields, both emitters, zero asymmetry |
+| CAP-7F schema agreement | PASS — 917 fields (916 before `blob_lifetime_rules` was added), both emitters, zero asymmetry |
 | CAP-11A CI structure | PASS |
 | CAP-11A migration map | PASS — 445 legacy, 342 bodies, 103 uploads |
 | CAP-11B watcher contract | PASS — 22/22 perturbations refused |
@@ -545,7 +581,7 @@ The two CAP-12B corpus digests agree across targets to the byte:
 1. **The 8 MiB window is bounded, not fast.** On the engines that deliver on
    the GUI thread, an asset requested beside a blob waits for that one
    window: 9–18 ms behind it on the hosted runners, where the window itself
-   took 82–205 ms. `blob_window_ms` is recorded as an observation on every
+   took 13–205 ms across two runs of the same code. `blob_window_ms` is recorded as an observation on every
    leg and is not gated.
 2. **`HEAD` is not served.** It is answered `405` with `Allow: GET`. v1
    promises `GET`, because a `HEAD` with a declared length and no body is a
@@ -572,7 +608,7 @@ The two CAP-12B corpus digests agree across targets to the byte:
 ## 12. VERDICT
 
 ```
-CAP-12B NOT READY
+CAP-12B PASS — BLOB DATA PLANE FROZEN
 ```
 
 - **§6.1's eight items** are built and measured on four targets.
@@ -583,14 +619,12 @@ CAP-12B NOT READY
 - **The regressions are green.** Both frozen policy digests are
   byte-identical on all four targets.
 - **The supersessions** are recorded old → new.
-- **Hosted CI was green on implementation commit `5e4554b`** (run
-  `35108018300`), with its substance checked against this document, not
-  just its green status (top).
-
-**Missing: a green hosted run on the final HEAD.** The run after
-`35108018300` was red on Windows in CAP-6b4 (`S6: setup exited 5`), which is
-the pre-existing D1-16 race, now fixed in the harness (`12B-4`). The verdict
-becomes `CAP-12B PASS — BLOB DATA PLANE FROZEN` when the run on the HEAD that
-carries that fix is green and its substance has been checked.
+- **Hosted CI is green on the final HEAD**
+  (`75e0f7c429e680621d74953d642fc4c083d70ca1`, run `35130141163`), with its
+  substance checked against this document, not just its green status
+  (closure record, top).
+- **The one red on the way** was run `35127169228`, Windows, CAP-6b4 S6. It
+  was the pre-existing D1-16 race, not this shard's code. It was fixed in the
+  harness (`12B-4`), and the fix is observed doing its job on the final run.
 
 CAP-12C is not begun.
