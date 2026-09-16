@@ -26,6 +26,29 @@ independent checks in this shard prove it is the same bytes.
 conditions in full. They are summarised in §1 here because the decisions
 below rest on them.
 
+**One hosted run was spent on a claim this shard did not run locally, and it
+is recorded rather than tidied away.** Run `35102099474` (commit `7aaf114`)
+failed its Windows leg at step 52, the CAP-5 zero-network sweep:
+
+```
+FORBIDDEN CAP-5 NETWORK PATTERN: sdk\typescript\src\blob.ts:135: response = await fetch(url, init);
+FORBIDDEN CAP-5 NETWORK PATTERN: sdk\pas2js\pweb.native.pas:476: return fetch(AUrl, init).then(...)
+FORBIDDEN CAP-5 NETWORK PATTERN: sdk\typescript\src\blob.ts:6:  * `fetch(PUT pweb://…)` ...
+```
+
+The first SDK read surface carried a reader beside the handle type, and
+CAP-5's bar is that **no SDK source contains a browser network primitive at
+all** — comments included, because that sweep does not strip them. The
+sweep was right and the surface was wrong: a blob is an ordinary same-origin
+resource at `handle.url`, served by the handler that serves the
+application's own assets, so the page loads it the way it loads everything
+else. The reader is gone from both SDKs; the handle type is what ships, and
+it is exactly the "blob URL and handle type" the brief asked for. Contract C4
+now reads CAP-5's own pattern back out of its script and applies it to both
+SDK files, and its self-test plants a network primitive in `blob.ts` and
+requires the refusal. Every script-bodied step of the Windows leg was then
+replayed locally from `platform-leg.yml` itself before the next push.
+
 ---
 
 ## 0. COVERAGE, STATED BEFORE THE CONCLUSIONS
@@ -36,6 +59,15 @@ below rest on them.
 | **Linux x64 / WebKitGTK 2.52.6** | **MEASURED** | **MEASURED** | WSL + `xvfb-run`, same gate script, verdict PASS |
 | **macOS x64 / WKWebView** | **compiles; UNMEASURED live** | **OUTSTANDING** | the Objective-C++ seam **and** the Pascal adapter compile on the hosted runner (`measure-cap12.yml`, run `35089828854`: `pweb_cocoa_bridge.o arch=x86_64 minos=12.0`, 23 073 lines of Pascal); the live harness runs on the hosted CI leg |
 | **macOS arm64 / WKWebView** | as above (`arch=arm64`, 19 919 lines) | **OUTSTANDING** | as above |
+
+**The adapters already passed the whole existing matrix on four targets.**
+Hosted run `35089829631` on commit `a57b14e` — the store, the translator,
+the reserved branch in all three handlers, the grown macOS seam and the host
+wiring, before the CAP-12B step existed — was green on all six jobs,
+including the CAP-7M runtime gates, the CAP-8B/8C real-window matrices and
+the CAP-9C2 real-GUI acceptance on **both** macOS architectures, and the
+`cap7 aggregate`. That is the four-target measurement that the branch did
+not change a single asset-path behaviour any existing gate observes.
 
 The macOS **engine** rows of §6.3.1 *are* measured — on the hosted
 measurement run, through CAP-12A's instrument. What is outstanding is the
@@ -260,6 +292,14 @@ the SDK would then be describing two shapes of success.
 blob URL is an ordinary same-origin request through the same handler, and it
 is measured decoding on both reachable engines and on both macOS targets.
 
+**The SDK read surface is the handle type and nothing else** —
+`PWebBlobHandle` and the shape check `isPWebBlobHandle` in `@pweb/runtime`,
+`TPWebBlobHandle` in the Pas2JS SDK, and the `blob` member on both fetch
+response types. Neither SDK loads a blob and neither builds a URL: the page
+loads `handle.url` the way it loads anything else it ships, which keeps
+CAP-5's rule that no SDK source contains a network primitive. The runtime's
+answers to a ranged load (206, 200-declined, 416) are documented on the type.
+
 ---
 
 ## 6. SECURITY PROPERTIES, EACH WITH ITS PROOF
@@ -343,7 +383,8 @@ rather than discovering it later.
 | CAP-10A / B0 / B1 (+ proof) / **B2** (+ proof) / C0 / C1 / C2 / **C3** contracts + gates, **Linux** | PASS, in a copy inside the Linux filesystem — `pweb create` cannot run on `/mnt/c` |
 | backlog gate | PASS — 0 violations |
 | backlog negative self-test | **26/26 perturbations refused** |
-| CAP-12B contracts | PASS — **4/4 perturbations refused** |
+| CAP-5 zero-network sweep, protocol cross-check, both SDK suites (TypeScript 29 tests, Pas2JS 72/72) | PASS — after the reader was removed (above) |
+| CAP-12B contracts | PASS — **5/5 perturbations refused** |
 | CAP-12B gates, Windows | PASS |
 | CAP-12B gates, Linux (WSL + xvfb) | PASS |
 

@@ -73,8 +73,10 @@ const
 
   { The blob data plane's READ surface (CAP-12B), and there is deliberately
     no method name here: reading a blob is not an invoke at all, it is an
-    ordinary same-origin fetch of a URL the runtime handed out. What this
-    SDK carries is the TYPE of that handle and one reader over it.
+    ordinary same-origin load of a URL the runtime handed out. What this
+    SDK carries is the TYPE of that handle and nothing else: the CAP-5 bar
+    is that no SDK source contains a browser network primitive, and the page
+    already loads same-origin resources the way it loads its own assets.
 
     NOTHING HERE BUILDS A BLOB URL. `url` comes from the runtime, which is
     the only place in the product that knows both the store's spelling and
@@ -239,30 +241,6 @@ function PWebInvoke(const AMethod: String; AArgs: TJSObject): TJSPromise;
   `service_error` with a category in Data for a transport failure or a
   response over a bound. }
 function PWebFetch(ARequest: TJSObject): TJSPromise;
-
-{ Read a blob the runtime is holding, whole or by window (CAP-12B).
-
-  AHandle is a TPWebBlobHandle - the object a fetch envelope carries in
-  `blob` when the response was too large to inline. AOffset and ALength are
-  byte counts; pass -1 for either to leave it out, and -1 for both to read
-  the whole blob.
-
-  Resolves with a TJSArrayBuffer. Rejects with EPWebError: `invalid_request`
-  for a handle this SDK cannot recognise, and `service_error` when the
-  runtime did not serve the resource - which is what a released token, a
-  token belonging to another principal and a token that never existed all
-  look like from here, deliberately and identically.
-
-  WHEN A WINDOW IS ASKED FOR AND THE WHOLE BODY ARRIVES, this function
-  slices it rather than pretending. The runtime is ALLOWED to decline a
-  range - a multi-range or a syntax it does not implement is answered with
-  the whole resource and 200 - so a caller asking for the last megabyte
-  must end up with that megabyte either way.
-
-  It is the twin of `readBlob` in @pweb/runtime, and it makes exactly the
-  same requests. }
-function PWebReadBlob(AHandle: TPWebBlobHandle;
-  AOffset: NativeInt = -1; ALength: NativeInt = -1): TJSPromise;
 
 { Perform the runtime handshake and verify protocol compatibility.
   Resolves with TPWebRuntimeInfo when the reported protocol is supported;
@@ -451,69 +429,6 @@ begin
     // door refuses an argument of the wrong type and sending an explicit
     // undefined would be sending one
     Result := PWebInvoke(PWEB_METHOD_FETCH, ARequest);
-end;
-
-{ ---------------- the blob read surface (CAP-12B) ---------------- }
-
-// ONE fetch of a URL the runtime handed out, and the whole of the range
-// handling in one place so that this SDK and @pweb/runtime cannot drift in
-// what they ask for. Written in assembler for the same reason the socket
-// base64 helpers are: Response, Headers and ArrayBuffer are browser objects
-// and expressing this through pas2js externals would be a transcription of
-// the fetch API rather than a use of it.
-function PWebReadBlobRaw(const AUrl: String;
-  AOffset, ALength: NativeInt): TJSPromise; assembler;
-asm
-  var init = {};
-  var ranged = false;
-  var wantOffset = 0;
-  if (AOffset >= 0 || ALength >= 0) {
-    wantOffset = AOffset >= 0 ? AOffset : 0;
-    var last = ALength >= 0 ? String(wantOffset + ALength - 1) : '';
-    init.headers = { Range: 'bytes=' + wantOffset + '-' + last };
-    ranged = true;
-  }
-  return fetch(AUrl, init).then(function (res) {
-    if (!res.ok) {
-      var e = new Error('the blob could not be read (status ' + res.status + ')');
-      e.pwebCode = 'service_error';
-      e.pwebStatus = res.status;
-      throw e;
-    }
-    return res.arrayBuffer().then(function (buf) {
-      if (!ranged || res.status === 206) { return buf; }
-      // 200 to a ranged request: the runtime declined the range and sent
-      // the whole resource, which is a documented answer, not a failure.
-      // `stopAt` and not `end`: this block is scanned by a Pascal
-      // tokenizer looking for its own terminator, and a JavaScript
-      // variable called `end` closes the routine early.
-      var stopAt = ALength >= 0 ? wantOffset + ALength : buf.byteLength;
-      return buf.slice(Math.min(wantOffset, buf.byteLength),
-                       Math.min(stopAt, buf.byteLength));
-    });
-  });
-end;
-
-function PWebReadBlob(AHandle: TPWebBlobHandle;
-  AOffset: NativeInt; ALength: NativeInt): TJSPromise;
-var
-  url: String;
-begin
-  url := '';
-  if AHandle <> nil then
-    url := AHandle.Url;
-  if url = '' then
-    exit(TJSPromise.reject(MakeError('invalid_request',
-      'A blob handle carrying a url is required', JS.Null)));
-  if (AOffset < -1) or (ALength < -1) then
-    exit(TJSPromise.reject(MakeError('invalid_request',
-      'a blob window is a pair of non-negative byte counts', JS.Null)));
-  Result := PWebReadBlobRaw(url, AOffset, ALength)._then(nil,
-    function(AReason: JSValue): JSValue
-    begin
-      raise ConvertReason(AReason);
-      Result := JS.Undefined; // unreachable - the raise rejects
-    end);
 end;
 
 { ---------------- TPWebSocket ---------------- }

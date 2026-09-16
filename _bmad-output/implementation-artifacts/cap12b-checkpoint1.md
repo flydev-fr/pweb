@@ -215,12 +215,21 @@ refusal is unchanged. **An application with no blob store keeps the CAP-15B
 answer byte for byte**, which is what makes this additive rather than a
 change of contract for every host that already ships.
 
-**The SDK read surface.** A handle type and one reader, in both SDKs:
-`PWebBlobHandle` / `readBlob(handle, {offset, length})` in `@pweb/runtime`,
-`TPWebBlobHandle` / `PWebReadBlob(handle, offset, length)` in the Pas2JS SDK.
-No `create`, no `put`, no upload — that is CAP-12C. **Neither SDK builds a
-blob URL**: `handle.url` comes from the runtime, which is the only place that
-knows both spellings.
+**The SDK read surface.** The handle TYPE, in both SDKs — `PWebBlobHandle`
+(+ the shape check `isPWebBlobHandle`) in `@pweb/runtime` and
+`TPWebBlobHandle` in the Pas2JS SDK — and nothing else. No `create`, no
+`put`, no upload: that is CAP-12C. **Neither SDK builds a blob URL**:
+`handle.url` comes from the runtime, which is the only place that knows both
+spellings.
+
+*Amended after hosted run `35102099474`.* This plan first carried a reader
+beside the type (`readBlob` / `PWebReadBlob`) that loaded `handle.url`
+itself. The Windows leg refused it at the CAP-5 zero-network sweep, whose
+bar is that no SDK source contains a browser network primitive at all — and
+the sweep was right. A blob is an ordinary same-origin resource served by
+the handler that serves the application's assets, so the page loads it the
+way it loads everything else it ships, and "a blob URL and a handle type" —
+which is what the brief asked for — is exactly the handle.
 
 **The smallest diff.** Three new units under `src/assets/`, one branch in
 each of the three adapters, one optional field on `TPWebHostOptions` plus the

@@ -87,7 +87,8 @@ export interface PWebFetchRequest {
  * - `blob` (CAP-12B) is non-null when the body was too large to inline and
  *   the runtime placed it on the blob data plane instead. `bodyText` and
  *   `bodyBase64` are both null in that case and `bytes` is still the wire
- *   length; the bytes are at `blob.url`, readable with `readBlob`. When the
+ *   length; the bytes are at `blob.url`, an ordinary same-origin resource
+ *   the page loads itself. When the
  *   application does not have the blob plane installed, a body over the
  *   inline cap is still the `response_too_large_to_inline` refusal it has
  *   always been — so a caller that handles both is correct everywhere. */

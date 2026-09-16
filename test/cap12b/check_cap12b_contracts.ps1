@@ -12,7 +12,9 @@
 #                                                   CAP-15A baseline
 #   C3  did the shard add streaming, EventSource    no plane unit and no
 #       or a media promise?                         adapter names any of them
-#   C4  did the shard add an SDK upload API?        neither SDK carries one
+#   C4  did the shard add an SDK upload API, or     neither SDK carries one,
+#       a network primitive to an SDK?              and CAP-5's own pattern
+#                                                   finds nothing in either
 #   C5  can a page enumerate blobs?                 the store has no listing,
 #                                                   and its tokens come from
 #                                                   the unpredictable
@@ -29,7 +31,8 @@
 #
 # AND THEN IT PERTURBS ITSELF. A contract check that has only ever been seen
 # to pass has an unproven failure path; the self-test at the bottom breaks
-# each of the three load-bearing ones in a COPY of the tree and requires the
+# each load-bearing one - the branch order, the CSP, the SDK network bar and
+# the streaming refusal - in a COPY of the tree and requires the
 # check to refuse.
 #
 # Usage: pwsh test/cap12b/check_cap12b_contracts.ps1
@@ -182,30 +185,65 @@ foreach ($f in @($INTF, $MEMORY, $PROTOCOL) + $ADAPTERS) {
 }
 $report.Add('C3: no streaming, no EventSource, no chunked transfer anywhere in the plane')
 
-# --- C4: no SDK upload API ----------------------------------------------------
-# CAP-12A §6.2 ratified `fetch(PUT pweb://...)` with a typed-array body as
-# the transport and left the SDK that drives it to CAP-12C. The read surface
-# ships; a write one does not.
+# --- C4: the SDK read surface is a TYPE, and nothing else ----------------------
+# CAP-12A §6.2 ratified a typed-array PUT to the blob plane as the transport
+# and left the SDK that drives it to CAP-12C, so there is no write surface.
+#
+# AND THERE IS NO READER EITHER, which is a correction with a hosted run
+# behind it. The first CAP-12B SDK carried a `readBlob` that loaded
+# `handle.url` itself, and CAP-5's zero-network sweep - whose bar is that no
+# SDK source contains a browser network primitive AT ALL - refused it on the
+# Windows leg of run 35102099474. The sweep was right: a blob is an ordinary
+# same-origin resource, the page loads it the way it loads its own assets,
+# and an SDK helper that did it instead would be a network entry point this
+# package promised never to have. What ships is the handle type, which is
+# where the runtime-built URL travels.
 $tsBlob = Read_ 'sdk/typescript/src/blob.ts'
 foreach ($needle in 'createBlob', 'putBlob', 'writeBlob', 'uploadBlob',
-                    'native.blobs.create') {
+                    'native.blobs.create', 'readBlob') {
     if ($tsBlob.Contains($needle)) {
-        Violation ("C4: the TypeScript SDK names ${needle}: the upload API is " +
-            'CAP-12C, and a surface this package cannot yet keep is not a surface')
+        Violation ("C4: the TypeScript SDK names ${needle}: the blob surface " +
+            'is the handle type - no writer until CAP-12C, and no reader ever')
     }
 }
-if (-not $tsBlob.Contains('export async function readBlob')) {
-    Violation 'C4: the TypeScript SDK carries no readBlob'
+if (-not $tsBlob.Contains('export interface PWebBlobHandle')) {
+    Violation 'C4: the TypeScript SDK carries no PWebBlobHandle'
 }
 $p2j = Read_ 'sdk/pas2js/pweb.native.pas'
 foreach ($needle in 'PWebCreateBlob', 'PWebPutBlob', 'PWebWriteBlob',
-                    'PWebUploadBlob') {
+                    'PWebUploadBlob', 'PWebReadBlob') {
     if ($p2j.Contains($needle)) {
-        Violation "C4: the Pas2JS SDK names ${needle}: the upload API is CAP-12C"
+        Violation ("C4: the Pas2JS SDK names ${needle}: the blob surface is " +
+            'the handle type - no writer until CAP-12C, and no reader ever')
     }
 }
-if (-not $p2j.Contains('function PWebReadBlob(')) {
-    Violation 'C4: the Pas2JS SDK carries no PWebReadBlob'
+if (-not $p2j.Contains('TPWebBlobHandle = class external')) {
+    Violation 'C4: the Pas2JS SDK carries no TPWebBlobHandle'
+}
+# THE CAP-5 PATTERN, READ BACK OUT OF ITS OWN SCRIPT and applied here, so
+# this gate refuses the exact shape that sweep refuses without keeping a
+# second copy of it. Comments are NOT stripped, because CAP-5 does not strip
+# them either: a comment spelling the primitive fails that gate too.
+$cap5Text = Read_ 'test/cap5/check_cap5_nonetwork.ps1'
+$cap5Match = [regex]::Match($cap5Text, '(?s)\$network = ((?:''[^'']*''\s*\+?\s*)+)')
+if (-not $cap5Match.Success) {
+    Violation 'C4: the CAP-5 $network pattern could not be parsed out of its script'
+} else {
+    $cap5Pattern = -join ([regex]::Matches($cap5Match.Groups[1].Value, "'([^']*)'") |
+        ForEach-Object { $_.Groups[1].Value })
+    $cap5Rx = [regex]::new($cap5Pattern,
+        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    foreach ($pair in @(@('sdk/typescript/src/blob.ts', $tsBlob),
+                        @('sdk/pas2js/pweb.native.pas', $p2j))) {
+        $lineNo = 0
+        foreach ($ln in ($pair[1] -split "`n")) {
+            $lineNo++
+            if ($cap5Rx.IsMatch($ln)) {
+                Violation ("C4: $($pair[0]):${lineNo} carries a network " +
+                    "primitive CAP-5 refuses: $($ln.Trim())")
+            }
+        }
+    }
 }
 # NEITHER SDK BUILDS A BLOB URL. `handle.url` comes from the runtime, which
 # is the only place that knows both spellings; an SDK that concatenated the
@@ -220,7 +258,7 @@ foreach ($pair in @(@('sdk/typescript/src/blob.ts', (StripJsComments $tsBlob)),
             'URL comes from the runtime and is never derived in an SDK')
     }
 }
-$report.Add('C4: both SDKs read blobs, neither writes one, neither builds a URL')
+$report.Add('C4: both SDKs carry the handle type, no reader, no writer, no network primitive, no URL')
 
 # --- C5: no enumeration, and an unpredictable token ---------------------------
 # A token is an identifier and never an authorization - the owner is checked
@@ -362,6 +400,11 @@ $legs = @(
        from = "'connect-src ''self''; script-src ''self''; ' +"
        to   = "'connect-src *; script-src ''self''; ' +"
        say  = 'C2:' },
+    @{ name = 'the TypeScript SDK grows a network primitive'
+       file = 'sdk/typescript/src/blob.ts'
+       from = 'export function isPWebBlobHandle('
+       to   = "export const load = (u: string) => fetch(u);`nexport function isPWebBlobHandle("
+       say  = 'C4:' },
     @{ name = 'the plane grows a streaming content type'
        file = 'src/assets/pweb.blobs.protocol.pas'
        from = "PWEB_BLOB_UPLOAD_REFUSAL = 'blob_upload_not_enabled';"
@@ -374,7 +417,8 @@ if ((Test-Path $sandbox) -and -not $SelfTestSandbox) {
 }
 foreach ($leg in $legs) {
     New-Item -ItemType Directory -Force $sandbox | Out-Null
-    foreach ($d in 'src', 'tools', 'docs', 'sdk', 'test/cap12b') {
+    foreach ($d in 'src', 'tools', 'docs', 'sdk/typescript/src', 'sdk/pas2js',
+                'test/cap12b', 'test/cap5') {
         $dest = Join-Path $sandbox $d
         New-Item -ItemType Directory -Force (Split-Path -Parent $dest) | Out-Null
         Copy-Item -Recurse -Force (Join-Path $repoRoot $d) $dest
