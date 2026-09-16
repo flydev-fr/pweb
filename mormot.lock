@@ -26,7 +26,7 @@
 # against 0/5 at the previous pin unpatched. test/cap3u is the permanent gate
 # over both, against the pristine dependency, with no patch step.
 url = https://github.com/synopse/mORMot2.git
-commit = da7e1c2fabb17cc18279c7c8599b563d35845168
+commit = 66d7d51c1fd21bd222b360382ed8e2b4f656aaad
 # Static .o/.a files required by FPC builds (mORMot's documented install
 # step). Release assets are mutable in principle, so the archive integrity
 # rests on the sha256 below, not on the URL.
