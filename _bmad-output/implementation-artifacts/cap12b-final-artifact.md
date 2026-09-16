@@ -1,11 +1,69 @@
 # CAP-12B — the blob data plane: built, and proven where it can be proven
 
 ```
-CAP-12B NOT READY
-every local proof is green on the two targets this host reaches
-the four-target hosted run is outstanding, and that is the one PASS condition
-that cannot be met from here
+CAP-12B PASS — BLOB DATA PLANE FROZEN
+hosted CI green on the final HEAD 5e4554b8acab6605833e058177e926dc7734d12c
+run 35108018300, all six jobs, the CAP-12B live plane measured on four targets
 ```
+
+**Closure record.** Hosted CI is GREEN on the final CAP-12B implementation
+commit `5e4554b8acab6605833e058177e926dc7734d12c`: run **35108018300**,
+attempt 1, all six jobs `success` — windows, linux, macos-x64, macos-arm64,
+macos release inventory, cap7 aggregate. I checked what the run actually
+proved, not just its green status:
+
+- step 185, `CAP-12B blob data plane gates (S1, L1, P1, B1, C1-C9) +
+  evidence`, **ran** and passed on all four legs, after CAP-15B (183) and
+  CAP-15C (184). Each leg's gate log carries
+  `bloblive: CAP-12B LIVE PASS target=<target>`, `[CAP-12B] PASS`, and
+  `self-test: 5/5 perturbations refused`. The build log on each leg ends
+  `build OK`, with the engine library staged (`webview.dll`,
+  `libwebview.so.0.12`, `libwebview.0.12.dylib` on both Macs). On macOS
+  arm64, `-k-no_fixup_chains` is present in all four link sets;
+- every record `build/cap12b/cli-<target>.json` reads `verdict = PASS`,
+  `violations = 0`, and **every boolean row `true` on all four targets**:
+  `blob_plane_available`, `blob_whole_by_url`, `blob_csp_byte_identical`,
+  `blob_range_206`, `blob_range_declined_200`, `blob_range_416`, `blob_img`,
+  `blob_body_bytes_256mib`, `blob_upload_refused_typed`,
+  `blob_foreign_token_unknown`, `blob_released_unresolvable`,
+  `blob_window_ok`, `blob_concurrent_bounded`, `blob_asset_unchanged`,
+  `blob_reserved_intercepted`, `blob_released_on_navigation`,
+  `blob_lifetime_rules`, `pack_refuses_pweb_prefix`,
+  `pack_clean_dist_unaffected`, `blob_units_present`. Also on all four:
+  `blob_release_order = cap9`, `blob_csp_violations = 0`,
+  `blob_namespace = _pweb/blob`, `blob_url_prefix = pweb://app/_pweb/blob/`;
+- **one cross-target corpus**: `blob_suite = PASS`, and
+  `blob_corpus_digest = 5d0ce4b9ba06421aed2ed67761e11ecbe2066ce930b0f47b9ce17faee1c093bc`
+  (31 lines) is identical on Windows, Linux, macOS x64 and macOS arm64.
+  `fetch_corpus_digest = 64eb3db2…8176`, the value re-pinned in §8, is equal
+  on all four;
+- `[CAP-7F] aggregate PASS - platform-matrix.json written`, with the CAP-12B
+  fields required and absolute-pinned by the aggregator.
+  `capability_policy_digest` (`23b87da5…4bddb2f`) and
+  `navigation_policy_digest` (`360d69f2…c7212e`) are equal on all four and
+  **unchanged**, so `PWEB_NATIVE_CSP` did not move. CAP-11A reports four
+  identical sequences of **207** steps, `CAP11A_SEQUENCE_PASS steps=207
+  digest=0379943652198e3a178387454dd08204cafa254bbcc458569e5515bbcafd5a3b`.
+
+The 8 MiB window (entry condition 6.3.3) on the hosted runners, from the same
+records. These are **observations, never thresholds**. `asset` is the
+ordinary asset request the page launched beside the blob:
+
+| target | `blob_window_ms` | `blob_window_asset_ms` |
+|---|---|---|
+| windows (WebView2) | 131 | 149 |
+| linux (WebKitGTK 2.52.6) | 39 | 3 |
+| macos-x64 (WKWebView) | 82 | 95 |
+| macos-arm64 (WKWebView) | 205 | 214 |
+
+On the three targets whose engine delivers on the GUI thread (WebView2, and
+WKWebView on both Macs), the asset arrives **9–18 ms after** the window. WebKitGTK serves the asset first.
+That is the shape §6.3.3 measured on this host (WebView2 38–42 ms, the asset
+about 5–6 ms after the window), scaled by slower shared runners. The bound
+in this shard is one window; it is not a latency promise.
+
+Nothing under `src/` or `test/` changed for this closure. The ledger rows
+`12B-1` (ACCEPTED), `12B-2` and `12B-3` (ROADMAP) stand as written.
 
 **What this shard did.** It turned CAP-12A's decision into a data plane:
 bytes the runtime holds for one principal, addressed by a 128-bit token,
@@ -85,10 +143,10 @@ Linux.
 
 | target | headless suite | live plane | how |
 |---|---|---|---|
-| **Windows x64 / WebView2** | **MEASURED** | **MEASURED** | this host; `test/cap12b/run_cap12b_gates.ps1`, verdict PASS |
-| **Linux x64 / WebKitGTK 2.52.6** | **MEASURED** | **MEASURED** | WSL + `xvfb-run`, same gate script, verdict PASS; and on the hosted leg of run `35102099474`, verdict PASS |
-| **macOS x64 / WKWebView** | **compiles; UNMEASURED live** | **OUTSTANDING** | the Objective-C++ seam **and** the Pascal adapter compile on the hosted runner (`measure-cap12.yml`, run `35089828854`: `pweb_cocoa_bridge.o arch=x86_64 minos=12.0`, 23 073 lines of Pascal); the live harness runs on the hosted CI leg |
-| **macOS arm64 / WKWebView** | **MEASURED** on run `35102099474` (S1 PASS, same corpus digest) | **OUTSTANDING** | seam as above (`arch=arm64`, 19 919 lines); that run's live-harness link was refused, and the fix is described above |
+| **Windows x64 / WebView2** | **MEASURED** | **MEASURED** | this host; `test/cap12b/run_cap12b_gates.ps1`, verdict PASS; and the hosted leg of run `35108018300`, verdict PASS |
+| **Linux x64 / WebKitGTK 2.52.6** | **MEASURED** | **MEASURED** | WSL + `xvfb-run`, same gate script, verdict PASS; and the hosted legs of runs `35102099474` and `35108018300`, verdict PASS |
+| **macOS x64 / WKWebView** | **MEASURED** on run `35108018300` | **MEASURED** on run `35108018300` | the Objective-C++ seam **and** the Pascal adapter first compiled on the hosted measurement run (`measure-cap12.yml`, run `35089828854`: `pweb_cocoa_bridge.o arch=x86_64 minos=12.0`, 23 073 lines of Pascal); the live harness passed on the hosted CI leg |
+| **macOS arm64 / WKWebView** | **MEASURED** on runs `35102099474` and `35108018300` | **MEASURED** on run `35108018300` | seam as above (`arch=arm64`, 19 919 lines); run `35102099474` refused the live harness's link, and the fix is described above |
 
 **The adapters already passed the whole existing matrix on four targets.**
 Hosted run `35089829631` on commit `a57b14e` — the store, the translator,
@@ -99,10 +157,10 @@ the CAP-9C2 real-GUI acceptance on **both** macOS architectures, and the
 `cap7 aggregate`. That is the four-target measurement that the branch did
 not change a single asset-path behaviour any existing gate observes.
 
-The macOS **engine** rows of §6.3.1 *are* measured — on the hosted
-measurement run, through CAP-12A's instrument. What is outstanding is the
-CAP-12B **live harness** on those two targets, which is the hosted CI leg's
-to run. Nothing below claims otherwise, and the verdict says so.
+The macOS **engine** rows of §6.3.1 were measured on the hosted measurement
+run, through CAP-12A's instrument. The CAP-12B **live harness** on those two
+targets was measured by the hosted CI legs of run `35108018300`, recorded in
+the closure record above.
 
 ---
 
@@ -374,6 +432,7 @@ output file; then removes the plant and requires the same dist to pack.
 | `fetch_corpus_digest` (CAP-15B) | `526789b249f1bedba2570482207adffa1d0fcc918623f7ff988cfbfd6de0a381` | `64eb3db2db4bf586c2739892b9cc320661e53eb9def9fc690cd16dd35cfe8176` | the envelope corpus now pins `"blob":null` in every envelope. 145 lines before and after |
 | CAP-15C K15 pin of `src/rpc/pweb.rpc.fetch.pas` | `82aedb926a8a6a77633a6eb82aa3da74a285365602cd44101ce054960e4ec5fb` | `a158a35aaf247f0c494b779d08953eb10ca38af57144d7fd8d917cebe8ff50e9` | the fetch door is the headline consumer of the plane |
 | the one CI sequence | 206 steps | **207** | one step added after CAP-15C: `CAP-12B blob data plane gates (S1, L1, P1, B1, C1-C9) + evidence` |
+| `ci_sequence_digest` | `b9e904096532204c5013e86f9d24eb6acf5120ea3e579fac98c1fab3e58533d0` (206 steps; main run `35062557082` on `6f78477`, this branch's base) | `0379943652198e3a178387454dd08204cafa254bbcc458569e5515bbcafd5a3b` (207 steps; run `35108018300`, four identical sequences) | the same added step |
 | `test/cap11a/step-applicability.tsv` | 206 rows | **207** | the same step, four targets, unconditional |
 | CAP-12A containment claim §5c(1) | *no file under `.github/` may name `test/cap12a`* | *no file of the ONE STEP SEQUENCE may; `.github/workflows/measure-cap12.yml` is the one named exception, and three new assertions hold it to being dispatch-only and uncallable* | two of the three entry conditions need a macOS or a baseline-WebKitGTK host the dev machine does not have. The claim that mattered — a GATE must not put a throwaway store behind the production seam — is unchanged and now stated exactly |
 | `cap12a_named_in_ci` | empty | `.github/workflows/measure-cap12.yml` | the same narrowing, as the evidence row reads it |
@@ -449,8 +508,11 @@ The two CAP-12B corpus digests agree across targets to the byte:
 
 ## 11. KNOWN LIMITATIONS
 
-1. **The two macOS live legs are outstanding.** The engine rows of §6.3.1 are
-   measured; the CAP-12B live harness on those targets is the hosted run's.
+1. **The 8 MiB window is bounded, not fast.** On the engines that deliver on
+   the GUI thread, an asset requested beside a blob waits for that one
+   window: 9–18 ms behind it on the hosted runners, where the window itself
+   took 82–205 ms. `blob_window_ms` is recorded as an observation on every
+   leg and is not gated.
 2. **`HEAD` is not served.** It is answered `405` with `Allow: GET`. v1
    promises `GET`, because a `HEAD` with a declared length and no body is a
    shape no engine here has been measured on.
@@ -476,18 +538,20 @@ The two CAP-12B corpus digests agree across targets to the byte:
 ## 12. VERDICT
 
 ```
-CAP-12B NOT READY
+CAP-12B PASS — BLOB DATA PLANE FROZEN
 ```
 
-Everything this host can prove is proven, and it is a long list: §6.1's eight
-items are built; the three entry conditions are measured and recorded; both
-consumers are wired; every security property has a proof rather than an
-argument; the regressions are green and the two frozen policy digests are
-byte-identical; the supersessions are recorded old → new. **What is missing
-is the one PASS condition that cannot be met from a Windows host with WSL:
-the four-target hosted run, green, on the final HEAD** — and with it the
-CAP-12B live rows on macOS x64 and macOS arm64.
+- **§6.1's eight items** are built and measured on four targets.
+- **The three entry conditions** are measured and recorded.
+- **Both consumers are wired:** large `pweb.fetch` responses come back as a
+  blob handle, and `<img>` loads by blob URL.
+- **Every security property** has a proof rather than an argument.
+- **The regressions are green.** Both frozen policy digests are
+  byte-identical on all four targets.
+- **The supersessions** are recorded old → new.
+- **Hosted CI is green on the final HEAD**
+  (`5e4554b8acab6605833e058177e926dc7734d12c`, run `35108018300`). Its
+  substance, not just its green status, was checked against this document
+  (closure record, top).
 
-The shard is complete and pushed; the verdict flips to
-`CAP-12B PASS — BLOB DATA PLANE FROZEN` when that run is green and its
-substance — not its badge — has been checked against this document.
+CAP-12C is not begun.
