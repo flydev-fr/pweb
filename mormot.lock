@@ -4,37 +4,50 @@
 # The whole tree is pinned by the commit SHA; fetched by tools/get-mormot.ps1
 # into the git-ignored deps/mormot2 checkout.
 #
-# MOVED 2026-09-08, from b1a129b09197b6b9fb67c6d4d2a13445987a3fe1 (2.4.16242,
-# 2026-08-05), for one reason: this commit range carries BOTH halves of the
-# CAP-3U finding upstream, so the patch PWeb had been re-applying around every
-# Windows compile since CAP-3 is now redundant and is gone.
+# MOVED 2026-09-16, from da7e1c2fabb17cc18279c7c8599b563d35845168 (2.4.16776,
+# 2026-09-07), to the SMALLEST commit on master's first-parent line that
+# carries all three binding fixes upstream wrote in answer to this project's
+# reports (2.4.16907). Each hash below was resolved in the upstream tree, and
+# each descends from the previous pin:
 #
-#   790154afbfb004d31404c81e13e8a1bc90a04d32  2026-08-12 22:02:12Z
-#     "core: ensure imvCurrency is returned in rax on x86-64"
-#   896f1c1c66653c5c995ec9790117f0d6b8eeb427  2026-08-12 22:03:58Z
-#     "core: Win64 requires unwinding information for its asm stub"
+#   6a27c07fc6c9f796711076561c293e68eb6b6398  2026-09-16 12:13:13 +0200
+#     "core: fixed currency result in mormot.core.interfaces"
+#     -- imvCurrency read from x87 ST0 on FPC SysV x64 and from x0 on AArch64
+#   37fa86b451304c15bacd34cf673cb4f0c40f0235  2026-09-16 12:59:49 +0200
+#     "lib: fixed JS_SetMaxStackSize() definition"
+#     -- the binding now takes JSRuntime, as the C side always did
+#   66d7d51c1fd21bd222b360382ed8e2b4f656aaad  2026-09-16 13:16:20 +0200
+#     "lib: fixed pas_malloc() wrapper definition"
+#     -- the pas_* heap exports are pointer-width, as cutils.h calls them
 #
-# Both commit messages cite the report that produced them:
-#   https://github.com/flydev-fr/mormot-fpc-win64-callmethod-unwind
+# The reports: https://synopse.info/forum/viewtopic.php?pid=45803#p45803
 #
-# MEASURED before the move, on a fresh checkout the patch had never touched:
-# FPC 3.2.2's internal PE-COFF writer honours the .seh_pushreg/.seh_setframe/
-# .seh_endprologue directives 896f1c1c adds, so CallMethod now carries a real
-# RUNTIME_FUNCTION (frame register rbp, SET_FPREG rbp offset 0, PUSH_NONVOL
-# r12, PUSH_NONVOL rbp) where the previous pin had no unwind entry at all; and
-# the Currency return matrix over arities 0/1/2 is 5/5 on Win64 unpatched,
-# against 0/5 at the previous pin unpatched. test/cap3u is the permanent gate
-# over both, against the pristine dependency, with no patch step.
+# MEASURED before the move, on the unpatched candidate: the Currency return
+# matrix over arities 0/1/2 is 5/5 on all four targets, each on its own leg's
+# compiler (it was 5/5, 1/5, 1/5 and 0/5 at the previous pin); CallMethod still
+# carries exactly one RUNTIME_FUNCTION on Win64 and the unwind matrix is 12/12;
+# and the CAP-9 resource-limit matrices pass with the pinned JS_SetMaxStackSize
+# called directly, so PWeb's private re-declaration of it is gone. test/cap3u
+# and the CAP-9 harnesses are the permanent gates over all three, against the
+# pristine dependency.
+#
+# This commit also carries both halves of the CAP-3U finding the previous move
+# (2026-09-08, from b1a129b0) was made for: 790154af ("core: ensure
+# imvCurrency is returned in rax on x86-64") and 896f1c1c ("core: Win64
+# requires unwinding information for its asm stub"), reported at
+# https://github.com/flydev-fr/mormot-fpc-win64-callmethod-unwind
 url = https://github.com/synopse/mORMot2.git
 commit = 66d7d51c1fd21bd222b360382ed8e2b4f656aaad
 # Static .o/.a files required by FPC builds (mORMot's documented install
 # step). Release assets are mutable in principle, so the archive integrity
 # rests on the sha256 below, not on the URL.
 #
-# UNCHANGED by the 2026-09-08 pin move, and that is a measurement rather than
-# an omission: the candidate's `static/` (dev.sha256 included) and `res/` trees
-# are byte-identical to the previous pin, 2.4-stable is still the newest
-# release, its asset was last modified 2026-01-12, and re-downloading it on
-# 2026-09-08 reproduced the sha256 below over all 33675498 bytes.
+# UNCHANGED by the 2026-09-16 pin move, and that is a measurement rather than
+# an omission: the candidate's `static/` tree (dev.sha256 included) is
+# byte-identical to the previous pin's, and `res/` differs only in the
+# prototype text of three liblizard headers - no object PWeb links is built
+# from them, and no PWeb link map names lizard. 2.4-stable is still the newest
+# release, its asset was last modified 2026-01-12T18:35:58Z, and re-downloading
+# it on 2026-09-16 reproduced the sha256 below over all 33675498 bytes.
 statics-url = https://github.com/synopse/mORMot2/releases/download/2.4-stable/mormot2static.tgz
 statics-sha256 = ae2d8da212c5b4f2778370de7aee965f7fd82eef911da27eeb797d6db06db449

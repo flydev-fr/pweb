@@ -370,7 +370,7 @@ if [ "${os_name}" = 'Darwin' ]; then
 fi
 license_sha="$(sha256_of "${license_path}")"
 add_row 'license_quickjs_sha256' \
-    "$([ "${license_sha}" = 'a1d491db9c87a750c2bb37d7d47b642ce4b94a0d56332640f1d14521233875bf' ] && echo 1 || echo 0)" \
+    "$([ "${license_sha}" = '3475555a50debb194de75ba33eb0a08e92ea9995c2021249c7966a3f0923ee19' ] && echo 1 || echo 0)" \
     "sha256=${license_sha}"
 license_count="$(printf '%s\n' "${actual_layout}" | grep -c 'LICENSE\.quickjs$' || true)"
 add_row 'license_quickjs_once' \

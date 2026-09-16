@@ -276,8 +276,15 @@ Windows and LF elsewhere and this file must be byte-identical on all four
 targets. It is:
 
 ```
-sha256 = a1d491db9c87a750c2bb37d7d47b642ce4b94a0d56332640f1d14521233875bf
+sha256 = 3475555a50debb194de75ba33eb0a08e92ea9995c2021249c7966a3f0923ee19
 ```
+
+**Superseded on 2026-09-16 from `a1d491db9c87a750c2bb37d7d47b642ce4b94a0d56332640f1d14521233875bf`,
+and again the licence text did not move.** The mORMot pin move to `66d7d51c`
+changed the provenance line and nothing else: the new artifact is 450 lines
+and 22 044 bytes, it carries seventeen per-file `sha256` lines over a
+`res/static/libquickjs` tree the move did not touch, and writing the old
+commit back into line 17 of the new artifact reproduces `a1d491db…` exactly.
 
 **Superseded on 2026-09-08 from `8310e7a6c52cd3b45a0aedb5620ef79408c8c155594f37259ba801f6a2fbe2fc`,
 and the licence text did not move.** The mORMot pin move to `da7e1c2f`

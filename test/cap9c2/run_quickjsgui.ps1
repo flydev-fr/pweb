@@ -230,7 +230,7 @@ Add-Row 'registry_not_shipped' `
 # the frozen QuickJS licence, hash-pinned, present exactly once
 $licenseSha = (Get-FileHash (Join-Path $release 'LICENSE.quickjs') -Algorithm SHA256).Hash.ToLowerInvariant()
 Add-Row 'license_quickjs_sha256' `
-    ($licenseSha -ceq 'a1d491db9c87a750c2bb37d7d47b642ce4b94a0d56332640f1d14521233875bf') `
+    ($licenseSha -ceq '3475555a50debb194de75ba33eb0a08e92ea9995c2021249c7966a3f0923ee19') `
     "sha256=$licenseSha"
 $licenseCount = @($actualLayout | Where-Object { $_ -eq 'file:LICENSE.quickjs' }).Count
 Add-Row 'license_quickjs_once' ($licenseCount -eq 1) "count=$licenseCount"

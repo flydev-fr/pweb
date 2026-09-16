@@ -39,13 +39,16 @@
     invocation while an in-flight one keeps its captured snapshot.
   - Per-engine limits: CPU via the pinned TimeoutValue interrupt
     (applies per Evaluate call), memory via JS_SetMemoryLimit, stack via
-    the correctly-typed PRIVATE re-declaration of JS_SetMaxStackSize
-    below - the pinned mormot.lib.quickjs binding mistypes its first
-    parameter as JSContext where the pinned C header (quickjs.h:464)
-    takes JSRuntime*; calling the mistyped binding corrupts the context
-    (measured AV under allocation pressure). Do NOT call the pinned
-    binding anywhere; the pin itself stays byte-unchanged (workaround
-    lives PWeb-side, per the ratified Ask-First boundary).
+    the pinned JS_SetMaxStackSize. Until the 2026-09-16 mORMot pin move
+    that binding typed its first parameter as JSContext where the C side
+    (quickjs.h) takes JSRuntime*, calling it was measured to corrupt the
+    context, and this unit carried a private runtime-typed
+    re-declaration. Upstream 37fa86b4 fixed the binding in answer to this
+    project's report, so the re-declaration is gone and the pinned import
+    is called directly - with FEngine.rt, a JSRuntime, which FPC refuses
+    to pass where a JSContext is declared. The call site is therefore a
+    compile-time gate on the upstream signature, and the CAP-9A and
+    CAP-9B2 limit matrices are the runtime one.
   - Lifecycle: the transport (this plugin) drives Quiesce -> Close on
     its source; Unload then stops the thread and the engine is destroyed
     ON ITS OWNING THREAD in Execute's epilogue. A late worker completion
@@ -525,12 +528,13 @@ implementation
   // mormot.lib.static's declarations. Darwin C symbols carry the '_'
   // prefix.
 
-{ size is PtrUInt, deliberately WIDER than the pinned mormot.lib.static
-  declaration (cardinal): the C side passes size_t, and truncating a
-  >4 GiB request to 32 bits would return an undersized buffer to the
-  engine. The pinned declaration carries that defect on the targets that
-  link mormot.lib.static; recorded in the deferred-work ledger as part
-  of the upstream report. }
+{ Every size here is pointer-width, as the C side (cutils.h, size_t) and,
+  since upstream 66d7d51c, the pinned mormot.lib.static both declare it.
+  This block was widened first, when the pin still read `cardinal` and
+  `integer`; the pin move of 2026-09-16 brought upstream level with it and
+  pas_malloc_usable_size, the one signature still 32-bit here, followed.
+  size stays unsigned (size_t) where mormot.lib.static says PtrInt: the
+  width is the ABI, and no request reaches the sign bit. }
 function pas_malloc(size: PtrUInt): pointer; cdecl;
   public name '_pas_malloc';
 begin
@@ -558,7 +562,7 @@ begin
   result := P;
 end;
 
-function pas_malloc_usable_size(P: pointer): integer; cdecl;
+function pas_malloc_usable_size(P: pointer): PtrUInt; cdecl;
   public name '_pas_malloc_usable_size';
 begin
   result := MemSize(P);
@@ -572,13 +576,6 @@ begin
 end;
   {$endif CPUAARCH64}
 {$endif DARWIN}
-
-{ The correctly-typed private re-declaration of the pinned C entry point
-  (quickjs.h:464 takes JSRuntime*). The unit-local name shadows the
-  mistyped import from mormot.lib.quickjs inside this unit, so the
-  mistyped binding cannot be called from here even by accident. }
-procedure JS_SetMaxStackSize(rt: JSRuntime; stack_size: PtrUInt);
-  cdecl; external;
 
 { ---------------- the shared manager ---------------- }
 
@@ -956,13 +953,13 @@ begin
   // TimeoutValue; it applies per Evaluate call (Execute sets it before
   // each script from the mailbox request).
   FEngine.TimeoutValue := FLimits.TimeoutSeconds;
-  // memory: correctly-typed pinned binding, safe to use as-is
+  // memory and stack: both pinned bindings take the runtime. The stack
+  // one did not until upstream 37fa86b4, and passing the context where
+  // the C side reads a JSRuntime* was measured as 0xC0000005 under
+  // allocation pressure - FEngine.rt here is what keeps that from
+  // compiling again
   if FLimits.MemoryLimitBytes <> 0 then
     JS_SetMemoryLimit(FEngine.rt, FLimits.MemoryLimitBytes);
-  // stack: the runtime-typed private external above - NEVER the pinned
-  // mistyped mormot binding (measured 0xC0000005 under allocation
-  // pressure when the context is passed where the C side reads a
-  // JSRuntime*)
   if FLimits.StackLimitBytes <> 0 then
     JS_SetMaxStackSize(FEngine.rt, FLimits.StackLimitBytes);
 end;
