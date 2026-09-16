@@ -337,7 +337,8 @@ rather than discovering it later.
 | CAP-14B contracts | PASS |
 | CAP-15B contracts + gates (incl. the live TLS pair) | PASS |
 | CAP-15C contracts | PASS — with K15 re-pinned, above |
-| CAP-10A/B0/B1/C0/C1/C2 contracts + gates | PASS |
+| CAP-10A / B0 / B1 (+ the private build proof and real GUI run) / C0 / C1 / C2 / D0 / D1 / D2 contracts + gates, **Windows** | PASS |
+| CAP-10A / B0 / B1 (+ proof) / **B2** (+ proof) / C0 / C1 / C2 / **C3** contracts + gates, **Linux** | PASS, in a copy inside the Linux filesystem — `pweb create` cannot run on `/mnt/c` |
 | backlog gate | PASS — 0 violations |
 | backlog negative self-test | **26/26 perturbations refused** |
 | CAP-12B contracts | PASS — **4/4 perturbations refused** |
