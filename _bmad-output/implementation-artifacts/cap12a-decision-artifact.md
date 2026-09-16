@@ -2,9 +2,35 @@
 
 ```
 CAP-12A DECISION READY
+hosted run 35075079887, all six jobs green, on commit 340417e
 two engines measured on this host, the third derived and named
 no product file changed; the ledger's own machinery did, and section 8 says so
 ```
+
+**Closed 2026-09-16.** The hosted four-target run is green and its **substance**
+is checked rather than its badge, against the pre-shard baseline — run
+`35062557082` on `main`, commit `6f78477`:
+
+| fact | baseline | CAP-12A | |
+|---|---|---|---|
+| the one CI sequence | 206 steps, 9 conditional | **206 steps, 9 conditional** | **no CI step entered the sequence.** `test/cap12a` is committed and run by nothing, which is the shard's rule and is now also a mechanical fact |
+| `navigation_policy_digest` | `360d69f2…c7212e` | **byte-identical** | `PWEB_NATIVE_CSP` did not move. It is the premise the whole namespace decision rests on, and the run proves it rather than the prose |
+| `capability_policy_digest` | `23b87da5…4bddb2f` | **byte-identical** | the CAP-8A corpus is untouched |
+| backlog gate | `PASS - 434 ledger entries` | **`PASS - 439`** | the five CAP-12A entries and their dispositions are accepted by the gate on the runner, not only locally |
+| `cap12a_named_in_ci` | — | **empty** | section 5c really ran: no workflow names the instrument… |
+| `cap12a_named_in_product` | — | **empty** | …and neither does anything under `src/`, `tools/`, `examples/` or `sdk/` |
+
+**One hosted run was spent before this one, and it is recorded rather than
+tidied away.** Run `35073544325` failed its Linux leg in **11 seconds**, at the
+first step, on `f2bc67f`: `Guard - no floating upstream ref in the Linux
+build/gate path` ends with a repository-wide assertion that every committed
+`*.sh` is mode `100755`, and this shard's two new runners were committed
+`100644`. The checkout has `core.fileMode=false`, so the `chmod +x` never
+reached git — and `git ls-files -s` printed `100755` afterwards while
+`git ls-tree HEAD` said `100644`, which is why a pre-commit check read clean.
+Commit `340417e` sets the mode with `git update-index --chmod=+x`. **No
+measurement is affected**: the leg never reached a build, and every M1–M5 number
+below was measured on this host before either push.
 
 **The question this shard was named for.** `pweb://app` today serves whole,
 in-memory, synchronous responses from a sealed bundle. A data plane needs, per
@@ -593,6 +619,7 @@ entries there carry the full text and evidence. In brief:
 
 ```
 CAP-12A DECISION READY
+hosted run 35075079887, all six jobs green, on commit 340417e
 ```
 
 - **MEASURED** on Windows x64 / WebView2 and Linux x64 / WebKitGTK 2.52.6, from
