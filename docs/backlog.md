@@ -19,8 +19,8 @@ from and the one the gate reads.
 | `FIX_NOW` | 4 | closed by this triage, one commit each, cited below |
 | `UPSTREAM` | 4 | the defect belongs to a third-party project and a report is written or owed; three of the four also carry a local workaround, and `RP-2` deliberately does not |
 | `ROADMAP` | 59 | real work, deferred, with a named owner |
-| `ACCEPTED` | 120 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
-| `CLOSED` | 252 | the thing the entry describes is done |
+| `ACCEPTED` | 121 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
+| `CLOSED` | 254 | the thing the entry describes is done |
 
 `ACCEPTED` is not a synonym for ignored. It is the verdict for an entry whose
 honest answer is a measurement — that WebView2 raises no navigation event for a
@@ -485,6 +485,6 @@ Sixty-seven rows: the four `FIX_NOW` items this triage closed, the four
 | `15C-27` | ROADMAP | the CAP-15C hosted run | the Darwin rows run on a worker thread and the main-thread row is sticky; the next macOS legs measure it |
 | `15C-28` | ROADMAP | the CAP-15C hosted run | fetchlive allows the Darwin delivery size darwinprobe already measures and allows; the next arm64 leg measures it |
 | `15C-30` | ROADMAP | the CAP-15B fetch corrective hosted run | every keychain command of the certificate-name pair is bounded and recorded; the next macOS legs say which cleanup command blocked and show the step ending |
-| `12A-1` | UPSTREAM | WebKitGTK, after CAP-12B pins the version range | `webkit_uri_scheme_request_get_http_body()` faults the UI process for a blob-backed request body on 2.52.6, with a same-size typed-array body unharmed; the gdb backtrace puts the fault three frames inside libwebkit2gtk with the caller doing nothing but the call |
-| `12A-4` | ROADMAP | CAP-12B, then a separate `app.pwb` decision | the frozen MIME table carries no audio or video type, so the asset plane cannot serve media with a correct type; the blob plane routes around it with `TBlobInfo.ContentType` and does not extend the table |
-| `12A-5` | ROADMAP | the shard that runs the macOS leg | four CAP-12A rows on WKWebView are derived rather than measured and `test/cap12a/cap12a_probe.mm` has never been compiled; it is CAP-12B entry condition 6.3.1 |
+| `12A-1` | UPSTREAM | WebKitGTK; the report is written, the version range is pinned | `webkit_uri_scheme_request_get_http_body()` faults the UI process for a blob-backed request body on 2.52.6, with a same-size typed-array body unharmed; the gdb backtrace puts the fault three frames inside libwebkit2gtk with the caller doing nothing but the call |
+| `12B-2` | ROADMAP | CAP-12C | the JS->native upload transport is built, drained and proven byte-exact on three engines and refused by name with a receipt; CAP-12C turns the refusal into a store write behind the already-ratified `IBlobWriter` and adds the two SDK functions |
+| `12B-3` | ROADMAP | the shard that wants blobs larger than one window | in v1 a blob is at most the 8 MiB window, which is why no whole-body answer needs ranging; the ranged path is built and proven and the clamp lives in one place, and the ceiling should be raised together with a file-backed store |

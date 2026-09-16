@@ -114,6 +114,10 @@ $shards = [ordered]@{
     # that carries the measurements. The key means the same thing here as
     # everywhere else - the shard that found it.
     'cap12a-decision-artifact.md'                          = '12A'
+    # CAP-12B built what CAP-12A decided. Its entries are sourced to its own
+    # final artifact for the same reason 12A's are sourced to the decision
+    # one: the key means the shard that found it.
+    'cap12b-final-artifact.md'                             = '12B'
 }
 
 # THE CLOSED SET. `CLOSED` means the thing the entry describes is done;
