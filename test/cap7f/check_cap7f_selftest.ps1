@@ -2863,13 +2863,23 @@ foreach ($case in @(
         @{ n = 'cap15c-starve-macos-measuring'; leg = 'macos-arm64';
            v = 'served_beside_parked_polls latency_ms=0.300 within_long_poll_bound=true result=42 opened=4/4 open_refused=none parked=4 parked_for_ms=1.000 active=4 queued=1' },
         @{ n = 'cap15c-starve-untyped'; leg = 'linux';
-           v = 'fast latency_ms=0.300 within_long_poll_bound=true result=42 opened=4/4 open_refused=none parked=4 parked_for_ms=1.000 active=4 queued=1' })) {
+           v = 'fast latency_ms=0.300 within_long_poll_bound=true result=42 opened=4/4 open_refused=none parked=4 parked_for_ms=1.000 active=4 queued=1';
+           p = 'not a typed starvation row' },
+        # a typed row that names another N: a row copied into the wrong field
+        @{ n = 'cap15c-starve-wrong-n'; leg = 'windows';
+           v = 'served_after_a_parked_poll_returned latency_ms=24970.000 within_long_poll_bound=true result=42 opened=4/5 open_refused=service_error:socket_limit parked=4 parked_for_ms=15.000 active=4 queued=1';
+           p = 'names N=5' },
+        # a served Add that did not answer the one thing it was asked
+        @{ n = 'cap15c-starve-wrong-answer'; leg = 'linux';
+           v = 'served_beside_parked_polls latency_ms=0.300 within_long_poll_bound=true result=41 opened=4/4 open_refused=none parked=4 parked_for_ms=1.000 active=4 queued=1';
+           p = 'result=41, not 42' })) {
     Reset-Fixture
     $f = Join-Path $fx "ev/$($case.leg)/evidence.json"
     $e = Get-Content $f -Raw | ConvertFrom-Json
     $e.socket_starvation_n4 = $case.v
     $e | ConvertTo-Json -Depth 4 | Set-Content $f
-    Invoke-AggExpectFail $case.n 'CAP-15C STARVATION'
+    $pattern = if ($case.ContainsKey('p')) { 'CAP-15C STARVATION.*' + [regex]::Escape($case.p) } else { 'CAP-15C STARVATION' }
+    Invoke-AggExpectFail $case.n $pattern
 }
 
 Remove-Item -Force -ErrorAction SilentlyContinue $matrix
@@ -2893,12 +2903,13 @@ Remove-Item -Force -ErrorAction SilentlyContinue $matrix
 # and eight absolute pins - for the same reason a fourth time.
 # CAP-14B raised it from 240 to 248 with its eight legs - one compared digest
 # and seven absolute pins - for the same reason a fifth time.
-# The CAP-15C starvation measurement raised it from 248 to 251 with its three
-# legs - both directions of the per-target asymmetry and one untyped row - for
+# The CAP-15C starvation measurement raised it from 248 to 253 with its five
+# legs - both directions of the per-target asymmetry, an untyped row, a row that
+# names another N and a served row that did not answer 42 - for
 # the same reason a sixth time.
-if ($script:AggRefusals -lt 251) {
+if ($script:AggRefusals -lt 253) {
     throw ("selftest: only $($script:AggRefusals) aggregator refusals fired, " +
-        'expected at least 251 -- a negative leg stopped running')
+        'expected at least 253 -- a negative leg stopped running')
 }
 if ($script:SweepRefusals -lt 2) {
     throw ("selftest: only $($script:SweepRefusals) divergence refusals fired, " +

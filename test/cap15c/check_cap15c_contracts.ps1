@@ -958,6 +958,24 @@ foreach ($needle in @(
 if ($starveCode -match 'PWEB_SOCKET_MAX_SOCKETS\s*\)?\s*[-+*]|[-+*]\s*PWEB_SOCKET_MAX_SOCKETS') {
     Violation "K25: $starveSrc does arithmetic with the socket bound - a worker added for the sockets is the workaround the measurement must not carry"
 }
+# the three numbers are ASSIGNED ONCE, from the command line, and never moved
+# afterwards - an `Inc(Workers)` or a `Slots := Slots * 2` before the pool is
+# built would pass every needle above
+foreach ($name in 'Workers', 'Slots', 'QueueBound') {
+    $assigns = [regex]::Matches($starveCode, "(?<![\w.])$name\s*:=").Count
+    if ($assigns -ne 1) {
+        Violation "K25: $starveSrc assigns $name $assigns time(s) - once, from its argument, is the rule"
+    }
+    if ($starveCode -match "(?i)\b(Inc|Dec)\s*\(\s*$name\b") {
+        Violation "K25: $starveSrc increments or decrements $name"
+    }
+    if ($starveCode -notmatch "(?<![\w.])$name\s*:=\s*StrToIntDef\(") {
+        Violation "K25: $starveSrc does not take $name from its command line"
+    }
+}
+if ($starveCode -notmatch 'limits\s*:=\s*Default\(\s*TPWebSourceLimits\s*\)') {
+    Violation "K25: $starveSrc does not start from a zeroed TPWebSourceLimits - a field added to it later would carry stack garbage"
+}
 $starveRunner = Read_ 'test/cap15c/run_cap15c_gates.ps1'
 if (($starveRunner -notmatch "'src/webview/pweb\.webview\.host\.pas'") -or
     ($starveRunner -notmatch 'function PWebDefaultHostOptions') -or
@@ -966,6 +984,13 @@ if (($starveRunner -notmatch "'src/webview/pweb\.webview\.host\.pas'") -or
     ($starveRunner -notmatch '--queue=\$\(\$defaults\.MaxQueueSize\)')) {
     Violation ('K25: run_cap15c_gates.ps1 does not pass the starvation instrument the ' +
         'three numbers it read from PWebDefaultHostOptions')
+}
+foreach ($field in 'Workers', 'MaxConcurrent', 'MaxQueueSize') {
+    if ($starveRunner -notmatch [regex]::Escape("foreach (`$f in 'Workers', 'MaxConcurrent', 'MaxQueueSize')") -or
+        $starveRunner -notmatch [regex]::Escape('"Result\.$f\s*:=\s*(\d+)\s*;"')) {
+        Violation "K25: run_cap15c_gates.ps1 no longer reads $field as the literal PWebDefaultHostOptions assigns"
+        break
+    }
 }
 if ($starveRunner -match '--(workers|slots|queue)=\d') {
     Violation 'K25: run_cap15c_gates.ps1 passes the starvation instrument a typed number'

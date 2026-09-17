@@ -23,9 +23,16 @@ program socketstarve;
 
   The worker count, the slot count and the queue bound are NOT typed here.
   test/cap15c/run_cap15c_gates.ps1 reads them out of PWebDefaultHostOptions
-  in src/webview/pweb.webview.host.pas and passes them in, so the measurement
-  follows the ratified defaults wherever they go. That unit is not linked:
-  it pulls in the platform WebView library, which no claim here needs.
+  in src/webview/pweb.webview.host.pas and passes them in, so the numbers are
+  always the ones the host ships. That unit is not linked: it pulls in the
+  platform WebView library, which no claim here needs. The N set is fixed and
+  brackets TODAY's four workers, four slots and four sockets; a host that
+  moved those numbers would want the set moved with them.
+
+  WORKERS AND SLOTS COINCIDE at the defaults, and the parked receives and the
+  Add share one source, so a delay here shows the pool and the window's slots
+  held together. This program does not separate the two bounds; FR-M1's reading
+  of the code names both.
 
   ONE ROW PER N, for N = 0, 3, 4 and 5, each on a FRESH composition:
 
@@ -45,8 +52,15 @@ program socketstarve;
   THE TYPE IS ORDER, NOT A THRESHOLD. A starved Add can only be claimed after
   a parked poll has given its slot back, so its completion follows the first
   parked completion. Latency is measured from the Add's own enqueue while the
-  polls were already parked, so a starved Add is answered INSIDE the 25 s
-  bound by construction; `parked_for_ms` sits beside it so the two add up.
+  polls were already parked, so a starved Add is answered at about the bound
+  minus `parked_for_ms`, plus at most one 20 ms wait slice and the claim.
+  `within_long_poll_bound` compares that latency with 25 000 ms exactly, so it
+  can read false by that slice when the polls were parked for less than it.
+
+  NOTHING HERE GATES THE ANSWER. A not-answered or refused Add is a row, not a
+  failure; the failures are the instrument's own - the control, the sockets
+  that should have opened, the polls that should have parked, a served Add
+  that did not answer 42.
 
     served_beside_parked_polls           Add completed while every parked poll
                                          was still parked
@@ -325,6 +339,7 @@ begin
   // THE HOST'S NUMBERS, AS GIVEN. Nothing is added for the sockets.
   scheduler := TInvocationScheduler.Create(policyRef, doorRef, Workers);
   schedulerRef := scheduler;
+  limits := Default(TPWebSourceLimits);
   limits.MaxConcurrent := Slots;
   limits.MaxQueueSize := QueueBound;
   source := scheduler.RegisterSource(limits);
@@ -390,7 +405,7 @@ begin
     begin
       if scheduler.TryGetSourceCounts(source, queued, active) and
          (active + queued = Length(ids)) and
-         (active = MinPtrInt(Length(ids), Slots)) then
+         (active = MinPtrInt(Length(ids), MinPtrInt(Slots, Workers))) then
         sawAll := True
       else
         Sleep(1);
@@ -465,7 +480,6 @@ begin
     else
       WriteLn('[CAP-15C] n=', N, ' no parked poll returned before the Add completed');
     // the instrument's own validity - never the verdict
-    Require(answered, 'the Add was not answered inside two long-poll bounds');
     if answered and (add.Outcome.Kind = prkSuccess) then
       Require(resultText = '42', 'CalculatorService.Add(20, 22) did not answer 42');
     Require(Length(ids) = MinPtrInt(N, PWEB_SOCKET_MAX_SOCKETS),

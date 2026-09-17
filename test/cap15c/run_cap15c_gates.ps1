@@ -200,7 +200,14 @@ function Invoke-Starvation {
     if ($null -eq $defaults) { return }
     $starveOut = Join-Path $work "starve-$target.json"
     Remove-Item -Force $starveOut -ErrorAction SilentlyContinue
-    & (Join-Path $work "bin/socketstarve$exeSuffix") "--port=$port" `
+    $starveBin = Join-Path $work "bin/socketstarve$exeSuffix"
+    # a build that failed must not take the rest of this runner with it: the
+    # rows below are then typed as missing and the leg fails by name
+    if (-not (Test-Path -LiteralPath $starveBin)) {
+        Require $false "L2: $starveBin is not built - run build_cap15c.ps1 first"
+        return
+    }
+    & $starveBin "--port=$port" `
         "--workers=$($defaults.Workers)" "--slots=$($defaults.MaxConcurrent)" `
         "--queue=$($defaults.MaxQueueSize)" "--out=$starveOut"
     $script:starveExit = $LASTEXITCODE
@@ -452,18 +459,21 @@ if ($IsMacOS) {
         if ($m.Groups[1].Value -like 'served_*') {
             Require ($v -match ' result=42 ') "L2: $k was served and did not answer 42"
         }
+        # a socket past the host bound is refused by name, never opened
+        if ($n -gt $starveSocketBound) {
+            Require ($v -match ' open_refused=service_error:socket_limit ') `
+                "L2: $k asked for more sockets than the host bound and was not refused socket_limit"
+        }
     }
     Require ("$($rows['socket_starvation_n0'])" -like 'served_beside_parked_polls *') `
         'L2: the control (no socket at all) was not served beside zero parked polls'
-    Require ("$($rows['socket_starvation_n5'])" -match ' open_refused=service_error:socket_limit ') `
-        'L2: the socket past the four-socket host bound was not refused socket_limit'
     # the verdict is LOGGED for this target and never gated: the ledger entry is
     # written from the hosted rows of both legs
     $starved = ("$($rows['socket_starvation_n3'])" -like 'served_beside_parked_polls *') -and
         ("$($rows['socket_starvation_n4'])" -like 'served_after_a_parked_poll_returned *') -and
         ("$($rows['socket_starvation_n5'])" -like 'served_after_a_parked_poll_returned *')
     Write-Host ("[CAP-15C] starvation under $starveDefaults on ${target}: " +
-        $(if ($starved) { 'CONFIRMED - four parked receives hold every worker' } else { 'NOT CONFIRMED as stated' }))
+        $(if ($starved) { 'CONFIRMED - an unrelated invoke waited for a parked receive to give back its worker and slot' } else { 'NOT CONFIRMED as stated' }))
 }
 
 # --- the rows the SUITE decided, read back from its corpus ---------------------
