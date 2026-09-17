@@ -208,7 +208,18 @@ $0 == "        const shell = readShell();" {
 { print }
 ' "${app}" > "${tmp}"
 mv -f -- "${tmp}" "${app}"
-[ "$(grep -c 'signalUpdates' "${app}")" -eq 4 ] || die 'the page teaching did not apply at every anchor'
+# every anchor, counted by what it adds: the field, its initial value and the
+# one place the callback moves it (and the same for the other two fields).
+# A patch that matched three anchors of four would otherwise compile and
+# measure nothing.
+for pair in 'signalUpdates:3' 'signalSubscribed:3' 'signalLastCount:3' \
+            'onSignal:2' 'Ticker.Start:1' 'Ticker.Count:1'; do
+    marker="${pair%:*}"
+    want="${pair##*:}"
+    have="$(grep -c -- "${marker}" "${app}")"
+    [ "${have}" -eq "${want}" ] ||
+        die "the page teaching left ${have} ${marker} line(s), not ${want}"
+done
 grep -q 'onSignal("demo.tick"' "${app}" || die 'the page does not subscribe'
 
 # --- 4. pweb build -----------------------------------------------------------
@@ -221,10 +232,26 @@ row signal_composition_build 'PASS'
 
 # THE RELEASE IMAGE: the template of the one script once, no development
 # console channel, and a page that never names the raw primitive
+# ONE SCRIPT TEMPLATE, and it is the ratified one. The COPIES are the
+# compiler's business and not a claim: FPC materialises this constant twice in
+# the data section (measured: two copies 65 bytes apart at the same use site),
+# so counting copies would pin a number nobody chose. What the image can
+# honestly say is that every `new CustomEvent(` literal in it belongs to the
+# ratified template - a second injected script would be a second literal - and
+# the "exactly one site" claim is held where it is decidable, in the source, by
+# K1 and K2 of test/cap16/check_cap16_contracts.ps1.
 template='window.dispatchEvent(new CustomEvent("pweb:signal",{detail:'
-tcount="$(grep -aoF "${template}" "${release}/demo" | wc -l | tr -d ' ')"
-row signal_composition_image_template "${tcount}"
-[ "${tcount}" = '1' ] || require 1 "the release image carries the template ${tcount} time(s), not once"
+tcopies="$(grep -aoF "${template}" "${release}/demo" | wc -l | tr -d ' ')"
+events="$(grep -aoF 'new CustomEvent(' "${release}/demo" | wc -l | tr -d ' ')"
+strays=$((events - tcopies))
+row signal_composition_image_template_copies "${tcopies}"
+row signal_composition_image_template_strays "${strays}"
+if [ "${tcopies}" -ge 1 ] && [ "${strays}" -eq 0 ]; then
+    row signal_composition_image_template '1'
+else
+    row signal_composition_image_template "${strays}"
+    require 1 "the release image carries ${tcopies} copy(ies) of the template and ${strays} other script literal(s)"
+fi
 if grep -aqF '__pweb_dev_console' "${release}/demo"; then
     row signal_composition_image_dev_console 'present'
     require 1 'the release image carries the development console channel'
@@ -307,7 +334,7 @@ row signal_composition_last_count "${last_count:--1}"
 row signal_composition_target 'linux-x86_64'
 if [ "${failures}" -eq 0 ]; then row signal_composition 'PASS'; else row signal_composition 'FAIL'; fi
 
-numeric_keys='|signal_composition_run_exit|signal_composition_listener_members|signal_composition_listener_samples|signal_composition_rpc_result|signal_composition_updates|signal_composition_last_count|signal_composition_image_template|'
+numeric_keys='|signal_composition_run_exit|signal_composition_listener_members|signal_composition_listener_samples|signal_composition_rpc_result|signal_composition_updates|signal_composition_last_count|signal_composition_image_template|signal_composition_image_template_copies|signal_composition_image_template_strays|'
 evidence="${repo_root}/build/cap16/composition-linux-x86_64.json"
 mkdir -p -- "$(dirname -- "${evidence}")"
 {
