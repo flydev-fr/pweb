@@ -574,8 +574,8 @@ var
   keep: IInvocationBridge;
   r: TPWebInvocationResult;
   id: RawUtf8;
-  events: TLiveEvents;
-  i, got, gaps, corrupt: Integer;
+  events, head: TLiveEvents;
+  i, got, gaps, corrupt, pend: Integer;
   seq: Cardinal;
   p: PByte;
   done: Boolean;
@@ -602,17 +602,35 @@ begin
   Require(d.QueuedBytes(id) <= PWEB_SOCKET_QUEUE_BYTES, 'L14: the queue passed its byte bound');
   // a send while reading has stopped still reaches the wire
   Row('live_bp_send_while_stalled', Verdict(SendText(d, id, 'while-stalled')));
-  // drain, checking every sequence number and every fill byte
+  // drain, checking every sequence number and every fill byte.
+  // THE HEAD OF THE FLOOD MAY ALREADY BE HERE: the server writes from the
+  // moment the upgrade completes, so the receive that brought the open event
+  // can bring the first messages with it, and WaitEvent keeps those aside.
+  // MEASURED on hosted macos-arm64 (run 35208424265): open and message 0 came
+  // in one receive, the drain below never saw message 0, and the row read
+  // 1023 received / 1023 gaps for a transport that had dropped nothing. The
+  // kept events are the first ones counted.
   got := 0;
   gaps := 0;
   corrupt := 0;
   done := False;
+  pend := PendIndex(id);
+  head := PendEvents[pend];
+  PendEvents[pend] := nil;
   t0 := GetTickCount64;
   while (not done) and (GetTickCount64 - t0 < 60000) do
   begin
-    events := nil;
-    if ReceiveInto(d, id, 1000, events) <> 'success' then
-      break;
+    if head <> nil then
+    begin
+      events := head;
+      head := nil;
+    end
+    else
+    begin
+      events := nil;
+      if ReceiveInto(d, id, 1000, events) <> 'success' then
+        break;
+    end;
     for i := 0 to High(events) do
       if events[i].IsBinary then
       begin
