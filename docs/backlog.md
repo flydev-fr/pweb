@@ -1,16 +1,16 @@
 # The backlog
 
 `_bmad-output/implementation-artifacts/deferred-work.md` is append-only and
-carries **450 entries** from Phase 0 to the second mORMot repin. It is a
+carries **454 entries** from Phase 0 to the CAP-12 closure. It is a
 ledger: it records what was found, in the words of the shard that found it,
 and it never edits itself. That makes it excellent evidence and a poor
 worklist — a reader who wants to know *what is still owed* has to resolve
 every supersession chain by hand, and three phase-closure artifacts answer
 that question for CAP-10 and CAP-11 only.
 
-This document is the worklist. Every one of the 450 entries is disposed of
-exactly once, with one verdict, an owner and a reason. **Sixty-three are open,**
-**and those sixty-three are listed here in full**; the other 387 are in
+This document is the worklist. Every one of the 454 entries is disposed of
+exactly once, with one verdict, an owner and a reason. **Sixty-two are open,**
+**and those sixty-two are listed here in full**; the other 392 are in
 `test/backlog/dispositions.tsv`, which is the table this document is written
 from and the one the gate reads.
 
@@ -18,9 +18,9 @@ from and the one the gate reads.
 |---|---:|---|
 | `FIX_NOW` | 4 | closed by this triage, one commit each, cited below |
 | `UPSTREAM` | 1 | the defect belongs to a third-party project and a report is written or owed. Three mORMot entries left this bucket on 2026-09-16, when upstream fixed all three and the pin moved onto the fixes |
-| `ROADMAP` | 58 | real work, deferred, with a named owner |
-| `ACCEPTED` | 123 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
-| `CLOSED` | 264 | the thing the entry describes is done |
+| `ROADMAP` | 57 | real work, deferred, with a named owner |
+| `ACCEPTED` | 125 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
+| `CLOSED` | 267 | the thing the entry describes is done |
 
 `ACCEPTED` is not a synonym for ignored. It is the verdict for an entry whose
 honest answer is a measurement — that WebView2 raises no navigation event for a
@@ -321,36 +321,34 @@ under a *resolved upstream* header naming the commit.
 
 ---
 
-## ROADMAP — 58 items, by owner
+## ROADMAP — 57 items, by owner
 
 The full reasons are in the table; this is the shape of what is owed.
 
-**CAP-12A has changed what two of the nine below will cost, and neither is
-closed yet — both stay `ROADMAP` until CAP-12B ships.** `7M1-5`, the deferred
-macOS chunked delivery, loses the reason it gave: the ratified plane is
-**Range-based rather than streaming-based**, a bounded ranged window *is* a
-whole body, and the synchronous `startURLSchemeTask:` handler may stay as it
-is, so CAP-12B closes the row without reopening the `WKURLSchemeTask` race
-surface. `9B1-6`, the carrier-side materialisation cap the frozen
-`IAssetStore` cannot express, is **routed around rather than fixed** — the blob
-plane does not go through `TryRead` — so it stays owed in full, for the module
-and manifest path it was actually found on. CAP-12A added one item of its own,
-`12A-4`. The reasoning is in
-`_bmad-output/implementation-artifacts/cap12a-decision-artifact.md`.
-
-**CAP-12 owns nine.** The blob and `Range` plane brings the deferred macOS
-delivery with it (`7M1-5`) and the carrier-side materialisation cap the frozen
-`IAssetStore` cannot express (`9B1-6`); the cross-target comparison the CAP-11A
-matrix now makes cheap finishes the ABI, fcntl and runtime facts no job compares
-between architectures (`7F-3`); the evidence schema wants one declarative field
-set instead of three hand-maintained lists whose required-versus-compared
-distinction has already cost three red runs (`P6U-6`); the three example hosts
-still compose the runtime by hand instead of through `pweb.webview.host`
-(`B1-5`); a job pump would enable both the Promise-returning `pweb.invoke` and
-dynamic `import()` (`9A-2`); a mORMot head watcher needs its own instrument and
-its own budget (`11B-4`); and one host-side change — flush the report line, or
-close the window on the first report — turns a 15-second smoke floor into a
-300-millisecond run (`11B-19`).
+**CAP-12 is closed, and a closed phase owns nothing.** It closed on 12B
+(`_bmad-output/implementation-artifacts/cap12-closure-artifact.md`) with the
+read side of the blob plane met and the upload line deferred to a CAP-12C brief
+kept ready. `7M1-5`, the deferred macOS chunked delivery, is closed by the
+decision it waited on (`12-2`): a bounded ranged window *is* a whole body, and
+the synchronous `startURLSchemeTask:` handler serves one on both macOS targets
+with `stop_arrivals = 0`. The other seven rows that named CAP-12 were never
+blob-plane work, so they are re-homed with their verdicts kept (`12-4`). The
+cross-target comparison of the ABI, fcntl and runtime facts (`7F-3`) and a
+declarative evidence field set, one place saying required, compared or
+per-target, whose absence has already cost three red runs (`P6U-6`), go to the
+shard that next extends the CAP-7F aggregator. The carrier-side
+materialisation cap the frozen `IAssetStore` cannot express (`9B1-6`) goes to
+the shard that ratifies a sized read: the blob plane routes around that bound
+and fixes none of it. The three example hosts that still compose the runtime by
+hand (`B1-5`), and the host-side flush or close-on-report that turns a
+15-second smoke floor into a 300-millisecond run (`11B-19`), go to the
+example-host migration shard. The job pump behind a Promise-returning
+`pweb.invoke` and dynamic `import()` (`9A-2`) goes to a shard wanting
+async-first plugin scripts, and a mORMot head watcher (`11B-4`) is its own
+instrument with its own budget. CAP-12 leaves two rows of its own open —
+`12B-2`, the upload, owned by CAP-12C, and `12B-3`, blobs larger than one
+window — and `test/backlog/check_backlog.ps1` §5d refuses any open row owned by
+`CAP-12`.
 
 **Pins and locks own six**, and each has a natural trigger rather than a date: a
 `discovery-url` key so a WebView2 bump can find the next build (`6B4-10`), a
@@ -413,9 +411,9 @@ than appended to an append-only ledger:
 
 ## The open work, in full
 
-Sixty-three rows: the four `FIX_NOW` items this triage closed, the one
-`UPSTREAM` entry, and the fifty-eight on the roadmap. Everything else — 123
-`ACCEPTED` and 264 `CLOSED` — is in `test/backlog/dispositions.tsv`.
+Sixty-two rows: the four `FIX_NOW` items this triage closed, the one
+`UPSTREAM` entry, and the fifty-seven on the roadmap. Everything else — 125
+`ACCEPTED` and 267 `CLOSED` — is in `test/backlog/dispositions.tsv`.
 
 | key | verdict | owner | reason |
 |---|---|---|---|
@@ -434,33 +432,32 @@ Sixty-three rows: the four `FIX_NOW` items this triage closed, the one
 | `6B4-10` | ROADMAP | next WebView2 pin bump | `-Refresh` reads the `url` key, which is now the immutable CDN target, so a bump must re-resolve the fwlink by hand. A `discovery-url` key alongside `url` closes it and is a lock-schema change. Pairs with 7M1-3 |
 | `7M0-5` | ROADMAP | next webview version bump | both native build scripts assert lock values as string literals rather than as shapes derived from `version.h`, so a routine version bump fails with a message that reads as tampering |
 | `7M1-3` | ROADMAP | a lock-schema shard | no machine-readable marker distinguishes a RATIFIED pinned value from a provisional one; the distinction lives only in prose comments no gate reads. Pairs with 6B4-10 and 7M1-10 |
-| `7M1-5` | ROADMAP | CAP-12 | a 206 response with `Content-Range` over a large body needs chunked or deferred delivery, at which point `stopURLSchemeTask:` really can interleave and the claim-once guards become load-bearing. `stop_arrivals=0` is printed as an explicit limitation on every runtime leg |
 | `7M1-6` | ROADMAP | the shard that ratifies a cross-platform attach seam | `examples/06-assets` cannot select `TCocoaAssetHandler` without a ratified answer to what shape the attach seam has when one platform cannot attach after creation. That is an API question, not a macOS one |
 | `7M1-9` | ROADMAP | a macOS signing shard | `DYLD_LIBRARY_PATH` can still redirect an ad-hoc-signed binary by leaf name ahead of `@rpath` expansion. Closure is hardened runtime plus library validation applied at signing time, and nothing in the tree signs. Pairs with D2-4 |
 | `7M1-10` | ROADMAP | a lock-schema shard | the dylib export gate's RTTI allowance is unbounded: `other_count` is measured and recorded but never compared, so a patched upstream that added a C++ class with RTTI passes silently. Pinning it per architecture closes it |
 | `7M1-11` | ROADMAP | a shard that revisits the CAP-7L confinement algorithm | a hard link inside the asset root pointing at an inode outside it is served on Linux and Darwin alike, and neither `readlink` nor `F_GETPATH` closes it. The named fix is same-device plus inode-set membership, or an `openat`-relative walk from a root descriptor |
 | `7M1-14` | ROADMAP | the shard that next touches the macOS gate suite | a bash-3.2 self-referencing-`local` scan belongs beside the existing no-inline-macOS-flag scan. It was deliberately not added in the same change as the fix, because `run_cap7m_gates.sh` runs before every other macOS gate and a buggy scanner there blocks the whole job |
-| `7F-3` | ROADMAP | CAP-12 | the 36 ABI probe facts, the 6 fcntl facts and the CAP-7M1 runtime markers are still per-target records no job compares between architectures. The 17-name export set and the logical inventories ARE compared across four targets; this is the named remainder |
+| `7F-3` | ROADMAP | the shard that next extends the CAP-7F aggregator | the 36 ABI probe facts, the 6 fcntl facts and the CAP-7M1 runtime markers are still per-target records no job compares between architectures. The 17-name export set and the logical inventories ARE compared across four targets; this is the named remainder |
 | `8A-3` | ROADMAP | a host-hardening shard | `SnapshotCapabilities` on a principal or window id that was never configured yields the full `AppMaximum`, so a host typo fails open to ceiling rights instead of failing loudly. Ratified semantics rather than a defect, but an opt-in strict mode or a startup assertion would make misconfiguration a named failure |
 | `8B-1` | ROADMAP | spec owner | the ratification records the intended new `security-model.md` wording — a privileged WebView never navigates to external content, and approved URIs reach the OS only through a capability-authorized invocation — and applying it to the spec is an explicit doc-only follow-up that has not been done |
 | `8B-8` | ROADMAP | a shard that adds a deterministic cross-engine download trigger | the driver's cross-origin `download`-attribute anchor is treated by engines as a plain navigation, so the dedicated download events plausibly never fire and no gate asserts a download operation was actually prevented — dropping the Windows `put_Handled` turns no gate red |
 | `8C-2` | ROADMAP | the shard that needs an external-content view | the frozen model already carries everything such a principal needs, and the `TrustedContent=false` gate is proven denied-before-method-row. What does not exist is host wiring, a guard profile, or a spec ratification |
-| `9A-2` | ROADMAP | CAP-12 | the Promise-returning `pweb.invoke` was measured at Checkpoint 1 and not chosen; it needs a job pump and cross-enqueue JSValue rooting the pinned wrapper does not expose. It is the same ratification 9B1-2 waits on, and a shard wanting async-first plugin scripts owns both |
-| `9B1-6` | ROADMAP | CAP-12 | module and manifest size bounds are checked after the carrier has already materialised the asset, because the frozen `TryRead` has no size, HEAD or streaming form. The real fix is a carrier-side materialisation cap, which needs `IAssetStore` ratification and belongs with the blob plane |
+| `9A-2` | ROADMAP | a shard wanting async-first plugin scripts | the Promise-returning `pweb.invoke` was measured at Checkpoint 1 and not chosen; it needs a job pump and cross-enqueue JSValue rooting the pinned wrapper does not expose. It is the same ratification 9B1-2 waits on, and a shard wanting async-first plugin scripts owns both |
+| `9B1-6` | ROADMAP | the shard that ratifies a sized IAssetStore read | module and manifest size bounds are checked after the carrier has already materialised the asset, because the frozen `TryRead` has no size, HEAD or streaming form. The real fix is a carrier-side materialisation cap, which needs `IAssetStore` ratification. The CAP-12 blob plane routes around this bound rather than fixing it: a blob is never read through `TryRead` |
 | `9B1-7` | ROADMAP | the shard that ratifies a module-source validator | module source shares the path validator, so a raw C1 control byte is refused even inside a comment or a string literal. Deterministic and fail-closed, but stricter than JavaScript requires, and whether module source gets its own validator is a decision to ratify rather than a second copy of a security validator to grow |
 | `9B2-5` | ROADMAP | the shard that next revisits the CAP-9A script surface | the `PostScript`/`WaitScript`/`Eval` mailbox path gained no pending-job gate, and adding one would move the frozen CAP-9A corpus. It is the diagnostic surface rather than the production call API, and that shard should decide whether to extend the gate or retire the path |
 | `9C2-3` | ROADMAP | CAP-13 | no `plugins.zip`, generated registry or `LICENSE.quickjs` enters the three Windows installer profiles. CAP-10 was named as the owner of deciding which generated applications include plugins and closed without doing it, so the decision now travels with the installers |
-| `B1-5` | ROADMAP | CAP-12 | `examples/08-release`, `examples/07-quickjs` and the CAP-8 harnesses still compose the runtime by hand rather than through `pweb.webview.host`, so there are two compositions of one runtime and only one is exercised by a generated project. Migrating them re-baselines three frozen closure digests, which belongs to a shard whose gates already re-measure them |
+| `B1-5` | ROADMAP | the example-host migration shard | `examples/08-release`, `examples/07-quickjs` and the CAP-8 harnesses still compose the runtime by hand rather than through `pweb.webview.host`, so there are two compositions of one runtime and only one is exercised by a generated project. Migrating them re-baselines three frozen closure digests, which belongs to a shard whose gates already re-measure them |
 | `B2-10` | ROADMAP | the shard that next touches `test/cap10b1` | `prove_cap10b1.sh` still captures `$?` after a bare simple command for `npm ci`, the typecheck, the build and the native compile, and extracts its ready report with an unguarded `grep` under `pipefail`. Under `set -e` those failure paths are unreachable. The identical shape was fixed in the CAP-10B2 twin |
 | `B2-16` | ROADMAP | the owner of the smoke non-report | CAP-11A instrumented the OBSERVER and seeded the cause rule, but no fixture executes the CAP-10B1/B2 proofs' own report parser or their timeout path; the self-test legs all mutate an already-emitted evidence file and exercise the aggregator. Departs from the CAP-10 closure's CAP-11 disposition because CAP-11A closed the observer half only |
 | `D2-1` | ROADMAP | a licensing shard, conditional | the SDK ships no compiler at all, and the pinned Pas2JS release archive additionally carries no licence text — its own README points at a `COPYING.FPC` the archive does not contain. Shipping Pas2JS becomes possible the day an offline licence text can be pinned by digest from a reviewed source, and not before |
 | `D2-4` | ROADMAP | a release-signing shard | the manifest catches a half-copied, truncated or altered SDK but not a manifest rewritten to describe the altered bytes, and it does not notice its own absence. Closing the whole class needs a signature over the manifest and a key nobody has ratified a home for. Pairs with 7M1-9 |
 | `P6U-2` | ROADMAP | a shard touching `tools/quickjs` | `pwebqjspack.pas` still reads `ParamStr`, so a CHECKOUT under a non-ASCII directory meets the same RTL Ansi conversion on Windows. It ships in no SDK and no `pweb` command spawns it, so the reach is a developer's machine rather than a user's |
-| `P6U-6` | ROADMAP | CAP-12 | the schema-agreement gate compares the three field LISTS, and nothing enforces the required-versus-compared-versus-per-target DISTINCTION. That distinction has since cost two further red runs, at D1-17 and 11B-14. The named fix is a declarative field set: one place saying, per field, required, compared, or per-target |
+| `P6U-6` | ROADMAP | the shard that next extends the CAP-7F aggregator | the schema-agreement gate compares the three field LISTS, and nothing enforces the required-versus-compared-versus-per-target DISTINCTION. That distinction has since cost two further red runs, at D1-17 and 11B-14. The named fix is a declarative field set: one place saying, per field, required, compared, or per-target |
 | `10E-2` | ROADMAP | the CAP-4 / CAP-6 asset layer | `PWebBundleLoadFile` accepts a symbolic-link `app.pwb` while the plugin reader refuses one. The asymmetry is pre-existing and unowned; closing it means giving the bundle loader the reparse-refusing open `pweb.script.release.pas` already has, with a supersession of its own |
 | `10E-4` | ROADMAP | CI owner | Pascal sources are not LF-pinned in `.gitattributes`, so `sed`-based marker extraction in several POSIX gates cannot run from a Windows checkout under WSL — the documented way of validating the Linux legs without spending a hosted run. Both candidate fixes are named, and the first is a checkout-behaviour change for every collaborator that should be decided rather than slipped in |
-| `11B-4` | ROADMAP | CAP-12 | the webview watcher's shape does not fit mORMot head — no C headers, no platform patch, no library build, no signature pin — and `mormot.lock` pins statics to a release asset, so `build_failed` would be the normal outcome rather than news. A mORMot watcher is a different instrument with its own budget |
-| `11B-19` | ROADMAP | CAP-12 | close-on-report is unavailable to every smoke driver, measured four ways. What remains owed is one of two host-side changes — flush the report line so a driver can see it, or close the window on the first report inside the host — either of which turns a 15-second floor into a 300-millisecond run. `examples/` and `src/` were frozen for CAP-11B |
+| `11B-4` | ROADMAP | a mORMot head watcher shard, with its own budget | the webview watcher's shape does not fit mORMot head — no C headers, no platform patch, no library build, no signature pin — and `mormot.lock` pins statics to a release asset, so `build_failed` would be the normal outcome rather than news. A mORMot watcher is a different instrument with its own budget |
+| `11B-19` | ROADMAP | the example-host migration shard | close-on-report is unavailable to every smoke driver, measured four ways. What remains owed is one of two host-side changes — flush the report line so a driver can see it, or close the window on the first report inside the host — either of which turns a 15-second floor into a 300-millisecond run. `examples/` and `src/` were frozen for CAP-11B |
 | `14A-3` | ROADMAP | a shard that ratifies whether an SVG in a bundle is an image, a document, or both | `.svg` is not scanned by the CAP-14A CSP refusal, and the reason is sound for the common case: an SVG referenced as an image has scripting disabled by the image context, so a handler inside one is inert by design rather than by CSP and refusing it would refuse a working dist. The narrow case left open is an application that NAVIGATES to one — `PWebClassifyNavigation` permits any `pweb://app/...` top-level navigation — because that SVG is then a real document whose inline script `script-src 'self'` blocks with exactly the silence CAP-14A exists to end. No shipped corpus does it. Closing it is a decision about what an SVG in a bundle is, and only then a question of whether an XML tokenizer is a second scanner or a mode of the existing one |
 | `14B-5` | ROADMAP | the shard that relaxes `worker-src` | a Worker's console is not covered by the CAP-14B development console surface, and today that costs nothing: `PWEB_NATIVE_CSP` carries `worker-src 'none'`, so a bundle cannot start a Worker and there is no second realm for `console` to exist in. The shim wraps the top frame's console and listens on `window`. The day that CSP term is relaxed, the console goes quiet for exactly the code most likely to need it, in exactly the silent way CAP-14B exists to end |
 | `15A-2` | ROADMAP | a door-B reopening shard | the macOS/WKWebView rows of the CAP-15A matrix are owed only if door B reopens, and they are not a baseline gap: CAP-8B measured on all four targets that `connect-src 'self'` refuses every external connection and every `wss://` (ratification R-B), which is what the shipped product rests on. What the missing rows would add is WIDENED-mode behaviour on WKWebView — how that engine treats a named origin, its cookies and its `no-cors` shapes — and only door B needs it. The Darwin branch of `test/cap15a/run_cap15a.sh` is written and mirrors the proven CAP-8B recipe line for line, so one run per macOS architecture clears the row |

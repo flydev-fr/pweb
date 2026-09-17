@@ -167,9 +167,11 @@ type
     host.
 
     ONE receive loop per socket - `pweb.socketReceive` long-polls, one after
-    another. When CAP-12 brings streaming, that loop is the only thing that
-    changes: this class, its events, the four method names and the native
-    decorator do not.
+    another. That loop is the receive path, not a placeholder: CAP-12A
+    measured WebView2 withholding a streamed body from the page until it is
+    complete, and ratified a data plane Range-based, not streaming-based, so
+    no streaming route exists to replace it. Each receive in flight holds one
+    native scheduler worker for up to `waitMs`.
 
     It constructs no URL, supplies no default origin, adds no header, retries
     nothing and reconnects nothing. Send on a socket that is not open raises
@@ -491,7 +493,7 @@ begin
     end);
 end;
 
-// THE RECEIVE LOOP - the one part CAP-12 streaming replaces
+// THE RECEIVE LOOP - one bounded long-poll after another (see the class)
 procedure TPWebSocket.ReceiveNext;
 var
   args: TJSObject;

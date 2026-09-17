@@ -673,8 +673,11 @@ three are true:
    divergence exists is measured, but *which* divergence it is — a cookie jar or
    a `SameSite` rule — is not yet settled;
 3. a named application needs something the native door structurally cannot
-   give: a third-party JS SDK that performs its own `fetch`, or live push that
-   CAP-12's streaming work does not cover.
+   give: a third-party JS SDK that performs its own `fetch`, or live push.
+   Protocol v1 has no push, and no streamed response can stand in for one:
+   CAP-12A measured WebView2 withholding a response body from the page until it
+   is complete, and ratified a data plane that is Range-based, not
+   streaming-based (`docs/kernel.md`).
 
 **The native door inherits the development-trust model above, unchanged in
 spirit.** Production origins are `https` only, with no wildcards and at most
@@ -842,9 +845,14 @@ dictionary.
 **The SDKs.** `PWebSocket` in `@pweb/runtime` and `TPWebSocket` in the Pas2JS
 SDK present `onopen`, `onmessage`, `onerror` and `onclose` over those four calls,
 each socket running one bounded long-poll `pweb.socketReceive` after another
-because protocol v1 has no server push. **When CAP-12 brings streaming, the
-receive loop is the only thing that changes**: the SDK surface, the four method
-names and the native decorator do not.
+because protocol v1 has no server push. **The long-poll is the receive loop, not
+a placeholder for a streaming one.** CAP-12A measured that WebView2 withholds a
+streamed body from the page until it is complete — six `text/event-stream`
+events produced 150 ms apart arrived within 0.1 ms of each other, 763 ms after
+the request — and ratified a data plane that is Range-based, not streaming-based
+(`docs/kernel.md`). CAP-12 closed on that plane, so there is no streaming route
+for this loop to move onto; each parked receive holds one scheduler worker for
+up to `waitMs`.
 
 **What the build proves.** As for fetch: `PWEB_NATIVE_CSP` byte-identical in the
 built image; the decorator, `network.socket` and the transport present iff

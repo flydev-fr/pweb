@@ -119,6 +119,10 @@ $shards = [ordered]@{
     # final artifact for the same reason 12A's are sourced to the decision
     # one: the key means the shard that found it.
     'cap12b-final-artifact.md'                             = '12B'
+    # The CAP-12 PHASE CLOSURE disposes of the phase and appends what the
+    # closure itself decided - a phase closing is a shard of its own in the
+    # sense the key cares about. Its code is the phase's, without a letter.
+    'cap12-closure-artifact.md'                            = '12'
 }
 
 # THE CLOSED SET. `CLOSED` means the thing the entry describes is done;
@@ -691,6 +695,64 @@ if (Test-Path -LiteralPath $cap12aDir) {
             Violation ("CAP-12A: $ps12 does not parse -- " + $errs12[0].Message)
         }
     }
+}
+
+# --- 5d. the CAP-12 closure, held to its own ledger ---------------------------
+# `cap12-closure-artifact.md` says the phase ledger is disposed with no orphan,
+# and a closure table is exactly the kind of prose that goes stale the first
+# time somebody re-judges a row. So the table is READ: every entry keyed 12A,
+# 12B or 12 must appear in it with the digest and the verdict this gate just
+# measured from the ledger and the disposition table, and nothing else may.
+#
+# And a closed phase owns nothing. The closure re-homed every open row that
+# named CAP-12; an open row pointing at it again would be an item assigned to
+# a phase nobody will reopen. The owner is matched EXACTLY - `CAP-12C` is a
+# ready brief and a legitimate owner.
+$cap12Closure = '_bmad-output/implementation-artifacts/cap12-closure-artifact.md'
+if (-not (Test-Path -LiteralPath $cap12Closure)) {
+    Violation "CAP-12 CLOSURE: $cap12Closure is missing"
+}
+else {
+    $ct = [System.IO.File]::ReadAllText($cap12Closure)
+    $inTable = @{}
+    foreach ($m in [regex]::Matches($ct,
+            '(?m)^\|\s*`(12[AB]?-\d+)`\s*\|\s*`([0-9a-f]{8})`\s*\|\s*([A-Z_]+)\s*\|')) {
+        $k = $m.Groups[1].Value
+        if ($inTable.ContainsKey($k)) {
+            Violation "CAP-12 CLOSURE: $k is disposed twice in $cap12Closure"
+            continue
+        }
+        $inTable[$k] = @($m.Groups[2].Value, $m.Groups[3].Value)
+    }
+    $phaseKeys = @($entries.Keys | Where-Object { $_ -match '^12[AB]?-\d+$' })
+    $facts['cap12_phase_entries'] = $phaseKeys.Count
+    $facts['cap12_closure_table_rows'] = $inTable.Count
+    foreach ($k in $phaseKeys) {
+        if (-not $inTable.ContainsKey($k)) {
+            Violation "CAP-12 CLOSURE ORPHAN: $k has no row in the phase ledger of $cap12Closure"
+            continue
+        }
+        if ($inTable[$k][0] -cne $entries[$k]) {
+            Violation ("CAP-12 CLOSURE: $k reads digest $($inTable[$k][0]) in $cap12Closure " +
+                "and $($entries[$k]) in the ledger")
+        }
+        if ($rows.Contains($k) -and ($inTable[$k][1] -cne $rows[$k].Verdict)) {
+            Violation ("CAP-12 CLOSURE: $k reads $($inTable[$k][1]) in $cap12Closure " +
+                "and $($rows[$k].Verdict) in $backlogPath")
+        }
+    }
+    foreach ($k in $inTable.Keys) {
+        if ($phaseKeys -notcontains $k) {
+            Violation "CAP-12 CLOSURE STRAY: $cap12Closure disposes of $k, which the ledger does not carry"
+        }
+    }
+}
+$ownedByClosed = @($rows.Keys | Where-Object {
+    ($rows[$_].Verdict -in @('FIX_NOW', 'ROADMAP', 'UPSTREAM')) -and ($rows[$_].Owner -ceq 'CAP-12') })
+$facts['open_rows_owned_by_cap12'] = ($ownedByClosed -join ',')
+if ($ownedByClosed.Count -gt 0) {
+    Violation ('OWNED BY A CLOSED PHASE: ' + ($ownedByClosed -join ', ') + ' name CAP-12 as ' +
+        'their owner, and CAP-12 closed on 12B - re-home them to somebody who will do the work')
 }
 
 # --- 6. verdict ---------------------------------------------------------------

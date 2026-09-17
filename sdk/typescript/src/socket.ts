@@ -15,9 +15,11 @@
  *
  * THE RECEIVE LOOP. Protocol v1 has no server push, so each socket runs ONE
  * bounded long-poll after another: `pweb.socketReceive {id, waitMs}` answers
- * at once with what is queued, or waits for the first event. When CAP-12
- * brings streaming, THAT LOOP IS THE ONLY THING THAT CHANGES: this class, its
- * events, the four method names and the native decorator do not.
+ * at once with what is queued, or waits for the first event. That loop is the
+ * receive path, not a placeholder: CAP-12A measured WebView2 withholding a
+ * streamed body from the page until it is complete, and ratified a data plane
+ * Range-based, not streaming-based, so no streaming route exists to replace it.
+ * Each receive in flight holds one native scheduler worker for up to `waitMs`.
  *
  * Browser-shaped, with the differences stated rather than hidden: messages
  * are `string` or `ArrayBuffer` (no `Blob`); there is no `bufferedAmount`,
@@ -214,7 +216,7 @@ export class PWebSocket {
     );
   }
 
-  // THE RECEIVE LOOP — the one part CAP-12 streaming replaces
+  // THE RECEIVE LOOP — one bounded long-poll after another (see the header)
   private async receiveLoop(): Promise<void> {
     while (this.state !== PWebSocket.CLOSED) {
       let value: JsonValue;

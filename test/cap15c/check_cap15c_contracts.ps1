@@ -28,7 +28,8 @@
 #       doors are released BEFORE the binding closes and the scheduler
 #       drains, a dev generation switch IS a trusted re-navigation, and each
 #       platform calls the hook once, after a trusted document verdict
-#   K9  the CAP-12 sentence is written where the receive loop lives
+#   K9  no "when CAP-12 brings streaming" promise under docs/, either SDK or
+#       the decorator; the CAP-12A measurement where the receive loop lives
 #   K10 every test/cap15c program naming the Cocoa socket unit is built by a
 #       script that links the bridge object
 #   K11 the divergence allowlist carries the transport and the frozen core
@@ -438,15 +439,36 @@ foreach ($pf in 'src/platform/windows/pweb.platform.webview2.pas',
 }
 $report.Add('K8: hook armed before the guard; disarm, BeforeDrain, binding.Close, scheduler.Shutdown in order; generation switch is a trusted re-navigation; one hook call per platform')
 
-# --- K9: the CAP-12 sentence ---------------------------------------------------------
-foreach ($f in 'docs/cli-contract.md', 'sdk/typescript/src/socket.ts',
-               'sdk/pas2js/pweb.native.pas', $decorator) {
-    if ((Read_ $f) -notmatch '(?i)only\s+thing\s+that\s+changes') {
-        Violation ("K9: $f does not say that when CAP-12 brings streaming the " +
-            'receive loop is the only thing that changes')
+# --- K9: the receive loop waits for nothing -----------------------------------------
+# CAP-15C wrote "when CAP-12 brings streaming, the receive loop is the only thing
+# that changes" into the contract, both SDKs and the decorator. CAP-12A then
+# MEASURED that WebView2 withholds a streamed body from the page until it is
+# complete, ratified a data plane that is Range-based and not streaming-based,
+# and CAP-12 closed on 12B with no streaming route at all
+# (cap12-closure-artifact.md). The promise pointed at nothing, so it is refused
+# anywhere under docs/, either SDK or the decorator, and the four places that
+# carried it must carry the measurement that replaced it. The needle is built by
+# concatenation so this file cannot satisfy its own sweep.
+$k9Promise = '(?i)CAP-12(''s)?\s+(brings\s+)?' + 'streaming|only\s+thing\s+that\s+' + 'changes'
+$k9Measured = '(?i)Range-based,\s+not\s+streaming-based'
+$k9Swept = @(Get-ChildItem 'docs', 'sdk/typescript/src', 'sdk/pas2js' -Recurse -File |
+    Where-Object { $_.Extension -in '.md', '.ts', '.pas', '.inc' } |
+    ForEach-Object { RelPath $_.FullName }) + @($decorator)
+foreach ($f in $k9Swept) {
+    if ((Read_ $f) -match $k9Promise) {
+        Violation ("K9: $f still says the socket receive loop waits for CAP-12 " +
+            'streaming - CAP-12A measured that route impossible on WebView2 and ' +
+            'CAP-12 closed without one')
     }
 }
-$report.Add('K9: the CAP-12 sentence is in the contract, both SDKs and the decorator')
+foreach ($f in 'docs/cli-contract.md', 'sdk/typescript/src/socket.ts',
+               'sdk/pas2js/pweb.native.pas', $decorator) {
+    if ((Read_ $f) -notmatch $k9Measured) {
+        Violation ("K9: $f does not carry the CAP-12A measurement that replaced " +
+            'the streaming promise (a data plane Range-based, not streaming-based)')
+    }
+}
+$report.Add("K9: no CAP-12 streaming promise in $($k9Swept.Count) swept files; the CAP-12A measurement in the contract, both SDKs and the decorator")
 
 # --- K10: half a transport does not link ----------------------------------------------
 $harness = @(Get-ChildItem 'test/cap15c' -File -Filter '*.ps1' |

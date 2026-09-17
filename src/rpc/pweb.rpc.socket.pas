@@ -43,9 +43,11 @@
   never deadlock a legal message and the peak is the bound.
 
   `receive` is a bounded LONG-POLL: it returns what is queued at once, or
-  waits up to `waitMs` for the first event. When CAP-12 brings streaming, the
-  SDK's receive loop is the only thing that changes: this decorator, its four
-  methods, its event shapes and the SDK surface do not.
+  waits up to `waitMs` for the first event, on the scheduler worker that runs
+  it. It is the receive path and not a placeholder: CAP-12A measured WebView2
+  withholding a streamed body from the page until it is complete, and ratified
+  a data plane Range-based, not streaming-based, so no streaming route exists
+  for the SDK's receive loop to move onto.
 
   ---------------------------------------------------------------------------
   THE URL - the wss authorisation rule, with no grammar change

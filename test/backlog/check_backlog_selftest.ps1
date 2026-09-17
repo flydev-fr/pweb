@@ -1,4 +1,4 @@
-# THE BACKLOG GATE'S NEGATIVE SELF-TEST: twenty-six perturbations, each of
+# THE BACKLOG GATE'S NEGATIVE SELF-TEST: twenty-nine perturbations, each of
 # which check_backlog.ps1 must refuse, and each of which is byte-restored after.
 #
 # A gate that has only ever been seen to PASS has an unproven failure path, and
@@ -41,6 +41,7 @@ $targets = [ordered]@{
     c12ps   = 'test/cap12a/run_cap12a.ps1'
     c12mwf  = '.github/workflows/measure-cap12.yml'
     assets  = 'src/assets/pweb.assets.intf.pas'
+    c12close = '_bmad-output/implementation-artifacts/cap12-closure-artifact.md'
 }
 $backup = @{}
 foreach ($k in $targets.Keys) {
@@ -79,7 +80,7 @@ try {
         throw ('the gate does not pass on the unperturbed tree, so no leg below ' +
             'would mean anything; fix that first')
     }
-    Write-Host '[backlog] baseline PASS; twenty-six perturbations follow'
+    Write-Host '[backlog] baseline PASS; twenty-nine perturbations follow'
 
     # Rewrite one row of the disposition table, addressed by its key, so a leg
     # says what it changes rather than depending on a substring that could
@@ -132,7 +133,8 @@ try {
     } 'names no closing commit'
 
     Leg 'a row that is not a FIX_NOW claiming a commit' {
-        SetRow '7F-3' @('7F-3', 'ea6daed4', 'ROADMAP', 'CAP-12', '0029fc5',
+        SetRow '7F-3' @('7F-3', 'ea6daed4', 'ROADMAP',
+            'the shard that next extends the CAP-7F aggregator', '0029fc5',
             'deferred work cannot cite a closure')
     } 'only a FIX_NOW closes something'
 
@@ -302,6 +304,32 @@ try {
         [System.IO.File]::WriteAllText($p,
             $t + "`n# see measure-cap" + "12.yml for the entry conditions`n")
     } 'references the CAP-12 measurement workflow'
+
+    # --- the CAP-12 closure, section 5d --------------------------------------
+    # The closure's phase ledger is a table somebody can re-judge without
+    # touching the artifact; these legs are what make that a failure rather
+    # than a drift. The first two are derived from the artifact itself, so a
+    # re-worded row cannot turn either into a no-op.
+    Leg 'CAP-12 closure: a phase entry falls out of the closure table' {
+        $p = Join-Path $repoRoot $targets['c12close']
+        $t = [System.IO.File]::ReadAllText($p)
+        $keep = @(($t -split "`r?`n") | Where-Object { $_ -notmatch '^\|\s*`12B-3`\s*\|' })
+        if ($keep.Count -eq @($t -split "`r?`n").Count) { throw 'the closure table carries no 12B-3 row to drop' }
+        [System.IO.File]::WriteAllText($p, ($keep -join "`n"))
+    } 'CAP-12 CLOSURE ORPHAN: 12B-3'
+
+    Leg 'CAP-12 closure: the table disagrees with the disposition table' {
+        $p = Join-Path $repoRoot $targets['c12close']
+        $t = [System.IO.File]::ReadAllText($p)
+        $re = [regex]'(?m)^(\|\s*`12A-2`\s*\|\s*`[0-9a-f]{8}`\s*\|\s*)ACCEPTED(\s*\|)'
+        if (-not $re.IsMatch($t)) { throw 'the closure table carries no ACCEPTED 12A-2 row to perturb' }
+        [System.IO.File]::WriteAllText($p, $re.Replace($t, '${1}CLOSED${2}', 1))
+    } 'CAP-12 CLOSURE: 12A-2 reads CLOSED'
+
+    Leg 'CAP-12 closure: an open row is handed back to the closed phase' {
+        SetRow '9A-2' @('9A-2', '61f21f8a', 'ROADMAP', 'CAP-12', '-',
+            'an open item assigned to a phase that closed')
+    } 'OWNED BY A CLOSED PHASE: 9A-2'
 }
 finally { Restore }
 
