@@ -134,6 +134,50 @@ begin
   Result := TJSJSON.stringify(AValue);
 end;
 
+{ CAP-16: THE PAGE'S WINDOW, played by the harness. node's global object
+  has no addEventListener; this one records the SDK's listener, and
+  DispatchSignal does what the runtime's one injected script does. }
+procedure InstallWindowFake; assembler;
+asm
+  globalThis.__cap16_listeners = [];
+  globalThis.addEventListener = function (type, listener) {
+    globalThis.__cap16_listeners.push([type, listener]);
+  };
+end;
+
+procedure DispatchSignal(ADetail: JSValue); assembler;
+asm
+  for (const entry of globalThis.__cap16_listeners) {
+    if (entry[0] === 'pweb:signal') entry[1]({ detail: ADetail });
+  }
+end;
+
+function Delay(AMs: NativeInt): TJSPromise; assembler;
+asm
+  return new Promise(function (resolve) { setTimeout(resolve, AMs); });
+end;
+
+function CountMethod(const AMethod: String): NativeInt;
+var
+  i: NativeInt;
+begin
+  Result := 0;
+  for i := 0 to Captured.length - 1 do
+    if String(TJSObject(Captured[i])['method']) = AMethod then
+      Inc(Result);
+end;
+
+function ReceiveArgsCarryOnlyId: Boolean;
+var
+  i: NativeInt;
+begin
+  Result := True;
+  for i := 0 to Captured.length - 1 do
+    if String(TJSObject(Captured[i])['method']) = PWEB_METHOD_SOCKET_RECEIVE then
+      if Json(TJSObject.keys(TJSObject(TJSObject(Captured[i])['args']))) <> '["id"]' then
+        Result := False;
+end;
+
 procedure RunAll; async;
 var
   v, reason, marker: JSValue;
@@ -145,6 +189,10 @@ var
   statuses: array[0..8] of NativeInt;
   throwing: TFakePrimitive;
   preTyped: EPWebError;
+  seen, queue, got: TJSArray;
+  sub, secret, proto: TPWebSignalSubscription;
+  sock: TPWebSocket;
+  receivesAfterOpen: NativeInt;
 begin
   // --- integer success -------------------------------------------------
   InstallFake(Resolving(42));
@@ -482,6 +530,146 @@ begin
     (Json(v) = '42') and (Captured.length = 2));
   RemoveFake;
 
+  // --- CAP-16: handshake features, additive and validated ---------------
+  InstallFake(Resolving(New(['protocol', 1, 'runtime', '0.1.0',
+    'features', TJSArray._of('signal')])));
+  v := await(JSValue, PWebHandshake);
+  Check('handshake features pass through when present',
+    Json(TJSObject(v)['features']) = '["signal"]');
+  RemoveFake;
+  InstallFake(Resolving(New(['protocol', 1, 'runtime', '0.1.0',
+    'features', TJSArray._of(1)])));
+  reason := await(JSValue, CaughtReason(PWebHandshake));
+  Check('malformed handshake features reject protocol_mismatch',
+    IsError(reason, 'protocol_mismatch'));
+  RemoveFake;
+
+  // --- CAP-16: the signal channel ---------------------------------------
+  InstallFake(function(AMethod: String; AArgs: JSValue): TJSPromise
+    begin
+      if AMethod = PWEB_METHOD_SIGNAL_SUBSCRIBE then
+      begin
+        if String(TJSObject(AArgs)['topic']) = 'p1.secret' then
+          Result := TJSPromise.reject(Envelope('forbidden',
+            'Invocation is not allowed', 403, JS.Null))
+        else
+          Result := TJSPromise.resolve(New(['topic',
+            TJSObject(AArgs)['topic'], 'seq', 5]));
+      end
+      else
+        Result := TJSPromise.resolve(New([]));
+    end);
+  seen := TJSArray.new;
+  sub := PWebOnSignal('p1.jobs',
+    procedure(ASeq: NativeInt; const ATopic: String)
+    begin
+      seen.push(ATopic + ':' + IntToStr(ASeq));
+    end);
+  v := await(JSValue, sub.Ready);
+  Check('signal: ready resolves with the subscription sequence', Json(v) = '5');
+  Check('signal: one subscribe crossed with the topic only',
+    (CountMethod(PWEB_METHOD_SIGNAL_SUBSCRIBE) = 1) and
+    (Json(TJSObject(Captured[0])['args']) = '{"topic":"p1.jobs"}'));
+  Check('signal: lastSeq is the subscription sequence',
+    PWebLastSeq('p1.jobs') = 5);
+  DispatchSignal(TJSArray._of(TJSArray._of('p1.jobs', 4)));
+  DispatchSignal(TJSArray._of(TJSArray._of('p1.jobs', 6),
+    TJSArray._of('p1.none', 9)));
+  DispatchSignal(TJSArray._of(TJSArray._of('p1.jobs', 6)));
+  DispatchSignal('garbage');
+  DispatchSignal(TJSArray._of(TJSArray._of('p1.jobs', -1)));
+  DispatchSignal(TJSArray._of(TJSArray._of('p1.jobs', 7.5)));
+  DispatchSignal(TJSArray._of(TJSArray._of('p1.jobs')));
+  DispatchSignal(TJSArray._of(TJSArray._of('p1.jobs', 7)));
+  Check('signal: only newer, well-formed pairs of subscribed topics arrive',
+    Json(seen) = '["p1.jobs:6","p1.jobs:7"]');
+  sub.Off;
+  sub.Off;
+  await(JSValue, Delay(5));
+  Check('signal: the last callback unsubscribes, once',
+    CountMethod(PWEB_METHOD_SIGNAL_UNSUBSCRIBE) = 1);
+  DispatchSignal(TJSArray._of(TJSArray._of('p1.jobs', 8)));
+  Check('signal: nothing arrives after off', seen.length = 2);
+  Check('signal: lastSeq forgets an unsubscribed topic',
+    PWebLastSeq('p1.jobs') = -1);
+  secret := PWebOnSignal('p1.secret',
+    procedure(ASeq: NativeInt; const ATopic: String)
+    begin
+      seen.push('secret');
+    end);
+  reason := await(JSValue, CaughtReason(secret.Ready));
+  Check('signal: a refused subscription rejects forbidden',
+    IsError(reason, 'forbidden'));
+  DispatchSignal(TJSArray._of(TJSArray._of('p1.secret', 9)));
+  Check('signal: a refused topic keeps no state and delivers nothing',
+    (PWebLastSeq('p1.secret') = -1) and (seen.length = 2));
+  proto := PWebOnSignal('constructor',
+    procedure(ASeq: NativeInt; const ATopic: String)
+    begin
+      seen.push(ATopic);
+    end);
+  await(JSValue, proto.Ready);
+  DispatchSignal(TJSArray._of(TJSArray._of('constructor', 6)));
+  Check('signal: a topic spelled like an inherited property is an ordinary topic',
+    (seen.length = 3) and (PWebLastSeq('constructor') = 6));
+  proto.Off;
+  RemoveFake;
+
+  // --- CAP-16: the socket loop, signal then receive ----------------------
+  queue := TJSArray._of(TJSArray._of(New(['type', 'open', 'protocol', ''])));
+  InstallFake(function(AMethod: String; AArgs: JSValue): TJSPromise
+    begin
+      if AMethod = PWEB_METHOD_SOCKET_OPEN then
+        Result := TJSPromise.resolve(New(['id', 's1']))
+      else if AMethod = PWEB_METHOD_SIGNAL_SUBSCRIBE then
+        Result := TJSPromise.resolve(New(['topic', PWEB_SIGNAL_TOPIC_SOCKET,
+          'seq', 0]))
+      else if AMethod = PWEB_METHOD_SOCKET_RECEIVE then
+      begin
+        if queue.length > 0 then
+          Result := TJSPromise.resolve(New(['events', queue.shift]))
+        else
+          Result := TJSPromise.resolve(New(['events', TJSArray.new]));
+      end
+      else
+        Result := TJSPromise.resolve(New([]));
+    end);
+  got := TJSArray.new;
+  sock := TPWebSocket.Create('socket-url-under-test');
+  sock.OnOpen := procedure(Sender: TPWebSocket; AInfo: TJSObject)
+    begin
+      got.push('open');
+    end;
+  sock.OnMessage := procedure(Sender: TPWebSocket; AData: JSValue)
+    begin
+      got.push(AData);
+    end;
+  sock.OnClose := procedure(Sender: TPWebSocket; AInfo: TJSObject)
+    begin
+      got.push('close');
+    end;
+  await(JSValue, Delay(20));
+  Check('socket loop: the open event arrived', Json(got) = '["open"]');
+  receivesAfterOpen := CountMethod(PWEB_METHOD_SOCKET_RECEIVE);
+  await(JSValue, Delay(20));
+  Check('socket loop: a quiet socket does not receive without a signal',
+    CountMethod(PWEB_METHOD_SOCKET_RECEIVE) = receivesAfterOpen);
+  queue.push(TJSArray._of(New(['type', 'message', 'text', 'hello'])));
+  DispatchSignal(TJSArray._of(TJSArray._of(PWEB_SIGNAL_TOPIC_SOCKET, 1)));
+  await(JSValue, Delay(20));
+  Check('socket loop: a signal brings the queued message',
+    Json(got) = '["open","hello"]');
+  queue.push(TJSArray._of(New(['type', 'close', 'code', 1000, 'reason', '',
+    'wasClean', True, 'category', 'remote', 'undelivered', 0])));
+  DispatchSignal(TJSArray._of(TJSArray._of(PWEB_SIGNAL_TOPIC_SOCKET, 2)));
+  await(JSValue, Delay(20));
+  Check('socket loop: the close arrives and the topic is released',
+    (Json(got) = '["open","hello","close"]') and
+    (CountMethod(PWEB_METHOD_SIGNAL_UNSUBSCRIBE) = 1));
+  Check('socket loop: every receive carried the id and nothing else',
+    ReceiveArgsCarryOnlyId);
+  RemoveFake;
+
   // --- canonical wire captures for the cross-SDK parity gate ----------
   InstallFake(function(AMethod: String; AArgs: JSValue): TJSPromise
     begin
@@ -515,5 +703,6 @@ end;
 
 begin
   Captured := TJSArray.new;
+  InstallWindowFake;
   RunAll;
 end.

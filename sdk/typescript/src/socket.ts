@@ -13,15 +13,17 @@
  * retries nothing and reconnects nothing. Every one of those is a native
  * decision or an application's, never this SDK's.
  *
- * THE RECEIVE LOOP. Protocol v1 has no server push, so each socket runs ONE
- * bounded long-poll after another: `pweb.socketReceive {id, waitMs}` answers
- * at once with what is queued, or waits for the first event. That loop is the
- * receive path, not a placeholder: CAP-12A measured WebView2 withholding a
- * streamed body from the page until it is complete, and ratified a data plane
- * Range-based, not streaming-based, so no streaming route exists to replace it.
- * Each receive in flight holds one native scheduler worker, and one of the
- * window's invocation slots, for up to `waitMs`. This class, its events and
- * the four method names are unaffected.
+ * THE RECEIVE LOOP — signal, then receive (CAP-16). `pweb.socketReceive {id}`
+ * answers at once with what is queued and never waits. The page learns that
+ * something is queued from the signal channel: every event the native door
+ * queues moves the window's `pweb.socket` topic, and this class receives when
+ * that topic moves — or every `PWEB_SOCKET_KEEPALIVE_MS`, which keeps a quiet
+ * socket inside the native idle bound. So a quiet socket holds no native
+ * worker and no invocation slot at all; CAP-15C's parked long-poll did, and
+ * four of them starved the page. Streaming was never the way out: CAP-12A
+ * measured WebView2 withholding a streamed body from the page until it is
+ * complete, and ratified a data plane Range-based, not streaming-based. This
+ * class, its events and the four method names are unaffected.
  *
  * Browser-shaped, with the differences stated rather than hidden: messages
  * are `string` or `ArrayBuffer` (no `Blob`); there is no `bufferedAmount`,
@@ -32,6 +34,12 @@
  */
 import { invoke } from "./invoke.js";
 import { PWebError, toPWebError } from "./errors.js";
+import {
+  lastSeq,
+  onSignal,
+  PWEB_SIGNAL_TOPIC_SOCKET,
+} from "./signal.js";
+import type { PWebSignalSubscription } from "./signal.js";
 import type { JsonValue } from "./types.js";
 
 /** The runtime-owned methods, spelled once. */
@@ -45,8 +53,9 @@ export const PWEB_METHOD_SOCKET_CLOSE = "pweb.socketClose";
 export const PWEB_CAP_NETWORK_SOCKET = "network.socket";
 
 /** The native bounds this SDK must respect — cross-checked against
- * `src/rpc/pweb.rpc.socket.pas` by the CAP-15C contract gate. */
-export const PWEB_SOCKET_RECEIVE_WAIT_MS = 25000;
+ * `src/rpc/pweb.rpc.socket.pas` by the CAP-15C contract gate. The keepalive
+ * is the most a quiet socket waits between two receives. */
+export const PWEB_SOCKET_KEEPALIVE_MS = 20000;
 export const PWEB_SOCKET_MAX_MESSAGE = 1048576;
 export const PWEB_SOCKET_MAX_PROTOCOLS = 4;
 export const PWEB_SOCKET_MAX_REASON_BYTES = 123;
@@ -133,6 +142,16 @@ export class PWebSocket {
   private selected = "";
   private sendChain: Promise<void> = Promise.resolve();
   private closeWanted: { code: number | undefined; reason: string | undefined } | null = null;
+  private subscription: PWebSignalSubscription | null = null;
+  private waiter: (() => void) | null = null;
+  // the signal's callback: whatever the loop is waiting on, it stops waiting
+  private readonly wake = (): void => {
+    const waiter = this.waiter;
+    this.waiter = null;
+    if (waiter !== null) {
+      waiter();
+    }
+  };
 
   constructor(url: string, options?: PWebSocketOptions) {
     this.url = url;
@@ -218,24 +237,67 @@ export class PWebSocket {
     );
   }
 
-  // THE RECEIVE LOOP — one bounded long-poll after another (see the header)
+  // THE RECEIVE LOOP — signal, then receive (see the header)
   private async receiveLoop(): Promise<void> {
+    const subscription = onSignal(PWEB_SIGNAL_TOPIC_SOCKET, this.wake);
+    this.subscription = subscription;
+    try {
+      await subscription.ready;
+    } catch (reason) {
+      this.fail(toPWebError(reason));
+      this.stopSignal();
+      return;
+    }
     while (this.state !== PWebSocket.CLOSED) {
+      // the sequence this receive covers, read BEFORE it starts: anything
+      // that moves while it is in flight is received again at once
+      const covered = lastSeq(PWEB_SIGNAL_TOPIC_SOCKET) ?? 0;
       let value: JsonValue;
       try {
-        value = await invoke(PWEB_METHOD_SOCKET_RECEIVE, {
-          id: this.id as string,
-          waitMs: PWEB_SOCKET_RECEIVE_WAIT_MS,
-        });
+        value = await invoke(PWEB_METHOD_SOCKET_RECEIVE, { id: this.id as string });
       } catch (reason) {
         this.fail(toPWebError(reason));
-        return;
+        break;
       }
       const events = ((value as { events?: WireEvent[] }).events ?? []);
       for (const event of events) {
         this.dispatch(event);
       }
+      if (this.state === PWebSocket.CLOSED) {
+        break;
+      }
+      if ((lastSeq(PWEB_SIGNAL_TOPIC_SOCKET) ?? 0) > covered) {
+        continue;
+      }
+      await this.nextSignal();
     }
+    this.stopSignal();
+  }
+
+  // resolves on the next `pweb.socket` signal, or when the keepalive is due
+  private nextSignal(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        if (this.waiter === done) {
+          this.waiter = null;
+        }
+        resolve();
+      }, PWEB_SOCKET_KEEPALIVE_MS);
+      const done = (): void => {
+        clearTimeout(timer);
+        resolve();
+      };
+      this.waiter = done;
+    });
+  }
+
+  private stopSignal(): void {
+    const subscription = this.subscription;
+    this.subscription = null;
+    if (subscription !== null) {
+      subscription.off();
+    }
+    this.wake();
   }
 
   private dispatch(event: WireEvent): void {
@@ -292,5 +354,7 @@ export class PWebSocket {
       category: "failed",
       undelivered: 0,
     });
+    // a loop waiting for its next signal sees the closed state now
+    this.wake();
   }
 }

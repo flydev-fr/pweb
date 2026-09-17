@@ -54,6 +54,26 @@ test("unknown handshake members are stripped from the resolved projection", asyn
   assert.deepEqual(Object.keys(info).sort(), ["capabilities", "protocol", "runtime"]);
 });
 
+test("features are an additive, validated member", async () => {
+  installFake(async () => ({
+    protocol: 1,
+    runtime: "0.1.0",
+    capabilities: [],
+    features: ["signal"],
+  }));
+  const info = await handshake();
+  assert.deepEqual(info.features, ["signal"]);
+  assert.deepEqual(Object.keys(info).sort(), ["capabilities", "features", "protocol", "runtime"]);
+  removeFake();
+  installFake(async () => ({ protocol: 1, runtime: "0.1.0" }));
+  assert.equal((await handshake()).features, undefined);
+  for (const features of ["signal", [1], [null], {}] as JsonValue[]) {
+    removeFake();
+    installFake(async () => ({ protocol: 1, runtime: "0.1.0", features }));
+    await expectMismatch(handshake());
+  }
+});
+
 test("unsupported protocol rejects with protocol_mismatch", async () => {
   installFake(async () => ({ protocol: 2, runtime: "9.9.9", capabilities: [] }));
   await expectMismatch(handshake());

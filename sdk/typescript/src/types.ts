@@ -59,6 +59,9 @@ export interface PWebRuntimeInfo {
   readonly protocol: number;
   readonly runtime: string;
   readonly capabilities?: readonly string[];
+  /** CAP-16: additive runtime features, e.g. `"signal"`; absent on a
+   * runtime that predates the member. Advisory, like `capabilities`. */
+  readonly features?: readonly string[];
 }
 
 /** The native invocation primitive installed by the PWeb runtime

@@ -13,8 +13,13 @@
  * deadline, the refusal to follow a redirect or keep a cookie - is NATIVE.
  * Nothing in this package opens a socket or names an origin.
  *
- * Deliberately absent: event and window APIs — protocol v1 has no backend
- * contract behind them, and this package does not invent surfaces. Also
+ * `onSignal` (CAP-16) is the one event surface, and it has a backend
+ * contract behind it: the native signal channel says that a topic moved,
+ * and the page reads through `invoke`. It carries no data and grants
+ * nothing; subscribing is itself an invocation under a capability.
+ *
+ * Deliberately absent: window APIs — protocol v1 has no backend contract
+ * behind them, and this package does not invent surfaces. Also
  * deliberately absent: a cancellation surface (e.g. AbortSignal) —
  * protocol v1 has no frontend-initiated cancellation; cancellation
  * originates native-side (source quiesce/teardown) and surfaces here only
@@ -44,7 +49,7 @@ export {
   PWEB_METHOD_SOCKET_RECEIVE,
   PWEB_METHOD_SOCKET_CLOSE,
   PWEB_CAP_NETWORK_SOCKET,
-  PWEB_SOCKET_RECEIVE_WAIT_MS,
+  PWEB_SOCKET_KEEPALIVE_MS,
   PWEB_SOCKET_MAX_MESSAGE,
   PWEB_SOCKET_MAX_PROTOCOLS,
   PWEB_SOCKET_MAX_REASON_BYTES,
@@ -56,6 +61,20 @@ export type {
   PWebSocketErrorEvent,
   PWebSocketCloseEvent,
 } from "./socket.js";
+export {
+  onSignal,
+  offSignal,
+  lastSeq,
+  PWEB_METHOD_SIGNAL_SUBSCRIBE,
+  PWEB_METHOD_SIGNAL_UNSUBSCRIBE,
+  PWEB_SIGNAL_EVENT,
+  PWEB_SIGNAL_FEATURE,
+  PWEB_SIGNAL_TOPIC_SOCKET,
+  PWEB_SIGNAL_TICKS_PER_SECOND,
+  PWEB_SIGNAL_MAX_SUBSCRIPTIONS,
+  PWEB_SIGNAL_MAX_TOPIC_BYTES,
+} from "./signal.js";
+export type { PWebSignalCallback, PWebSignalSubscription } from "./signal.js";
 export { isPWebBlobHandle } from "./blob.js";
 export type { PWebBlobHandle } from "./blob.js";
 export { PWebError, toPWebError } from "./errors.js";

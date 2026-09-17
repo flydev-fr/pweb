@@ -27,10 +27,16 @@
   - an absent primitive rejects immediately with runtime_closed: no
     fallback transport, never a forever-pending promise.
 
-  Deliberately absent (as in the TypeScript SDK): event/window APIs and
-  any frontend cancellation surface - protocol v1 has no backend
-  contract behind them; cancellation originates native-side and surfaces
-  here only as the cancelled error code.
+  PWebOnSignal (CAP-16) is the one event surface, as in the TypeScript
+  SDK, and it has a backend contract behind it: the native signal channel
+  says that a topic moved, and the page reads through PWebInvoke. It
+  carries no data and grants nothing; subscribing is itself an invocation
+  under a capability.
+
+  Deliberately absent (as in the TypeScript SDK): window APIs and any
+  frontend cancellation surface - protocol v1 has no backend contract
+  behind them; cancellation originates native-side and surfaces here only
+  as the cancelled error code.
 }
 unit pweb.native;
 
@@ -66,7 +72,8 @@ const
   PWEB_METHOD_SOCKET_RECEIVE = 'pweb.socketReceive';
   PWEB_METHOD_SOCKET_CLOSE = 'pweb.socketClose';
   PWEB_CAP_NETWORK_SOCKET = 'network.socket';
-  PWEB_SOCKET_RECEIVE_WAIT_MS = 25000;
+  { the most a quiet socket waits between two receives (CAP-16) }
+  PWEB_SOCKET_KEEPALIVE_MS = 20000;
   PWEB_SOCKET_MAX_MESSAGE = 1048576;
   PWEB_SOCKET_MAX_PROTOCOLS = 4;
   PWEB_SOCKET_MAX_REASON_BYTES = 123;
@@ -84,6 +91,20 @@ const
     answer to a settled namespace question. The bound is the native one,
     cross-checked against src/assets/pweb.blobs.intf.pas. }
   PWEB_BLOB_TOKEN_CHARS = 32;
+
+  { The native signal channel (CAP-16), the twin of `onSignal` in
+    @pweb/runtime: two runtime-owned methods, the DOM event the runtime's
+    one injected script dispatches on `window`, the handshake feature
+    name, the socket door's topic, and the native bounds - cross-checked
+    against src/rpc/pweb.rpc.signal.pas. }
+  PWEB_METHOD_SIGNAL_SUBSCRIBE = 'pweb.signalSubscribe';
+  PWEB_METHOD_SIGNAL_UNSUBSCRIBE = 'pweb.signalUnsubscribe';
+  PWEB_SIGNAL_EVENT = 'pweb:signal';
+  PWEB_SIGNAL_FEATURE = 'signal';
+  PWEB_SIGNAL_TOPIC_SOCKET = 'pweb.socket';
+  PWEB_SIGNAL_TICKS_PER_SECOND = 20;
+  PWEB_SIGNAL_MAX_SUBSCRIPTIONS = 32;
+  PWEB_SIGNAL_MAX_TOPIC_BYTES = 64;
 
   PWEB_SOCKET_CONNECTING = 0;
   PWEB_SOCKET_OPEN = 1;
@@ -122,6 +143,39 @@ type
     Protocol: NativeInt; external name 'protocol';
     Runtime: String; external name 'runtime';
     Capabilities: TJSArray; external name 'capabilities'; // may be undefined
+    { CAP-16: additive runtime features, e.g. 'signal'; may be undefined }
+    Features: TJSArray; external name 'features';
+  end;
+
+  { Called with the topic's new sequence number. }
+  TPWebSignalCallback = reference to procedure(ASeq: NativeInt;
+    const ATopic: String);
+
+  { One callback on one topic (CAP-16), the twin of @pweb/runtime's
+    PWebSignalSubscription.
+
+    Ready resolves with the topic's sequence once the native subscription
+    exists, and rejects with EPWebError (forbidden, invalid_request,
+    service_error with category signal_limit, ...). Off removes the
+    callback; the native subscription goes with the last callback of its
+    topic. Off is idempotent.
+
+    THE RECOVERY PATTERN is the TypeScript SDK's: subscribe, await Ready,
+    then read everything ONCE through PWebInvoke, and on every callback
+    read again since your own cursor. A signal lost before the
+    subscription, across a navigation or a development reload costs
+    latency, never correctness. }
+  TPWebSignalSubscription = class
+  private
+    FTopic: String;
+    FReady: TJSPromise;
+    FCallback: TPWebSignalCallback;
+    FOwner: TObject;
+    FActive: Boolean;
+  public
+    procedure Off;
+    property Topic: String read FTopic;
+    property Ready: TJSPromise read FReady;
   end;
 
   { One blob the runtime is holding for THIS principal (CAP-12B), typed
@@ -166,14 +220,15 @@ type
     `network.socket` capability and the origin allowlist compiled into the
     host.
 
-    ONE receive loop per socket - `pweb.socketReceive` long-polls, one after
-    another. That loop is the receive path, not a placeholder: CAP-12A
+    ONE receive loop per socket - signal, then receive (CAP-16).
+    `pweb.socketReceive` answers at once and never waits; the loop receives
+    when the window's `pweb.socket` topic moves, or every
+    PWEB_SOCKET_KEEPALIVE_MS, so a quiet socket holds no native worker and
+    no invocation slot at all. CAP-15C's parked long-poll did, and four of
+    them starved the page. Streaming was never the way out: CAP-12A
     measured WebView2 withholding a streamed body from the page until it is
-    complete, and ratified a data plane Range-based, not streaming-based, so
-    no streaming route exists to replace it. Each receive in flight holds one
-    native scheduler worker, and one of the window's invocation slots, for up
-    to `waitMs`. This class, its events and the four method names are
-    unaffected.
+    complete, and ratified a data plane Range-based, not streaming-based.
+    This class, its events and the four method names are unaffected.
 
     It constructs no URL, supplies no default origin, adds no header, retries
     nothing and reconnects nothing. Send on a socket that is not open raises
@@ -188,6 +243,13 @@ type
     FCloseWanted: Boolean;
     FCloseCode: NativeInt;
     FCloseReason: String;
+    FSubscription: TPWebSignalSubscription;
+    FWaiting: Boolean;
+    FTimer: JSValue;
+    procedure StartLoop;
+    procedure WaitSignal;
+    procedure Wake;
+    procedure StopSignal;
     procedure ReceiveNext;
     procedure DispatchEvent(AEvent: TJSObject);
     procedure Fail(AError: EPWebError);
@@ -253,6 +315,22 @@ function PWebFetch(ARequest: TJSObject): TJSPromise;
   Applications gate startup on this and must not continue against an
   incompatible runtime. }
 function PWebHandshake: TJSPromise;
+
+{ Call ACallback whenever ATopic moves (CAP-16). The first callback of a
+  topic subscribes natively through pweb.signalSubscribe; the result's
+  Ready settles when that answer arrives. A pair whose sequence is not
+  newer than the last one seen for its topic is ignored, whatever order
+  the engine delivered it in. An empty topic or a nil callback raises
+  EPWebError invalid_request locally. }
+function PWebOnSignal(const ATopic: String;
+  ACallback: TPWebSignalCallback): TPWebSignalSubscription;
+
+{ Remove ACallback from ATopic; nothing happens when it is not there. }
+procedure PWebOffSignal(const ATopic: String; ACallback: TPWebSignalCallback);
+
+{ The last sequence this page saw for ATopic, or -1 when it is not
+  subscribed. The start of "read everything since N". }
+function PWebLastSeq(const ATopic: String): NativeInt;
 
 implementation
 
@@ -435,6 +513,239 @@ begin
     Result := PWebInvoke(PWEB_METHOD_FETCH, ARequest);
 end;
 
+{ ---------------- the signal channel (CAP-16) ---------------- }
+
+type
+  { one topic: its callbacks, the last sequence seen (-1 before any) and
+    the native subscription's answer }
+  TPWebTopicState = class
+  public
+    Callbacks: TJSArray;
+    Last: NativeInt;
+    Ready: TJSPromise;
+  end;
+
+  TPWebSignalHandler = reference to procedure(AEvent: JSValue);
+  TPWebTimerHandler = reference to procedure;
+
+var
+  // a Map and not an object: a topic may be spelled like a property every
+  // object inherits, and a Map has none
+  SignalTopics: TJSMap = nil;
+  SignalListening: Boolean = False;
+
+function AddGlobalListener(const AType: String; AHandler: JSValue): Boolean; assembler;
+asm
+  if (typeof globalThis.addEventListener !== 'function') return false;
+  globalThis.addEventListener(AType, AHandler);
+  return true;
+end;
+
+function IsSafeSeq(AValue: JSValue): Boolean; assembler;
+asm
+  return (typeof AValue === 'number') && Number.isSafeInteger(AValue) &&
+    (AValue >= 0);
+end;
+
+function StartTimer(AHandler: JSValue; AMs: NativeInt): JSValue; assembler;
+asm
+  return setTimeout(AHandler, AMs);
+end;
+
+procedure StopTimer(AHandle: JSValue); assembler;
+asm
+  if (AHandle !== undefined) clearTimeout(AHandle);
+end;
+
+function TopicState(const ATopic: String): TPWebTopicState;
+begin
+  if (SignalTopics <> nil) and SignalTopics.has(ATopic) then
+    Result := TPWebTopicState(SignalTopics.get(ATopic))
+  else
+    Result := nil;
+end;
+
+procedure DeliverSignal(const ATopic: String; ASeq: NativeInt);
+var
+  state: TPWebTopicState;
+  list: TJSArray;
+  i: NativeInt;
+  callback: TPWebSignalCallback;
+begin
+  state := TopicState(ATopic);
+  if state = nil then
+    exit;
+  // THE SEQUENCE IS WHAT IS TRUSTED: an old or repeated one says nothing new
+  if (state.Last >= 0) and (ASeq <= state.Last) then
+    exit;
+  state.Last := ASeq;
+  list := state.Callbacks.slice(0);
+  for i := 0 to list.length - 1 do
+  begin
+    callback := TPWebSignalCallback(list[i]);
+    try
+      callback(ASeq, ATopic);
+    except
+      // one callback never stops the others
+    end;
+  end;
+end;
+
+procedure ReceiveSignal(AEvent: JSValue);
+var
+  detail: JSValue;
+  list, pair: TJSArray;
+  i: NativeInt;
+begin
+  if not isObject(AEvent) then
+    exit;
+  detail := TJSObject(AEvent)['detail'];
+  if not isArray(detail) then
+    exit;
+  list := TJSArray(detail);
+  for i := 0 to list.length - 1 do
+  begin
+    if not isArray(list[i]) then
+      continue;
+    pair := TJSArray(list[i]);
+    if (pair.length <> 2) or
+       not isString(pair[0]) or
+       not IsSafeSeq(pair[1]) then
+      continue;
+    DeliverSignal(String(pair[0]), NativeInt(pair[1]));
+  end;
+end;
+
+procedure ListenSignals;
+var
+  handler: TPWebSignalHandler;
+begin
+  if SignalListening then
+    exit;
+  handler := @ReceiveSignal;
+  if AddGlobalListener(PWEB_SIGNAL_EVENT, JSValue(handler)) then
+    SignalListening := True;
+end;
+
+procedure ReleaseSignal(const ATopic: String; AOwner: TPWebTopicState;
+  ACallback: TPWebSignalCallback);
+var
+  idx: NativeInt;
+  args: TJSObject;
+begin
+  idx := AOwner.Callbacks.indexOf(JSValue(ACallback));
+  if idx >= 0 then
+    AOwner.Callbacks.splice(idx, 1);
+  if (AOwner.Callbacks.length > 0) or (TopicState(ATopic) <> AOwner) then
+    exit;
+  SignalTopics.delete(ATopic);
+  // the native subscription goes with the last callback; a refusal here
+  // changes nothing the page relies on
+  args := TJSObject.new;
+  args['topic'] := ATopic;
+  PWebInvoke(PWEB_METHOD_SIGNAL_UNSUBSCRIBE, args).catch(
+    function(AReason: JSValue): JSValue
+    begin
+      Result := JS.Undefined;
+    end);
+end;
+
+procedure TPWebSignalSubscription.Off;
+begin
+  if not FActive then
+    exit;
+  FActive := False;
+  ReleaseSignal(FTopic, TPWebTopicState(FOwner), FCallback);
+end;
+
+function PWebOnSignal(const ATopic: String;
+  ACallback: TPWebSignalCallback): TPWebSignalSubscription;
+var
+  state, fresh: TPWebTopicState;
+  args: TJSObject;
+begin
+  if ATopic = '' then
+    raise MakeError('invalid_request',
+      'A signal topic must be a non-empty string', JS.Null);
+  if not Assigned(ACallback) then
+    raise MakeError('invalid_request',
+      'A signal callback must be a function', JS.Null);
+  ListenSignals;
+  if SignalTopics = nil then
+    SignalTopics := TJSMap.new;
+  state := TopicState(ATopic);
+  if state = nil then
+  begin
+    fresh := TPWebTopicState.Create;
+    fresh.Callbacks := TJSArray.new;
+    fresh.Last := -1;
+    args := TJSObject.new;
+    args['topic'] := ATopic;
+    fresh.Ready := PWebInvoke(PWEB_METHOD_SIGNAL_SUBSCRIBE, args)._then(
+      function(AValue: JSValue): JSValue
+      var
+        seq: JSValue;
+      begin
+        seq := JS.Undefined;
+        if isObject(AValue) and not isArray(AValue) then
+          seq := TJSObject(AValue)['seq'];
+        if not IsSafeSeq(seq) then
+          raise MakeError('internal_error',
+            'A subscription answer carried no sequence', JS.Null);
+        if (TopicState(ATopic) = fresh) and
+           ((fresh.Last < 0) or (NativeInt(seq) > fresh.Last)) then
+          fresh.Last := NativeInt(seq);
+        Result := seq;
+      end,
+      function(AReason: JSValue): JSValue
+      begin
+        if TopicState(ATopic) = fresh then
+          SignalTopics.delete(ATopic);
+        raise ConvertReason(AReason);
+        Result := JS.Undefined; // unreachable - the raise rejects
+      end);
+    // observed here so a page that never waits on Ready leaves no unhandled
+    // rejection behind; waiting on it still rejects
+    fresh.Ready.catch(
+      function(AReason: JSValue): JSValue
+      begin
+        Result := JS.Undefined;
+      end);
+    SignalTopics.&set(ATopic, fresh);
+    state := fresh;
+  end;
+  if state.Callbacks.indexOf(JSValue(ACallback)) < 0 then
+    state.Callbacks.push(JSValue(ACallback));
+  Result := TPWebSignalSubscription.Create;
+  Result.FTopic := ATopic;
+  Result.FReady := state.Ready;
+  Result.FCallback := ACallback;
+  Result.FOwner := state;
+  Result.FActive := True;
+end;
+
+procedure PWebOffSignal(const ATopic: String; ACallback: TPWebSignalCallback);
+var
+  state: TPWebTopicState;
+begin
+  state := TopicState(ATopic);
+  if (state = nil) or
+     (state.Callbacks.indexOf(JSValue(ACallback)) < 0) then
+    exit;
+  ReleaseSignal(ATopic, state, ACallback);
+end;
+
+function PWebLastSeq(const ATopic: String): NativeInt;
+var
+  state: TPWebTopicState;
+begin
+  state := TopicState(ATopic);
+  if state = nil then
+    Result := -1
+  else
+    Result := state.Last;
+end;
+
 { ---------------- TPWebSocket ---------------- }
 
 function SocketBufferToBase64(ABuffer: TJSArrayBuffer): String; assembler;
@@ -480,7 +791,7 @@ begin
     function(AValue: JSValue): JSValue
     begin
       FId := String(TJSObject(AValue)['id']);
-      ReceiveNext;
+      StartLoop;
       if FCloseWanted then
       begin
         FCloseWanted := False;
@@ -495,16 +806,84 @@ begin
     end);
 end;
 
-// THE RECEIVE LOOP - one bounded long-poll after another (see the class)
+// THE RECEIVE LOOP - signal, then receive (see the class)
+procedure TPWebSocket.StartLoop;
+begin
+  FSubscription := PWebOnSignal(PWEB_SIGNAL_TOPIC_SOCKET,
+    procedure(ASeq: NativeInt; const ATopic: String)
+    begin
+      Wake;
+    end);
+  FSubscription.Ready._then(
+    function(AValue: JSValue): JSValue
+    begin
+      ReceiveNext;
+      Result := JS.Undefined;
+    end,
+    function(AReason: JSValue): JSValue
+    begin
+      Fail(ConvertReason(AReason));
+      StopSignal;
+      Result := JS.Undefined;
+    end);
+end;
+
+// wait for the next `pweb.socket` signal, or for the keepalive
+procedure TPWebSocket.WaitSignal;
+var
+  handler: TPWebTimerHandler;
+begin
+  FWaiting := True;
+  handler := procedure
+    begin
+      FTimer := JS.Undefined;
+      if FWaiting then
+      begin
+        FWaiting := False;
+        ReceiveNext;
+      end;
+    end;
+  FTimer := StartTimer(JSValue(handler), PWEB_SOCKET_KEEPALIVE_MS);
+end;
+
+procedure TPWebSocket.Wake;
+begin
+  if not FWaiting then
+    exit;
+  FWaiting := False;
+  StopTimer(FTimer);
+  FTimer := JS.Undefined;
+  ReceiveNext;
+end;
+
+procedure TPWebSocket.StopSignal;
+var
+  subscription: TPWebSignalSubscription;
+begin
+  FWaiting := False;
+  StopTimer(FTimer);
+  FTimer := JS.Undefined;
+  subscription := FSubscription;
+  FSubscription := nil;
+  if subscription <> nil then
+    subscription.Off;
+end;
+
 procedure TPWebSocket.ReceiveNext;
 var
   args: TJSObject;
+  covered: NativeInt;
 begin
   if FReadyState = PWEB_SOCKET_CLOSED then
+  begin
+    StopSignal;
     exit;
+  end;
+  // the sequence this receive covers, read BEFORE it starts: anything that
+  // moves while it is in flight is received again at once
+  covered := PWebLastSeq(PWEB_SIGNAL_TOPIC_SOCKET);
   args := TJSObject.new;
   args['id'] := FId;
-  args['waitMs'] := PWEB_SOCKET_RECEIVE_WAIT_MS;
   PWebInvoke(PWEB_METHOD_SOCKET_RECEIVE, args)._then(
     function(AValue: JSValue): JSValue
     var
@@ -519,12 +898,18 @@ begin
         for i := 0 to list.length - 1 do
           DispatchEvent(TJSObject(list[i]));
       end;
-      ReceiveNext;
+      if FReadyState = PWEB_SOCKET_CLOSED then
+        StopSignal
+      else if PWebLastSeq(PWEB_SIGNAL_TOPIC_SOCKET) > covered then
+        ReceiveNext
+      else
+        WaitSignal;
       Result := JS.Undefined;
     end,
     function(AReason: JSValue): JSValue
     begin
       Fail(ConvertReason(AReason));
+      StopSignal;
       Result := JS.Undefined;
     end);
 end;
@@ -580,6 +965,9 @@ begin
   if Assigned(OnClose) then
     OnClose(Self, new(['code', 1006, 'reason', '', 'wasClean', False,
       'category', 'failed', 'undelivered', 0]));
+  // a loop waiting for its next signal stops now, not at the keepalive
+  if FWaiting then
+    StopSignal;
 end;
 
 procedure TPWebSocket.Send(const AText: String);
@@ -670,8 +1058,8 @@ begin
   Result := PWebInvoke(PWEB_METHOD_HANDSHAKE, nil)._then(
     function(AValue: JSValue): JSValue
     var
-      obj: TJSObject;
-      protocolVal, runtimeVal, capsVal, item: JSValue;
+      obj, projection: TJSObject;
+      protocolVal, runtimeVal, capsVal, featVal, item: JSValue;
       i: NativeInt;
     begin
       if not isObject(AValue) or isArray(AValue) then
@@ -700,13 +1088,26 @@ begin
             raise Mismatch('handshake capabilities member is malformed');
         end;
       end;
-      // resolve a validated projection (protocol/runtime/capabilities
-      // only), mirroring the TS SDK - unknown members never reach callers
-      if isUndefined(capsVal) then
-        Result := New(['protocol', protocolVal, 'runtime', runtimeVal])
-      else
-        Result := New(['protocol', protocolVal, 'runtime', runtimeVal,
-          'capabilities', capsVal]);
+      // CAP-16: an ADDITIVE member - a runtime with the signal channel lists
+      // 'signal', an older one omits it; protocol v1 either way
+      featVal := obj['features'];
+      if not isUndefined(featVal) then
+      begin
+        if not isArray(featVal) then
+          raise Mismatch('handshake features member is malformed');
+        for i := 0 to TJSArray(featVal).length - 1 do
+          if not isString(TJSArray(featVal)[i]) then
+            raise Mismatch('handshake features member is malformed');
+      end;
+      // resolve a validated projection (protocol/runtime/capabilities/
+      // features only), mirroring the TS SDK - unknown members never reach
+      // callers
+      projection := New(['protocol', protocolVal, 'runtime', runtimeVal]);
+      if not isUndefined(capsVal) then
+        projection['capabilities'] := capsVal;
+      if not isUndefined(featVal) then
+        projection['features'] := featVal;
+      Result := projection;
     end);
 end;
 

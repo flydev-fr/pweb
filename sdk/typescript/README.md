@@ -24,7 +24,41 @@ const value = await invoke<number>(
 - Absent primitive (plain browser) ⇒ immediate `runtime_closed`
   rejection; there is no fallback transport.
 - `handshake()` rejects `protocol_mismatch` for unsupported/malformed
-  runtimes; its `capabilities` are advisory metadata, never authorization.
+  runtimes; its `capabilities` and `features` are advisory metadata, never
+  authorization.
+
+## Signals (CAP-16)
+
+Native code says that a topic moved; the page reads what changed through
+`invoke`. A signal carries the topic and a sequence number only, so a lost
+one costs latency, never correctness.
+
+```ts
+import { invoke, onSignal } from "@pweb/runtime";
+
+let cursor = 0;
+async function refresh(): Promise<void> {
+  const page = await invoke<{ next: number }>("Jobs.Since", { since: cursor });
+  cursor = page.next;      // YOUR cursor is the truth; the sequence is a wake-up
+}
+
+const jobs = onSignal("jobs", () => void refresh());
+await jobs.ready;          // subscribed (needs the capability signal.jobs)
+await refresh();           // read everything ONCE, after subscribing
+// ... later: jobs.off();
+```
+
+- `onSignal(topic, cb)` subscribes natively on its topic's first callback;
+  `ready` resolves with the current sequence or rejects with a `PWebError`
+  (`forbidden` for an undeclared or unauthorised topic).
+- `lastSeq(topic)` is the last sequence seen; a pair that is not newer is
+  ignored, whatever order it arrived in.
+- A signal emitted before the subscription, during a navigation or during a
+  `pweb dev` reload may be lost; the re-read after `ready` recovers it. A
+  revoked subscription is gone natively: `off()` every callback and
+  subscribe again to hear the topic once the capability is back.
+- `PWebSocket` receives on the runtime's `pweb.socket` topic (or every 20 s)
+  and never holds a native worker while a socket is quiet.
 
 Build & test (Node, pinned lockfile):
 

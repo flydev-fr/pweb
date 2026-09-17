@@ -65,12 +65,31 @@ export async function handshake(): Promise<PWebRuntimeInfo> {
       throw mismatch("handshake capabilities member is malformed");
     }
   }
-  const result: { protocol: number; runtime: string; capabilities?: readonly string[] } = {
+  // CAP-16: an ADDITIVE member. A runtime that installs the signal channel
+  // lists "signal"; an older runtime omits the member; protocol v1 either way
+  const features = info["features"];
+  if (features !== undefined) {
+    if (
+      !Array.isArray(features) ||
+      features.some((f) => typeof f !== "string")
+    ) {
+      throw mismatch("handshake features member is malformed");
+    }
+  }
+  const result: {
+    protocol: number;
+    runtime: string;
+    capabilities?: readonly string[];
+    features?: readonly string[];
+  } = {
     protocol,
     runtime,
   };
   if (capabilities !== undefined) {
     result.capabilities = capabilities as readonly string[];
+  }
+  if (features !== undefined) {
+    result.features = features as readonly string[];
   }
   return result;
 }
