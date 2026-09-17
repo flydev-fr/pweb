@@ -1,16 +1,17 @@
 # The backlog
 
 `_bmad-output/implementation-artifacts/deferred-work.md` is append-only and
-carries **455 entries** from Phase 0 to the CAP-12 closure. It is a
+carries **457 entries** from Phase 0 to the CAP-12 closure and the CAP-15C
+starvation measurement. It is a
 ledger: it records what was found, in the words of the shard that found it,
 and it never edits itself. That makes it excellent evidence and a poor
 worklist — a reader who wants to know *what is still owed* has to resolve
 every supersession chain by hand, and four phase-closure artifacts answer
 that question for CAP-10, CAP-11 and CAP-12 only.
 
-This document is the worklist. Every one of the 455 entries is disposed of
-exactly once, with one verdict, an owner and a reason. **Sixty-three are open,**
-**and those sixty-three are listed here in full**; the other 392 are in
+This document is the worklist. Every one of the 457 entries is disposed of
+exactly once, with one verdict, an owner and a reason. **Sixty-four are open,**
+**and those sixty-four are listed here in full**; the other 393 are in
 `test/backlog/dispositions.tsv`, which is the table this document is written
 from and the one the gate reads.
 
@@ -18,9 +19,9 @@ from and the one the gate reads.
 |---|---:|---|
 | `FIX_NOW` | 4 | closed by this triage, one commit each, cited below |
 | `UPSTREAM` | 1 | the defect belongs to a third-party project and a report is written or owed. Three mORMot entries left this bucket on 2026-09-16, when upstream fixed all three and the pin moved onto the fixes |
-| `ROADMAP` | 58 | real work, deferred, with a named owner |
+| `ROADMAP` | 59 | real work, deferred, with a named owner |
 | `ACCEPTED` | 125 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
-| `CLOSED` | 267 | the thing the entry describes is done |
+| `CLOSED` | 268 | the thing the entry describes is done |
 
 `ACCEPTED` is not a synonym for ignored. It is the verdict for an entry whose
 honest answer is a measurement — that WebView2 raises no navigation event for a
@@ -321,7 +322,7 @@ under a *resolved upstream* header naming the commit.
 
 ---
 
-## ROADMAP — 58 items, by owner
+## ROADMAP — 59 items, by owner
 
 The full reasons are in the table; this is the shape of what is owed.
 
@@ -349,6 +350,8 @@ instrument with its own budget. CAP-12 leaves four rows of its own open:
 `12A-1`, the WebKitGTK fault, upstream; `12B-2`, the upload, owned by-12C; `12B-3`, blobs larger than one window; and `12-5`, an application returning a blob, which the SPEC names and no path proves yet because a service never sees the principal a blob belongs to.
 `test/backlog/check_backlog.ps1` §5d refuses any open row owned by `CAP-12`,
 `CAP-12A` or `CAP-12B`.
+
+**The socket door starves the pool, measured (`15CS-1`).** Under the ratified defaults — four workers, four slots per source, a queue of 32 — four quiet with parked receives hold the pool and the window's slots, and an invocation of that page waited 24 984.7 ms on Windows and 24 999.1 ms Linux for a poll to give its worker back, against well under a millisecond three sockets parked. Nothing was changed to hide it: the network template's workers keep four sockets from reaching this shape and do not remove it. owner is the native-to-page signal channel proposed as FR-M1, because the is a receive path that holds no worker while a socket is quiet.
 
 **Pins and locks own six**, and each has a natural trigger rather than a date: a
 `discovery-url` key so a WebView2 bump can find the next build (`6B4-10`), a
@@ -411,9 +414,9 @@ than appended to an append-only ledger:
 
 ## The open work, in full
 
-Sixty-three rows: the four `FIX_NOW` items this triage closed, the one
-`UPSTREAM` entry, and the fifty-eight on the roadmap. Everything else — 125
-`ACCEPTED` and 267 `CLOSED` — is in `test/backlog/dispositions.tsv`.
+Sixty-four rows: the four `FIX_NOW` items this triage closed, the one
+`UPSTREAM` entry, and the fifty-nine on the roadmap. Everything else — 125
+`ACCEPTED` and 268 `CLOSED` — is in `test/backlog/dispositions.tsv`.
 
 | key | verdict | owner | reason |
 |---|---|---|---|
@@ -480,3 +483,4 @@ Sixty-three rows: the four `FIX_NOW` items this triage closed, the one
 | `12B-2` | ROADMAP | CAP-12C | the JS->native upload transport is built, drained and proven byte-exact on three engines and refused by name with a receipt; CAP-12C turns the refusal into a store write behind the already-ratified `IBlobWriter` and adds the two SDK functions |
 | `12B-3` | ROADMAP | the shard that wants blobs larger than one window | in v1 a blob is at most the 8 MiB window, which is why no whole-body answer needs ranging; the ranged path is built and proven and the clamp lives in one place, and the ceiling should be raised together with a file-backed store |
 | `12-5` | ROADMAP | the first application that returns a blob from its own service | the SPEC's producer is proven only for the runtime-owned pweb.fetch: an application mORMot service never receives the invocation context, so it cannot own a blob to a principal, and the decorator path that can has no helper, no template construct and no proof |
+| `15CS-1` | ROADMAP | FR-M1, a native-to-page signal channel (a proposal, not yet a shard) | confirmed on both hosted measuring legs: under the host defaults four parked receives hold the pool and the window's slots, and an unrelated invoke waits up to a whole 25 s long-poll bound (24 984.7 ms windows, 24 999.1 ms linux) while three parked ones leave it at a fraction of a millisecond. The network template's extra workers hide the shape for four sockets rather than remove it; the owed fix is a receive path that holds no worker while a socket is quiet, never a larger pool |

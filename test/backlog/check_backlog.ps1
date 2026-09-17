@@ -123,6 +123,10 @@ $shards = [ordered]@{
     # closure itself decided - a phase closing is a shard of its own in the
     # sense the key cares about. Its code is the phase's, without a letter.
     'cap12-closure-artifact.md'                            = '12'
+    # The branch that closed CAP-12 also measured the CAP-15C starvation and
+    # fixed a CAP-15C harness defect the hosted macOS leg met; its findings are
+    # sourced to its own spec, keyed as the socket door's.
+    'spec-phase-12-cap12-closure-and-15c-starvation.md'    = '15CS'
 }
 
 # THE CLOSED SET. `CLOSED` means the thing the entry describes is done;

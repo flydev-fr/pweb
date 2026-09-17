@@ -2,7 +2,7 @@
 title: 'CAP-12 closes on 12B, and the CAP-15C starvation is measured'
 type: 'chore'
 created: '2026-09-17'
-status: 'in-review'
+status: 'done'
 route: 'dispatch'
 baseline_commit: 'd46d6ada8299e438f9f51704d82b069571084537'
 review_loop_iteration: 0
@@ -87,7 +87,7 @@ CAP-12C; commit `.claude/settings.json` or `mtron-feature-requests.md`.
 - [x] `test/backlog/check_backlog.ps1` + self-test -- map `12`; §5d: the closure table carries every 12A/12B/12 key with its TSV digest and verdict, and no open row is owned by `CAP-12`.
 - [x] `test/cap15c/socketstarve.pas` + build + gate runner -- the instrument, four rows, instrument-validity requirements.
 - [x] `test/cap7f/*` -- required, per-target shape checks, `not_applicable` on macOS, three seeded refusals, floor 251.
-- [ ] after the hosted measurement -- one ledger entry (`15CS-1`) with the verdict and the numbers, TSV row, `docs/backlog.md`.
+- [x] after the hosted measurement -- one ledger entry (`15CS-1`) with the verdict and the numbers, TSV row, `docs/backlog.md`.
 
 **Acceptance Criteria:**
 - Given the branch, when `check_backlog.ps1` runs, then 0 orphans, 0 rewords, and the closure table agrees with the TSV.
@@ -124,6 +124,25 @@ CAP-12C; commit `.claude/settings.json` or `mtron-feature-requests.md`.
 - Local Windows measurement, twice: N=0 0.38–0.41 ms, N=3 0.20 ms (both
   `served_beside_parked_polls`), N=4 24 970–24 977 ms and N=5 24 972–24 992 ms
   (`served_after_a_parked_poll_returned`, `active=4 queued=1`).
+
+- **Hosted measurement, run 35216062519 on `c2214ea`**: windows-x86_64 N=0 0.655 ms,
+  N=3 0.204 ms, N=4 24 984.7 ms, N=5 24 993.6 ms; linux-x86_64 0.287, 0.208,
+  24 999.1, 24 997.8 ms. Verdict CONFIRMED on both; ledger `15CS-1` (ROADMAP,
+  FR-M1). One local WSL run read 23 238 ms while the VM's clocks disagreed; the
+  hosted Linux leg is the number.
+- **The same run's macos-arm64 leg failed CAP-15C L14** exactly as `main` had
+  (run 35208424265): 1023 received / 1023 gaps. A harness defect, not the
+  transport: `WaitEvent` kept the flood messages that arrived with the
+  `open` event and the drain never counted them. Reproduced on Windows with a
+  planted 300 ms pause (1008/1008), fixed (1024/0), clean on Windows and WSL;
+  `86417f7`, ledger `15CS-2` (CLOSED).
+- **Local chain**: the Windows leg replayed step by step and the Linux leg under
+  WSL. The Windows failures were local state only (the pinned Lazarus installer
+  step, which also popped a setup window and installed nothing; stale PPU in
+  `build/`; a transient file lock; a scratchpad temp root too long for
+  `pweb`), each re-run green in a clean clone or with a short temp root.
+  Linux: every step green except step 4 (`sudo apt-get`), which cannot run
+  unattended here.
 
 ## Spec Change Log
 
