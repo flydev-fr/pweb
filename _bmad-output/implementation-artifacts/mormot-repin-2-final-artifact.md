@@ -1,10 +1,48 @@
 # MORMOT-REPIN-2 — the mORMot pin on the three upstream binding fixes
 
 ```
-MORMOT-REPIN-2 READY — hosted CI outstanding on the final HEAD
-mormot.lock: da7e1c2f → 66d7d51c1fd21bd222b360382ed8e2b4f656aaad
-Currency 5/5 unpatched on four targets · JS_SetMaxStackSize shadow removed · RP-2, 9A-3, 9A-4 CLOSED
+MORMOT-REPIN-2 PASS — MORMOT PIN ON THE THREE UPSTREAM BINDING FIXES
+hosted CI green on the final HEAD 29a82391d941254b10aca46f9ad15ed1dca1aecf
+run 35158616270, all six jobs · mormot.lock: da7e1c2f → 66d7d51c1fd21bd222b360382ed8e2b4f656aaad
+Currency 5/5 unpatched on four targets · JS_SetMaxStackSize shadow removed · RP-2, 9A-3, 9A-4, RP2-6 CLOSED
 ```
+
+**Closure record.** Hosted CI is GREEN on the final MORMOT-REPIN-2 commit
+`29a82391d941254b10aca46f9ad15ed1dca1aecf`: run **35158616270**, attempt 1,
+all six jobs `success` — windows, linux, macos-x64, macos-arm64, macos
+release inventory, cap7 aggregate. I checked what the run proved, not just
+its green status:
+
+- **Currency, every row gated, on each leg's own compiler:**
+  `CAP3UCUR: <target> 5 gated, 0 observed, 0 gated failure(s)` on
+  windows-x86_64, linux-x86_64, macos-x86_64 and macos-arm64.
+- **The three `JS_SetMaxStackSize` gates on all four legs, with no
+  re-declaration anywhere:**
+  - `pinned binding declarations PASS - 4 rules, each refused in its pre-fix
+    form` on every leg;
+  - the q22 depth probe — windows 494 → 1983 frames, linux 562 → 2257,
+    macos-x64 429 → 1722, macos-arm64 440 → 1769;
+  - CAP-9A to CAP-9C2 `success` on both macOS legs. So the aarch64-darwin
+    export block, with `pas_malloc_usable_size` returning `PtrUInt`, compiled
+    and linked there.
+- **What was owed from Windows:** CAP-10D0 L2b (step 164) and the CAP-10D2
+  gates (step 168) `success`, and the backlog gate (step 186) green on 450
+  entries.
+- **Across all four legs:** CAP-10 to CAP-15 `success` on both macOS legs.
+  `sdk_digest` `b33df77e…` and `sdk_ship_table_digest` `92f53b63…` are the
+  same on all four, with `sdk_files` 319 / 235 / 233 / 230.
+- **The aggregate:**
+  - `[CAP-7F] aggregate PASS - platform-matrix.json written`, and the
+    self-test refused all 259 aggregator perturbations;
+  - `capability_policy_digest` `23b87da5…`, `navigation_policy_digest`
+    `360d69f2…`, the five CAP-9 corpora (`601b86ff…`, `4b01cf06…`,
+    `6c8d0bd7…`, `04c2db17…`, `1c88bda9…`) and `cap9c1_inventory_digest`
+    `a60b62a4…` are equal on all four legs and unchanged;
+  - `CAP11A_SEQUENCE_PASS steps=207
+    digest=0379943652198e3a178387454dd08204cafa254bbcc458569e5515bbcafd5a3b`.
+
+`RP2-6`, the row that held what only this run could prove, is `CLOSED` on
+it. The four hosted `sdk_inventory_digest` values are in SUPERSESSIONS.
 
 Branch `phase/post-mvp/mormot-repin-2`, cut from `main` at
 `4aed789bb029fb5f4e2bd4d14749268a7d82358a` after CAP-12B had merged. Spec:
@@ -23,7 +61,8 @@ the decisions they support.
 | `de8add5` | the checkpoint, five ledger entries, the dispositions, the backlog document, the three upstream reports resolved |
 | `6dd1247` | review: the q22 depth probe, `test/cap9a/check_pinned_bindings.ps1`, the `9B1-8` runner fixes, the unit's comments |
 | `fc17e67` | review: the corrections, the owed row `RP2-6`, the `9B1-8` closure `RP2-7` |
-| the commit that adds this record | this file |
+| `29a82391d941254b10aca46f9ad15ed1dca1aecf` | this record, before closure — **the final HEAD, run 35158616270** |
+| the closure commit | this record's closure, `RP2-6` closed, the spec `done` |
 
 ---
 
@@ -99,7 +138,7 @@ is outside the declared body digest (`2866347299e06fbc`, unchanged).
 |---|---|---|
 | `JS_SetMaxStackSize(rt: JSRuntime; …)` re-declared in `pweb.script.quickjs.pas` | **removed**; `ApplyLimits` calls the pinned import with `FEngine.rt` | three gates, each seen firing — see below |
 | any `pas_malloc` shadow on Windows/Linux | **none existed** — confirmed, as the ledger said | the Win64 link map shows upstream's `pas_malloc$int64$$pointer` and `pas_malloc_usable_size$pointer$$qword` |
-| the aarch64-darwin `pas_*` export block | **kept** — a provision, not a workaround: `NOLIBCSTATIC` is still defined for Darwin/ARM at the candidate (`mormot.defines.inc:1062`) | `pas_malloc_usable_size` now returns `PtrUInt` like the pin and `cutils.h`; no platform directive touched, so the CAP-7F divergence fingerprint holds. **Its aarch64-darwin compile is owed to the hosted run** |
+| the aarch64-darwin `pas_*` export block | **kept** — a provision, not a workaround: `NOLIBCSTATIC` is still defined for Darwin/ARM at the candidate (`mormot.defines.inc:1062`) | `pas_malloc_usable_size` now returns `PtrUInt` like the pin and `cutils.h`; no platform directive touched, so the CAP-7F divergence fingerprint holds. It compiled and linked on the macos-arm64 leg of run 35158616270, where CAP-9A to CAP-9C2 are green |
 
 **Every probe is a permanent gate against the unpatched upstream, and each
 was observed firing:**
@@ -108,7 +147,7 @@ was observed firing:**
 |---|---|---|---|
 | the compile of `pweb.script.quickjs.pas` | a revert of `JS_SetMaxStackSize` to `ctx: JSContext` | compiles on every leg | copy `deps/mormot2/src` aside, write `ctx: JSContext` back into `lib/mormot.lib.quickjs.pas`, compile the unit against the copy: `pweb.script.quickjs.pas(964,34) Error: Incompatible type for arg no. 1: Got "JSRuntime", expected "JSContext"`. It does not cover a change to an untyped pointer, which is what the next row is for |
 | `test/cap9a/check_pinned_bindings.ps1`, run by both CAP-9A runners | the pinned `JS_SetMaxStackSize`, `pas_malloc`, `pas_realloc` and `pas_malloc_usable_size` declarations | 4/4 PASS at `66d7d51c` | every run rewrites each declaration to its pre-fix form and requires zero matches. `-MormotRoot` pointed at `da7e1c2f`'s two files refuses `JS_SetMaxStackSize(ctx: JSContext …)`, `pas_malloc(size: cardinal)` and the `integer` `pas_malloc_usable_size`, and passes `pas_realloc`, which was already pointer-width |
-| CAP-9A q22, discriminating | the configured stack limit reaches the runtime | 494 frames at 256 KB, 1983 at the 1 MB default (Windows) | compile the harness against a copy of `src/script` with the `JS_SetMaxStackSize` call deleted: 494 and 494, `QUICKJS FAIL (q22 the configured stack limit does not decide the recursion depth …)`. The probe adds no corpus line, so `quickjs_corpus_digest` holds |
+| CAP-9A q22, discriminating | the configured stack limit reaches the runtime | 256 KB → 1 MB on run 35158616270: windows 494 → 1983 frames, linux 562 → 2257, macos-x64 429 → 1722, macos-arm64 440 → 1769 | compile the harness against a copy of `src/script` with the `JS_SetMaxStackSize` call deleted: 494 and 494, `QUICKJS FAIL (q22 the configured stack limit does not decide the recursion depth …)`. The probe adds no corpus line, so `quickjs_corpus_digest` holds |
 | CAP-9A q20–q23, CAP-9B2 L13 | the three limits fail safe | PASS on Windows and Linux | — (q22 alone could not tell a limit from QuickJS's own 256 KB default, which is why the row above exists) |
 | `test/cap3u` | CallMethod's unwind and Currency result register | 12/12, 5/5 | carried from the 2026-09-08 repin |
 
@@ -152,10 +191,12 @@ so on the forum is the owner's call.
 ## SUPERSESSIONS
 
 "Before" is the last green hosted run before the move, 35130141163, unless
-the row says otherwise. "After" names where it was measured. The Windows and
-Linux "after" values are this host's, on the final HEAD. The hosted run of
-the final HEAD measures all four targets and supersedes them in the closure
-record.
+the row says otherwise. "After" names where it was measured. The four
+`sdk_inventory_digest` values are those of the hosted run of the final HEAD,
+35158616270. For Windows and Linux they supersede the values this host
+measured on `fc17e67`, which are kept beside them: the hosted runners stage
+the SDK root from their own checkouts, and the recorded digest is the
+runner's.
 
 | value | before | after |
 |---|---|---|
@@ -163,10 +204,10 @@ record.
 | `LICENSE.quickjs` sha256 (six sites) | `a1d491db9c87a750c2bb37d7d47b642ce4b94a0d56332640f1d14521233875bf` | `3475555a50debb194de75ba33eb0a08e92ea9995c2021249c7966a3f0923ee19` — Windows, Linux; line 17 only, and writing the old commit back reproduces the old digest |
 | CAP-9C1 C30 expected pin | `mORMot2 commit  : da7e1c2f` | `mORMot2 commit  : 66d7d51c` |
 | Currency expectations | 5 + 1 + 1 + 0 rows `must_pass` | 20 rows `must_pass` |
-| `sdk_inventory_digest` windows-x86_64 | `fb2b7fc645bee0ec0a9f1c8ee3b36dfd915eb508c6acd26e9b18487ff1962f25` (319 files) | `83f2f07bcf3981698367bf598490fa79c331b7c55fbea63186976995bf6fa263` (319 files), archive `f91e7bafd1858a474622414c0b22a1f25cdc67343ed9cd95349cde375c46aff3` — dev host, `fc17e67` |
-| `sdk_inventory_digest` linux-x86_64 | `e25e4918a9890cc9be2f289451db6338556ed733ef23a2ff95b95d9ac3cc9ed6` (235) | `91af9036e4a1e3c0478178b13d742687a7741ee3a5be909fc90420629e256486` (235 files), archive `c2c713fbfa6ced38d546efc1457e6994fb80e0fa9708a9b45019d83d0fd7824e` — WSL, `fc17e67` |
-| `sdk_inventory_digest` macos-x86_64 | `6219c14797d3237fafc985b3093a0c3f334a54bdde8945a32fea74cb48007c68` (233) | **owed to the hosted run of the final HEAD** (`RP2-6`) |
-| `sdk_inventory_digest` macos-arm64 | `42dad4846ef42c48384743ea4777a89c3325b5bea0459c1ee1687689294f636a` (230) | **owed to the hosted run of the final HEAD** (`RP2-6`) |
+| `sdk_inventory_digest` windows-x86_64 | `fb2b7fc645bee0ec0a9f1c8ee3b36dfd915eb508c6acd26e9b18487ff1962f25` (319 files) | **`85e5ea0d1c6f72195747e8e536f4c3ae0011810967eff7cff7f49c6be78a3b2d`** (319 files) — hosted run 35158616270. Dev host on `fc17e67`: `83f2f07b…` (319) |
+| `sdk_inventory_digest` linux-x86_64 | `e25e4918a9890cc9be2f289451db6338556ed733ef23a2ff95b95d9ac3cc9ed6` (235) | **`157e1edc9ef8a1d5685990b5b8986a3a8a624f44add9f6da7c456925c602878d`** (235 files) — hosted run 35158616270. WSL on `fc17e67`: `91af9036…` (235) |
+| `sdk_inventory_digest` macos-x86_64 | `6219c14797d3237fafc985b3093a0c3f334a54bdde8945a32fea74cb48007c68` (233) | **`b3c19931ec7e734e909c5c5ba56c65498131d82245d14576e0a83b8534b18771`** (233 files) — hosted run 35158616270 |
+| `sdk_inventory_digest` macos-arm64 | `42dad4846ef42c48384743ea4777a89c3325b5bea0459c1ee1687689294f636a` (230) | **`aa1425b64bb7cbdc293b6bb114401629c03dc8e6f1246747e2efa0e654cd6f53`** (230 files) — hosted run 35158616270 |
 | `sdk_digest` | `b33df77e…` | unchanged — Windows, Linux |
 | `sdk_ship_table_digest` | `92f53b63…` | unchanged — Windows, Linux. The ship table names the pinned tree without naming a commit, so its wording did not move |
 | `quickjs_corpus_digest` | `601b86ff…` | unchanged — Windows, Linux (the depth probe adds no line) |
@@ -212,7 +253,7 @@ Seven steps were not run here, each for a stated reason:
 | 12 Install FPC | installs Lazarus on the host | the toolchain it installs is the one used |
 | 67, 70, 74, 79 — CAP-6b1/6b2/6b3 setup gates and the CAP-6b4 profile matrix | they execute real installers on the host | hosted Windows leg of 35141256648, green against the candidate (all 82 steps before C30) |
 | 80 CAP-10E E4 | installs the fixed-runtime profile | same run, green |
-| 163 CAP-10D0 L2b | it copies the repository with its `build/`, and this host's `build/cap7l` holds two WSL-created symlinks robocopy cannot copy and retries indefinitely — a leftover no runner has | **owed to the hosted run of the final HEAD** (`RP2-6`); the measurement run stopped before it |
+| 163 CAP-10D0 L2b | it copies the repository with its `build/`, and this host's `build/cap7l` holds two WSL-created symlinks robocopy cannot copy and retries indefinitely — a leftover no runner has | hosted Windows leg of run 35158616270, step 164, `success` |
 
 Steps 187–207 are the other targets' emitters and the upload/collection
 block, which a replay has nothing to upload to. Four local-harness
@@ -242,7 +283,7 @@ the runner:
 | CAP-9A pinned binding declarations, 4 rules | PASS | PASS |
 | CAP-9A q22 depth probe | 494 → 1983 frames | 562 → 2257 frames |
 | CAP-9A / 9B1 / 9B2 / 9C1 / 9C2 (no shadow) | PASS | PASS |
-| CAP-10A / B0 / B1 / B2 / C0 / C1 / C2 / C3 / D0 / D1 / D2 / E | PASS, except D0 L2b (owed) | PASS (L2b is not a Linux step) |
+| CAP-10A / B0 / B1 / B2 / C0 / C1 / C2 / C3 / D0 / D1 / D2 / E | PASS (D0 L2b on the hosted leg) | PASS (L2b is not a Linux step) |
 | CAP-11A structure, migration, schema, fetch, flakes, cases | PASS | PASS |
 | **CAP-11B watcher contract, ref input, seeded verdicts, ledger** | PASS | PASS |
 | CAP-12B, CAP-14A, CAP-14B, CAP-15B, CAP-15C | PASS | PASS |
@@ -267,13 +308,21 @@ alignment, the only disagreements were exactly those artifacts (`fpc` 3.2.3
 vs 3.2.2, and two `github_sha` values). No licence, SDK or corpus field
 disagreed.
 
-**macOS is the hosted run's.** The measurement run covered macOS up to
+**macOS is the hosted runs'.** The measurement run covered macOS up to
 CAP-9C1: Currency, CAP-7M0/7M1/7M2, CAP-8B/8C, and CAP-9A/9B1/9B2 with the
-re-declaration still present. Everything after that is `RP2-6`.
+re-declaration still present. Run 35158616270 covered the rest on both
+macOS legs, every step `success` (see the closure record at the top):
+
+- CAP-9A to CAP-9C2 without the re-declaration, with the declarations
+  check and the depth probe;
+- CAP-10 to CAP-15;
+- the two `sdk_inventory_digest` values.
 
 ## VERDICT
 
-**MORMOT-REPIN-2 READY — hosted CI outstanding.**
+**MORMOT-REPIN-2 PASS — MORMOT PIN ON THE THREE UPSTREAM BINDING FIXES**
+(hosted run 35158616270, final HEAD `29a82391d941254b10aca46f9ad15ed1dca1aecf`,
+all six jobs green).
 
 - The pin is on the smallest upstream commit that carries the three fixes,
   and each hash was checked against the tree.
@@ -286,16 +335,15 @@ re-declaration still present. Everything after that is `RP2-6`.
   guarded now has a gate of its own.
 - `RP-2`, `9A-3` and `9A-4` are `CLOSED` by `RP2-1` to `RP2-3`, with the
   commits named, and `9B1-8` is closed by `RP2-7`.
-- Every supersession is a measured pair, or is named as owed.
+- Every supersession is a measured pair.
 
-Windows and Linux are green locally on the committed HEAD. What only the
-hosted run of the final HEAD can prove is one open row, `RP2-6`:
+`RP2-6` held what only the hosted run of the final HEAD could prove:
 
 - the four legs and the aggregate green;
 - on both macOS legs, CAP-9 without the re-declaration, including the new
   depth probe and declaration check, and CAP-10 to CAP-15;
 - the aarch64-darwin compile of the widened export;
-- the two macOS `sdk_inventory_digest` values;
+- the macOS `sdk_inventory_digest` values;
 - CAP-10D0 L2b on Windows.
 
-The closure reads them from that run, records them here, and closes `RP2-6`.
+Run 35158616270 measured every one of them, and `RP2-6` is `CLOSED` on it.

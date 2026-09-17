@@ -9,8 +9,8 @@ every supersession chain by hand, and three phase-closure artifacts answer
 that question for CAP-10 and CAP-11 only.
 
 This document is the worklist. Every one of the 450 entries is disposed of
-exactly once, with one verdict, an owner and a reason. **Sixty-four are open,**
-**and those sixty-four are listed here in full**; the other 386 are in
+exactly once, with one verdict, an owner and a reason. **Sixty-three are open,**
+**and those sixty-three are listed here in full**; the other 387 are in
 `test/backlog/dispositions.tsv`, which is the table this document is written
 from and the one the gate reads.
 
@@ -18,9 +18,9 @@ from and the one the gate reads.
 |---|---:|---|
 | `FIX_NOW` | 4 | closed by this triage, one commit each, cited below |
 | `UPSTREAM` | 1 | the defect belongs to a third-party project and a report is written or owed. Three mORMot entries left this bucket on 2026-09-16, when upstream fixed all three and the pin moved onto the fixes |
-| `ROADMAP` | 59 | real work, deferred, with a named owner |
+| `ROADMAP` | 58 | real work, deferred, with a named owner |
 | `ACCEPTED` | 123 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
-| `CLOSED` | 263 | the thing the entry describes is done |
+| `CLOSED` | 264 | the thing the entry describes is done |
 
 `ACCEPTED` is not a synonym for ignored. It is the verdict for an entry whose
 honest answer is a measurement — that WebView2 raises no navigation event for a
@@ -321,7 +321,7 @@ under a *resolved upstream* header naming the commit.
 
 ---
 
-## ROADMAP — 59 items, by owner
+## ROADMAP — 58 items, by owner
 
 The full reasons are in the table; this is the shape of what is owed.
 
@@ -413,9 +413,9 @@ than appended to an append-only ledger:
 
 ## The open work, in full
 
-Sixty-four rows: the four `FIX_NOW` items this triage closed, the one
-`UPSTREAM` entry, and the fifty-nine on the roadmap. Everything else — 123
-`ACCEPTED` and 263 `CLOSED` — is in `test/backlog/dispositions.tsv`.
+Sixty-three rows: the four `FIX_NOW` items this triage closed, the one
+`UPSTREAM` entry, and the fifty-eight on the roadmap. Everything else — 123
+`ACCEPTED` and 264 `CLOSED` — is in `test/backlog/dispositions.tsv`.
 
 | key | verdict | owner | reason |
 |---|---|---|---|
@@ -482,4 +482,3 @@ Sixty-four rows: the four `FIX_NOW` items this triage closed, the one
 | `12A-1` | UPSTREAM | WebKitGTK; the report is written, the version range is pinned | `webkit_uri_scheme_request_get_http_body()` faults the UI process for a blob-backed request body on 2.52.6, with a same-size typed-array body unharmed; the gdb backtrace puts the fault three frames inside libwebkit2gtk with the caller doing nothing but the call |
 | `12B-2` | ROADMAP | CAP-12C | the JS->native upload transport is built, drained and proven byte-exact on three engines and refused by name with a receipt; CAP-12C turns the refusal into a store write behind the already-ratified `IBlobWriter` and adds the two SDK functions |
 | `12B-3` | ROADMAP | the shard that wants blobs larger than one window | in v1 a blob is at most the 8 MiB window, which is why no whole-body answer needs ranging; the ranged path is built and proven and the clamp lives in one place, and the ceiling should be raised together with a file-backed store |
-| `RP2-6` | ROADMAP | the MORMOT-REPIN-2 closure | owed to the hosted run of the shard's final HEAD: macOS CAP-9 without the `JS_SetMaxStackSize` re-declaration (with the new depth probe and declarations check), the aarch64-darwin compile of the widened `pas_malloc_usable_size`, macOS CAP-10 to CAP-15, the two macOS `sdk_inventory_digest` values, and Windows CAP-10D0 L2b, which this host's `build/` cannot copy |

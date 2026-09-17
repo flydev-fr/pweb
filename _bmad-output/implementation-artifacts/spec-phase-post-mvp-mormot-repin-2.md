@@ -2,7 +2,7 @@
 title: 'MORMOT-REPIN-2 — the mORMot pin onto the three upstream binding fixes'
 type: 'chore'
 created: '2026-09-16'
-status: 'in-review'
+status: 'done'
 route: 'dispatch'
 baseline_commit: '4aed789bb029fb5f4e2bd4d14749268a7d82358a'
 review_loop_iteration: 0
