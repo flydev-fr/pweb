@@ -112,6 +112,7 @@ uses
   pweb.rpc.support,
   pweb.rpc.scheduler,
   pweb.rpc.command,
+  pweb.rpc.signal, // CAP-16: the native -> page signal channel's view seam
   pweb.capabilities.policy,
   pweb.webview.intf,
   pweb.webview.binding,
@@ -207,9 +208,18 @@ type
     // unchanged. A network host raises it so a 1 MiB binary message - 1 398
     // 104 base64 characters before its envelope - can cross at all
     MaxRequestBytes: Integer;
-    /// CAP-15C: the native socket door's two lifecycle seams, or nil
+    /// CAP-15C: the two lifecycle seams, or nil
+    // - CAP-16: a host given Signals derives BOTH from the channel and
+    // REFUSES a composition that also sets one - each seam has one owner
     DocumentReplacing: TPWebHostDocumentProc;
     BeforeDrain: TPWebHostNotifyProc;
+    /// CAP-16: the native -> page signal channel, or nil
+    // - THE COMPOSITION CREATES IT, because it is a decorator in the bridge
+    // chain the composition builds. The host gives it the view seam - the
+    // dispatch trampoline and the ONE webview_eval call site of the product -
+    // the policy's grants slot, the document seam and the drain seam, and
+    // installs it for PWebSignal for the length of the run
+    Signals: TPWebSignalChannel;
     /// CAP-12B: the blob data plane served under pweb://app/_pweb/blob/,
     /// or nil for an application that does not use it
     // - THE COMPOSITION CREATES IT, because one store has to reach both
@@ -365,6 +375,15 @@ var
   /// this run's diagnostic prefix, for the two callbacks that cannot carry
   // an argument through the C boundary
   HostLogPrefix: RawUtf8;
+  /// CAP-16: the signal channel of the running host, the view it may reach
+  // and the window that view is - set on the GUI thread before the channel's
+  // view is attached, cleared on the GUI thread after its pacer is joined
+  HostSignals: TPWebSignalChannel;
+  HostSignalHandle: Pointer;
+  HostSignalWindow: RawUtf8;
+  /// CAP-16: signal dispatches that have read the handle and not yet
+  // returned from webview_dispatch - the reload drain's shape, reused
+  HostSignalBusy: LongInt;
 
 constructor TPWebHostPolicyContext.Create(
   const AInner: IWebViewInvocationHandler;
@@ -549,6 +568,61 @@ begin
   finally
     InterlockedDecrement(HostReloadBusy);
   end;
+end;
+
+{ CAP-16: THE SIGNAL CHANNEL'S VIEW SEAM.
+
+  The channel's pacer asks for a drain from its own thread; the drain runs
+  on the GUI thread, where the channel builds its one script and hands it to
+  PWebHostSignalEval under its own lock. Neither function decides anything:
+  what a script contains is PWebSignalScript's, and when one is due is the
+  pacer's. }
+procedure PWebHostSignalDrain(w: webview_t; arg: Pointer); cdecl;
+var
+  signals: TPWebSignalChannel;
+begin
+  try
+    signals := HostSignals;
+    if signals <> nil then
+      signals.Drain(HostSignalWindow);
+  except
+    { Pascal exceptions never cross a C callback. }
+  end;
+end;
+
+function PWebHostSignalDispatch(const Window: RawUtf8): Boolean;
+var
+  handle: Pointer;
+begin
+  // the busy count is raised BEFORE the handle is read, exactly as the
+  // reload does, so the teardown's drain cannot complete around a caller
+  // that is between the two
+  InterlockedIncrement(HostSignalBusy);
+  try
+    handle := HostSignalHandle;
+    Result := (handle <> nil) and
+              (Window = HostSignalWindow) and
+              (webview_dispatch(webview_t(handle), @PWebHostSignalDrain,
+                 nil) = WEBVIEW_ERROR_OK);
+  finally
+    InterlockedDecrement(HostSignalBusy);
+  end;
+end;
+
+{ THE ONE EVAL SITE OF THE PRODUCT. Its only caller is the signal channel's
+  drain, on the GUI thread, and its only script is the one
+  PWEB_SIGNAL_EVAL_TEMPLATE describes - every variable part JSON-encoded to
+  printable ASCII by PWebSignalScript. test/cap16 and the development-trust
+  gate count this call and refuse a second one anywhere in src/**. }
+procedure PWebHostSignalEval(const Window: RawUtf8; const Script: RawUtf8);
+var
+  handle: Pointer;
+begin
+  handle := HostSignalHandle;
+  if (handle <> nil) and
+     (Window = HostSignalWindow) and
+     (Script <> '') then
+    webview_eval(webview_t(handle), PAnsiChar(pointer(Script)));
 end;
 
 function PWebHostAutoCloseThread(Param: Pointer): PtrInt;
@@ -982,6 +1056,12 @@ var
   closerId, closerHandle: system.TThreadID; // mormot.core.os shadows it
   closerStarted, safeToDestroy, schedulerDrained: Boolean;
   reloadWaited: Integer; // CAP-10C2: the reload drain's bounded wait
+  // CAP-16: the two seams' ONE owner each, and the channel's view
+  documentReplacing: TPWebHostDocumentProc;
+  beforeDrain: TPWebHostNotifyProc;
+  signals: TPWebSignalChannel;
+  signalView: TPWebSignalView;
+  signalWaited: Integer;
   {$ifdef OSPOSIX}
   stopHelper: system.TThreadID;
   stopHelperInstalled: Boolean;
@@ -1001,6 +1081,8 @@ begin
   schedulerDrained := False;
   verdictFile := '';
   argAutoCloseMs := -1;
+  documentReplacing := Options.DocumentReplacing;
+  beforeDrain := Options.BeforeDrain;
   {$ifdef OSPOSIX}
   // read in the finally below, so they must be defined before anything in
   // the try can raise
@@ -1022,6 +1104,23 @@ begin
     else
       assets := PWebHostLoadBundle;
 
+    // CAP-16: THE SIGNAL CHANNEL OWNS THE SEAMS. The policy's single grants
+    // slot, the document seam and the drain seam each get ONE owner, and a
+    // composition that also set one of the host's two is refused here,
+    // before anything exists - the channel hands them on to its one door
+    signals := Options.Signals;
+    if signals <> nil then
+    begin
+      if Assigned(Options.DocumentReplacing) or
+         Assigned(Options.BeforeDrain) then
+        raise Exception.Create('PWebHostRun: the signal channel owns the ' +
+          'document and drain seams - attach a door to the channel instead');
+      // this unit compiles in mORMot's Delphi mode: a method pointer is
+      // assigned without `@`
+      documentReplacing := signals.DocumentReplacing;
+      beforeDrain := signals.BeforeDrain;
+      signals.AttachPolicy(Policy);
+    end;
     // the policy is installed at the ONE frozen call site; the plumbing
     // below is the Phase-2 plumbing, untouched
     policyRef := Policy;
@@ -1100,8 +1199,21 @@ begin
       // the navigation that replaces the document
       HostBlobs := Options.Blobs;
       HostBlobOwner := Options.PrincipalId;
-      HostDocumentReplacing := Options.DocumentReplacing;
+      HostDocumentReplacing := documentReplacing;
       HostDocumentWindow := Options.WindowId;
+      // CAP-16: the channel's view, BEFORE the first navigation, so the
+      // first document can already be told what changed. Its topic set
+      // freezes here, and its pacer starts
+      if Options.Signals <> nil then
+      begin
+        HostSignalWindow := Options.WindowId;
+        HostSignals := Options.Signals;
+        HostSignalHandle := Pointer(w);
+        signalView.Dispatch := @PWebHostSignalDispatch;
+        signalView.Eval := @PWebHostSignalEval;
+        Options.Signals.AttachView(signalView);
+        PWebSignalInstall(Options.Signals);
+      end;
       PWebNavTrustedDocumentHook := PWebHostTrustedDocument;
       {$ifdef DARWIN}
       navGuard := TPWebHostNavGuard.Create;
@@ -1222,9 +1334,12 @@ begin
             Result := 1;
           end;
         end;
-      if Assigned(Options.BeforeDrain) then
+      // CAP-16: PWebSignal stops reaching this host before its channel stops
+      if Options.Signals <> nil then
+        PWebSignalUninstall(Options.Signals);
+      if Assigned(beforeDrain) then
         try
-          Options.BeforeDrain();
+          beforeDrain();
         except
           on E: Exception do
           begin
@@ -1233,6 +1348,41 @@ begin
             Result := 1;
           end;
         end;
+      // CAP-16: the channel's pacer is joined, so nothing can ask for a
+      // drain any more; the view is disowned, the dispatches already past
+      // their read are drained - the reload's bounded shape - and the
+      // channel is told it has no view. All of it before the binding closes,
+      // and long before the webview is destroyed
+      if Options.Signals <> nil then
+      begin
+        InterlockedExchange(HostSignalHandle, nil);
+        signalWaited := 0;
+        while (InterlockedExchangeAdd(HostSignalBusy, 0) <> 0) and
+              (signalWaited < PWEB_HOST_RELOAD_DRAIN_MS) do
+        begin
+          Sleep(PWEB_HOST_RELOAD_POLL_MS);
+          Inc(signalWaited, PWEB_HOST_RELOAD_POLL_MS);
+        end;
+        if InterlockedExchangeAdd(HostSignalBusy, 0) <> 0 then
+        begin
+          WriteLn(StdErr, HostLogPrefix,
+            ': FAIL a signal dispatch did not drain');
+          safeToDestroy := False;
+          Result := 1;
+        end;
+        HostSignals := nil;
+        HostSignalWindow := '';
+        try
+          Options.Signals.DetachView;
+        except
+          on E: Exception do
+          begin
+            WriteLn(StdErr, HostLogPrefix, ': FAIL signal DetachView: ',
+              E.Message);
+            Result := 1;
+          end;
+        end;
+      end;
       if binding <> nil then
         try
           binding.Close;

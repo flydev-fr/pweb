@@ -5,6 +5,16 @@
   unit deliberately knows nothing about WebViews, the raw C binding, HTTP
   servers or network clients. Interface-service calls are direct
   TRestUriParams -> TRestServer.Uri() operations on scheduler workers.
+
+  CAP-16 (ledger 12-5): THE CALLER, for a service that needs it. A service
+  reached through Uri() never sees the invocation context - the bridge
+  signature is frozen and the SOA layer has no slot for it - so a service
+  could not create anything OWNED BY the principal that called it. The
+  bridge now publishes a pointer to the native context in a THREADVAR for
+  exactly the length of the Uri() call on the worker that runs it (saved and
+  restored, so a nested bridged call is exact), and PWebCallerPrincipal is
+  the one documented reader. A thread the service starts itself sees no
+  caller: the helper answers False there, never a stale principal.
 }
 unit pweb.rpc.mormot;
 
@@ -69,7 +79,37 @@ type
       const Token: ICancellationToken): TPWebInvocationResult;
   end;
 
+/// CAP-16 (12-5): the principal the CURRENT bridged service call is for
+// - True, with the native PrincipalId, only on the worker thread running
+// TRestServer.Uri() for an invocation, and only for the length of that call
+// - False everywhere else: outside a bridged call, on a thread the service
+// started, and for a context with no principal. The id comes from the
+// native context the binding built - never from the invocation's JSON
+function PWebCallerPrincipal(out PrincipalId: RawUtf8): Boolean;
+
 implementation
+
+type
+  PInvocationContext = ^TInvocationContext;
+
+threadvar
+  /// the context of the bridged call running on THIS thread, or nil
+  CallerContext: PInvocationContext;
+
+function PWebCallerPrincipal(out PrincipalId: RawUtf8): Boolean;
+var
+  p: PInvocationContext;
+begin
+  PrincipalId := '';
+  p := CallerContext;
+  Result := (p <> nil) and
+            (p^.PrincipalId <> '');
+  if Result then
+  begin
+    PrincipalId := RawUtf8(p^.PrincipalId);
+    UniqueString(PrincipalId);
+  end;
+end;
 
 const
   SERVICE_RESULT_PREFIX = '{"result":';
@@ -455,6 +495,7 @@ function TMormotInvocationBridge.Invoke(const Context: TInvocationContext;
 var
   catalogIndex: Integer;
   call: TRestUriParams;
+  previous: PInvocationContext;
 begin
   if (Token <> nil) and Token.IsCancelled then
     exit(PWebDefaultErrorResult(pecCancelled));
@@ -492,7 +533,14 @@ begin
     call.RestAccessRights := @SUPERVISOR_ACCESS_RIGHTS;
     Include(call.LowLevelConnectionFlags, llfInProcess);
     UniqueRawUtf8(call.InBody); // mORMot parses the body in place
-    FServer.Uri(call);          // synchronous, cooperative boundary
+    // CAP-16 (12-5): the caller is published for exactly this call
+    previous := CallerContext;
+    CallerContext := @Context;
+    try
+      FServer.Uri(call);        // synchronous, cooperative boundary
+    finally
+      CallerContext := previous;
+    end;
     if call.OutStatus = HTTP_SUCCESS then
       Result := NormalizeSuccess(FCatalog[catalogIndex], call.OutBody)
     else if (call.OutStatus = HTTP_UNPROCESSABLE_CONTENT) and

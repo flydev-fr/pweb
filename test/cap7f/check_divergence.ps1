@@ -273,6 +273,8 @@ $frozenCore = @(
     'src/rpc/pweb.rpc.scheduler.pas', 'src/rpc/pweb.rpc.intf.pas',
     'src/rpc/pweb.rpc.mormot.pas', 'src/rpc/pweb.rpc.support.pas',
     'src/rpc/pweb.rpc.command.pas', 'src/rpc/pweb.rpc.socket.pas',
+    # CAP-16: the signal channel and the caller-principal helper, platform-free
+    'src/rpc/pweb.rpc.signal.pas', 'src/rpc/pweb.rpc.caller.pas',
     'src/security/pweb.capabilities.pas',
     'src/security/pweb.capabilities.policy.pas',
     'src/webview/pweb.webview.binding.pas', 'src/webview/pweb.webview.intf.pas',
