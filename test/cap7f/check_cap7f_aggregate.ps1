@@ -604,15 +604,16 @@ $required = @(
     'socket_composition_rpc_ok', 'socket_composition_rpc_result',
     'socket_composition_listener_members', 'socket_composition_client_sockets',
     'cap15c_failures',
-    # CAP-15C L2: the starvation, MEASURED AND NOT FIXED. One typed row per N
-    # (0, 3, 4, 5 quiet sockets with parked receives, then an unrelated
-    # invoke) under the host defaults. PER-TARGET, checked below in both
-    # directions: Windows and Linux carry a typed measurement whose shape is
-    # refused if it drifts, macOS carries `not_applicable`. The answer itself -
-    # starved or not - is compared on no target and pinned on none: it is a
-    # finding, and the ledger entry is where it is judged.
+    # CAP-15C L2: the starvation, MEASURED at CAP-15C and CLOSED at CAP-16.
+    # One typed row per N (0, 3, 4, 5, 8 quiet sockets on the signal loop,
+    # then an unrelated invoke) under the host defaults, and the slowest of
+    # them. PER-TARGET, checked below in both directions: Windows and Linux
+    # carry a typed measurement that must be served under 5 ms with nothing
+    # in flight, macOS carries `not_applicable`. The latency is compared on
+    # no target: it is a timing, and the bound is what is gated.
     'socket_starvation_n0', 'socket_starvation_n3',
     'socket_starvation_n4', 'socket_starvation_n5',
+    'socket_starvation_n8', 'socket_starvation_max_ms',
     # CAP-12B: the blob data plane.
     #
     # COMPARED (in $equalityFields): the decision corpus digest, the
@@ -648,6 +649,50 @@ $required = @(
     'blob_release_order', 'blob_csp_violations',
     'pack_refuses_pweb_prefix', 'pack_clean_dist_unaffected',
     'blob_url_prefix_sources', 'blob_units_present',
+    # CAP-16: the native -> page signal channel.
+    #
+    # COMPARED (in $equalityFields): the decision corpus and every DECISION -
+    # the one eval site, the rate, the suite's witnesses, the engine facts
+    # that do not depend on the engine (a native script runs under the CSP,
+    # every script arrived, eighteen hostile topics arrived exact and none
+    # ran), and the live exchange's refusals.
+    #
+    # PINNED ABSOLUTELY (in $absolutePins): the same decisions, because four
+    # targets could agree that the page's eval now runs, that a second eval
+    # site appeared, or that a revocation no longer stops delivery.
+    #
+    # PER-TARGET, required present and checked target by target below:
+    #   eval_engine               webview2 / webkitgtk / wkwebview
+    #   eval_ordering             typed per engine, never preferred
+    #   signal_flood_*            the bound: at most R scripts a second
+    #   signal_latency_ms / gui_jitter_ms   observations, shape-checked
+    #   signal_navigation         the reload lost five and recovered them
+    #   starvation_n4_ms / _n8_ms Windows and Linux under 5 ms, macOS
+    #                             `not_applicable`
+    #   signal_composition*       Linux carries the measurements; the other
+    #                             three `not_applicable`
+    'signal_ticks_per_second', 'signal_contracts', 'eval_sites_release',
+    'signal_suite', 'signal_corpus_digest', 'signal_corpus_lines',
+    'socket_receive_waitms', 'socket_no_parked_worker',
+    'signal_subscribe_forbidden_zero_scripts', 'signal_coalescing',
+    'signal_revoke_race', 'signal_document_replacement',
+    'signal_window_isolation', 'signal_hostile_literal',
+    'signal_hooks_outside_lock', 'caller_principal_suite',
+    'signal_raw_primitive_used',
+    'eval_engine', 'eval_page_csp', 'eval_received', 'eval_under_csp',
+    'eval_ordering', 'eval_hostile_exact', 'eval_hostile_ran',
+    'eval_trusted_events',
+    'signal_channel_available', 'signal_latency_ms', 'signal_denied',
+    'signal_flood_sent', 'signal_flood_scripts', 'signal_flood_evals_per_s',
+    'gui_jitter_ms', 'signal_revoke', 'signal_navigation',
+    'socket_signal_echo', 'caller_principal_blob',
+    'signal_grants_slot_released',
+    'starvation_n4_ms', 'starvation_n8_ms',
+    'signal_composition', 'signal_composition_updates',
+    'signal_composition_rpc_result', 'signal_composition_listener_members',
+    'signal_composition_image_template', 'signal_composition_image_dev_console',
+    'signal_composition_raw_primitive',
+    'cap16_failures',
     # CAP-14B: the development console surface.
     #
     # COMPARED (below, in $equalityFields): console_mechanism, console_levels,
@@ -1441,11 +1486,48 @@ $absolutePins = @{
     # of duplication that reads as harmless right up until the two disagree.
     blob_url_prefix_sources            = 'src/assets/pweb.blobs.protocol.pas'
     blob_units_present                 = 'true'
+    # CAP-16: the signal channel. Every one of these is a claim four targets
+    # could agree on while being wrong together.
+    #
+    # THE RATE AND THE ONE SITE are the security ruling itself: a release
+    # host evaluates exactly one templated script, at most R times a second
+    signal_ticks_per_second            = '20'
+    eval_sites_release                 = '1'
+    socket_receive_waitms              = 'removed'
+    socket_no_parked_worker            = 'true'
+    signal_subscribe_forbidden_zero_scripts = 'true'
+    signal_coalescing                  = 'true'
+    signal_revoke_race                 = 'true'
+    signal_document_replacement        = 'true'
+    signal_window_isolation            = 'true'
+    signal_hostile_literal             = 'true'
+    signal_hooks_outside_lock          = 'true'
+    caller_principal_suite             = 'true'
+    signal_raw_primitive_used          = 'false'
+    # THE PAGE'S OWN EVAL STAYS REFUSED while the native script runs: the
+    # channel needs no CSP relaxation, and the page gains none
+    eval_page_csp                      = 'eval=blocked function=blocked inline=blocked'
+    eval_under_csp                     = 'true'
+    eval_hostile_exact                 = '18/18'
+    eval_hostile_ran                   = 'False'
+    # a script-dispatched event is never trusted: the page cannot tell the
+    # channel's event from one it dispatched itself, and needs nothing that
+    # would depend on telling them apart
+    eval_trusted_events                = '0'
+    signal_channel_available           = 'true'
+    signal_denied                      = 'forbidden scripts=0'
+    signal_revoke                      = 'subscriptions=0 delivered_after=0'
+    socket_signal_echo                 = 'cap16-echo'
+    caller_principal_blob              = 'true'
+    signal_grants_slot_released        = 'True'
+    cap16_failures                     = '0'
     cap14b_gates                       = 'PASS'
 }
 # fields that must read exactly PASS on every target; SKIP/WAIVED never promote
 $mustPass = @('release_layout', 'no_listener', 'host_args', 'capability_policy',
     'socket_suite', 'blob_suite',
+    # CAP-16: the headless suite and the contract cross-checks behind it
+    'signal_suite', 'signal_contracts',
     'build_corpus', 'build_suite', 'build_option_matrix',
     'build_help_matrix', 'gate_quoting_space_path',
     # CAP-10D1: the packaging verdict and the suite behind it
@@ -1836,6 +1918,21 @@ $equalityFields = @(
     'blob_units_present', 'blob_csp_byte_identical', 'blob_release_order',
     'blob_lifetime_rules',
     'blob_csp_violations', 'pack_refuses_pweb_prefix',
+    # CAP-16: the signal channel's DECISIONS, never its timings or its
+    # engine. The corpus digest is the strongest: every line is written only
+    # after the assertions behind it held, over platform-independent logic.
+    'signal_ticks_per_second', 'signal_contracts', 'eval_sites_release',
+    'signal_suite', 'signal_corpus_digest', 'signal_corpus_lines',
+    'socket_receive_waitms', 'socket_no_parked_worker',
+    'signal_subscribe_forbidden_zero_scripts', 'signal_coalescing',
+    'signal_revoke_race', 'signal_document_replacement',
+    'signal_window_isolation', 'signal_hostile_literal',
+    'signal_hooks_outside_lock', 'caller_principal_suite',
+    'signal_raw_primitive_used', 'eval_page_csp', 'eval_received',
+    'eval_under_csp', 'eval_hostile_exact', 'eval_hostile_ran',
+    'eval_trusted_events', 'signal_channel_available', 'signal_denied',
+    'signal_revoke', 'socket_signal_echo', 'caller_principal_blob',
+    'signal_grants_slot_released', 'cap16_failures',
     'sdk_corpus', 'sdk_suite', 'sdk_digest', 'sdk_corpus_lines',
     'sdk_package_built', 'sdk_manifest_deterministic',
     'sdk_archive_deterministic', 'sdk_inventory_deterministic',
@@ -2205,11 +2302,14 @@ foreach ($t in $evidence.Keys) {
     # is running an unratified leg, and a measuring leg that started emitting
     # `not_applicable` is an instrument that stopped running and still read
     # green. On a measuring leg the row must be the typed shape the instrument
-    # writes, name its own N, and carry a served Add's answer - but the TYPE
-    # (served beside the parked polls, or only after one returned) is the
-    # finding, and nothing here prefers one to the other.
-    $c15cStarveKinds = 'served_beside_parked_polls|served_after_a_parked_poll_returned|not_answered|refused_[a-z_:]+'
-    foreach ($n in 0, 3, 4, 5) {
+    # writes, name its own N, and - since CAP-16 closed the starvation - be
+    # SERVED, answer 42, under 5 ms, with nothing in flight beside the quiet
+    # sockets, the retired waitMs refused and an echo carried through signal
+    # then receive (the control, N=0, has no socket to say either about).
+    $invariant = [System.Globalization.CultureInfo]::InvariantCulture
+    $c15cStarveKinds = 'served|not_answered|refused_[a-z_:]+'
+    $c15cStarveMax = 0.0
+    foreach ($n in 0, 3, 4, 5, 8) {
         $f = "socket_starvation_n$n"
         $v = "$($e.$f)"
         if ($c15cMac) {
@@ -2218,16 +2318,120 @@ foreach ($t in $evidence.Keys) {
             }
             continue
         }
-        $m = [regex]::Match($v, "^($c15cStarveKinds) latency_ms=\d+\.\d{3} within_long_poll_bound=(true|false) result=(\S+) opened=\d+/(\d+) open_refused=\S+ parked=\d+ parked_for_ms=\d+\.\d{3} active=-?\d+ queued=-?\d+$")
+        $m = [regex]::Match($v, "^($c15cStarveKinds) latency_ms=(\d+\.\d{3}) result=(\S+) opened=(\d+)/(\d+) open_refused=\S+ in_flight=(-?\d+) socket_bound=(\d+) waitms=(\S+) echo=(\S+)$")
         if (-not $m.Success) {
             $failures.Add("CAP-15C STARVATION: target=$t $f='$v' -- not a typed starvation row")
             continue
         }
-        if ($m.Groups[4].Value -cne "$n") {
-            $failures.Add("CAP-15C STARVATION: target=$t $f names N=$($m.Groups[4].Value)")
+        if ($m.Groups[5].Value -cne "$n" -or $m.Groups[4].Value -cne "$n") {
+            $failures.Add("CAP-15C STARVATION: target=$t $f names N=$($m.Groups[5].Value) with $($m.Groups[4].Value) opened")
         }
-        if (($m.Groups[1].Value -like 'served_*') -and ($m.Groups[3].Value -cne '42')) {
-            $failures.Add("CAP-15C STARVATION: target=$t $f was served with result=$($m.Groups[3].Value), not 42")
+        if ($m.Groups[1].Value -cne 'served') {
+            $failures.Add("CAP-15C STARVATION: target=$t $f was $($m.Groups[1].Value), not served")
+        }
+        if ($m.Groups[3].Value -cne '42') {
+            $failures.Add("CAP-15C STARVATION: target=$t $f answered result=$($m.Groups[3].Value), not 42")
+        }
+        $ms = [double]::Parse($m.Groups[2].Value, $invariant)
+        if ($ms -gt $c15cStarveMax) { $c15cStarveMax = $ms }
+        if ($ms -ge 5.0) {
+            $failures.Add("CAP-15C STARVATION: target=$t $f answered in $ms ms, not under 5 ms -- an invocation waited behind quiet sockets")
+        }
+        if ($m.Groups[6].Value -cne '0') {
+            $failures.Add("CAP-15C STARVATION: target=$t $f had in_flight=$($m.Groups[6].Value) beside quiet sockets -- a receive parked a worker")
+        }
+        $wantWait = if ($n -eq 0) { 'not_applicable' } else { 'invalid_request' }
+        $wantEcho = if ($n -eq 0) { 'not_applicable' } else { 'signalled' }
+        if ($m.Groups[8].Value -cne $wantWait -or $m.Groups[9].Value -cne $wantEcho) {
+            $failures.Add("CAP-15C STARVATION: target=$t $f waitms=$($m.Groups[8].Value) echo=$($m.Groups[9].Value), expected waitms=$wantWait echo=$wantEcho")
+        }
+    }
+    $maxRow = "$($e.socket_starvation_max_ms)"
+    if ($c15cMac) {
+        if ($maxRow -cne 'not_applicable') {
+            $failures.Add("CAP-15C STARVATION: target=$t socket_starvation_max_ms='$maxRow' -- the macOS legs do not measure it")
+        }
+    } elseif ($maxRow -cnotmatch '^\d+\.\d{3}$') {
+        $failures.Add("CAP-15C STARVATION: target=$t socket_starvation_max_ms='$maxRow' is not an invariant-culture latency")
+    } elseif ([double]::Parse($maxRow, $invariant) -ne $c15cStarveMax) {
+        $failures.Add("CAP-15C STARVATION: target=$t socket_starvation_max_ms=$maxRow is not the slowest row ($c15cStarveMax)")
+    }
+
+    # --- CAP-16: the signal channel, target by target ------------------------
+    #
+    # The engine names itself; the ordering is typed and never preferred (the
+    # sequence number is what the SDK trusts either way); the flood is held
+    # to the rate the channel is pinned to; the observations must be numbers.
+    $c16Engine = if ($t -like 'windows-*') { 'webview2' } elseif ($t -like 'linux-*') { 'webkitgtk' } else { 'wkwebview' }
+    if ("$($e.eval_engine)" -cne $c16Engine) {
+        $failures.Add("CAP-16 ENGINE: target=$t eval_engine='$($e.eval_engine)' expected '$c16Engine'")
+    }
+    if ("$($e.eval_ordering)" -cnotmatch '^dispatch=(in_order|reordered) burst=(in_order|reordered)$') {
+        $failures.Add("CAP-16 ORDERING: target=$t eval_ordering='$($e.eval_ordering)' is not typed")
+    }
+    if ("$($e.eval_received)" -cnotmatch '^(\d+)/\1$') {
+        $failures.Add("CAP-16 ENGINE: target=$t eval_received='$($e.eval_received)' -- a natively evaluated script did not arrive")
+    }
+    $c16Sent = [long]0
+    $c16Scripts = [long]0
+    $c16Rate = [double]0
+    $c16Ticks = [long]0
+    [void][long]::TryParse("$($e.signal_ticks_per_second)", [ref]$c16Ticks)
+    if (-not [long]::TryParse("$($e.signal_flood_sent)", [ref]$c16Sent) -or $c16Sent -lt 10000) {
+        $failures.Add("CAP-16 FLOOD: target=$t signal_flood_sent='$($e.signal_flood_sent)' -- the bound is not proven against a flood of 10 000")
+    }
+    if (-not [long]::TryParse("$($e.signal_flood_scripts)", [ref]$c16Scripts) -or $c16Scripts -lt 1) {
+        $failures.Add("CAP-16 FLOOD: target=$t signal_flood_scripts='$($e.signal_flood_scripts)' -- the flood delivered nothing")
+    }
+    if ("$($e.signal_flood_evals_per_s)" -cnotmatch '^\d+(\.\d{1,3})?$' -or
+        -not [double]::TryParse("$($e.signal_flood_evals_per_s)", [System.Globalization.NumberStyles]::Float, $invariant, [ref]$c16Rate) -or
+        $c16Rate -le 0 -or $c16Rate -gt $c16Ticks) {
+        $failures.Add("CAP-16 FLOOD: target=$t signal_flood_evals_per_s='$($e.signal_flood_evals_per_s)' -- not a rate within the pinned $c16Ticks scripts a second")
+    }
+    if ("$($e.signal_latency_ms)" -cnotmatch '^\d+(\.\d+)?$') {
+        $failures.Add("CAP-16 OBSERVATION: target=$t signal_latency_ms='$($e.signal_latency_ms)' is not a number")
+    }
+    if ("$($e.gui_jitter_ms)" -cnotmatch '^idle=\d+(\.\d+)? flood=\d+(\.\d+)?$') {
+        $failures.Add("CAP-16 OBSERVATION: target=$t gui_jitter_ms='$($e.gui_jitter_ms)' is not the typed pair")
+    }
+    if ("$($e.signal_navigation)" -cnotmatch '^subscriptions_after=0 lost=5 recovered_seq=\d+$') {
+        $failures.Add("CAP-16 NAVIGATION: target=$t signal_navigation='$($e.signal_navigation)' -- a reload kept a subscription or its losses were not recovered")
+    }
+    foreach ($f in 'starvation_n4_ms', 'starvation_n8_ms') {
+        $v = "$($e.$f)"
+        if ($c15cMac) {
+            if ($v -cne 'not_applicable') {
+                $failures.Add("CAP-16 STARVATION: target=$t $f='$v' -- the macOS legs do not measure it, and say so by name")
+            }
+        } elseif ($v -cnotmatch '^\d+\.\d{3}$' -or [double]::Parse($v, $invariant) -ge 5.0) {
+            $failures.Add("CAP-16 STARVATION: target=$t $f='$v' -- not a latency under 5 ms")
+        }
+    }
+    # the composition, in both directions: Linux measures it, the other three
+    # say so by name
+    $c16Comp = [ordered]@{
+        signal_composition                   = 'PASS'
+        signal_composition_rpc_result        = '42'
+        signal_composition_listener_members  = '0'
+        signal_composition_image_template    = '1'
+        signal_composition_image_dev_console = 'absent'
+        signal_composition_raw_primitive     = 'false'
+    }
+    if ($t -like 'linux-*') {
+        foreach ($f in $c16Comp.Keys) {
+            if ("$($e.$f)" -cne $c16Comp[$f]) {
+                $failures.Add("CAP-16 COMPOSITION: target=$t field=$f value='$($e.$f)', expected '$($c16Comp[$f])'")
+            }
+        }
+        $u = [long]0
+        if (-not [long]::TryParse("$($e.signal_composition_updates)", [ref]$u) -or $u -lt 3) {
+            $failures.Add("CAP-16 COMPOSITION: target=$t signal_composition_updates='$($e.signal_composition_updates)' -- the page was told of fewer than three ticks")
+        }
+    } else {
+        foreach ($f in @($c16Comp.Keys) + 'signal_composition_updates') {
+            if ("$($e.$f)" -cne 'not_applicable') {
+                $failures.Add("CAP-16 COMPOSITION: target=$t field=$f value='$($e.$f)', expected 'not_applicable' where the smoke does not run")
+            }
         }
     }
     # the export surface: exactly 17 webview_* names, no strays

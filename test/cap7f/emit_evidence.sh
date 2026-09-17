@@ -1780,7 +1780,8 @@ for f in socket_suite socket_corpus_digest socket_door_available \
         socket_composition_listener_members socket_composition_client_sockets \
         cap15c_failures \
         socket_starvation_n0 socket_starvation_n3 \
-        socket_starvation_n4 socket_starvation_n5; do
+        socket_starvation_n4 socket_starvation_n5 \
+        socket_starvation_n8 socket_starvation_max_ms; do
     eval "${f}=\"\$(c15c_str ${f})\""
 done
 
@@ -1816,6 +1817,51 @@ for f in blob_suite blob_corpus_digest blob_corpus_lines \
         blob_url_prefix_sources blob_units_present; do
     eval "${f}=\"\$(c12b_str ${f})\""
 done
+
+# --- CAP-16: the native -> page signal channel -------------------------------
+# build/cap16/cli-<target>.json is ONE record: the contract cross-checks (the
+# one eval site, the one template), the headless channel and its decision
+# corpus, the engine facts (a native script under the shipped CSP, the order
+# successive scripts arrive in, eighteen hostile topics), the PRODUCTION host
+# with the real SDK (a refused topic, a bounded flood, a revocation, a reload
+# recovered by re-read, a socket echo through the signal loop, a service blob
+# read by URL), the starvation rows read back from the CAP-15C record, and on
+# Linux the composition.
+#
+# This block exists in BOTH emitters, for the reason the CAP-10E block below
+# spells out: rows added to one and not the other cost a whole hosted run.
+c16_file="${repo_root}/build/cap16/cli-${target}.json"
+[ -f "${c16_file}" ] ||
+    die "cap16/cli-${target}.json missing -- the CAP-16 gates have not run in this workspace"
+c16_str() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+        "${c16_file}" | head -n 1
+}
+for f in signal_ticks_per_second signal_contracts eval_sites_release \
+        signal_suite signal_corpus_digest signal_corpus_lines \
+        socket_receive_waitms socket_no_parked_worker \
+        signal_subscribe_forbidden_zero_scripts signal_coalescing \
+        signal_revoke_race signal_document_replacement \
+        signal_window_isolation signal_hostile_literal \
+        signal_hooks_outside_lock caller_principal_suite \
+        eval_engine eval_page_csp eval_received eval_under_csp \
+        eval_ordering eval_hostile_exact eval_hostile_ran \
+        eval_trusted_events signal_channel_available signal_latency_ms \
+        signal_denied signal_flood_sent signal_flood_scripts \
+        signal_flood_evals_per_s gui_jitter_ms signal_revoke \
+        signal_navigation socket_signal_echo caller_principal_blob \
+        starvation_n4_ms starvation_n8_ms \
+        signal_composition signal_composition_updates \
+        signal_composition_rpc_result signal_composition_listener_members \
+        signal_composition_image_template signal_composition_image_dev_console \
+        signal_composition_raw_primitive cap16_failures; do
+    eval "${f}=\"\$(c16_str ${f})\""
+done
+# RENAMED on the way in: the record's `raw_primitive_used` is CAP-10B1's name
+# in this file, and `live_grants_slot_released` says what it is only inside
+# the CAP-16 record
+signal_raw_primitive_used="$(c16_str raw_primitive_used)"
+signal_grants_slot_released="$(c16_str live_grants_slot_released)"
 
 # --- CAP-10E: the kernel-resolved image path --------------------------------
 # TWO records, and both are required rather than optional: the RUNTIME one
@@ -2975,6 +3021,8 @@ cat > "${work}/evidence.json" <<EOF
   "socket_starvation_n3": "${socket_starvation_n3}",
   "socket_starvation_n4": "${socket_starvation_n4}",
   "socket_starvation_n5": "${socket_starvation_n5}",
+  "socket_starvation_n8": "${socket_starvation_n8}",
+  "socket_starvation_max_ms": "${socket_starvation_max_ms}",
   "blob_suite": "${blob_suite}",
   "blob_corpus_digest": "${blob_corpus_digest}",
   "blob_corpus_lines": "${blob_corpus_lines}",
@@ -3005,6 +3053,53 @@ cat > "${work}/evidence.json" <<EOF
   "pack_clean_dist_unaffected": "${pack_clean_dist_unaffected}",
   "blob_url_prefix_sources": "${blob_url_prefix_sources}",
   "blob_units_present": "${blob_units_present}",
+  "signal_ticks_per_second": "${signal_ticks_per_second}",
+  "signal_contracts": "${signal_contracts}",
+  "eval_sites_release": "${eval_sites_release}",
+  "signal_suite": "${signal_suite}",
+  "signal_corpus_digest": "${signal_corpus_digest}",
+  "signal_corpus_lines": "${signal_corpus_lines}",
+  "socket_receive_waitms": "${socket_receive_waitms}",
+  "socket_no_parked_worker": "${socket_no_parked_worker}",
+  "signal_subscribe_forbidden_zero_scripts": "${signal_subscribe_forbidden_zero_scripts}",
+  "signal_coalescing": "${signal_coalescing}",
+  "signal_revoke_race": "${signal_revoke_race}",
+  "signal_document_replacement": "${signal_document_replacement}",
+  "signal_window_isolation": "${signal_window_isolation}",
+  "signal_hostile_literal": "${signal_hostile_literal}",
+  "signal_hooks_outside_lock": "${signal_hooks_outside_lock}",
+  "caller_principal_suite": "${caller_principal_suite}",
+  "signal_raw_primitive_used": "${signal_raw_primitive_used}",
+  "eval_engine": "${eval_engine}",
+  "eval_page_csp": "${eval_page_csp}",
+  "eval_received": "${eval_received}",
+  "eval_under_csp": "${eval_under_csp}",
+  "eval_ordering": "${eval_ordering}",
+  "eval_hostile_exact": "${eval_hostile_exact}",
+  "eval_hostile_ran": "${eval_hostile_ran}",
+  "eval_trusted_events": "${eval_trusted_events}",
+  "signal_channel_available": "${signal_channel_available}",
+  "signal_latency_ms": "${signal_latency_ms}",
+  "signal_denied": "${signal_denied}",
+  "signal_flood_sent": "${signal_flood_sent}",
+  "signal_flood_scripts": "${signal_flood_scripts}",
+  "signal_flood_evals_per_s": "${signal_flood_evals_per_s}",
+  "gui_jitter_ms": "${gui_jitter_ms}",
+  "signal_revoke": "${signal_revoke}",
+  "signal_navigation": "${signal_navigation}",
+  "socket_signal_echo": "${socket_signal_echo}",
+  "caller_principal_blob": "${caller_principal_blob}",
+  "signal_grants_slot_released": "${signal_grants_slot_released}",
+  "starvation_n4_ms": "${starvation_n4_ms}",
+  "starvation_n8_ms": "${starvation_n8_ms}",
+  "signal_composition": "${signal_composition}",
+  "signal_composition_updates": "${signal_composition_updates}",
+  "signal_composition_rpc_result": "${signal_composition_rpc_result}",
+  "signal_composition_listener_members": "${signal_composition_listener_members}",
+  "signal_composition_image_template": "${signal_composition_image_template}",
+  "signal_composition_image_dev_console": "${signal_composition_image_dev_console}",
+  "signal_composition_raw_primitive": "${signal_composition_raw_primitive}",
+  "cap16_failures": "${cap16_failures}",
   "github_sha": "${github_sha}",
   "github_run_id": "${github_run_id}",
   "waivers": [${waivers}]

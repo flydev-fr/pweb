@@ -2853,33 +2853,149 @@ foreach ($case in @(
 }
 
 # --- CAP-15C L2: the starvation rows, refused in both directions ------------
-# The rows are per-target and the answer is compared nowhere, so what the
-# aggregator can get wrong is WHICH target measures and WHAT a measurement
-# looks like. One leg per failure: a measuring leg that went quiet, a macOS
-# leg that started measuring, and a row whose type is outside the closed set.
+# The rows are per-target and the latency is compared nowhere, so what the
+# aggregator can get wrong is WHICH target measures, WHAT a measurement looks
+# like, and - since CAP-16 closed the starvation - whether a measured row is
+# still inside the closure: served, 42, under 5 ms, nothing in flight, the
+# retired wait refused. One leg per failure.
+$starveRow = 'served latency_ms=0.300 result=42 opened=4/4 open_refused=none in_flight=0 socket_bound=8 waitms=invalid_request echo=signalled'
 foreach ($case in @(
-        @{ n = 'cap15c-starve-windows-silent'; leg = 'windows';
+        @{ n = 'cap15c-starve-windows-silent'; leg = 'windows'; f = 'socket_starvation_n4';
            v = 'not_applicable' },
-        @{ n = 'cap15c-starve-macos-measuring'; leg = 'macos-arm64';
-           v = 'served_beside_parked_polls latency_ms=0.300 within_long_poll_bound=true result=42 opened=4/4 open_refused=none parked=4 parked_for_ms=1.000 active=4 queued=1' },
-        @{ n = 'cap15c-starve-untyped'; leg = 'linux';
-           v = 'fast latency_ms=0.300 within_long_poll_bound=true result=42 opened=4/4 open_refused=none parked=4 parked_for_ms=1.000 active=4 queued=1';
+        @{ n = 'cap15c-starve-macos-measuring'; leg = 'macos-arm64'; f = 'socket_starvation_n4';
+           v = $starveRow },
+        @{ n = 'cap15c-starve-untyped'; leg = 'linux'; f = 'socket_starvation_n4';
+           v = ($starveRow -replace '^served', 'fast'); p = 'not a typed starvation row' },
+        # the CAP-15C shape: an instrument that still parks a receive
+        @{ n = 'cap15c-starve-old-shape'; leg = 'windows'; f = 'socket_starvation_n4';
+           v = 'served_beside_parked_polls latency_ms=0.300 within_long_poll_bound=true result=42 opened=4/4 open_refused=none parked=4 parked_for_ms=1.000 active=4 queued=1';
            p = 'not a typed starvation row' },
         # a typed row that names another N: a row copied into the wrong field
-        @{ n = 'cap15c-starve-wrong-n'; leg = 'windows';
-           v = 'served_after_a_parked_poll_returned latency_ms=24970.000 within_long_poll_bound=true result=42 opened=4/5 open_refused=service_error:socket_limit parked=4 parked_for_ms=15.000 active=4 queued=1';
-           p = 'names N=5' },
+        @{ n = 'cap15c-starve-wrong-n'; leg = 'windows'; f = 'socket_starvation_n4';
+           v = ($starveRow -replace 'opened=4/4', 'opened=5/5'); p = 'names N=5' },
         # a served Add that did not answer the one thing it was asked
-        @{ n = 'cap15c-starve-wrong-answer'; leg = 'linux';
-           v = 'served_beside_parked_polls latency_ms=0.300 within_long_poll_bound=true result=41 opened=4/4 open_refused=none parked=4 parked_for_ms=1.000 active=4 queued=1';
-           p = 'result=41, not 42' })) {
+        @{ n = 'cap15c-starve-wrong-answer'; leg = 'linux'; f = 'socket_starvation_n4';
+           v = ($starveRow -replace 'result=42', 'result=41'); p = 'result=41, not 42' },
+        # THE STARVATION ITSELF, back: served, but only after a quiet socket let go
+        @{ n = 'cap15c-starve-reopened'; leg = 'windows'; f = 'socket_starvation_n8';
+           v = ($starveRow -replace 'latency_ms=0.300', 'latency_ms=24970.000' -replace 'opened=4/4', 'opened=8/8');
+           p = 'not under 5 ms' },
+        @{ n = 'cap15c-starve-in-flight'; leg = 'linux'; f = 'socket_starvation_n4';
+           v = ($starveRow -replace 'in_flight=0', 'in_flight=1'); p = 'in_flight=1' },
+        @{ n = 'cap15c-starve-wait-honoured'; leg = 'windows'; f = 'socket_starvation_n4';
+           v = ($starveRow -replace 'waitms=invalid_request', 'waitms=accepted'); p = 'expected waitms=invalid_request' },
+        @{ n = 'cap15c-starve-not-served'; leg = 'linux'; f = 'socket_starvation_n3';
+           v = ($starveRow -replace '^served', 'not_answered' -replace 'opened=4/4', 'opened=3/3'); p = 'not served' },
+        # the slowest row, restated wrongly or in a comma culture
+        @{ n = 'cap15c-starve-max-wrong'; leg = 'linux'; f = 'socket_starvation_max_ms';
+           v = '4.999'; p = 'is not the slowest row' },
+        @{ n = 'cap15c-starve-max-comma'; leg = 'windows'; f = 'socket_starvation_max_ms';
+           v = '0,279'; p = 'invariant-culture' })) {
     Reset-Fixture
     $f = Join-Path $fx "ev/$($case.leg)/evidence.json"
     $e = Get-Content $f -Raw | ConvertFrom-Json
-    $e.socket_starvation_n4 = $case.v
+    $e.($case.f) = $case.v
     $e | ConvertTo-Json -Depth 4 | Set-Content $f
     $pattern = if ($case.ContainsKey('p')) { 'CAP-15C STARVATION.*' + [regex]::Escape($case.p) } else { 'CAP-15C STARVATION' }
     Invoke-AggExpectFail $case.n $pattern
+}
+
+# --- CAP-16: the native -> page signal channel -------------------------------
+# (s1) one leg's decision corpus moved: COMPARED, and every line of it is
+# platform-independent logic, so a moved digest is a leg that took another
+# branch.
+Reset-Fixture
+$f = Join-Path $fx 'ev/linux/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.signal_corpus_digest = ('0' * 64)
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap16-corpus-diverged' 'signal_corpus_digest'
+
+# (s2) the suite skipped on one leg: a SKIP never promotes
+Reset-Fixture
+$f = Join-Path $fx 'ev/windows/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.signal_suite = 'SKIP'
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap16-suite-skipped' 'SKIP/WAIVED NEVER PROMOTES.*signal_suite'
+
+# (s3) a field gone from one leg: a renamed row must not read as green
+Reset-Fixture
+$f = Join-Path $fx 'ev/macos-arm64/evidence.json'
+$e = Get-Content $f -Raw | ConvertFrom-Json
+$e.PSObject.Properties.Remove('signal_channel_available')
+$e | ConvertTo-Json -Depth 4 | Set-Content $f
+Invoke-AggExpectFail 'cap16-field-absent' 'REQUIRED FIELD MISSING/EMPTY.*signal_channel_available'
+
+# (s4-s14) the absolute pins, IN UNISON on all four legs. Every one of them is
+# a claim four targets could agree on while being wrong together: a second
+# eval site, a faster rate, the page's own eval allowed, a hostile topic that
+# ran, a refused topic that still cost a script, a revocation that did not
+# stop delivery, a receive that waits again, a parked worker, a blob for
+# nobody, a trusted event, the raw primitive.
+foreach ($case in @(
+        @{ n = 'cap16-second-eval-site';  f = 'eval_sites_release';      v = '2' },
+        @{ n = 'cap16-rate-raised';       f = 'signal_ticks_per_second'; v = '40' },
+        @{ n = 'cap16-page-eval-allowed'; f = 'eval_page_csp';
+           v = 'eval=allowed function=blocked inline=blocked' },
+        @{ n = 'cap16-hostile-ran';       f = 'eval_hostile_ran';        v = 'True' },
+        @{ n = 'cap16-denied-cost-script'; f = 'signal_denied';          v = 'forbidden scripts=1' },
+        @{ n = 'cap16-revoke-leaked';     f = 'signal_revoke';
+           v = 'subscriptions=0 delivered_after=1' },
+        @{ n = 'cap16-wait-returned';     f = 'socket_receive_waitms';   v = 'PRESENT' },
+        @{ n = 'cap16-worker-parked';     f = 'socket_no_parked_worker'; v = 'false' },
+        @{ n = 'cap16-blob-not-caller';   f = 'caller_principal_blob';   v = 'false' },
+        @{ n = 'cap16-trusted-event';     f = 'eval_trusted_events';     v = '1' },
+        @{ n = 'cap16-raw-primitive';     f = 'signal_raw_primitive_used'; v = 'true' })) {
+    Reset-Fixture
+    foreach ($leg in 'windows', 'linux', 'macos-x64', 'macos-arm64') {
+        $f = Join-Path $fx "ev/$leg/evidence.json"
+        $e = Get-Content $f -Raw | ConvertFrom-Json
+        $e.($case.f) = $case.v
+        $e | ConvertTo-Json -Depth 4 | Set-Content $f
+    }
+    Invoke-AggExpectFail $case.n "ABSOLUTE PIN VIOLATED.*field=$($case.f) "
+}
+
+# (s15-s27) the per-target rows, one leg each: the engine that names another,
+# an ordering outside the closed set, a script that never arrived, a flood
+# over the rate or too small to prove it or in a comma culture, a starvation
+# row over the bound or on a leg that does not measure it, the composition on
+# a leg where it does not run or with too few updates or a second template, a
+# reload that kept its losses, and an observation that is not a number.
+foreach ($case in @(
+        @{ n = 'cap16-engine-mislabelled'; leg = 'linux'; f = 'eval_engine';
+           v = 'webview2'; p = 'CAP-16 ENGINE' },
+        @{ n = 'cap16-ordering-untyped'; leg = 'macos-x64'; f = 'eval_ordering';
+           v = 'dispatch=sorted burst=in_order'; p = 'CAP-16 ORDERING' },
+        @{ n = 'cap16-script-lost'; leg = 'windows'; f = 'eval_received';
+           v = '218/219'; p = 'CAP-16 ENGINE' },
+        @{ n = 'cap16-flood-over-rate'; leg = 'windows'; f = 'signal_flood_evals_per_s';
+           v = '20.5'; p = 'CAP-16 FLOOD' },
+        @{ n = 'cap16-flood-too-small'; leg = 'linux'; f = 'signal_flood_sent';
+           v = '9999'; p = 'CAP-16 FLOOD' },
+        @{ n = 'cap16-flood-comma'; leg = 'macos-arm64'; f = 'signal_flood_evals_per_s';
+           v = '19,9'; p = 'CAP-16 FLOOD' },
+        @{ n = 'cap16-starve-over'; leg = 'linux'; f = 'starvation_n8_ms';
+           v = '5.000'; p = 'CAP-16 STARVATION' },
+        @{ n = 'cap16-starve-macos'; leg = 'macos-arm64'; f = 'starvation_n4_ms';
+           v = '0.100'; p = 'CAP-16 STARVATION' },
+        @{ n = 'cap16-composition-off-linux'; leg = 'windows'; f = 'signal_composition';
+           v = 'PASS'; p = 'CAP-16 COMPOSITION' },
+        @{ n = 'cap16-composition-few-updates'; leg = 'linux'; f = 'signal_composition_updates';
+           v = '2'; p = 'CAP-16 COMPOSITION' },
+        @{ n = 'cap16-composition-two-templates'; leg = 'linux'; f = 'signal_composition_image_template';
+           v = '2'; p = 'CAP-16 COMPOSITION' },
+        @{ n = 'cap16-navigation-unrecovered'; leg = 'macos-x64'; f = 'signal_navigation';
+           v = 'subscriptions_after=0 lost=4 recovered_seq=10'; p = 'CAP-16 NAVIGATION' },
+        @{ n = 'cap16-jitter-untyped'; leg = 'linux'; f = 'gui_jitter_ms';
+           v = 'idle=1,7 flood=1.5'; p = 'CAP-16 OBSERVATION' })) {
+    Reset-Fixture
+    $f = Join-Path $fx "ev/$($case.leg)/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.($case.f) = $case.v
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+    Invoke-AggExpectFail $case.n $case.p
 }
 
 Remove-Item -Force -ErrorAction SilentlyContinue $matrix
@@ -2907,9 +3023,15 @@ Remove-Item -Force -ErrorAction SilentlyContinue $matrix
 # legs - both directions of the per-target asymmetry, an untyped row, a row that
 # names another N and a served row that did not answer 42 - for
 # the same reason a sixth time.
-if ($script:AggRefusals -lt 253) {
+# CAP-16 raised it from 253 to 287: the starvation closure grew its five legs
+# to twelve (the old shape refused, the starvation back, a worker in flight,
+# the wait honoured, a row not served, the slowest row misstated or in a comma
+# culture), and the signal channel added twenty-seven - a moved corpus, a
+# skipped suite, an absent field, eleven absolute pins in unison and thirteen
+# per-target rows - for the same reason a seventh time.
+if ($script:AggRefusals -lt 287) {
     throw ("selftest: only $($script:AggRefusals) aggregator refusals fired, " +
-        'expected at least 253 -- a negative leg stopped running')
+        'expected at least 287 -- a negative leg stopped running')
 }
 if ($script:SweepRefusals -lt 2) {
     throw ("selftest: only $($script:SweepRefusals) divergence refusals fired, " +

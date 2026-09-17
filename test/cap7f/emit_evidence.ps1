@@ -1277,6 +1277,24 @@ if ("$($c12b.verdict)" -cne 'PASS') {
     throw "[CAP-7F] the CAP-12B record carries verdict $($c12b.verdict)"
 }
 
+# --- CAP-16: the native -> page signal channel -------------------------------
+# build/cap16/cli-<target>.json is ONE record: the contract cross-checks (the
+# one eval site, the one template), the headless channel and its decision
+# corpus, the engine facts (a native script under the shipped CSP, the order
+# successive scripts arrive in, eighteen hostile topics), the PRODUCTION host
+# with the real SDK (a refused topic, a bounded flood, a revocation, a reload
+# recovered by re-read, a socket echo through the signal loop, a service blob
+# read by URL), the starvation rows read back from the CAP-15C record, and on
+# Linux the composition.
+#
+# This block exists in BOTH emitters, for the reason the CAP-10E block spells
+# out: rows added to one and not the other cost a whole hosted run.
+$c16File = Join-Path $repoRoot 'build/cap16/cli-windows-x86_64.json'
+if (-not (Test-Path $c16File)) {
+    throw '[CAP-7F] cap16/cli-windows-x86_64.json missing -- the CAP-16 gates have not run in this workspace'
+}
+$c16 = Get-Content $c16File -Raw | ConvertFrom-Json
+
 # --- CAP-10E: the kernel-resolved image path --------------------------------
 # TWO records, and both are required rather than optional: the RUNTIME one
 # (test/cap10e/run_cap10e_gates.ps1) says what a real host at a real
@@ -2333,12 +2351,14 @@ $evidence = [ordered]@{
     socket_composition_listener_members = "$($c15c.socket_composition_listener_members)"
     socket_composition_client_sockets  = "$($c15c.socket_composition_client_sockets)"
     cap15c_failures                    = "$($c15c.cap15c_failures)"
-    # CAP-15C L2: the starvation, measured and not fixed - one typed row per
-    # N on Windows and Linux, `not_applicable` by name on macOS
+    # CAP-15C L2: the starvation, CLOSED at CAP-16 - one typed row per N on
+    # Windows and Linux, gated under 5 ms, `not_applicable` by name on macOS
     socket_starvation_n0               = "$($c15c.socket_starvation_n0)"
     socket_starvation_n3               = "$($c15c.socket_starvation_n3)"
     socket_starvation_n4               = "$($c15c.socket_starvation_n4)"
     socket_starvation_n5               = "$($c15c.socket_starvation_n5)"
+    socket_starvation_n8               = "$($c15c.socket_starvation_n8)"
+    socket_starvation_max_ms           = "$($c15c.socket_starvation_max_ms)"
     # CAP-12B: the blob data plane. The headless contract and its corpus, the
     # live plane through the PRODUCTION handler, the pack-time reservation
     # proven to fire, and the one place the URL prefix is built.
@@ -2372,6 +2392,57 @@ $evidence = [ordered]@{
     pack_clean_dist_unaffected         = "$($c12b.pack_clean_dist_unaffected)"
     blob_url_prefix_sources            = "$($c12b.blob_url_prefix_sources)"
     blob_units_present                 = "$($c12b.blob_units_present)"
+    # CAP-16: the native -> page signal channel. The record's own
+    # `raw_primitive_used` and `live_grants_slot_released` are renamed here:
+    # the first name is CAP-10B1's, and the second says what it is only
+    # inside the CAP-16 record.
+    signal_ticks_per_second            = "$($c16.signal_ticks_per_second)"
+    signal_contracts                   = "$($c16.signal_contracts)"
+    eval_sites_release                 = "$($c16.eval_sites_release)"
+    signal_suite                       = "$($c16.signal_suite)"
+    signal_corpus_digest               = "$($c16.signal_corpus_digest)"
+    signal_corpus_lines                = "$($c16.signal_corpus_lines)"
+    socket_receive_waitms              = "$($c16.socket_receive_waitms)"
+    socket_no_parked_worker            = "$($c16.socket_no_parked_worker)"
+    signal_subscribe_forbidden_zero_scripts = "$($c16.signal_subscribe_forbidden_zero_scripts)"
+    signal_coalescing                  = "$($c16.signal_coalescing)"
+    signal_revoke_race                 = "$($c16.signal_revoke_race)"
+    signal_document_replacement        = "$($c16.signal_document_replacement)"
+    signal_window_isolation            = "$($c16.signal_window_isolation)"
+    signal_hostile_literal             = "$($c16.signal_hostile_literal)"
+    signal_hooks_outside_lock          = "$($c16.signal_hooks_outside_lock)"
+    caller_principal_suite             = "$($c16.caller_principal_suite)"
+    signal_raw_primitive_used          = "$($c16.raw_primitive_used)"
+    eval_engine                        = "$($c16.eval_engine)"
+    eval_page_csp                      = "$($c16.eval_page_csp)"
+    eval_received                      = "$($c16.eval_received)"
+    eval_under_csp                     = "$($c16.eval_under_csp)"
+    eval_ordering                      = "$($c16.eval_ordering)"
+    eval_hostile_exact                 = "$($c16.eval_hostile_exact)"
+    eval_hostile_ran                   = "$($c16.eval_hostile_ran)"
+    eval_trusted_events                = "$($c16.eval_trusted_events)"
+    signal_channel_available           = "$($c16.signal_channel_available)"
+    signal_latency_ms                  = "$($c16.signal_latency_ms)"
+    signal_denied                      = "$($c16.signal_denied)"
+    signal_flood_sent                  = "$($c16.signal_flood_sent)"
+    signal_flood_scripts               = "$($c16.signal_flood_scripts)"
+    signal_flood_evals_per_s           = "$($c16.signal_flood_evals_per_s)"
+    gui_jitter_ms                      = "$($c16.gui_jitter_ms)"
+    signal_revoke                      = "$($c16.signal_revoke)"
+    signal_navigation                  = "$($c16.signal_navigation)"
+    socket_signal_echo                 = "$($c16.socket_signal_echo)"
+    caller_principal_blob              = "$($c16.caller_principal_blob)"
+    signal_grants_slot_released        = "$($c16.live_grants_slot_released)"
+    starvation_n4_ms                   = "$($c16.starvation_n4_ms)"
+    starvation_n8_ms                   = "$($c16.starvation_n8_ms)"
+    signal_composition                 = "$($c16.signal_composition)"
+    signal_composition_updates         = "$($c16.signal_composition_updates)"
+    signal_composition_rpc_result      = "$($c16.signal_composition_rpc_result)"
+    signal_composition_listener_members = "$($c16.signal_composition_listener_members)"
+    signal_composition_image_template  = "$($c16.signal_composition_image_template)"
+    signal_composition_image_dev_console = "$($c16.signal_composition_image_dev_console)"
+    signal_composition_raw_primitive   = "$($c16.signal_composition_raw_primitive)"
+    cap16_failures                     = "$($c16.cap16_failures)"
     github_sha                      = $sha
     github_run_id                   = "$runId"
     waivers                         = @(

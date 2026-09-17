@@ -1,0 +1,54 @@
+name: 'CAP-16 native signal channel gates (S1, K, E1, L1, X, C1) + evidence'
+description: 'CAP-11A: the body of the "CAP-16 native signal channel gates (S1, K, E1, L1, X, C1) + evidence" step of the one platform-leg sequence.'
+inputs:
+  target:
+    description: 'windows | linux | macos-x64 | macos-arm64'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: all targets
+      shell: bash
+      run: |
+        # EVERY SCRIPT RUNS, AND THE STEP FAILS AFTERWARDS - the CAP-14A rule.
+        # The Linux composition comes first because C1 reads its record, and
+        # the contracts come before the gates because K is read back from
+        # build/cap16/contracts.txt; but an `&&` anywhere would stop the gates
+        # writing build/cap16/cli-<target>.json, and the aggregate could then
+        # only report "artifact absent" for a leg whose real cause was one row.
+        #
+        # X READS build/cap15c/cli-<target>.json, so this step sits after the
+        # CAP-15C one. The composition needs the SDK root CAP-10B1 staged and
+        # CAP-10C1 completed, both earlier in this sequence.
+        #
+        # THE ENGINE PROBE, THE LIVE HOST AND THE COMPOSITION OPEN REAL
+        # WINDOWS, so the Linux leg runs them under xvfb. Windows and macOS
+        # have a session of their own.
+        set +e
+        mkdir -p build
+        p=0
+        if [ "${PWEB_CI_TARGET}" = 'linux' ]; then
+          export WEBKIT_DISABLE_COMPOSITING_MODE=1
+          export WEBKIT_DISABLE_DMABUF_RENDERER=1
+          export GDK_BACKEND=x11
+          export LIBGL_ALWAYS_SOFTWARE=1
+          xvfb-run -a test/cap16/prove_cap16_composition.sh 2>&1 |
+            tee build/cap16-composition.log
+          p=${PIPESTATUS[0]}
+        fi
+        pwsh -NoProfile -File test/cap16/check_cap16_contracts.ps1 2>&1 |
+          tee build/cap16-contracts.log
+        c=${PIPESTATUS[0]}
+        pwsh -NoProfile -File test/cap16/build_cap16.ps1 2>&1 |
+          tee build/cap16-build.log
+        b=${PIPESTATUS[0]}
+        if [ "${PWEB_CI_TARGET}" = 'linux' ]; then
+          xvfb-run -a pwsh -NoProfile -File test/cap16/run_cap16_gates.ps1 2>&1 |
+            tee build/cap16-gates.log
+        else
+          pwsh -NoProfile -File test/cap16/run_cap16_gates.ps1 2>&1 |
+            tee build/cap16-gates.log
+        fi
+        g=${PIPESTATUS[0]}
+        set -e
+        test "$p" -eq 0 -a "$c" -eq 0 -a "$b" -eq 0 -a "$g" -eq 0

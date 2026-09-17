@@ -176,6 +176,8 @@ step is still pinned and an undeclared edit still trips
 | `CAP-14B development console surface gates (C0, R1, D1-D6, B1-B2) + evidence` | **added**, all four legs | `412b21b2…` (203) → `e0d2e3f2…` (204) |
 | `CAP-15B native fetch door gates (S1, L1, D1, P1, B1-B5) + evidence` | **added**, all four legs | `e0d2e3f2…` (204) → measured on the CAP-15B hosted run (205) |
 | `CAP-15C native socket door gates (S1, L1, B1-B5, C1) + evidence` | **added**, all four legs | the CAP-15B closure (205) → measured on the CAP-15C hosted run (206) |
+| `CAP-12B blob data plane gates (S1, L1, P1, B1, C1-C9) + evidence` | **added**, all four legs — the row this table owed: CAP-12B added the step and recorded the move in its own artifact rather than here, and CAP-16 writes it down where the moves live | the CAP-15C closure (206) → measured on the CAP-12B hosted run (207) |
+| `CAP-16 native signal channel gates (S1, K, E1, L1, X, C1) + evidence` | **added**, all four legs | the CAP-12B closure (207) → measured on the CAP-16 hosted run (208) |
 
 **Two step names now outlive what they describe.** `CAP-5 host examples
 compile (re-applied CAP-3U window)` and `CAP-6 compile bundler + release host

@@ -985,6 +985,12 @@ jobs:
         with:
           target: ${{ inputs.target }}
 
+      - name: CAP-16 native signal channel gates (S1, K, E1, L1, X, C1) + evidence
+        timeout-minutes: 45
+        uses: ./.github/actions/cap-16-native-signal-channel-gates-s1-k-e1-l1-x-c1-evidence
+        with:
+          target: ${{ inputs.target }}
+
       - name: Backlog disposition - every ledger entry has a verdict
         if: ${{ inputs.target == 'windows' }}
         timeout-minutes: 5
