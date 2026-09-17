@@ -764,7 +764,7 @@ capability, `network.socket`:
 | --- | --- | --- |
 | `pweb.socketOpen` | `{url, protocols?, headers?}` | `{id}` |
 | `pweb.socketSend` | `{id, text}` or `{id, base64}` | `{}` |
-| `pweb.socketReceive` | `{id, waitMs?}` | `{events: [...]}` |
+| `pweb.socketReceive` | `{id}` — **CAP-16: `waitMs is retired`**; `0` is accepted, any other value is `invalid_request` | `{events: [...]}`, at once |
 | `pweb.socketClose` | `{id, code?, reason?}` | `{}` |
 
 The method names are two segments, `Service.Method`, because the frozen method
@@ -808,8 +808,9 @@ is an event carrying its code, a reason bounded to 123 bytes, `wasClean`,
 | send deadline (wall clock) | 10 s |
 | message, either direction | 1 MiB |
 | per-socket event queue | 64 events or 1 MiB |
-| long-poll wait maximum (refused, not clamped, above it) | 25 s |
-| idle bound — a socket the page has not polled | 60 s, closed as `idle` |
+| ~~long-poll wait maximum~~ — **retired by CAP-16**: a receive never waits | — |
+| SDK keepalive receive, `PWEB_SOCKET_KEEPALIVE_MS` (under half the idle bound) | 20 s |
+| idle bound — a socket the page has not received from | 60 s, closed as `idle` |
 | close handshake wait | 2 s |
 | binding request bound in a network host | 2 MiB |
 
@@ -843,18 +844,33 @@ the read, no cookie storage, the system trust store, and an empty proxy
 dictionary.
 
 **The SDKs.** `PWebSocket` in `@pweb/runtime` and `TPWebSocket` in the Pas2JS
-SDK present `onopen`, `onmessage`, `onerror` and `onclose` over those four calls,
-each socket running one bounded long-poll `pweb.socketReceive` after another
-because protocol v1 has no server push. **The long-poll is the receive loop, not
-a placeholder for a streaming one.** CAP-12A measured that WebView2 withholds a
-streamed body from the page until it is complete — six `text/event-stream`
-events produced 150 ms apart arrived within 0.1 ms of each other, 763 ms after
-the request — and ratified a data plane that is Range-based, not streaming-based
-(`docs/kernel.md`). CAP-12 closed on that plane, so there is no streaming route
-for this loop to move onto. Each parked receive holds one scheduler worker, and
-one of its window's simultaneous-invocation slots, for up to `waitMs`. The half
-of the old promise that does hold is kept: the SDK surface, the four method
-names and the native decorator are unaffected by any of this.
+SDK present `onopen`, `onmessage`, `onerror` and `onclose` over those four calls.
+**CAP-16 SUPERSESSION — the receive loop is signal, then receive.** CAP-15C shipped
+one bounded long-poll `pweb.socketReceive {id, waitMs}` after another, and each
+parked receive held one scheduler worker and one of its window's
+simultaneous-invocation slots for up to 25 s. CAP-15C then MEASURED what that
+meant under the host defaults (ledger `15CS-1`): four quiet sockets held the
+whole pool and an unrelated invocation waited 24 984.7 ms on Windows and
+24 999.1 ms on Linux; CAP-16 measured that raising either the workers or the
+slots alone leaves the same wait. Streaming was never the way out: CAP-12A
+measured that WebView2 withholds a streamed body from the page until it is
+complete — six `text/event-stream` events produced 150 ms apart arrived within
+0.1 ms of each other, 763 ms after the request — and ratified a data plane that
+is Range-based, not streaming-based (`docs/kernel.md`). So `waitMs is retired`:
+a receive answers what is queued at once, every event the door queues signals
+the owning window's runtime topic `pweb.socket` through the signal channel below,
+and each SDK socket receives when that topic moves or every
+`PWEB_SOCKET_KEEPALIVE_MS` (20 s), which keeps a quiet socket inside the idle
+bound. A quiet socket holds no worker and no slot; with eight quiet sockets an
+unrelated invocation answers in well under a millisecond (`test/cap15c`, gated
+under 5 ms on Windows and Linux). One topic for every socket of a window, rather
+than one per socket, because topics are declared at composition and an id on
+the channel would be a name; a signal makes each open socket of the page receive
+once. The SDK surface, the four method names and their capability are unchanged.
+
+**The hooks.** The socket door no longer takes the policy's grants slot or the
+host's document and drain seams: it sits on the signal channel
+(`AttachSignals`), which owns all three and hands each on to its one door.
 
 **What the build proves.** As for fetch: `PWEB_NATIVE_CSP` byte-identical in the
 built image; the decorator, `network.socket` and the transport present iff
@@ -862,6 +878,37 @@ origins were declared; no `ws://` loopback literal in a release image, with the
 identical sweep required to fire on a planted twin; and `app.pwb` refused with
 `network_field_in_bundle` when a root-level JSON document carries a `socket`,
 `sockets`, `websocket`, `ws` or `wss` field.
+
+### The native → page signal channel (ratified and implemented at CAP-16)
+
+**Signal, then pull.** Native code says that a topic moved; the page reads what
+changed through an ordinary invocation. Nothing but the topic and a sequence
+number ever reaches the page this way, so a lost signal costs latency, never
+correctness.
+
+| part | contract |
+| --- | --- |
+| native | `PWebSignal(topic)` from any thread (the running host's channel), or `TPWebSignalChannel.Signal`; per-topic sequence `+1`, **coalesced** per (window, topic) — the last sequence wins |
+| drain | one GUI dispatch per tick, at most `PWEB_SIGNAL_TICKS_PER_SECOND` (**20**) per window, one script per tick carrying every pending pair |
+| page | the `pweb:signal` DOM event on `window`, `detail = [["topic", seq], ...]`; `onSignal` / `offSignal` / `lastSeq` in `@pweb/runtime`, `PWebOnSignal` / `PWebOffSignal` / `PWebLastSeq` in the Pas2JS SDK |
+| topics | declared at composition: the application's in `app.services.AppSignalTopics` (grammar `[a-z0-9]+(\.[a-z0-9]+)*`, ≤ 64 bytes, never `pweb.`), the runtime's by their door (`pweb.socket`) |
+| subscribe | `pweb.signalSubscribe {topic}` → `{topic, seq}`; the two methods are registered capability-free and the authority is **per topic**: `signal.<topic>` in the policy's effective set (`network.socket` for `pweb.socket`); an undeclared topic and a missing capability are the same `forbidden` |
+| unsubscribe | `pweb.signalUnsubscribe {topic}` → `{}`, idempotent, needs nothing |
+| lifecycle | a subscription belongs to the native (window, principal); document replacement and revocation drop it, and no script carrying a revoked topic is issued after the revoking call returns |
+| handshake | `pweb.handshake` gains the additive member `"features": ["signal"]`; protocol stays 1 |
+| bounds | 64 topics per host, 32 subscriptions per window, 8 windows, `service_error` category `signal_limit` beyond |
+
+**The recovery pattern.** Subscribe, wait for `ready`, then read everything
+once; on every callback read again since the application's own cursor. A signal
+emitted before the subscription, during a navigation or during a `pweb dev`
+reload is allowed to be lost, and the re-read is what recovers it.
+
+**The one injected script.** The channel's script is the only one the runtime
+writes into a page — `window.dispatchEvent(new CustomEvent("pweb:signal",{detail:…}))`,
+one literal, every variable part JSON-encoded to printable ASCII — evaluated at
+the product's one `webview_eval` call site, under `PWEB_NATIVE_CSP` unchanged
+(`_bmad-output/specs/spec-pweb/security-model.md`, "The one injected script").
+QuickJS subscriptions are out of scope (backlog `9A-2`).
 
 ---
 

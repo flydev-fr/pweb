@@ -165,6 +165,28 @@ Approved `https:` and `mailto:` URIs may be handed to the operating system **onl
 
 **DECIDED — dev-mode trust model (implementation lands with Phase 10).** The privileged origin is `pweb://app` in development and production alike: `pweb dev` proxies/serves the Vite assets **behind `pweb://app`** rather than re-pointing the privileged origin at `127.0.0.1:<ephemeral>`. Vite HMR may use a narrowly scoped, development-only WebSocket connection (`ws://127.0.0.1:<selected-port>`) — a dev-only **transport** exception, never a privileged-**origin** exception. Production builds contain no localhost/WebSocket HMR allowance of any kind. Recorded now, implemented at Phase 10 — a dev mode that quietly relaxes the origin rule is how the rule dies.
 
+## The one injected script
+
+**DECIDED (CAP-16).** Until CAP-16 the runtime wrote no script of its own into a privileged page: the only native → page calls were the upstream promise resolutions every invocation already makes, and the release and development navigations stayed free of injected HTML and injected script. The native → page signal channel adds exactly one script, and this section is its whole description.
+
+**Its shape.** One literal, `PWEB_SIGNAL_EVAL_TEMPLATE` in `src/rpc/pweb.rpc.signal.pas`:
+
+```text
+window.dispatchEvent(new CustomEvent("pweb:signal",{detail:%}))
+```
+
+Its only variable part, `%`, is the array `[["topic",seq],...]` built by `PWebSignalScript`. Every topic goes through `PWebSignalJsonString`, which emits printable ASCII only — quotes, backslash, `<`, `>`, `&`, the apostrophe, every control byte and every code point above U+007E (U+2028 and U+2029 included) become `\u` escapes, and a byte that is not valid UTF-8 becomes the replacement character's escape — and every sequence is a decimal integer. A topic is grammar-restricted (`[a-z0-9]+(\.[a-z0-9]+)*`, at most 64 bytes) before it can be declared, and is encoded anyway. CAP-16 measured eighteen hostile topics through that encoder on WebView2 and WebKitGTK: every one arrived as exactly the string it was, and nothing it spelled ran (`cap16-checkpoint1.md` §1).
+
+**Its one site.** The script is evaluated by `PWebHostSignalEval` in `src/webview/pweb.webview.host.pas`, the only `webview_eval` call in `src/**`, whose only caller is the channel's drain and whose only argument is what `PWebSignalScript` built. `IWebView.Eval` stays declared and unimplemented. `test/cap16/check_cap16_contracts.ps1` and the development-trust gate count the site and refuse a second one; both are proven to fire on a planted copy.
+
+**It runs under the native CSP.** `PWEB_NATIVE_CSP` carries no `'unsafe-inline'` and no `'unsafe-eval'`, and CAP-16 measured, per engine, that a natively evaluated script runs under it while the page's own `eval`, `Function` and inline script are refused. The engine APIs involved (`ExecuteScript`, `webkit_web_view_evaluate_javascript`, `evaluateJavaScript:`) are the ones the upstream promise resolution already uses for every invocation.
+
+**The receiver is a DOM event, `pweb:signal` on `window`** — not a global function. There is no global name the page and the runtime must agree on, a page without the SDK has no listener and the dispatch does nothing, and a page can only break its own listeners.
+
+**It carries no authority.** A delivered pair names a topic the page already subscribed to and a counter; neither grants, names or reaches anything. Every read a signal prompts is an ordinary invocation, authorised by `ICapabilityPolicy` from the native context. Subscribing is itself an invocation (`pweb.signalSubscribe`), authorised per topic by the capability `signal.<topic>` — or, for a runtime topic, the capability its door declared (`pweb.socket` → `network.socket`) — read from the policy's effective set at the moment of the call. A page that dispatches `pweb:signal` to itself bypasses nothing, because it was never needed to make the read. A subscription belongs to the native (window, principal); it ends when the document is replaced and when the capability is revoked, and no script carrying the topic is issued after the revoking call returns.
+
+**It adds no activation source.** CAP-8B measured that a navigation issued in the continuation of an engine-evaluated script reports user activation on WebView2 and WebKitGTK. The signal script navigates nowhere, the navigation classifier is forbidden to read activation, and every invocation already resolves through the same engine API.
+
 If embedded external content is ever needed:
 
 ```
