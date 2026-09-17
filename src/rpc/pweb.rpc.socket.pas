@@ -44,7 +44,8 @@
 
   `receive` is a bounded LONG-POLL: it returns what is queued at once, or
   waits up to `waitMs` for the first event, on the scheduler worker that runs
-  it. It is the receive path and not a placeholder: CAP-12A measured WebView2
+  it and in one of its source's invocation slots. It is the receive path and
+  not a placeholder: CAP-12A measured WebView2
   withholding a streamed body from the page until it is complete, and ratified
   a data plane Range-based, not streaming-based, so no streaming route exists
   for the SDK's receive loop to move onto.

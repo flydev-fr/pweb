@@ -49,7 +49,10 @@ decision, not from the measurements.
 1. **The store write.** The typed refusal becomes a write behind
    `IBlobWriter`: a window is appended to a blob the caller's principal owns,
    the last one seals it, and a failure abandons it. Ceilings are refused by
-   name with the categories CAP-12B already emits.
+   name with the categories CAP-12B already emits. A write accepts **at most
+   one window per request**: the 512 MiB drain bound belongs to today's
+   refusal path, which reads a body to its end only to report it, and a store
+   write must refuse a body over the window before it appends anything.
 2. **The addressing of an upload.** How the page names the blob it is writing
    before a token exists (a create call through `invoke`, or a reserved
    segment under `_pweb/`) is this shard's first decision, and it must keep the

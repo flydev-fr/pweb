@@ -19,7 +19,9 @@
  * receive path, not a placeholder: CAP-12A measured WebView2 withholding a
  * streamed body from the page until it is complete, and ratified a data plane
  * Range-based, not streaming-based, so no streaming route exists to replace it.
- * Each receive in flight holds one native scheduler worker for up to `waitMs`.
+ * Each receive in flight holds one native scheduler worker, and one of the
+ * window's invocation slots, for up to `waitMs`. This class, its events and
+ * the four method names are unaffected.
  *
  * Browser-shaped, with the differences stated rather than hidden: messages
  * are `string` or `ArrayBuffer` (no `Blob`); there is no `bufferedAmount`,

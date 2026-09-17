@@ -2,7 +2,7 @@
 title: 'CAP-12 closes on 12B, and the CAP-15C starvation is measured'
 type: 'chore'
 created: '2026-09-17'
-status: 'in-progress'
+status: 'in-review'
 route: 'dispatch'
 baseline_commit: 'd46d6ada8299e438f9f51704d82b069571084537'
 review_loop_iteration: 0
@@ -79,14 +79,14 @@ CAP-12C; commit `.claude/settings.json` or `mtron-feature-requests.md`.
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `_bmad-output/planning-artifacts/cap12c-brief.md` -- write the 12C brief, `status: ready` -- the brief the closure keeps.
-- [ ] docs, SDKs, decorator comment -- replace the four sentences with the 12A measurement -- they point at nothing.
-- [ ] `test/cap15c/check_cap15c_contracts.ps1` -- K9 refuses the promise and requires the measurement -- observed firing on the old tree.
-- [ ] `_bmad-output/implementation-artifacts/cap12-closure-artifact.md` -- runs, SPEC lines, phase ledger, re-homed rows, 12C handoff, supersessions.
-- [ ] ledger -- append the `12-*` closure entries; TSV rows; `7M1-5` closed; seven CAP-12-owned rows re-homed; `docs/backlog.md` counts and tables.
-- [ ] `test/backlog/check_backlog.ps1` + self-test -- map `12`; §5d: the closure table carries every 12A/12B/12 key with its TSV digest and verdict, and no open row is owned by `CAP-12`.
-- [ ] `test/cap15c/socketstarve.pas` + build + gate runner -- the instrument, four rows, instrument-validity requirements.
-- [ ] `test/cap7f/*` -- required, per-target shape checks, `not_applicable` on macOS, three seeded refusals, floor 251.
+- [x] `_bmad-output/planning-artifacts/cap12c-brief.md` -- write the 12C brief, `status: ready` -- the brief the closure keeps.
+- [x] docs, SDKs, decorator comment -- replace the four sentences with the 12A measurement -- they point at nothing.
+- [x] `test/cap15c/check_cap15c_contracts.ps1` -- K9 refuses the promise and requires the measurement -- observed firing on the old tree.
+- [x] `_bmad-output/implementation-artifacts/cap12-closure-artifact.md` -- runs, SPEC lines, phase ledger, re-homed rows, 12C handoff, supersessions.
+- [x] ledger -- append the `12-*` closure entries; TSV rows; `7M1-5` closed; seven CAP-12-owned rows re-homed; `docs/backlog.md` counts and tables.
+- [x] `test/backlog/check_backlog.ps1` + self-test -- map `12`; §5d: the closure table carries every 12A/12B/12 key with its TSV digest and verdict, and no open row is owned by `CAP-12`.
+- [x] `test/cap15c/socketstarve.pas` + build + gate runner -- the instrument, four rows, instrument-validity requirements.
+- [x] `test/cap7f/*` -- required, per-target shape checks, `not_applicable` on macOS, three seeded refusals, floor 251.
 - [ ] after the hosted measurement -- one ledger entry (`15CS-1`) with the verdict and the numbers, TSV row, `docs/backlog.md`.
 
 **Acceptance Criteria:**
@@ -97,9 +97,65 @@ CAP-12C; commit `.claude/settings.json` or `mtron-feature-requests.md`.
 
 ## Implementation Notes
 
+- Implemented directly in the main session rather than through a fresh
+  subagent: the work leans on repository context already gathered (the
+  ledger keying, the aggregator's per-target idiom, the CAP-15C harness).
+- **No 12C brief existed** under `planning-artifacts`; one was written from
+  CAP-12A §5.3/§6.2, CAP-12B §3/§4 and ledger `12B-2`, `status: ready`.
+- **The SPEC's ">40 MB" clause is recorded as DEVIATED** in the closure
+  (a v1 blob is one 8 MiB window, `12B-3`); the line is MET for the read side
+  with that deviation and the URL spelling supersession stated, not rounded up.
+- **Nine open rows named CAP-12 as owner.** `7M1-5` is closed (`12-2`); seven
+  are re-homed (`12-4`); `12B-2` keeps CAP-12C. The backlog gate gained §5d
+  (the closure table is read; no open row owned by `CAP-12`) and three
+  self-test legs (29/29).
+- **K9 inverted** and observed firing eight times on the unchanged tree. The
+  decorator's header comment carried the same promise and was changed too —
+  a comment, no compiled change.
+- **N = 5 cannot park five polls**: the fifth open is refused `socket_limit`
+  by the ratified four-socket host bound; the row says `opened=4/5`.
+- **Teardown finding, harness-side**: `BeforeDrain` alone does not end a
+  parked receive (the socket is made invisible, no close event is queued); the
+  scheduler's `Shutdown` cancels it within a slice. The first local run waited
+  on the wrong order and failed its own check; the harness now tears down in
+  the host's order.
+- K25 (the instrument runs at the numbers read from `PWebDefaultHostOptions`,
+  adds nothing for the sockets) observed firing three ways.
+- Local Windows measurement, twice: N=0 0.38–0.41 ms, N=3 0.20 ms (both
+  `served_beside_parked_polls`), N=4 24 970–24 977 ms and N=5 24 972–24 992 ms
+  (`served_after_a_parked_poll_returned`, `active=4 queued=1`).
+
 ## Spec Change Log
 
 ## Review Triage Log
+
+Pass 1 (blind, edge-case, verification-gap), all layers reported before triage.
+
+| # | finding | verdict | route | evidence |
+|---|---|---|---|---|
+| 1 | CAP-10A dev-trust still requires "only thing that changes" in `docs/cli-contract.md` (all three layers) | high | patch | `test/cap10a/check_dev_trust.ps1:591`; the local gate reads FAIL; it runs on four legs before CAP-15C |
+| 2 | §5d digest, stray, duplicate and missing-file branches never observed firing | medium | patch | the three new self-test legs reach only the orphan, verdict and owner branches |
+| 3 | `not_answered` / refused Add fails the leg, the frozen matrix says recorded | medium | patch | `Require(answered)` in `socketstarve.pas`; the matrix row "recorded; the program still tears down" |
+| 4 | K9 misses a promise wrapped across a comment prefix or a curly apostrophe, and sweeps only part of `sdk/` | medium | patch | `\s+` cannot cross ` * `; the old `socket.ts` split was caught only by the other alternative |
+| 5 | closure §2 says two deviations, the table marks one | low | patch | R4 read "MET, spelling superseded" while `12-1` names two |
+| 6 | R6 MET without tying the memory-backed store to `12B-3` | low | patch | the v1 store holds each blob whole |
+| 7 | R2 proven only for `pweb.fetch`; an application mORMot service never sees the principal, so it cannot create an owner-scoped blob | medium | defer (pre-existing, 12B) | `TMormotInvocationBridge` hands the service no `TInvocationContext`; recorded as `12-5` under the closure's own key rather than this spec's, so the phase ledger stays one table |
+| 8 | `docs/backlog.md` says CAP-12 leaves two open rows; `12A-1` makes three | low | patch | `12A-1` is UPSTREAM |
+| 9 | `docs/backlog.md` head still names CAP-10 and CAP-11 closures only | low | patch | lines 8-9 |
+| 10 | closure §4 says one 12C entry condition, the brief lists two; the brief does not reconcile the 512 MiB drain bound with one window | low | patch | brief "Entry conditions" |
+| 11 | §5d owner check misses `CAP-12A` / `CAP-12B` | low | patch | exact match on `CAP-12` |
+| 12 | closure table owner column never compared and already paraphrased | low | patch | 12A-1, 12A-2, 12A-3, 12B-1 |
+| 13 | aggregator self-test does not reach the wrong-N and non-42 branches | low | patch | both new "untyped" legs hit one branch |
+| 14 | the measurement cannot separate worker starvation from slot starvation (4 workers = 4 slots, one source) | medium | patch (wording) | `TryClaim` stops at `MaxConcurrent`; the log and the prose said "every worker" |
+| 15 | "answered inside 25 s by construction" is false by up to one wait slice | low | patch (source comment) | a parked poll returns at bound + ≤20 ms |
+| 16 | the spec's example row does not match the written format | low | reject | the fix edits this build's spec |
+| 17 | the parked check ignores `Workers`; the N>bound check assumes 4 | low | patch | `active = Min(len, Slots)` |
+| 18 | the measurement half's supersessions are recorded nowhere yet | low | patch (in `15CS-1`) | floor, fields, L2, K25 |
+| 19 | K25 passes `Workers := Workers + 4` or `Inc(Workers)` | low | patch | only arithmetic beside the socket bound was refused |
+| 20 | "nine open rows named CAP-12" — eight did | low | patch | baseline TSV |
+| 21 | a missing `socketstarve` binary aborts the runner before `cli-<target>.json` | low | patch | `& $bin` under `Stop` |
+| 22 | `limits` not `Default`-initialised | low | patch | `TPWebSourceLimits` may grow additively |
+| 23 | the removed sentence also carried the surface-stability promise | low | patch | CAP-12A §6.2 keeps that half |
 
 ## Design Notes
 

@@ -851,8 +851,10 @@ streamed body from the page until it is complete — six `text/event-stream`
 events produced 150 ms apart arrived within 0.1 ms of each other, 763 ms after
 the request — and ratified a data plane that is Range-based, not streaming-based
 (`docs/kernel.md`). CAP-12 closed on that plane, so there is no streaming route
-for this loop to move onto; each parked receive holds one scheduler worker for
-up to `waitMs`.
+for this loop to move onto. Each parked receive holds one scheduler worker, and
+one of its window's simultaneous-invocation slots, for up to `waitMs`. The half
+of the old promise that does hold is kept: the SDK surface, the four method
+names and the native decorator are unaffected by any of this.
 
 **What the build proves.** As for fetch: `PWEB_NATIVE_CSP` byte-identical in the
 built image; the decorator, `network.socket` and the transport present iff

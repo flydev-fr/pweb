@@ -706,8 +706,8 @@ if (Test-Path -LiteralPath $cap12aDir) {
 #
 # And a closed phase owns nothing. The closure re-homed every open row that
 # named CAP-12; an open row pointing at it again would be an item assigned to
-# a phase nobody will reopen. The owner is matched EXACTLY - `CAP-12C` is a
-# ready brief and a legitimate owner.
+# a phase nobody will reopen. The owner is matched EXACTLY against CAP-12 and
+# its two closed shards - `CAP-12C` is a ready brief and a legitimate owner.
 $cap12Closure = '_bmad-output/implementation-artifacts/cap12-closure-artifact.md'
 if (-not (Test-Path -LiteralPath $cap12Closure)) {
     Violation "CAP-12 CLOSURE: $cap12Closure is missing"
@@ -716,13 +716,13 @@ else {
     $ct = [System.IO.File]::ReadAllText($cap12Closure)
     $inTable = @{}
     foreach ($m in [regex]::Matches($ct,
-            '(?m)^\|\s*`(12[AB]?-\d+)`\s*\|\s*`([0-9a-f]{8})`\s*\|\s*([A-Z_]+)\s*\|')) {
+            '(?m)^\|\s*`(12[AB]?-\d+)`\s*\|\s*`([0-9a-f]{8})`\s*\|\s*([A-Z_]+)\s*\|\s*([^|]*?)\s*\|')) {
         $k = $m.Groups[1].Value
         if ($inTable.ContainsKey($k)) {
             Violation "CAP-12 CLOSURE: $k is disposed twice in $cap12Closure"
             continue
         }
-        $inTable[$k] = @($m.Groups[2].Value, $m.Groups[3].Value)
+        $inTable[$k] = @($m.Groups[2].Value, $m.Groups[3].Value, $m.Groups[4].Value)
     }
     $phaseKeys = @($entries.Keys | Where-Object { $_ -match '^12[AB]?-\d+$' })
     $facts['cap12_phase_entries'] = $phaseKeys.Count
@@ -740,6 +740,12 @@ else {
             Violation ("CAP-12 CLOSURE: $k reads $($inTable[$k][1]) in $cap12Closure " +
                 "and $($rows[$k].Verdict) in $backlogPath")
         }
+        # the owner is the TSV's cell verbatim: a paraphrase is how two tables
+        # that read alike start meaning different people
+        if ($rows.Contains($k) -and ($inTable[$k][2] -cne $rows[$k].Owner)) {
+            Violation ("CAP-12 CLOSURE: $k names owner '$($inTable[$k][2])' in $cap12Closure " +
+                "and '$($rows[$k].Owner)' in $backlogPath")
+        }
     }
     foreach ($k in $inTable.Keys) {
         if ($phaseKeys -notcontains $k) {
@@ -748,11 +754,11 @@ else {
     }
 }
 $ownedByClosed = @($rows.Keys | Where-Object {
-    ($rows[$_].Verdict -in @('FIX_NOW', 'ROADMAP', 'UPSTREAM')) -and ($rows[$_].Owner -ceq 'CAP-12') })
+    ($rows[$_].Verdict -in @('FIX_NOW', 'ROADMAP', 'UPSTREAM')) -and ($rows[$_].Owner -cmatch '^CAP-12[AB]?$') })
 $facts['open_rows_owned_by_cap12'] = ($ownedByClosed -join ',')
 if ($ownedByClosed.Count -gt 0) {
-    Violation ('OWNED BY A CLOSED PHASE: ' + ($ownedByClosed -join ', ') + ' name CAP-12 as ' +
-        'their owner, and CAP-12 closed on 12B - re-home them to somebody who will do the work')
+    Violation ('OWNED BY A CLOSED PHASE: ' + ($ownedByClosed -join ', ') + ' name CAP-12, CAP-12A ' +
+        'or CAP-12B as their owner, and all three are closed - re-home them to somebody who will do the work')
 }
 
 # --- 6. verdict ---------------------------------------------------------------

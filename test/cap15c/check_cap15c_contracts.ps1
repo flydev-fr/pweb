@@ -451,13 +451,27 @@ $report.Add('K8: hook armed before the guard; disarm, BeforeDrain, binding.Close
 # anywhere under docs/, either SDK or the decorator, and the four places that
 # carried it must carry the measurement that replaced it. The needle is built by
 # concatenation so this file cannot satisfy its own sweep.
+#
+# THE SWEPT TEXT IS NORMALISED FIRST, because a promise is prose and prose
+# wraps: the old socket.ts split "When CAP-12 / * brings streaming" across a
+# JSDoc line, which `\s+` alone cannot cross. Comment prefixes at the start
+# of a line (` * `, `//`, `#`, `>`) become spaces and a typographic apostrophe
+# becomes a straight one, so the needle meets the sentence however it was
+# laid out. The sweep is every TRACKED file under docs/ and sdk/ - README,
+# tests and all - plus the decorator; build output is not the source.
 $k9Promise = '(?i)CAP-12(''s)?\s+(brings\s+)?' + 'streaming|only\s+thing\s+that\s+' + 'changes'
 $k9Measured = '(?i)Range-based,\s+not\s+streaming-based'
-$k9Swept = @(Get-ChildItem 'docs', 'sdk/typescript/src', 'sdk/pas2js' -Recurse -File |
-    Where-Object { $_.Extension -in '.md', '.ts', '.pas', '.inc' } |
-    ForEach-Object { RelPath $_.FullName }) + @($decorator)
+function K9Text([string]$P) {
+    $t = (Read_ $P) -replace '(?m)^\s*(\*|//|#|>)+', ' '
+    return $t.Replace([string][char]0x2019, "'")
+}
+$k9Swept = @(& git ls-files -- docs sdk | Where-Object {
+        $_ -match '\.(md|ts|js|mjs|pas|pp|inc|json)$' }) + @($decorator)
+if ($k9Swept.Count -lt 20) {
+    Violation "K9: the sweep found only $($k9Swept.Count) tracked file(s) under docs/ and sdk/ - git ls-files did not answer"
+}
 foreach ($f in $k9Swept) {
-    if ((Read_ $f) -match $k9Promise) {
+    if ((K9Text $f) -match $k9Promise) {
         Violation ("K9: $f still says the socket receive loop waits for CAP-12 " +
             'streaming - CAP-12A measured that route impossible on WebView2 and ' +
             'CAP-12 closed without one')
@@ -465,7 +479,7 @@ foreach ($f in $k9Swept) {
 }
 foreach ($f in 'docs/cli-contract.md', 'sdk/typescript/src/socket.ts',
                'sdk/pas2js/pweb.native.pas', $decorator) {
-    if ((Read_ $f) -notmatch $k9Measured) {
+    if ((K9Text $f) -notmatch $k9Measured) {
         Violation ("K9: $f does not carry the CAP-12A measurement that replaced " +
             'the streaming promise (a data plane Range-based, not streaming-based)')
     }

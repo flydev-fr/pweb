@@ -1,16 +1,16 @@
 # The backlog
 
 `_bmad-output/implementation-artifacts/deferred-work.md` is append-only and
-carries **454 entries** from Phase 0 to the CAP-12 closure. It is a
+carries **455 entries** from Phase 0 to the CAP-12 closure. It is a
 ledger: it records what was found, in the words of the shard that found it,
 and it never edits itself. That makes it excellent evidence and a poor
 worklist — a reader who wants to know *what is still owed* has to resolve
-every supersession chain by hand, and three phase-closure artifacts answer
-that question for CAP-10 and CAP-11 only.
+every supersession chain by hand, and four phase-closure artifacts answer
+that question for CAP-10, CAP-11 and CAP-12 only.
 
-This document is the worklist. Every one of the 454 entries is disposed of
-exactly once, with one verdict, an owner and a reason. **Sixty-two are open,**
-**and those sixty-two are listed here in full**; the other 392 are in
+This document is the worklist. Every one of the 455 entries is disposed of
+exactly once, with one verdict, an owner and a reason. **Sixty-three are open,**
+**and those sixty-three are listed here in full**; the other 392 are in
 `test/backlog/dispositions.tsv`, which is the table this document is written
 from and the one the gate reads.
 
@@ -18,7 +18,7 @@ from and the one the gate reads.
 |---|---:|---|
 | `FIX_NOW` | 4 | closed by this triage, one commit each, cited below |
 | `UPSTREAM` | 1 | the defect belongs to a third-party project and a report is written or owed. Three mORMot entries left this bucket on 2026-09-16, when upstream fixed all three and the pin moved onto the fixes |
-| `ROADMAP` | 57 | real work, deferred, with a named owner |
+| `ROADMAP` | 58 | real work, deferred, with a named owner |
 | `ACCEPTED` | 125 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
 | `CLOSED` | 267 | the thing the entry describes is done |
 
@@ -321,7 +321,7 @@ under a *resolved upstream* header naming the commit.
 
 ---
 
-## ROADMAP — 57 items, by owner
+## ROADMAP — 58 items, by owner
 
 The full reasons are in the table; this is the shape of what is owed.
 
@@ -345,10 +345,10 @@ hand (`B1-5`), and the host-side flush or close-on-report that turns a
 example-host migration shard. The job pump behind a Promise-returning
 `pweb.invoke` and dynamic `import()` (`9A-2`) goes to a shard wanting
 async-first plugin scripts, and a mORMot head watcher (`11B-4`) is its own
-instrument with its own budget. CAP-12 leaves two rows of its own open —
-`12B-2`, the upload, owned by CAP-12C, and `12B-3`, blobs larger than one
-window — and `test/backlog/check_backlog.ps1` §5d refuses any open row owned by
-`CAP-12`.
+instrument with its own budget. CAP-12 leaves four rows of its own open:
+`12A-1`, the WebKitGTK fault, upstream; `12B-2`, the upload, owned by-12C; `12B-3`, blobs larger than one window; and `12-5`, an application returning a blob, which the SPEC names and no path proves yet because a service never sees the principal a blob belongs to.
+`test/backlog/check_backlog.ps1` §5d refuses any open row owned by `CAP-12`,
+`CAP-12A` or `CAP-12B`.
 
 **Pins and locks own six**, and each has a natural trigger rather than a date: a
 `discovery-url` key so a WebView2 bump can find the next build (`6B4-10`), a
@@ -411,8 +411,8 @@ than appended to an append-only ledger:
 
 ## The open work, in full
 
-Sixty-two rows: the four `FIX_NOW` items this triage closed, the one
-`UPSTREAM` entry, and the fifty-seven on the roadmap. Everything else — 125
+Sixty-three rows: the four `FIX_NOW` items this triage closed, the one
+`UPSTREAM` entry, and the fifty-eight on the roadmap. Everything else — 125
 `ACCEPTED` and 267 `CLOSED` — is in `test/backlog/dispositions.tsv`.
 
 | key | verdict | owner | reason |
@@ -479,3 +479,4 @@ Sixty-two rows: the four `FIX_NOW` items this triage closed, the one
 | `12A-1` | UPSTREAM | WebKitGTK; the report is written, the version range is pinned | `webkit_uri_scheme_request_get_http_body()` faults the UI process for a blob-backed request body on 2.52.6, with a same-size typed-array body unharmed; the gdb backtrace puts the fault three frames inside libwebkit2gtk with the caller doing nothing but the call |
 | `12B-2` | ROADMAP | CAP-12C | the JS->native upload transport is built, drained and proven byte-exact on three engines and refused by name with a receipt; CAP-12C turns the refusal into a store write behind the already-ratified `IBlobWriter` and adds the two SDK functions |
 | `12B-3` | ROADMAP | the shard that wants blobs larger than one window | in v1 a blob is at most the 8 MiB window, which is why no whole-body answer needs ranging; the ranged path is built and proven and the clamp lives in one place, and the ceiling should be raised together with a file-backed store |
+| `12-5` | ROADMAP | the first application that returns a blob from its own service | the SPEC's producer is proven only for the runtime-owned pweb.fetch: an application mORMot service never receives the invocation context, so it cannot own a blob to a principal, and the decorator path that can has no helper, no template construct and no proof |

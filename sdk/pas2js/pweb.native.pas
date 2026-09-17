@@ -171,7 +171,9 @@ type
     measured WebView2 withholding a streamed body from the page until it is
     complete, and ratified a data plane Range-based, not streaming-based, so
     no streaming route exists to replace it. Each receive in flight holds one
-    native scheduler worker for up to `waitMs`.
+    native scheduler worker, and one of the window's invocation slots, for up
+    to `waitMs`. This class, its events and the four method names are
+    unaffected.
 
     It constructs no URL, supplies no default origin, adds no header, retries
     nothing and reconnects nothing. Send on a socket that is not open raises

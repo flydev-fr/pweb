@@ -1,4 +1,4 @@
-# THE BACKLOG GATE'S NEGATIVE SELF-TEST: twenty-nine perturbations, each of
+# THE BACKLOG GATE'S NEGATIVE SELF-TEST: thirty-four perturbations, each of
 # which check_backlog.ps1 must refuse, and each of which is byte-restored after.
 #
 # A gate that has only ever been seen to PASS has an unproven failure path, and
@@ -80,7 +80,7 @@ try {
         throw ('the gate does not pass on the unperturbed tree, so no leg below ' +
             'would mean anything; fix that first')
     }
-    Write-Host '[backlog] baseline PASS; twenty-nine perturbations follow'
+    Write-Host '[backlog] baseline PASS; thirty-four perturbations follow'
 
     # Rewrite one row of the disposition table, addressed by its key, so a leg
     # says what it changes rather than depending on a substring that could
@@ -325,6 +325,38 @@ try {
         if (-not $re.IsMatch($t)) { throw 'the closure table carries no ACCEPTED 12A-2 row to perturb' }
         [System.IO.File]::WriteAllText($p, $re.Replace($t, '${1}CLOSED${2}', 1))
     } 'CAP-12 CLOSURE: 12A-2 reads CLOSED'
+
+    # The table is compared cell by cell, so each cell gets a leg of its own,
+    # and so does each way the table can stop being a disposition of the
+    # ledger: a key it invents, a key it disposes of twice, and no table at all.
+    function Set-ClosureRow([string]$Key, [scriptblock]$Rewrite) {
+        $p = Join-Path $repoRoot $targets['c12close']
+        $t = [System.IO.File]::ReadAllText($p)
+        $re = [regex]('(?m)^\|\s*`' + [regex]::Escape($Key) + '`\s*\|[^\r\n]*')
+        $m = $re.Match($t)
+        if (-not $m.Success) { throw "the closure table carries no $Key row to perturb" }
+        [System.IO.File]::WriteAllText($p, $t.Remove($m.Index, $m.Length).Insert($m.Index, (& $Rewrite $m.Value)))
+    }
+
+    Leg 'CAP-12 closure: a digest that disagrees with the ledger' {
+        Set-ClosureRow '12A-1' { param($r) $r -replace '`bf54f4e6`', '`0badf00d`' }
+    } 'CAP-12 CLOSURE: 12A-1 reads digest 0badf00d'
+
+    Leg 'CAP-12 closure: an owner that paraphrases the disposition table' {
+        Set-ClosureRow '12B-3' { param($r) $r -replace 'the shard that wants blobs larger than one window', 'whoever wants bigger blobs' }
+    } 'CAP-12 CLOSURE: 12B-3 names owner'
+
+    Leg 'CAP-12 closure: a key the ledger does not carry' {
+        Set-ClosureRow '12B-4' { param($r) $r + "`n| ``12B-9`` | ``00000000`` | CLOSED | itself | a row nobody appended |" }
+    } 'CAP-12 CLOSURE STRAY: '
+
+    Leg 'CAP-12 closure: a key disposed of twice' {
+        Set-ClosureRow '12B-4' { param($r) $r + "`n" + $r }
+    } 'CAP-12 CLOSURE: 12B-4 is disposed twice'
+
+    Leg 'CAP-12 closure: the closure artifact is gone' {
+        Remove-Item -LiteralPath (Join-Path $repoRoot $targets['c12close'])
+    } 'CAP-12 CLOSURE: _bmad-output/implementation-artifacts/cap12-closure-artifact.md is missing'
 
     Leg 'CAP-12 closure: an open row is handed back to the closed phase' {
         SetRow '9A-2' @('9A-2', '61f21f8a', 'ROADMAP', 'CAP-12', '-',

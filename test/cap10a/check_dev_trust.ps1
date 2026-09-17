@@ -588,7 +588,12 @@ foreach ($tpl in 'tools/templates/react/src/program.lpr',
     }
     if (-not $sawDoor) { $violations.Add("$tpl does not install the socket door") }
 }
-foreach ($phrase in 'pweb.socketOpen', 'network.socket', 'only thing that changes',
+# The third phrase is the receive-loop decision. CAP-15C recorded it as a
+# promise that CAP-12 streaming would replace the loop; CAP-12A measured that
+# route impossible on WebView2 and the CAP-12 closure replaced the promise
+# with the measurement, which is what the contract must now carry (and what
+# CAP-15C K9 requires beside it).
+foreach ($phrase in 'pweb.socketOpen', 'network.socket', 'Range-based, not streaming-based',
                     'by parsed components') {
     if (-not $contractText.Contains($phrase)) {
         $violations.Add(("docs/cli-contract.md does not record the CAP-15C " +
