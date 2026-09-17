@@ -118,9 +118,9 @@ verbatim, and nothing else may appear.
 | `12-5` | `72468149` | ROADMAP | the first application that returns a blob from its own service | the SPEC's producer is proven for `pweb.fetch` only (§2 R2); found by the closure's own review |
 
 **Orphans: 0. Strays: 0. Rewords: 0.** Census: 5 CLOSED, 5 ACCEPTED,
-3 ROADMAP, 1 UPSTREAM. The backlog gate reads
+3 ROADMAP, 1 UPSTREAM. At this closure's commits the backlog gate read
 **455 ledger entries, 0 orphans, 63 open** (4 fix-now, 58 roadmap, 1 upstream),
-125 accepted, 267 closed.
+125 accepted, 267 closed; the same branch's CAP-15C entries came after.
 
 ### The rows CAP-12 owned in other phases
 
