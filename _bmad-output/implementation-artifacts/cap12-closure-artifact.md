@@ -115,7 +115,7 @@ verbatim, and nothing else may appear.
 | `12-2` | `6ef453d0` | CLOSED | itself | `7M1-5` closed by the Range decision and the macOS measurements behind it |
 | `12-3` | `fe0a748a` | CLOSED | itself | the streaming promise removed and K9 inverted (§6) |
 | `12-4` | `f45701e6` | ACCEPTED | the CAP-12 closure | the seven open rows CAP-12 owned without being blob-plane work, re-homed |
-| `12-5` | `72468149` | ROADMAP | the first application that returns a blob from its own service | the SPEC's producer is proven for `pweb.fetch` only (§2 R2); found by the closure's own review |
+| `12-5` | `72468149` | CLOSED | CAP-16 | the SPEC's producer was proven for `pweb.fetch` only (§2 R2); found by the closure's own review, and CLOSED by CAP-16 (ledger `16-3`), which gave the mORMot bridge a thread-scoped caller context and one helper that creates a blob for the caller. **Superseded row:** this phase ledger read `ROADMAP` / `the first application that returns a blob from its own service` at the CAP-12 closure |
 
 **Orphans: 0. Strays: 0. Rewords: 0.** Census: 5 CLOSED, 5 ACCEPTED,
 3 ROADMAP, 1 UPSTREAM. At this closure's commits the backlog gate read

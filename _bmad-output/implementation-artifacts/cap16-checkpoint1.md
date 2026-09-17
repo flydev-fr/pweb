@@ -219,7 +219,11 @@ never calls a door while holding its lock.
   from being closed as idle and bounds the latency of any signal lost in a way
   the design did not foresee. Cross-checked native ↔ both SDKs, and required
   below half the idle bound.
-- One receive in flight per socket stays (`busy` otherwise).
+- ~~One receive in flight per socket stays (`busy` otherwise).~~
+  **Revised during implementation:** `busy` is retired for receive. With no
+  wait, a second receive is never observable as "in flight"; the take is one
+  step under the door's lock, so two receives of one socket each get a
+  disjoint, ordered part of the queue (ledger `16-7`).
 - The network template keeps its four extra workers and slots (**no default
   moves**); their parked-poll reason is gone, and what they still cover —
   opens and sends running under their own 10 s wall-clock deadlines — is

@@ -127,6 +127,9 @@ $shards = [ordered]@{
     # fixed a CAP-15C harness defect the hosted macOS leg met; its findings are
     # sourced to its own spec, keyed as the socket door's.
     'spec-phase-12-cap12-closure-and-15c-starvation.md'    = '15CS'
+    # CAP-16 built what 15CS-1 asked for: the native-to-page signal channel,
+    # the socket door on it, and the caller principal 12-5 owed.
+    'spec-phase-16-cap16-native-signal-channel.md'         = '16'
 }
 
 # THE CLOSED SET. `CLOSED` means the thing the entry describes is done;
