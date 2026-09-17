@@ -293,6 +293,10 @@ if ($IsLinux -and (Test-Path $compFile)) {
     foreach ($p in $comp.PSObject.Properties) { Row $p.Name "$($p.Value)" }
     Require ("$($comp.signal_composition)" -ceq 'PASS') 'C1: the signal composition smoke failed'
 } elseif ($IsLinux) {
+    # EVERY key still present, and none of them silently empty: an absent
+    # record must read as this leg's own named failure rather than as
+    # `REQUIRED FIELD MISSING/EMPTY` in the aggregate two steps later
+    foreach ($k in $compKeys) { Row $k 'missing' }
     Row 'signal_composition' 'FAIL'
     Require $false 'C1: the signal composition smoke left no record - test/cap16/prove_cap16_composition.sh runs before this gate on Linux'
 } else {
