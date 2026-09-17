@@ -604,6 +604,15 @@ $required = @(
     'socket_composition_rpc_ok', 'socket_composition_rpc_result',
     'socket_composition_listener_members', 'socket_composition_client_sockets',
     'cap15c_failures',
+    # CAP-15C L2: the starvation, MEASURED AND NOT FIXED. One typed row per N
+    # (0, 3, 4, 5 quiet sockets with parked receives, then an unrelated
+    # invoke) under the host defaults. PER-TARGET, checked below in both
+    # directions: Windows and Linux carry a typed measurement whose shape is
+    # refused if it drifts, macOS carries `not_applicable`. The answer itself -
+    # starved or not - is compared on no target and pinned on none: it is a
+    # finding, and the ledger entry is where it is judged.
+    'socket_starvation_n0', 'socket_starvation_n3',
+    'socket_starvation_n4', 'socket_starvation_n5',
     # CAP-12B: the blob data plane.
     #
     # COMPARED (in $equalityFields): the decision corpus digest, the
@@ -2187,6 +2196,38 @@ foreach ($t in $evidence.Keys) {
             if ("$($e.$f)" -cne '0') {
                 $failures.Add("CAP-15C COMPOSITION: target=$t field=$f value='$($e.$f)', expected '0' where the smoke does not run")
             }
+        }
+    }
+    # --- CAP-15C L2: the starvation rows, typed where they are measured -------
+    #
+    # Windows and Linux measure; the two macOS legs say `not_applicable`. BOTH
+    # directions are refused: a macOS leg that started emitting a measurement
+    # is running an unratified leg, and a measuring leg that started emitting
+    # `not_applicable` is an instrument that stopped running and still read
+    # green. On a measuring leg the row must be the typed shape the instrument
+    # writes, name its own N, and carry a served Add's answer - but the TYPE
+    # (served beside the parked polls, or only after one returned) is the
+    # finding, and nothing here prefers one to the other.
+    $c15cStarveKinds = 'served_beside_parked_polls|served_after_a_parked_poll_returned|not_answered|refused_[a-z_:]+'
+    foreach ($n in 0, 3, 4, 5) {
+        $f = "socket_starvation_n$n"
+        $v = "$($e.$f)"
+        if ($c15cMac) {
+            if ($v -cne 'not_applicable') {
+                $failures.Add("CAP-15C STARVATION: target=$t $f='$v' -- only windows-x86_64 and linux-x86_64 measure the starvation, and the macOS legs say so by name")
+            }
+            continue
+        }
+        $m = [regex]::Match($v, "^($c15cStarveKinds) latency_ms=\d+\.\d{3} within_long_poll_bound=(true|false) result=(\S+) opened=\d+/(\d+) open_refused=\S+ parked=\d+ parked_for_ms=\d+\.\d{3} active=-?\d+ queued=-?\d+$")
+        if (-not $m.Success) {
+            $failures.Add("CAP-15C STARVATION: target=$t $f='$v' -- not a typed starvation row")
+            continue
+        }
+        if ($m.Groups[4].Value -cne "$n") {
+            $failures.Add("CAP-15C STARVATION: target=$t $f names N=$($m.Groups[4].Value)")
+        }
+        if (($m.Groups[1].Value -like 'served_*') -and ($m.Groups[3].Value -cne '42')) {
+            $failures.Add("CAP-15C STARVATION: target=$t $f was served with result=$($m.Groups[3].Value), not 42")
         }
     }
     # the export surface: exactly 17 webview_* names, no strays

@@ -2852,6 +2852,26 @@ foreach ($case in @(
     Invoke-AggExpectFail $case.n $case.f
 }
 
+# --- CAP-15C L2: the starvation rows, refused in both directions ------------
+# The rows are per-target and the answer is compared nowhere, so what the
+# aggregator can get wrong is WHICH target measures and WHAT a measurement
+# looks like. One leg per failure: a measuring leg that went quiet, a macOS
+# leg that started measuring, and a row whose type is outside the closed set.
+foreach ($case in @(
+        @{ n = 'cap15c-starve-windows-silent'; leg = 'windows';
+           v = 'not_applicable' },
+        @{ n = 'cap15c-starve-macos-measuring'; leg = 'macos-arm64';
+           v = 'served_beside_parked_polls latency_ms=0.300 within_long_poll_bound=true result=42 opened=4/4 open_refused=none parked=4 parked_for_ms=1.000 active=4 queued=1' },
+        @{ n = 'cap15c-starve-untyped'; leg = 'linux';
+           v = 'fast latency_ms=0.300 within_long_poll_bound=true result=42 opened=4/4 open_refused=none parked=4 parked_for_ms=1.000 active=4 queued=1' })) {
+    Reset-Fixture
+    $f = Join-Path $fx "ev/$($case.leg)/evidence.json"
+    $e = Get-Content $f -Raw | ConvertFrom-Json
+    $e.socket_starvation_n4 = $case.v
+    $e | ConvertTo-Json -Depth 4 | Set-Content $f
+    Invoke-AggExpectFail $case.n 'CAP-15C STARVATION'
+}
+
 Remove-Item -Force -ErrorAction SilentlyContinue $matrix
 # a floor, so a leg that silently stops running is caught. It is deliberately
 # NOT an equality: adding a refusal branch is normal and should not require
@@ -2873,9 +2893,12 @@ Remove-Item -Force -ErrorAction SilentlyContinue $matrix
 # and eight absolute pins - for the same reason a fourth time.
 # CAP-14B raised it from 240 to 248 with its eight legs - one compared digest
 # and seven absolute pins - for the same reason a fifth time.
-if ($script:AggRefusals -lt 248) {
+# The CAP-15C starvation measurement raised it from 248 to 251 with its three
+# legs - both directions of the per-target asymmetry and one untyped row - for
+# the same reason a sixth time.
+if ($script:AggRefusals -lt 251) {
     throw ("selftest: only $($script:AggRefusals) aggregator refusals fired, " +
-        'expected at least 248 -- a negative leg stopped running')
+        'expected at least 251 -- a negative leg stopped running')
 }
 if ($script:SweepRefusals -lt 2) {
     throw ("selftest: only $($script:SweepRefusals) divergence refusals fired, " +

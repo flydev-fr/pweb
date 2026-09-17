@@ -6,6 +6,9 @@
 #                 all through the INJECTED transport, no socket anywhere
 #   socketlive    the SHIPPED transport through the REAL decorator, against
 #                 test/cap15c/ws_server.js
+#   socketstarve  the starvation measurement: the real scheduler at the host
+#                 defaults, the real policy, the decorator and the mORMot
+#                 SOA bridge, against the same witness (Windows and Linux)
 #
 # Like build_cap15b.ps1 it builds no GUI host: every claim these gates make
 # about a built image is a property of the binary, and a window would add a
@@ -72,6 +75,15 @@ Build 'test/cap15c/cap15ctests.pas' @()
 Build 'test/cap15c/socketlive.pas' $macLink
 # the CAP-6 bundler, for the app.pwb refusal of a socket field (B5)
 Build 'tools/bundler/pwebbundle.pas' @()
+# THE STARVATION MEASUREMENT, Windows and Linux only - the two targets whose
+# transport is the mORMot one it composes. It is a measurement of the
+# scheduler under the host defaults, not of a transport, so the macOS legs
+# carry `not_applicable` rows rather than a second transport's copy of it.
+if (-not $IsMacOS) {
+    Build 'test/cap15c/socketstarve.pas' @('-Fudeps/mormot2/src/db',
+        '-Fudeps/mormot2/src/orm', '-Fudeps/mormot2/src/rest',
+        '-Fudeps/mormot2/src/soa')
+}
 
 # --- the Darwin path, TYPE-CHECKED where no Darwin exists -------------------
 #
@@ -104,6 +116,7 @@ if (-not $IsMacOS) {
 
 $exe = if ($IsWindows) { '.exe' } else { '' }
 $wanted = @("cap15ctests$exe", "socketlive$exe", "pwebbundle$exe")
+if (-not $IsMacOS) { $wanted += "socketstarve$exe" }
 foreach ($w in $wanted) {
     if (-not (Test-Path (Join-Path $work "bin/$w"))) {
         throw "expected artifact missing: $w"

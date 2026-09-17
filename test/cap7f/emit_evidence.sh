@@ -1778,7 +1778,9 @@ for f in socket_suite socket_corpus_digest socket_door_available \
         socket_composition_navigation_close socket_composition_shutdown_close \
         socket_composition_rpc_ok socket_composition_rpc_result \
         socket_composition_listener_members socket_composition_client_sockets \
-        cap15c_failures; do
+        cap15c_failures \
+        socket_starvation_n0 socket_starvation_n3 \
+        socket_starvation_n4 socket_starvation_n5; do
     eval "${f}=\"\$(c15c_str ${f})\""
 done
 
@@ -2969,6 +2971,10 @@ cat > "${work}/evidence.json" <<EOF
   "socket_composition_listener_members": "${socket_composition_listener_members}",
   "socket_composition_client_sockets": "${socket_composition_client_sockets}",
   "cap15c_failures": "${cap15c_failures}",
+  "socket_starvation_n0": "${socket_starvation_n0}",
+  "socket_starvation_n3": "${socket_starvation_n3}",
+  "socket_starvation_n4": "${socket_starvation_n4}",
+  "socket_starvation_n5": "${socket_starvation_n5}",
   "blob_suite": "${blob_suite}",
   "blob_corpus_digest": "${blob_corpus_digest}",
   "blob_corpus_lines": "${blob_corpus_lines}",

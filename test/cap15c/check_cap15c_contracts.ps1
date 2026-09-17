@@ -54,6 +54,8 @@
 #       thread's FPU traps first - FPC re-arms them on each thread it creates
 #   K22 inside PWebCocoaSocket the task ivar is only retained, under
 #       @synchronized after a stopping test - never messaged directly
+#   K25 the starvation instrument runs at the numbers read from
+#       PWebDefaultHostOptions, and adds no worker or slot for the sockets
 #
 # Usage: pwsh test/cap15c/check_cap15c_contracts.ps1
 $ErrorActionPreference = 'Stop'
@@ -919,6 +921,42 @@ if ($mmK24 -notmatch 'closeSettled\s*=\s*1') {
     Violation 'K24: nothing in the Cocoa bridge records that a socket task settled, so the grace cannot end early'
 }
 $report.Add("K24: the Darwin release gives a scheduled close frame the mORMot transport's $($graceMormot.Groups[1].Value) ms grace before teardown")
+
+# --- K25: the starvation is measured at the host's own numbers ------------------------
+# test/cap15c/socketstarve.pas asks whether parked receives starve an unrelated
+# invocation UNDER THE RATIFIED HOST DEFAULTS, and it is only that measurement
+# while the numbers are the host's. So the runner must read them out of
+# PWebDefaultHostOptions rather than type them, and the program must hand them
+# to the scheduler and the source untouched: a worker or a slot added for the
+# sockets - which is what the network template does (15C-6) - would hide the
+# very shape the rows exist to show.
+$starveSrc = 'test/cap15c/socketstarve.pas'
+$starveCode = StripComments (Read_ $starveSrc)
+foreach ($needle in @(
+        'TInvocationScheduler\.Create\(\s*policyRef\s*,\s*doorRef\s*,\s*Workers\s*\)',
+        'limits\.MaxConcurrent\s*:=\s*Slots\s*;',
+        'limits\.MaxQueueSize\s*:=\s*QueueBound\s*;')) {
+    if ($starveCode -notmatch $needle) {
+        Violation ("K25: $starveSrc does not hand the host's numbers to the " +
+            "scheduler untouched (expected $needle)")
+    }
+}
+if ($starveCode -match 'PWEB_SOCKET_MAX_SOCKETS\s*\)?\s*[-+*]|[-+*]\s*PWEB_SOCKET_MAX_SOCKETS') {
+    Violation "K25: $starveSrc does arithmetic with the socket bound - a worker added for the sockets is the workaround the measurement must not carry"
+}
+$starveRunner = Read_ 'test/cap15c/run_cap15c_gates.ps1'
+if (($starveRunner -notmatch "'src/webview/pweb\.webview\.host\.pas'") -or
+    ($starveRunner -notmatch 'function PWebDefaultHostOptions') -or
+    ($starveRunner -notmatch '--workers=\$\(\$defaults\.Workers\)') -or
+    ($starveRunner -notmatch '--slots=\$\(\$defaults\.MaxConcurrent\)') -or
+    ($starveRunner -notmatch '--queue=\$\(\$defaults\.MaxQueueSize\)')) {
+    Violation ('K25: run_cap15c_gates.ps1 does not pass the starvation instrument the ' +
+        'three numbers it read from PWebDefaultHostOptions')
+}
+if ($starveRunner -match '--(workers|slots|queue)=\d') {
+    Violation 'K25: run_cap15c_gates.ps1 passes the starvation instrument a typed number'
+}
+$report.Add('K25: the starvation instrument runs at the three numbers the runner reads from PWebDefaultHostOptions, and adds nothing for the sockets')
 
 # --- verdict ---------------------------------------------------------------------------------
 New-Item -ItemType Directory -Force build/cap15c | Out-Null

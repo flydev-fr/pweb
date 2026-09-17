@@ -2333,6 +2333,12 @@ $evidence = [ordered]@{
     socket_composition_listener_members = "$($c15c.socket_composition_listener_members)"
     socket_composition_client_sockets  = "$($c15c.socket_composition_client_sockets)"
     cap15c_failures                    = "$($c15c.cap15c_failures)"
+    # CAP-15C L2: the starvation, measured and not fixed - one typed row per
+    # N on Windows and Linux, `not_applicable` by name on macOS
+    socket_starvation_n0               = "$($c15c.socket_starvation_n0)"
+    socket_starvation_n3               = "$($c15c.socket_starvation_n3)"
+    socket_starvation_n4               = "$($c15c.socket_starvation_n4)"
+    socket_starvation_n5               = "$($c15c.socket_starvation_n5)"
     # CAP-12B: the blob data plane. The headless contract and its corpus, the
     # live plane through the PRODUCTION handler, the pack-time reservation
     # proven to fire, and the one place the URL prefix is built.
