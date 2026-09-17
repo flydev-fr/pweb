@@ -89,6 +89,7 @@ type
   published
     procedure ByteBoundParksTheReader;
     procedure CountBoundParksTheReader;
+    procedure TwoReceiversShareTheQueue;
     procedure NativeCloseReleasesAParkedReader;
     procedure IdleBoundClosesUnpolledSocket;
     procedure ReceivingKeepsASocketAlive;
@@ -1368,6 +1369,143 @@ begin
     CheckEqual(gaps, 0);
     th.Free;
     Record_('queue|small-flood|1000-of-1000|0-gaps');
+  finally
+    keep := nil;
+  end;
+end;
+
+type
+  { one page loop of two receiving from the SAME socket at once: CAP-15C
+    refused the second as `busy` while the first waited; CAP-16 retired the
+    wait, and with it the refusal }
+  TReceiverThread = class(TThread)
+  protected
+    procedure Execute; override;
+  public
+    Bridge: TPWebSocketBridge;
+    Id: RawUtf8;
+    Tally: PInteger;
+    Expected: Integer;
+    Seqs: array of Cardinal;
+    Errors: Integer;
+    FirstError: RawUtf8;
+    constructor CreateFor(ABridge: TPWebSocketBridge; const AId: RawUtf8;
+      ATally: PInteger; AExpected: Integer);
+  end;
+
+constructor TReceiverThread.CreateFor(ABridge: TPWebSocketBridge;
+  const AId: RawUtf8; ATally: PInteger; AExpected: Integer);
+begin
+  Bridge := ABridge;
+  Id := AId;
+  Tally := ATally;
+  Expected := AExpected;
+  FreeOnTerminate := false;
+  inherited Create(false);
+end;
+
+procedure TReceiverThread.Execute;
+var
+  r: TPWebInvocationResult;
+  ev: variant;
+  i, n: Integer;
+  bin: RawByteString;
+  t: Int64;
+begin
+  t := GetTickCount64 + 20000;
+  while (Tally^ < Expected) and (GetTickCount64 < t) do
+  begin
+    r := ReceiveOnce(Bridge, Id);
+    if r.Kind <> prkSuccess then
+    begin
+      if Errors = 0 then
+        FirstError := ErrorCodeOf(r);
+      Inc(Errors);
+      Sleep(1);
+      continue;
+    end;
+    ev := EventsOf(r);
+    n := EvCount(ev);
+    for i := 0 to n - 1 do
+      if EvS(ev, i, 'type') = 'message' then
+      begin
+        bin := Base64ToBin(EvS(ev, i, 'base64'));
+        SetLength(Seqs, Length(Seqs) + 1);
+        if Length(bin) >= 4 then
+          Seqs[High(Seqs)] := PCardinal(pointer(bin))^
+        else
+          Seqs[High(Seqs)] := High(Cardinal);
+        InterlockedIncrement(Tally^);
+      end;
+    if n = 0 then
+      Sleep(1);
+  end;
+end;
+
+procedure TTestPWebSocketQueue.TwoReceiversShareTheQueue;
+const
+  TOTAL = 1000;
+var
+  b: TPWebSocketBridge;
+  keep: IInvocationBridge;
+  id: RawUtf8;
+  th: TServerThread;
+  loops: array[0..1] of TReceiverThread;
+  tally, i, k, taken, missing, twice, disorder: Integer;
+  seen: array of Integer;
+begin
+  FakeReset;
+  b := NewBridge;
+  keep := b;
+  try
+    id := IdOf(OpenUrl(b, 'wss://api.example.com/'));
+    ReceiveOnce(b, id); // takes the open event
+    tally := 0;
+    th := TServerThread.CreateFor(LastConn, TOTAL, 8);
+    loops[0] := TReceiverThread.CreateFor(b, id, @tally, TOTAL);
+    loops[1] := TReceiverThread.CreateFor(b, id, @tally, TOTAL);
+    th.WaitFor;
+    loops[0].WaitFor;
+    loops[1].WaitFor;
+    SetLength(seen, TOTAL);
+    for k := 0 to TOTAL - 1 do
+      seen[k] := 0;
+    taken := 0;
+    twice := 0;
+    disorder := 0;
+    for i := 0 to 1 do
+    begin
+      CheckEqual(loops[i].Errors, 0,
+        'a receive beside another was refused: ' + loops[i].FirstError);
+      Inc(taken, Length(loops[i].Seqs));
+      for k := 0 to High(loops[i].Seqs) do
+      begin
+        if (k > 0) and (loops[i].Seqs[k] <= loops[i].Seqs[k - 1]) then
+          Inc(disorder);
+        if loops[i].Seqs[k] < TOTAL then
+          Inc(seen[loops[i].Seqs[k]])
+        else
+          Inc(twice);
+      end;
+    end;
+    missing := 0;
+    for k := 0 to TOTAL - 1 do
+      if seen[k] = 0 then
+        Inc(missing)
+      else if seen[k] > 1 then
+        Inc(twice, seen[k] - 1);
+    CheckEqual(taken, TOTAL, 'the two loops did not take every message once');
+    CheckEqual(missing, 0, 'a message reached neither loop');
+    CheckEqual(twice, 0, 'a message reached both loops, or arrived corrupt');
+    CheckEqual(disorder, 0, 'a loop saw its part of the queue out of order');
+    // an OBSERVATION, not a corpus row: how the queue split depends on the
+    // scheduler of the machine
+    AddConsole(FormatUtf8('two receivers took %/% of %',
+      [Length(loops[0].Seqs), Length(loops[1].Seqs), TOTAL]));
+    Record_('queue|two-receivers-one-socket|1000-of-1000|disjoint|each-in-order|never-refused');
+    loops[0].Free;
+    loops[1].Free;
+    th.Free;
   finally
     keep := nil;
   end;

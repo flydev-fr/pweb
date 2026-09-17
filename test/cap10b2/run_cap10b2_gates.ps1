@@ -186,10 +186,22 @@ Set-Location $repoRoot
 # MEASURED on two targets before it was written here: the same two values in
 # build/cap10b1/cli-windows-x86_64.json and build/cap10b1/cli-linux-x86_64.json,
 # from the local CAP-15C chains on each.
+#
+# CAP-16 SUPERSEDES BOTH NUMBERS A THIRD TIME, in the same two files: every
+# generated host - not only a network one - now composes the signal channel in
+# `program.lpr`, and `app.services.pas` declares the host's topic set and
+# registers the two signal methods capability-free. No file was added or
+# removed, so the COUNT does not move; two files grew.
+#   inventory 31244b06547bf15f239eb5bc68742df573137ff7517d7c7cbc41aa48a9f9c98b
+#          -> 869ff9299213727195f4ada515ba97933f3fe752f5ccbd999a69b984b154cfa8
+#   bytes     78679 -> 80939   (16 files, unchanged)
+# MEASURED on two targets before it was written here, the same way: both
+# values identical in build/cap10b1/cli-windows-x86_64.json (local Windows
+# chain) and build/cap10b1/cli-linux-x86_64.json (local WSL chain).
 $CAP10B1_REACT_INVENTORY_DIGEST =
-    '31244b06547bf15f239eb5bc68742df573137ff7517d7c7cbc41aa48a9f9c98b'
+    '869ff9299213727195f4ada515ba97933f3fe752f5ccbd999a69b984b154cfa8'
 $CAP10B1_REACT_FILE_COUNT = 16
-$CAP10B1_REACT_TOTAL_BYTES = 78679
+$CAP10B1_REACT_TOTAL_BYTES = 80939
 
 $exeSuffix = if ($IsWindows) { '.exe' } else { '' }
 $work = Join-Path $repoRoot 'build/cap10b2'

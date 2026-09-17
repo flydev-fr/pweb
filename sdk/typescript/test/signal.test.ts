@@ -212,7 +212,8 @@ test("the socket loop receives on the signal, never waits natively, and unsubscr
     await tick();
   }
   assert.deepEqual(got, ["open", "hello"]);
-  // every receive carried the id and nothing else: waitMs is retired
+  // every receive carried the id and nothing else: the retired wait is gone
+  // from the argument set (K7 sweeps this file for its name, comments and all)
   for (const c of captured.filter((x) => x.method === PWEB_METHOD_SOCKET_RECEIVE)) {
     assert.deepEqual(Object.keys(c.args as object), ["id"]);
   }

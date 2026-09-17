@@ -45,7 +45,9 @@ end;
 
 A signal carries a topic and a sequence number only (`PWebLastSeq` is the
 last one seen); one lost before the subscription or across a navigation is
-recovered by that re-read. `TPWebSocket` receives on the runtime's
+recovered by that re-read. A revoked subscription is gone natively and a
+later grant does not restore it: `Off` the subscription and subscribe again
+once the capability is back. `TPWebSocket` receives on the runtime's
 `pweb.socket` topic, or every 20 s, and holds no native worker while quiet.
 
 Compile with the pinned toolchain (`pwsh tools/get-pas2js.ps1` →
