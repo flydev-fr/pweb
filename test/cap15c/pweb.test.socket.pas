@@ -12,7 +12,8 @@
     URL        the wss authorisation rule of cap15c-checkpoint1.md §6
     HANDSHAKE  subprotocols, the 15B header allowlist, argument shapes, the
                transport outcomes as typed categories
-    TRAFFIC    open/message/close events, send, the long-poll, close codes
+    TRAFFIC    open/message/close events, send, a receive that never waits
+               and the signal that replaces the wait (CAP-16), close codes
     QUEUE      the bounded queue: reading PARKS, nothing is dropped, the idle
                bound closes a socket nobody polls
     OWNERSHIP  a second window cannot touch a socket it does not own; the
@@ -52,6 +53,7 @@ uses
   pweb.rpc.support,
   pweb.rpc.scheduler,
   pweb.rpc.fetch,
+  pweb.rpc.signal,
   pweb.rpc.socket,
   pweb.capabilities.policy;
 
@@ -78,7 +80,7 @@ type
     procedure OpenEventComesFirst;
     procedure MessagesInBothEncodings;
     procedure SendContract;
-    procedure LongPoll;
+    procedure ReceiveNeverWaits;
     procedure CloseContract;
     procedure RemoteAndAbnormalClose;
   end;
@@ -89,7 +91,7 @@ type
     procedure CountBoundParksTheReader;
     procedure NativeCloseReleasesAParkedReader;
     procedure IdleBoundClosesUnpolledSocket;
-    procedure ParkedReceiveIsPolling;
+    procedure ReceivingKeepsASocketAlive;
   end;
 
   TTestPWebSocketOwnership = class(TSynTestCase)
@@ -416,13 +418,13 @@ begin
   Result := VariantToUtf8(v.id);
 end;
 
-function Receive(B: TPWebSocketBridge; const Id: RawUtf8; WaitMs: Integer = 0;
+// ONE receive, exactly as an SDK sends it since CAP-16: no waitMs
+function ReceiveOnce(B: TPWebSocketBridge; const Id: RawUtf8;
   const Window: Utf8String = 'main';
   const Token: ICancellationToken = nil): TPWebInvocationResult;
 begin
   Result := Call(B, PWEB_METHOD_SOCKET_RECEIVE,
-    '{"id":' + QuotedStrJson(Id) + ',"waitMs":' + RawUtf8(IntToStr(WaitMs)) +
-    '}', Ctx(Window), Token);
+    '{"id":' + QuotedStrJson(Id) + '}', Ctx(Window), Token);
 end;
 
 // the events of a successful receive, as a TDocVariant array
@@ -469,6 +471,26 @@ var
 begin
   doc := EventsOf(R);
   Result := EvCount(doc);
+end;
+
+// a receive, and - when WaitMs > 0 - the PAGE's patience played by the test:
+// receive again every 5 ms until something arrives or WaitMs has passed.
+// The DOOR never waits (CAP-16), and nothing here asks it to
+function Receive(B: TPWebSocketBridge; const Id: RawUtf8; WaitMs: Integer = 0;
+  const Window: Utf8String = 'main';
+  const Token: ICancellationToken = nil): TPWebInvocationResult;
+var
+  t: Int64;
+begin
+  t := GetTickCount64 + WaitMs;
+  repeat
+    Result := ReceiveOnce(B, Id, Window, Token);
+    if (WaitMs <= 0) or
+       (Result.Kind <> prkSuccess) or
+       (EventCount(Result) > 0) then
+      exit;
+    Sleep(5);
+  until GetTickCount64 > t;
 end;
 
 function WaitUntil(var Counter: LongInt; Expected: LongInt; Ms: Integer): Boolean;
@@ -876,13 +898,17 @@ begin
     CheckEqual(PWEB_SOCKET_MAX_MESSAGE, 1 shl 20);
     CheckEqual(PWEB_SOCKET_QUEUE_EVENTS, 64);
     CheckEqual(PWEB_SOCKET_QUEUE_BYTES, 1 shl 20);
-    CheckEqual(PWEB_SOCKET_MAX_WAIT_MS, 25000);
+    // CAP-16: the wait bound is RETIRED; the keepalive is the SDK cadence
+    // that keeps a quiet socket inside the idle bound
+    CheckEqual(PWEB_SOCKET_KEEPALIVE_MS, 20000);
+    Check(PWEB_SOCKET_KEEPALIVE_MS * 2 < PWEB_SOCKET_IDLE_MS,
+      'a keepalive that is not under half the idle bound can lose a socket');
     CheckEqual(PWEB_SOCKET_IDLE_MS, 60000);
     CheckEqual(PWEB_SOCKET_MAX_PROTOCOLS, 4);
     CheckEqual(PWEB_SOCKET_MAX_REASON_BYTES, 123);
     CheckEqual(PWEB_SOCKET_REQUEST_BYTES, 2 shl 20);
     Record_('bounds|sockets=4|connect=10000|send=10000|message=1048576|' +
-      'queue=64/1048576|wait=25000|idle=60000|protocols=4|reason=123|' +
+      'queue=64/1048576|keepalive=20000|idle=60000|protocols=4|reason=123|' +
       'request=2097152');
   finally
     keep := nil;
@@ -1024,104 +1050,94 @@ begin
   end;
 end;
 
-type
-  { cancels a token after a delay - FPC 3.2 has no anonymous procedures }
-  TCancelLater = class(TThread)
-  protected
-    procedure Execute; override;
-  public
-    Token: TTestToken;
-    DelayMs: Integer;
-    constructor CreateFor(AToken: TTestToken; ADelayMs: Integer);
-  end;
+function BuildSocketPolicy(WithSocket, WithFetch: Boolean): TPWebCapabilityPolicy; forward;
 
-constructor TCancelLater.CreateFor(AToken: TTestToken; ADelayMs: Integer);
-begin
-  Token := AToken;
-  DelayMs := ADelayMs;
-  FreeOnTerminate := true;
-  inherited Create(false);
-end;
-
-procedure TCancelLater.Execute;
-begin
-  Sleep(DelayMs);
-  InterlockedIncrement(Token.Cancelled);
-end;
-
-procedure TTestPWebSocketTraffic.LongPoll;
+// CAP-16: the long-poll is RETIRED. A receive answers what is queued at once,
+// a nonzero waitMs is refused, and what used to be the wait is a signal on
+// the owning window's `pweb.socket` topic
+procedure TTestPWebSocketTraffic.ReceiveNeverWaits;
 var
   b: TPWebSocketBridge;
   keep: IInvocationBridge;
+  sig: TPWebSignalChannel;
+  sigRef: IInvocationBridge;
+  policy: TPWebCapabilityPolicy;
+  policyRef: ICapabilityPolicy;
   id: RawUtf8;
   c: TFakeConn;
   t0: Int64;
   r: TPWebInvocationResult;
-  th: TServerThread;
   token: TTestToken;
   tokenRef: ICancellationToken;
+
+  procedure Refused(const WaitMs: RawUtf8);
+  begin
+    CheckEqual(ErrorCodeOf(Call(b, PWEB_METHOD_SOCKET_RECEIVE,
+      '{"id":' + QuotedStrJson(id) + ',"waitMs":' + WaitMs + '}', Ctx)),
+      'invalid_request', 'waitMs ' + WaitMs);
+  end;
+
 begin
   FakeReset;
+  policy := BuildSocketPolicy(true, false);
+  policyRef := policy;
   b := NewBridge;
   keep := b;
+  sig := TPWebSignalChannel.Create(TInnerCounter.Create, []);
+  sigRef := sig;
   try
+    b.AttachSignals(sig);
+    sig.AttachPolicy(policy);
+    CheckEqual(sig.TopicSeq(PWEB_SIGNAL_TOPIC_SOCKET), 0,
+      'the socket door did not declare its topic');
     id := IdOf(OpenUrl(b, 'wss://api.example.com/'));
     c := LastConn;
-    Receive(b, id); // takes the open event
-    // nothing queued, no wait: an immediate empty answer
-    r := Call(b, PWEB_METHOD_SOCKET_RECEIVE, '{"id":' + QuotedStrJson(id) + '}', Ctx);
+    ReceiveOnce(b, id); // takes the open event
+    // nothing queued: an immediate empty answer, whatever is not queued
+    t0 := GetTickCount64;
+    r := ReceiveOnce(b, id);
     CheckEqual(ErrorCodeOf(r), 'success');
     CheckEqual(EventCount(r), 0);
-    Record_('receive|no-wait|empty');
-    // a message arriving DURING the wait ends it early
-    th := TServerThread.CreateFor(c, 1, 8);
-    t0 := GetTickCount64;
-    r := Receive(b, id, 5000);
-    CheckEqual(EventCount(r), 1);
-    Check(GetTickCount64 - t0 < 4000, 'a long-poll waited past its first event');
-    th.WaitFor;
-    th.Free;
-    Record_('receive|long-poll|returns-on-first-event');
-    // a wait that expires answers empty
-    t0 := GetTickCount64;
-    r := Receive(b, id, 150);
-    CheckEqual(EventCount(r), 0);
-    Check(GetTickCount64 - t0 >= 140, 'a long-poll returned before its wait');
-    Record_('receive|long-poll|expires-empty');
-    // the bound is REFUSED, not clamped
-    CheckEqual(ErrorCodeOf(Receive(b, id, PWEB_SOCKET_MAX_WAIT_MS + 1)),
-      'invalid_request');
-    CheckEqual(ErrorCodeOf(Receive(b, id, -1)), 'invalid_request');
+    Check(GetTickCount64 - t0 < 1000, 'a receive waited');
+    Record_('receive|nothing-queued|empty-at-once');
+    // waitMs is RETIRED: 0 asks for exactly what a receive is, anything else
+    // is refused - never clamped, never served as 0
     CheckEqual(ErrorCodeOf(Call(b, PWEB_METHOD_SOCKET_RECEIVE,
-      '{"id":' + QuotedStrJson(id) + ',"waitMs":"5"}', Ctx)), 'invalid_request');
-    Record_('receive|wait-over-max|negative|string|invalid_request');
-    // the token is observed DURING the wait
+      '{"id":' + QuotedStrJson(id) + ',"waitMs":0}', Ctx)), 'success');
+    Refused('1');
+    Refused('5000');
+    Refused('25000');
+    Refused('-1');
+    Refused('"5"');
+    Refused('0.5');
+    Record_('receive|waitMs-0-accepted|1|5000|25000|-1|string|fraction|invalid_request');
+    // a queued event SIGNALS its window, and a receive takes it
+    CheckEqual(ErrorCodeOf((sig as IInvocationBridge).Invoke(Ctx,
+      PWEB_METHOD_SIGNAL_SUBSCRIBE,
+      TPWebJson('{"topic":"' + PWEB_SIGNAL_TOPIC_SOCKET + '"}'), nil)),
+      'success', 'the window could not subscribe to its socket topic');
+    CheckEqual(sig.PendingCount('main'), 0);
+    c.Sink.Deliver(false, 'hello');
+    CheckEqual(sig.PendingCount('main'), 1,
+      'a queued event did not signal the socket''s window');
+    CheckEqual(sig.PendingCount('other'), 0);
+    r := ReceiveOnce(b, id);
+    CheckEqual(EventCount(r), 1);
+    Record_('receive|queued-event|signals-pweb.socket-of-its-window|receive-takes-it');
+    // a cancelled invocation takes nothing
+    c.Sink.Deliver(false, 'kept');
     token := TTestToken.Create;
     tokenRef := token;
-    TCancelLater.CreateFor(token, 100);
-    t0 := GetTickCount64;
-    r := Receive(b, id, 5000, 'main', tokenRef);
-    CheckEqual(ErrorCodeOf(r), 'cancelled');
-    Check(GetTickCount64 - t0 < 2000, 'a cancelled long-poll was not released');
-    Record_('receive|token-during-wait|cancelled');
+    InterlockedIncrement(token.Cancelled);
+    CheckEqual(ErrorCodeOf(ReceiveOnce(b, id, 'main', tokenRef)), 'cancelled');
+    CheckEqual(b.QueuedEvents(id), 1, 'a cancelled receive took the queue');
+    Record_('receive|cancelled-token|cancelled|queue-kept');
+    b.BeforeDrain;
   finally
     keep := nil;
+    sigRef := nil;
+    policyRef := nil;
   end;
-end;
-
-type
-  TReceiveThread = class(TThread)
-  protected
-    procedure Execute; override;
-  public
-    Bridge: TPWebSocketBridge;
-    Id: RawUtf8;
-    Res: TPWebInvocationResult;
-  end;
-
-procedure TReceiveThread.Execute;
-begin
-  Res := Receive(Bridge, Id, 1500);
 end;
 
 procedure TTestPWebSocketTraffic.CloseContract;
@@ -1132,7 +1148,6 @@ var
   c: TFakeConn;
   r: TPWebInvocationResult;
   ev: variant;
-  rt: TReceiveThread;
 
   function Close(const Args: RawUtf8): TPWebInvocationResult;
   begin
@@ -1161,15 +1176,6 @@ begin
     Refused(',"code":"1000"', 'code-string');
     Refused(',"reason":"' + RawUtf8(StringOfChar('r', 124)) + '"', 'reason-124');
     Refused(',"reason":5', 'reason-number');
-    // a second concurrent receive is busy, and the first still works
-    rt := TReceiveThread.Create(true);
-    rt.Bridge := b;
-    rt.Id := id;
-    rt.FreeOnTerminate := false;
-    rt.Start;
-    Sleep(150);
-    CheckEqual(ErrorCodeOf(Receive(b, id, 0)), 'busy');
-    Record_('receive|second-concurrent|busy');
     CheckEqual(ErrorCodeOf(Close(',"code":4000,"reason":"done"')), 'success');
     CheckEqual(FakeCloseCalls, 1);
     CheckEqual(c.CloseCode, 4000);
@@ -1180,11 +1186,7 @@ begin
     Record_('close|4000|done|idempotent');
     // the server's echo is the page's close event
     c.Sink.Closed(pscRemote, 4000, 'done');
-    rt.WaitFor;
-    r := rt.Res;
-    rt.Free;
-    if EventCount(r) = 0 then
-      r := Receive(b, id, 500);
+    r := Receive(b, id, 500);
     CheckEqual(EventCount(r), 1);
     ev := EventsOf(r);
     CheckEqual(EvS(ev, 0, 'type'), 'close');
@@ -1438,22 +1440,32 @@ begin
   end;
 end;
 
-procedure TTestPWebSocketQueue.ParkedReceiveIsPolling;
+// CAP-16: with no receive in flight any more, what keeps a quiet socket open
+// is the SDK's keepalive - a receive at least every third of the idle bound
+procedure TTestPWebSocketQueue.ReceivingKeepsASocketAlive;
 var
   b: TPWebSocketBridge;
   keep: IInvocationBridge;
   id: RawUtf8;
+  i: Integer;
 begin
   FakeReset;
   b := NewBridge(ShortIdle);
   keep := b;
   try
     id := IdOf(OpenUrl(b, 'wss://api.example.com/'));
-    // one long-poll three times the idle bound: a receive in flight IS polling
-    Receive(b, id, 900);
-    CheckEqual(FakeCloseCalls, 0, 'a socket with a receive in flight was closed as idle');
-    Receive(b, id, 0);
-    Record_('queue|receive-in-flight-counts-as-polling');
+    // three times the idle bound, receiving every third of it
+    for i := 1 to 9 do
+    begin
+      ReceiveOnce(b, id);
+      Sleep(ShortIdle.IdleMs div 3);
+    end;
+    CheckEqual(FakeCloseCalls, 0, 'a socket received from on the keepalive cadence was closed as idle');
+    Record_('queue|receiving-every-third-of-the-idle-bound|kept-open');
+    // and a page that stops receiving loses it
+    Check(WaitUntil(FakeReleaseCalls, 1, 3000), 'a socket nobody received from was not released');
+    CheckEqual(FakeCloseCalls, 1);
+    Record_('queue|receiving-stopped|closed-idle');
   finally
     keep := nil;
   end;
@@ -1652,6 +1664,8 @@ procedure TTestPWebSocketLifecycle.RevocationClosesImmediately;
 var
   b: TPWebSocketBridge;
   keep: IInvocationBridge;
+  sig: TPWebSignalChannel;
+  sigRef: IInvocationBridge;
   policy: TPWebCapabilityPolicy;
   policyRef: ICapabilityPolicy;
   id: RawUtf8;
@@ -1662,8 +1676,12 @@ begin
   policyRef := policy;
   b := NewBridge;
   keep := b;
+  sig := TPWebSignalChannel.Create(TInnerCounter.Create, []);
+  sigRef := sig;
   try
-    b.AttachPolicy(policy);
+    // CAP-16: the channel owns the grants slot and hands it to the door
+    b.AttachSignals(sig);
+    sig.AttachPolicy(policy);
     id := IdOf(OpenUrl(b, 'wss://api.example.com/'));
     c := LastConn;
     Receive(b, id);
@@ -1690,9 +1708,14 @@ begin
     Check(WaitUntil(FakeReleaseCalls, 1, 2000), 'a revoked socket was not released');
     CheckEqual(c.CloseCode, 1001);
     Record_('lifecycle|revoke|closed-before-return|0-sends|late-frame-discarded|close-1001');
+    // the slot is the channel's, and a second subscriber is still refused
+    Check(TMethod(policy.OnGrantsChanged).Data = Pointer(sig),
+      'the policy grants slot is not owned by the signal channel');
+    Record_('lifecycle|revoke|heard-through-the-signal-channel');
     b.BeforeDrain;
   finally
     keep := nil;
+    sigRef := nil;
     policyRef := nil;
   end;
 end;

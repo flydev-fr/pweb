@@ -1,79 +1,53 @@
 program socketstarve;
 
-{ CAP-15C: THE STARVATION, MEASURED AND NOT FIXED.
+{ CAP-15C MEASURED THE STARVATION; CAP-16 CLOSES IT, AND THIS PROVES IT.
 
-  `pweb.socketReceive` is a bounded long-poll, and it waits ON THE SCHEDULER
-  WORKER that runs it (TPWebSocketBridge.Receive, 20 ms slices up to waitMs).
-  A reading of the code says that under the ratified host defaults - four
-  workers, four simultaneous invocations, a queue of 32 - four quiet sockets
-  with their receive loops parked hold every worker, and any other invocation
-  of the page waits in the queue until one poll returns. This program measures
-  that claim instead of repeating it. It changes nothing: no default, no extra
-  worker, no workaround. Raising the worker count, which the network template
-  does (ledger 15C-6), would hide the shape this program exists to show.
+  CAP-15C's `pweb.socketReceive` was a bounded long-poll that waited ON THE
+  SCHEDULER WORKER running it, and this program measured what that meant
+  under the ratified host defaults - four workers, four simultaneous
+  invocations, a queue of 32: with four quiet sockets parked, an unrelated
+  invocation waited 24 984.7 ms on Windows and 24 999.1 ms on Linux for a
+  poll to give its worker back (ledger 15CS-1). CAP-16 Checkpoint 1 measured
+  further, with this same program before it changed, that raising EITHER the
+  workers or the slots alone to eight leaves N = 4 starved - both bounds bind.
 
-  WHAT IS REAL. Every component on the path is the shipped one, composed the
-  way a host composes it, minus the window:
+  CAP-16 retired the wait. A receive answers what is queued at once, a
+  nonzero `waitMs` is refused, and a page learns that something is queued
+  from the signal channel's window-scoped `pweb.socket` topic. So this
+  program keeps its composition, its host numbers and its N set - one more
+  N, eight - and changes only the loop it drives, which is now the SDK's:
 
-    TInvocationScheduler           the frozen pool, at the host's numbers
-      -> TPWebCapabilityPolicy     authoritative, before the bridge
-      -> TPWebSocketBridge         the decorator, over
-           PWebSocketNativeTransport against test/cap15c/ws_server.js /idle
-      -> TMormotInvocationBridge   -> CalculatorService.Add(20, 22) = 42
+    1. open N sockets through the scheduler, one after another - the first
+       on the witness's /echo route, the rest on /idle. The SOCKET bound is
+       raised to eight through TPWebSocketBounds so that N = 8 is eight real
+       sockets; the host bound stays four (PWEB_SOCKET_MAX_SOCKETS);
+    2. take each socket's `open` event with one receive, as the SDK's first
+       receive does - it is there at once, because nothing waits;
+    3. subscribe the window to `pweb.socket` through the signal channel and
+       leave every socket QUIET: the scheduler must hold NOTHING in flight
+       and nothing queued - a quiet socket is no invocation at all;
+    4. enqueue `CalculatorService.Add` with a = 20 and b = 22, and time it
+       from its own enqueue to its completion;
+    5. the loop still delivers: send one text on the /echo socket, wait for
+       the channel to ask for a drain (the page's signal), drain it, and
+       receive the echo - the round trip a page makes;
+    6. a receive with `waitMs` 25000 is refused invalid_request;
+    7. tear down in the host's order - the channel's BeforeDrain, which hands
+       the door its own, then the scheduler's Shutdown.
 
   The worker count, the slot count and the queue bound are NOT typed here.
   test/cap15c/run_cap15c_gates.ps1 reads them out of PWebDefaultHostOptions
-  in src/webview/pweb.webview.host.pas and passes them in, so the numbers are
-  always the ones the host ships. That unit is not linked: it pulls in the
-  platform WebView library, which no claim here needs. The N set is fixed and
-  brackets TODAY's four workers, four slots and four sockets; a host that
-  moved those numbers would want the set moved with them.
+  and passes them in, exactly as before.
 
-  WORKERS AND SLOTS COINCIDE at the defaults, and the parked receives and the
-  Add share one source, so a delay here shows the pool and the window's slots
-  held together. This program does not separate the two bounds; FR-M1's reading
-  of the code names both.
+  ONE ROW PER N, for N = 0, 3, 4, 5 and 8, each on a FRESH composition:
 
-  ONE ROW PER N, for N = 0, 3, 4 and 5, each on a FRESH composition:
+    served latency_ms=<ms> result=<r> opened=<o>/<N> open_refused=<cat>
+      in_flight=<active+queued> socket_bound=8 waitms=<verdict>
+      echo=<signalled|missing|not_applicable>
 
-    1. open N sockets through the scheduler, one after another. The fifth is
-       refused `socket_limit` by the ratified four-socket host bound, and the
-       row says so rather than pretending five parked;
-    2. drain each socket's `open` event, exactly as the SDK's first receive
-       does, so the next receive has nothing to return;
-    3. PARK one receive per socket, `waitMs` = PWEB_SOCKET_MAX_WAIT_MS, and
-       wait until the scheduler holds every one of them (active + queued);
-    4. enqueue `CalculatorService.Add` with a = 20 and b = 22, and time it from its own
-       enqueue to its completion, with the queue sampled right after the
-       enqueue;
-    5. tear down in the host's order - the socket door's BeforeDrain, then the
-       scheduler's Shutdown - which releases every parked poll at once.
-
-  THE TYPE IS ORDER, NOT A THRESHOLD. A starved Add can only be claimed after
-  a parked poll has given its slot back, so its completion follows the first
-  parked completion. Latency is measured from the Add's own enqueue while the
-  polls were already parked, so a starved Add is answered at about the bound
-  minus `parked_for_ms`, plus at most one 20 ms wait slice and the claim.
-  `within_long_poll_bound` compares that latency with 25 000 ms exactly, so it
-  can read false by that slice when the polls were parked for less than it.
-
-  NOTHING HERE GATES THE ANSWER. A not-answered or refused Add is a row, not a
-  failure; the failures are the instrument's own - the control, the sockets
-  that should have opened, the polls that should have parked, a served Add
-  that did not answer 42.
-
-    served_beside_parked_polls           Add completed while every parked poll
-                                         was still parked
-    served_after_a_parked_poll_returned  Add completed only after a parked
-                                         poll returned
-    not_answered                         Add still outstanding after two whole
-                                         long-poll bounds
-    refused_<code>                       the enqueue or the call was refused
-
-  The Add waits at most 2 x PWEB_SOCKET_MAX_WAIT_MS. The contract says every
-  parked poll returns within one bound plus one 20 ms slice, so a starved Add
-  is claimed by then; the second bound is there so a poll that overran by a
-  whole bound is observed rather than cut off.
+  The runner GATES the answer now: every N served in under 5 ms with
+  nothing in flight. The instrument's own validity - sockets that should have
+  opened, the control, 42 - is still its own exit code.
 
   Usage:
     socketstarve --port=<plain ws port> --workers=<n> --slots=<n>
@@ -103,6 +77,7 @@ uses
   pweb.rpc.support,
   pweb.rpc.scheduler,
   pweb.rpc.mormot,
+  pweb.rpc.signal,
   pweb.rpc.socket,
   pweb.rpc.socket.mormot,
   pweb.capabilities.policy;
@@ -110,13 +85,18 @@ uses
 const
   APP_METHOD_ADD = 'CalculatorService.Add';
   APP_CAP_ADD = 'calculator.add';
-  /// how long an open or a drain may take before the instrument gives up;
+  /// the socket bound this instrument runs with, so N = 8 is eight sockets
+  STARVE_SOCKET_BOUND = 8;
+  /// how long an open or a receive may take before the instrument gives up;
   // the connect deadline is the door's own wall-clock bound on an open
   STEP_BOUND_MS = PWEB_SOCKET_CONNECT_DEADLINE_MS + 5000;
-  /// how long the parked polls may take to show up in the scheduler
-  PARK_BOUND_MS = 5000;
-  /// how long the Add may stay outstanding: two whole long-poll bounds
-  ADD_BOUND_MS = 2 * PWEB_SOCKET_MAX_WAIT_MS;
+  /// how long the Add may stay outstanding before it is typed not_answered -
+  // far past anything a served Add takes, far short of CAP-15C's 25 s park
+  ADD_BOUND_MS = 10000;
+  /// how long the echo may take to be signalled
+  ECHO_BOUND_MS = 5000;
+  /// the retired long-poll bound, sent once to see it refused
+  RETIRED_WAIT_MS = 25000;
 
 type
   ICalculatorService = interface(IInvokable)
@@ -193,6 +173,21 @@ var
   OutPath: RawUtf8 = '';
   Rows: TRawUtf8DynArray;
   Failures: Integer = 0;
+  /// the channel's view, played by this program: a drain request is the
+  // page's signal
+  DrainAsked: LongInt = 0;
+  Scripts: LongInt = 0;
+
+function ViewDispatch(const Window: RawUtf8): Boolean;
+begin
+  InterlockedIncrement(DrainAsked);
+  Result := True;
+end;
+
+procedure ViewEval(const Window: RawUtf8; const Script: RawUtf8);
+begin
+  InterlockedIncrement(Scripts);
+end;
 
 procedure Row(const Name, Value: RawUtf8);
 begin
@@ -281,6 +276,8 @@ begin
     b.MapMethod(PWEB_METHOD_SOCKET_SEND, [PWEB_CAP_NETWORK_SOCKET]);
     b.MapMethod(PWEB_METHOD_SOCKET_RECEIVE, [PWEB_CAP_NETWORK_SOCKET]);
     b.MapMethod(PWEB_METHOD_SOCKET_CLOSE, [PWEB_CAP_NETWORK_SOCKET]);
+    b.RegisterZeroCapMethod(PWEB_METHOD_SIGNAL_SUBSCRIBE);
+    b.RegisterZeroCapMethod(PWEB_METHOD_SIGNAL_UNSUBSCRIBE);
     Result := b.Build;
   finally
     b.Free;
@@ -294,25 +291,26 @@ var
   realBridge: IInvocationBridge;
   door: TPWebSocketBridge;
   doorRef: IInvocationBridge;
+  signals: TPWebSignalChannel;
+  chain: IInvocationBridge;
   policyObj: TPWebCapabilityPolicy;
   policyRef: ICapabilityPolicy;
   scheduler: TInvocationScheduler;
   schedulerRef: IInvocationScheduler;
   source: IInvocationSource;
   limits: TPWebSourceLimits;
+  bounds: TPWebSocketBounds;
+  view: TPWebSignalView;
   ctx: TInvocationContext;
   ids: TRawUtf8DynArray;
-  parked: array of TCompletion;
-  parkedRefs: array of IInvocationCompletion;
-  c: TCompletion;
-  cRef: IInvocationCompletion;
-  add: TCompletion;
-  addRef: IInvocationCompletion;
-  i, queued, active, parkedCount: Integer;
-  refusal, kind, resultText: RawUtf8;
-  deadline, parkUs, enqueueUs, firstParkedUs, latencyUs: Int64;
+  c, add: TCompletion;
+  cRef, addRef: IInvocationCompletion;
+  i, queued, active, inFlight: Integer;
+  refusal, kind, resultText, waitVerdict, echo, route: RawUtf8;
+  enqueueUs, latencyUs: Int64;
   e: TPWebEnqueueResult;
-  answered, sawAll: Boolean;
+  answered: Boolean;
+  deadline: Int64;
 
   function Call(const Method, Args: RawUtf8; out Sink: TCompletion;
     out SinkRef: IInvocationCompletion): TPWebEnqueueResult;
@@ -320,6 +318,20 @@ var
     Sink := TCompletion.Create;
     SinkRef := Sink;
     Result := source.TryEnqueue(ctx, Method, TPWebJson(Args), SinkRef);
+  end;
+
+  // one invocation, run to its answer
+  function Run(const Method, Args: RawUtf8): TPWebInvocationResult;
+  var
+    s: TCompletion;
+    sRef: IInvocationCompletion;
+  begin
+    Result := Default(TPWebInvocationResult);
+    if (Call(Method, Args, s, sRef) = perAccepted) and
+       s.WaitDone(STEP_BOUND_MS) then
+      Result := s.Outcome
+    else
+      Result := PWebDefaultErrorResult(pecInternalError);
   end;
 
 begin
@@ -330,14 +342,24 @@ begin
     raise Exception.Create('unable to register CalculatorService');
   realBridge := TMormotInvocationBridge.Create(server, True);
   server := nil; // owned by the bridge from here
+  bounds := PWebSocketDefaultBounds;
+  bounds.MaxSockets := STARVE_SOCKET_BOUND;
   door := TPWebSocketBridge.Create(realBridge, PWebSocketNativeTransport,
-    ['http://127.0.0.1:' + RawUtf8(IntToStr(Port))]);
+    ['http://127.0.0.1:' + RawUtf8(IntToStr(Port))], bounds);
   doorRef := door;
+  // THE HOST'S COMPOSITION: the channel over the door, the door on the
+  // channel, the channel holding the policy's grants slot and a view
+  signals := TPWebSignalChannel.Create(doorRef, []);
+  chain := signals;
+  door.AttachSignals(signals);
   policyObj := Policy;
   policyRef := policyObj;
-  door.AttachPolicy(policyObj);
+  signals.AttachPolicy(policyObj);
+  view.Dispatch := @ViewDispatch;
+  view.Eval := @ViewEval;
+  signals.AttachView(view);
   // THE HOST'S NUMBERS, AS GIVEN. Nothing is added for the sockets.
-  scheduler := TInvocationScheduler.Create(policyRef, doorRef, Workers);
+  scheduler := TInvocationScheduler.Create(policyRef, chain, Workers);
   schedulerRef := scheduler;
   limits := Default(TPWebSourceLimits);
   limits.MaxConcurrent := Slots;
@@ -352,17 +374,22 @@ begin
   ctx.TrustedContent := True;
   ctx.Capabilities := policyObj.SnapshotCapabilities('window:main', 'main');
   ids := nil;
-  parked := nil;
-  parkedRefs := nil;
   refusal := 'none';
+  echo := 'not_applicable';
+  waitVerdict := 'none';
+  InterlockedExchange(DrainAsked, 0);
   try
     // 1. open N sockets, one after another
     for i := 1 to N do
     begin
+      if i = 1 then
+        route := '/echo'
+      else
+        route := '/idle';
       e := Call(PWEB_METHOD_SOCKET_OPEN,
         '{"url":' + QuotedStrJson('ws://127.0.0.1:' + RawUtf8(IntToStr(Port)) +
-        '/idle?row=starve_n' + RawUtf8(IntToStr(N)) + '_' + RawUtf8(IntToStr(i))) + '}',
-        c, cRef);
+        route + '?row=starve_n' + RawUtf8(IntToStr(N)) + '_' +
+        RawUtf8(IntToStr(i))) + '}', c, cRef);
       Require(e = perAccepted, 'an open was not accepted by the scheduler');
       if (e <> perAccepted) or not c.WaitDone(STEP_BOUND_MS) then
       begin
@@ -378,57 +405,29 @@ begin
       else if refusal = 'none' then
         refusal := Verdict(c.Outcome);
     end;
-    // 2. drain each socket's open event, as the SDK's first receive does
+    // 2. each socket's open event, there at once
     for i := 0 to High(ids) do
-    begin
-      e := Call(PWEB_METHOD_SOCKET_RECEIVE,
-        '{"id":' + QuotedStrJson(ids[i]) + ',"waitMs":5000}', c, cRef);
-      Require((e = perAccepted) and c.WaitDone(STEP_BOUND_MS) and
-        (EventTypes(c.Outcome) = 'open'),
-        'a socket did not deliver exactly its open event before it was parked');
-    end;
-    // 3. park one receive per socket, and see every one of them held
-    SetLength(parked, Length(ids));
-    SetLength(parkedRefs, Length(ids));
-    for i := 0 to High(ids) do
-    begin
-      e := Call(PWEB_METHOD_SOCKET_RECEIVE, '{"id":' + QuotedStrJson(ids[i]) +
-        ',"waitMs":' + RawUtf8(IntToStr(PWEB_SOCKET_MAX_WAIT_MS)) + '}',
-        parked[i], parkedRefs[i]);
-      Require(e = perAccepted, 'a parked receive was not accepted by the scheduler');
-    end;
-    parkUs := NowUs;
-    parkedCount := 0;
-    sawAll := Length(ids) = 0;
-    deadline := GetTickCount64 + PARK_BOUND_MS;
-    while not sawAll and (GetTickCount64 < deadline) do
-    begin
-      if scheduler.TryGetSourceCounts(source, queued, active) and
-         (active + queued = Length(ids)) and
-         (active = MinPtrInt(Length(ids), MinPtrInt(Slots, Workers))) then
-        sawAll := True
-      else
-        Sleep(1);
-    end;
-    if sawAll then
-      parkedCount := Length(ids);
-    Require(sawAll, 'the parked receives never all showed up in the scheduler');
-    for i := 0 to High(parked) do
-      Require(not parked[i].Done, 'a parked receive returned before the Add was enqueued');
+      Require(EventTypes(Run(PWEB_METHOD_SOCKET_RECEIVE,
+        '{"id":' + QuotedStrJson(ids[i]) + '}')) = 'open',
+        'a socket did not deliver exactly its open event at once');
+    // 3. the migrated loop at rest: subscribed, and NOTHING in flight
+    Require(Verdict(Run(PWEB_METHOD_SIGNAL_SUBSCRIBE,
+      '{"topic":"' + PWEB_SIGNAL_TOPIC_SOCKET + '"}')) = 'success',
+      'the window could not subscribe to its socket topic');
+    inFlight := -1;
+    deadline := GetTickCount64 + 2000;
+    repeat
+      if scheduler.TryGetSourceCounts(source, queued, active) then
+        inFlight := queued + active;
+      if inFlight = 0 then
+        break;
+      Sleep(1);
+    until GetTickCount64 > deadline;
+    Require(inFlight = 0, 'a quiet socket left an invocation in flight');
     // 4. the unrelated invoke
     enqueueUs := NowUs;
     e := Call(APP_METHOD_ADD, '{"a":20,"b":22}', add, addRef);
-    if not scheduler.TryGetSourceCounts(source, queued, active) then
-    begin
-      queued := -1;
-      active := -1;
-    end;
     answered := (e = perAccepted) and add.WaitDone(ADD_BOUND_MS);
-    firstParkedUs := 0;
-    for i := 0 to High(parked) do
-      if parked[i].Done and
-         ((firstParkedUs = 0) or (parked[i].AtUs < firstParkedUs)) then
-        firstParkedUs := parked[i].AtUs;
     if e <> perAccepted then
     begin
       case e of
@@ -456,57 +455,71 @@ begin
       end
       else
       begin
+        kind := 'served';
         resultText := Trim(RawUtf8(add.Outcome.Value));
-        if (firstParkedUs <> 0) and (firstParkedUs <= add.AtUs) then
-          kind := 'served_after_a_parked_poll_returned'
-        else
-          kind := 'served_beside_parked_polls';
       end;
     end;
+    // 5. the loop still delivers: send, be signalled, drain, receive
+    if Length(ids) > 0 then
+    begin
+      echo := 'missing';
+      InterlockedExchange(DrainAsked, 0);
+      if Verdict(Run(PWEB_METHOD_SOCKET_SEND, '{"id":' + QuotedStrJson(ids[0]) +
+           ',"text":"cap16-starve-echo"}')) = 'success' then
+      begin
+        deadline := GetTickCount64 + ECHO_BOUND_MS;
+        while (PWebAtomicRead(DrainAsked) = 0) and
+              (GetTickCount64 < deadline) do
+          Sleep(1);
+        if PWebAtomicRead(DrainAsked) > 0 then
+        begin
+          // the page's side of the tick: the GUI drain, then the read
+          signals.Drain('main');
+          if Pos('cap16-starve-echo', RawUtf8(Run(PWEB_METHOD_SOCKET_RECEIVE,
+               '{"id":' + QuotedStrJson(ids[0]) + '}').Value)) > 0 then
+            echo := 'signalled';
+        end;
+      end;
+      Require(echo = 'signalled',
+        'an echo did not come back through signal then receive');
+    end;
+    // 6. the retired wait, refused
+    if Length(ids) > 0 then
+      waitVerdict := Verdict(Run(PWEB_METHOD_SOCKET_RECEIVE,
+        '{"id":' + QuotedStrJson(ids[0]) + ',"waitMs":' +
+        RawUtf8(IntToStr(RETIRED_WAIT_MS)) + '}'))
+    else
+      waitVerdict := 'not_applicable';
     Result := kind +
       ' latency_ms=' + Ms3(latencyUs) +
-      ' within_long_poll_bound=' +
-        RawUtf8(BoolToStr(answered and (latencyUs <= Int64(PWEB_SOCKET_MAX_WAIT_MS) * 1000), 'true', 'false')) +
       ' result=' + resultText +
       ' opened=' + RawUtf8(IntToStr(Length(ids))) + '/' + RawUtf8(IntToStr(N)) +
       ' open_refused=' + refusal +
-      ' parked=' + RawUtf8(IntToStr(parkedCount)) +
-      ' parked_for_ms=' + Ms3(enqueueUs - parkUs) +
-      ' active=' + RawUtf8(IntToStr(active)) +
-      ' queued=' + RawUtf8(IntToStr(queued));
-    if firstParkedUs <> 0 then
-      WriteLn('[CAP-15C] n=', N, ' first parked poll returned ',
-        Ms3(firstParkedUs - enqueueUs), ' ms after the Add was enqueued')
-    else
-      WriteLn('[CAP-15C] n=', N, ' no parked poll returned before the Add completed');
+      ' in_flight=' + RawUtf8(IntToStr(inFlight)) +
+      ' socket_bound=' + RawUtf8(IntToStr(STARVE_SOCKET_BOUND)) +
+      ' waitms=' + waitVerdict +
+      ' echo=' + echo;
     // the instrument's own validity - never the verdict
     if answered and (add.Outcome.Kind = prkSuccess) then
       Require(resultText = '42', 'CalculatorService.Add(20, 22) did not answer 42');
-    Require(Length(ids) = MinPtrInt(N, PWEB_SOCKET_MAX_SOCKETS),
-      'the number of sockets that opened is not min(N, the host bound)');
-    if N > PWEB_SOCKET_MAX_SOCKETS then
-      Require(refusal = 'service_error:' + PWEB_SOCKET_CAT_LIMIT,
-        'the socket past the host bound was not refused socket_limit');
+    Require(Length(ids) = N,
+      'the number of sockets that opened is not N');
+    if N > 0 then
+      Require(waitVerdict = 'invalid_request',
+        'a receive with a nonzero waitMs was not refused');
     if N = 0 then
-      Require(kind = 'served_beside_parked_polls',
-        'the control (no socket at all) was not served at once');
+      Require(kind = 'served', 'the control (no socket at all) was not served');
   finally
-    // 5. the host's order: the door releases every socket, then the pool
-    // drains. MEASURED on the first run of this program: BeforeDrain alone
-    // does not end a parked receive - the socket it waits on is made
-    // invisible, not given a close event - so the poll would sit out its
-    // whole waitMs. What ends it is the scheduler's shutdown, which closes
-    // the source and cancels the token the receive checks every slice. That
-    // is the order the host already uses, so it is the order used here.
-    door.BeforeDrain;
+    // 7. the host's order: the channel's drain seam - which hands the door
+    // its own and releases every socket - then the pool drains
+    signals.BeforeDrain;
+    signals.DetachView;
     source := nil;
     schedulerRef.Shutdown;
-    for i := 0 to High(parked) do
-      if parked[i] <> nil then
-        Require(parked[i].Done,
-          'a parked receive was still outstanding after the scheduler shut down');
     schedulerRef := nil;
     scheduler := nil;
+    chain := nil;
+    signals := nil;
     doorRef := nil;
     door := nil;
     realBridge := nil;
@@ -556,7 +569,7 @@ begin
 end;
 
 const
-  NS: array[0..3] of Integer = (0, 3, 4, 5);
+  NS: array[0..4] of Integer = (0, 3, 4, 5, 8);
 
 var
   k: Integer;
@@ -583,6 +596,7 @@ begin
         Row('socket_starvation_n' + RawUtf8(IntToStr(NS[k])), 'instrument_failed');
       end;
     end;
+  Row('socket_starvation_scripts', RawUtf8(IntToStr(Scripts)));
   Row('socket_starvation_failures', RawUtf8(IntToStr(Failures)));
   WriteOut;
   if Failures > 0 then

@@ -40,8 +40,10 @@ uses
   mormot.core.base,
   pweb.rpc.intf,
   pweb.navigation.policy,
-  {$ifdef PWEB_NET}
   pweb.capabilities.policy,
+  // CAP-16: every generated host composes the signal channel
+  pweb.rpc.signal,
+  {$ifdef PWEB_NET}
   pweb.rpc.fetch,
   pweb.rpc.socket,
   {$ifdef DARWIN}
@@ -66,44 +68,62 @@ const
 {$endif CAP15C_PLANT_WS}
 
 var
-  inner: IInvocationBridge;
-  {$ifdef PWEB_NET}
-  bridge: IInvocationBridge;
-  socketBridge: TPWebSocketBridge;
+  inner, bridge: IInvocationBridge;
+  signals: TPWebSignalChannel;
   builder: TPWebCapabilityPolicyBuilder;
   policy: TPWebCapabilityPolicy;
+  {$ifdef PWEB_NET}
+  socketBridge: TPWebSocketBridge;
   {$endif PWEB_NET}
 
 begin
   inner := TDummyInvocationBridge.Create;
+  bridge := inner;
   {$ifdef PWEB_NET}
-  bridge := TPWebFetchBridge.Create(inner, @PWebFetchNativeTransport,
+  bridge := TPWebFetchBridge.Create(bridge, @PWebFetchNativeTransport,
     APP_NETWORK_ORIGINS);
   socketBridge := TPWebSocketBridge.Create(bridge,
     PWebSocketNativeTransport, APP_NETWORK_ORIGINS);
   bridge := socketBridge;
+  {$endif PWEB_NET}
+  signals := TPWebSignalChannel.Create(bridge, []);
+  bridge := signals;
+  {$ifdef PWEB_NET}
+  socketBridge.AttachSignals(signals);
+  {$endif PWEB_NET}
   builder := TPWebCapabilityPolicyBuilder.Create;
   try
+    {$ifdef PWEB_NET}
     builder.SetAppMaximum([PWEB_CAP_NETWORK_SOCKET]);
     builder.MapMethod(PWEB_METHOD_SOCKET_OPEN, [PWEB_CAP_NETWORK_SOCKET]);
     builder.MapMethod(PWEB_METHOD_SOCKET_SEND, [PWEB_CAP_NETWORK_SOCKET]);
     builder.MapMethod(PWEB_METHOD_SOCKET_RECEIVE, [PWEB_CAP_NETWORK_SOCKET]);
     builder.MapMethod(PWEB_METHOD_SOCKET_CLOSE, [PWEB_CAP_NETWORK_SOCKET]);
+    {$else}
+    builder.SetAppMaximum([]);
+    {$endif PWEB_NET}
+    builder.RegisterZeroCapMethod(PWEB_METHOD_SIGNAL_SUBSCRIBE);
+    builder.RegisterZeroCapMethod(PWEB_METHOD_SIGNAL_UNSUBSCRIBE);
     policy := builder.Build;
   finally
     builder.Free;
   end;
-  socketBridge.AttachPolicy(policy);
+  // the host's own call, made here because this witness runs no host
+  signals.AttachPolicy(policy);
+  {$ifdef PWEB_NET}
   WriteLn('network ', PWebFetchDeclaredDigest(APP_NETWORK_ORIGINS), ' ',
     APP_NETWORK_ALLOWLIST_DIGEST);
   WriteLn('socket ', PWEB_CAP_NETWORK_SOCKET, ' ', PWEB_METHOD_SOCKET_OPEN,
     ' ', PWEB_SOCKET_MAX_SOCKETS, ' open=', socketBridge.OpenCount);
-  socketBridge.BeforeDrain;
-  bridge := nil;
   {$else}
   WriteLn('network none none');
   WriteLn('socket none');
   {$endif PWEB_NET}
+  WriteLn('signal ', PWEB_METHOD_SIGNAL_SUBSCRIBE, ' topics=',
+    signals.TopicCount);
+  // the host's drain seam: the channel first, then its door
+  signals.BeforeDrain;
+  bridge := nil;
   {$ifdef CAP15C_PLANT_WS}
   WriteLn('planted ', CAP15C_PLANTED_WS);
   {$endif CAP15C_PLANT_WS}

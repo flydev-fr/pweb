@@ -5,7 +5,7 @@
 
     pweb.socketOpen      url, protocols?, headers?    ->  id
     pweb.socketSend      id, text | base64            ->  (empty object)
-    pweb.socketReceive   id, waitMs?                  ->  events [...]
+    pweb.socketReceive   id                           ->  events [...]
     pweb.socketClose     id, code?, reason?           ->  (empty object)
 
   The page opens a WebSocket to a declared origin THROUGH THE NATIVE HOST.
@@ -42,13 +42,18 @@
   no larger than the byte bound always fits an EMPTY queue, so a bound can
   never deadlock a legal message and the peak is the bound.
 
-  `receive` is a bounded LONG-POLL: it returns what is queued at once, or
-  waits up to `waitMs` for the first event, on the scheduler worker that runs
-  it and in one of its source's invocation slots. It is the receive path and
-  not a placeholder: CAP-12A measured WebView2
-  withholding a streamed body from the page until it is complete, and ratified
-  a data plane Range-based, not streaming-based, so no streaming route exists
-  for the SDK's receive loop to move onto.
+  `receive` NEVER WAITS (CAP-16). It returns what is queued, at once, and a
+  `waitMs` other than 0 is refused. The page learns that something is queued
+  from the SIGNAL CHANNEL: every event this door queues signals the window-
+  scoped runtime topic `pweb.socket` for the socket's own window, and the
+  SDK's loop is "wait for that signal - or its 20 s keepalive - then
+  receive". CAP-15C's parked long-poll held a scheduler worker and one of the
+  window's invocation slots for up to 25 s, and four quiet sockets were
+  MEASURED starving every other invocation of the page for that long (ledger
+  15CS-1); streaming was never the way out, because CAP-12A measured WebView2
+  withholding a streamed body until it is complete and ratified a data plane
+  Range-based, not streaming-based. So no invocation of this door waits on an
+  event, and test/cap16 holds that bound at zero.
 
   ---------------------------------------------------------------------------
   THE URL - the wss authorisation rule, with no grammar change
@@ -72,7 +77,9 @@
   id that never existed. It is closed when the page closes it, when the peer
   does, when nobody polls it for PWEB_SOCKET_IDLE_MS, when its document is
   replaced (DocumentReplacing), when its capability is revoked
-  (AttachPolicy), and before the host drains its scheduler (BeforeDrain).
+  (GrantsChanged), and before the host drains its scheduler (BeforeDrain).
+  All three lifecycle calls reach this door THROUGH THE SIGNAL CHANNEL, which
+  owns the policy's grants slot and the host's two seams (AttachSignals).
 
   Called on scheduler WORKER threads. The lifecycle entry points are called
   on the GUI thread (DocumentReplacing, which never blocks), on the thread
@@ -98,6 +105,7 @@ uses
   pweb.rpc.intf,
   pweb.rpc.support,
   pweb.rpc.fetch,
+  pweb.rpc.signal,
   pweb.capabilities.policy;
 
 const
@@ -144,12 +152,16 @@ const
   PWEB_SOCKET_QUEUE_EVENTS = 64;
   PWEB_SOCKET_QUEUE_BYTES = 1 shl 20;
 
-  /// the long-poll ceiling; a larger waitMs is REFUSED, never clamped
-  PWEB_SOCKET_MAX_WAIT_MS = 25000;
-
   /// a socket with no receive in flight and none returned for this long is
   // closed with a typed reason
   PWEB_SOCKET_IDLE_MS = 60000;
+
+  /// CAP-16: how often an SDK receives from a socket nothing has signalled -
+  // one third of the idle bound, so a quiet socket is never closed as idle,
+  // and the most a signal lost in an unforeseen way can cost in latency
+  // - the receive loop is "wait for the pweb.socket signal OR this, then
+  // receive"; a receive never waits (CAP-15C's waitMs is retired)
+  PWEB_SOCKET_KEEPALIVE_MS = 20000;
 
   /// how long a page-initiated close waits for the peer's echo before the
   // transport is released anyway
@@ -201,7 +213,6 @@ type
     MaxMessage: PtrInt;
     QueueEvents: Integer;
     QueueBytes: PtrInt;
-    MaxWaitMs: Integer;
     IdleMs: Integer;
     CloseWaitMs: Integer;
   end;
@@ -335,9 +346,7 @@ type
     Events: array of TPWebSocketEvent;
     Count: Integer;
     Bytes: PtrInt;
-    Arrived: TEvent;
     SendLock: TCriticalSection;
-    Receiving: Boolean;
     LastPollTix, ClosingTix, ClosedTix: Int64;
     PageCode: Integer;
     NeedRelease, Released, SendCloseFrame: Boolean;
@@ -379,10 +388,10 @@ type
     FEntries: array of TPWebSocketEntry;
     FKeeper: TPWebSocketKeeper;
     FDraining: Boolean;
-    FPolicy: TPWebCapabilityPolicy;
-    /// keeps the attached policy alive as long as this door: a host tearing
-    // down in either order can never leave BeforeDrain holding a freed one
-    FPolicyRef: ICapabilityPolicy;
+    /// CAP-16: the signal channel this door signals and hears its lifecycle
+    // from - NOT a counted reference: the channel wraps this door as its
+    // inner bridge, and tells it through ChannelGone when it goes away
+    FSignals: TPWebSignalChannel;
     function Open(const Context: TInvocationContext; const Args: TPWebJson;
       const Token: ICancellationToken): TPWebInvocationResult;
     function Send(const Context: TInvocationContext;
@@ -404,6 +413,8 @@ type
     procedure Wake;
     procedure Tick;
     procedure GrantsChanged(const APrincipalId: Utf8String);
+    procedure ChannelGone;
+    function Door: TPWebSignalDoor;
   public
     { Fail closed: a nil inner bridge, an incomplete transport or an origin
       the grammar refuses all raise here, at startup. AOrigins is the
@@ -429,9 +440,13 @@ type
     /// the host is about to drain its scheduler: every socket is closed and
     // EVERY TRANSPORT RELEASED before this returns, and no socket opens again
     procedure BeforeDrain;
-    /// subscribe to the policy's runtime-grant changes, so that a principal
-    // losing network.socket loses its sockets before the revoking call returns
-    procedure AttachPolicy(APolicy: TPWebCapabilityPolicy);
+    /// CAP-16: sit on the signal channel - declare the window-scoped
+    // `pweb.socket` topic (read under network.socket), take the channel's one
+    // door slot, and signal every queued event through it. The channel owns
+    // the policy's grants slot and the host's two seams and hands them on
+    // here, so a principal losing network.socket still loses its sockets
+    // before the revoking call returns. Before the host runs; once
+    procedure AttachSignals(ASignals: TPWebSignalChannel);
 
     /// sockets not yet closed, for the host's accounting and the gates
     function OpenCount: Integer;
@@ -459,7 +474,6 @@ begin
   Result.MaxMessage := PWEB_SOCKET_MAX_MESSAGE;
   Result.QueueEvents := PWEB_SOCKET_QUEUE_EVENTS;
   Result.QueueBytes := PWEB_SOCKET_QUEUE_BYTES;
-  Result.MaxWaitMs := PWEB_SOCKET_MAX_WAIT_MS;
   Result.IdleMs := PWEB_SOCKET_IDLE_MS;
   Result.CloseWaitMs := PWEB_SOCKET_CLOSE_WAIT_MS;
 end;
@@ -947,13 +961,11 @@ constructor TPWebSocketEntry.Create(ABridge: TPWebSocketBridge);
 begin
   inherited Create;
   FBridge := ABridge;
-  Arrived := TEvent.Create(nil, False, False, '');
   SendLock := TCriticalSection.Create;
 end;
 
 destructor TPWebSocketEntry.Destroy;
 begin
-  Arrived.Free;
   SendLock.Free;
   inherited Destroy;
 end;
@@ -1145,6 +1157,11 @@ var
 begin
   if not FDraining then
     BeforeDrain;
+  // the channel's door slot is given back before this door is gone - unless
+  // the channel went first and already said so
+  if FSignals <> nil then
+    FSignals.DetachDoor(Door);
+  FSignals := nil;
   if FKeeper <> nil then
   begin
     FKeeper.Terminate;
@@ -1236,7 +1253,11 @@ begin
   Inc(E.Count);
   if Ev.Kind in [sekText, sekBinary] then
     Inc(E.Bytes, Length(Ev.Data));
-  E.Arrived.SetEvent;
+  // THE PAGE IS TOLD, and nothing waits: the owning window's `pweb.socket`
+  // topic moves, and its SDK receives. Lock order: this door's lock, then
+  // the channel's - the channel never calls back into a door under its own
+  if FSignals <> nil then
+    FSignals.SignalWindow(E.WindowId, PWEB_SIGNAL_TOPIC_SOCKET);
 end;
 
 procedure TPWebSocketBridge.CloseNativeLocked(E: TPWebSocketEntry;
@@ -1295,7 +1316,6 @@ begin
     E.SendCloseFrame := True;
     E.CloseFrameCode := PWEB_SOCKET_NATIVE_CLOSE_CODE;
   end;
-  E.Arrived.SetEvent;
   Wake;
 end;
 
@@ -1355,8 +1375,9 @@ begin
     for i := 0 to High(FEntries) do
     begin
       e := FEntries[i];
+      // no receive for the idle bound - an SDK receives at least every
+      // PWEB_SOCKET_KEEPALIVE_MS, so this is a page that stopped listening
       if (e.State = pssOpen) and
-         not e.Receiving and
          (now - e.LastPollTix >= FBounds.IdleMs) then
         CloseNativeLocked(e, 'idle', False);
       if (e.State = pssClosing) and
@@ -1686,87 +1707,49 @@ var
   a: TSockArgs;
   waitMs, i: Integer;
   e: TPWebSocketEntry;
-  deadline, remaining: Int64;
   json: RawUtf8;
-  took, closeTaken, busy, cancelled: Boolean;
+  closeTaken: Boolean;
 begin
   if not DecodeArgs(Args, [sanId, sanWaitMs], a) then
     exit(Invalid('malformed, unknown or repeated argument'));
   if a[sanId].Kind <> sakString then
     exit(Invalid('id must be a string'));
-  waitMs := 0;
+  // CAP-16: THE LONG-POLL IS RETIRED. A receive never waits, so a nonzero
+  // waitMs is a request this door no longer knows how to honour - REFUSED,
+  // never quietly served as 0. `0` stays accepted: it asks for exactly what
+  // a receive now is (ledger 15CS-1, cap16-checkpoint1.md §6)
   if a[sanWaitMs].Kind <> sakAbsent then
-    // REFUSED, never clamped: a clamp is a request that quietly became
-    // another request
     if not ArgInteger(a[sanWaitMs], waitMs) or
-       (waitMs < 0) or
-       (waitMs > FBounds.MaxWaitMs) then
-      exit(Invalid('waitMs is outside the accepted range'));
+       (waitMs <> 0) then
+      exit(Invalid('waitMs is retired: a receive never waits'));
+  if (Token <> nil) and
+     Token.IsCancelled then
+    exit(PWebDefaultErrorResult(pecCancelled));
   e := AcquireOwned(Context, a[sanId].Text);
   if e = nil then
     exit(ServiceError(PWEB_SOCKET_CAT_NOT_FOUND));
   try
-    FLock.Enter;
-    try
-      busy := e.Receiving;
-      if not busy then
-      begin
-        e.Receiving := True;
-        e.LastPollTix := GetTickCount64;
-      end;
-    finally
-      FLock.Leave;
-    end;
-    // ONE receive in flight per socket: a second one would pin a second
-    // scheduler worker for nothing (cap15c-checkpoint1.md F-9)
-    if busy then
-      exit(PWebDefaultErrorResult(pecBusy));
-    deadline := GetTickCount64 + waitMs;
-    took := False;
     closeTaken := False;
-    cancelled := False;
     json := '';
-    repeat
-      FLock.Enter;
-      try
-        if e.Count > 0 then
-        begin
-          for i := 0 to e.Count - 1 do
-          begin
-            if i > 0 then
-              json := json + ',';
-            json := json + EventJson(e.Events[i]);
-            if e.Events[i].Kind = sekClose then
-              closeTaken := True;
-          end;
-          e.Events := nil;
-          e.Count := 0;
-          e.Bytes := 0;
-          if closeTaken then
-            e.CloseTaken := True;
-          took := True;
-        end;
-      finally
-        FLock.Leave;
-      end;
-      if took then
-        break;
-      if (Token <> nil) and
-         Token.IsCancelled then
-      begin
-        cancelled := True;
-        break;
-      end;
-      remaining := deadline - GetTickCount64;
-      if remaining <= 0 then
-        break;
-      if remaining > WAIT_SLICE_MS then
-        remaining := WAIT_SLICE_MS;
-      e.Arrived.WaitFor(remaining);
-    until False;
+    // WHAT IS QUEUED, NOW - and nothing waits for what is not. The take is
+    // ONE step under the door's lock, so two receives of one socket each get
+    // a disjoint, ordered part of the queue; CAP-15C's `busy` for a second
+    // receive in flight retired with the wait that made one observable
     FLock.Enter;
     try
-      e.Receiving := False;
+      for i := 0 to e.Count - 1 do
+      begin
+        if i > 0 then
+          json := json + ',';
+        json := json + EventJson(e.Events[i]);
+        if e.Events[i].Kind = sekClose then
+          closeTaken := True;
+      end;
+      e.Events := nil;
+      e.Count := 0;
+      e.Bytes := 0;
+      if closeTaken then
+        e.CloseTaken := True;
       e.LastPollTix := GetTickCount64;
     finally
       FLock.Leave;
@@ -1775,8 +1758,6 @@ begin
     // so a page that reopens at once does not race the keeper
     if closeTaken then
       ReleaseEntry(e);
-    if cancelled then
-      exit(PWebDefaultErrorResult(pecCancelled));
     Result := PWebSuccessResult(TPWebJson('{"events":[' + json + ']}'));
   finally
     Unref(e);
@@ -1890,10 +1871,6 @@ begin
   FLock.Enter;
   try
     FDraining := True;
-    if (FPolicy <> nil) and
-       (TMethod(FPolicy.OnGrantsChanged).Data = Pointer(Self)) then
-      FPolicy.OnGrantsChanged := nil;
-    FPolicy := nil;
     for i := 0 to High(FEntries) do
       CloseNativeLocked(FEntries[i], 'shutdown', True);
     snapshot := Copy(FEntries);
@@ -1935,28 +1912,56 @@ begin
   end;
 end;
 
-procedure TPWebSocketBridge.AttachPolicy(APolicy: TPWebCapabilityPolicy);
+function TPWebSocketBridge.Door: TPWebSignalDoor;
 begin
-  if APolicy = nil then
-    raise EPWebSocket.Create('AttachPolicy requires a policy');
-  if Assigned(APolicy.OnGrantsChanged) then
-    raise EPWebSocket.Create('the policy already has a grants subscriber');
-  FPolicy := APolicy;
-  FPolicyRef := APolicy;
-  APolicy.OnGrantsChanged := @GrantsChanged;
+  Result.DocumentReplacing := @DocumentReplacing;
+  Result.GrantsChanged := @GrantsChanged;
+  Result.BeforeDrain := @BeforeDrain;
+  Result.ChannelGone := @ChannelGone;
+end;
+
+procedure TPWebSocketBridge.ChannelGone;
+begin
+  // under this door's lock: a PushLocked signalling right now finishes
+  // before the channel it is signalling is allowed to go
+  FLock.Enter;
+  try
+    FSignals := nil;
+  finally
+    FLock.Leave;
+  end;
+end;
+
+procedure TPWebSocketBridge.AttachSignals(ASignals: TPWebSignalChannel);
+begin
+  if ASignals = nil then
+    raise EPWebSocket.Create('AttachSignals requires a signal channel');
+  if FSignals <> nil then
+    raise EPWebSocket.Create('the socket door already sits on a channel');
+  // the topic FIRST: a channel that refuses it (a frozen topic set, a bound)
+  // must leave this door unattached rather than half attached
+  ASignals.DeclareWindowTopic(PWEB_SIGNAL_TOPIC_SOCKET,
+    PWEB_CAP_NETWORK_SOCKET);
+  ASignals.AttachDoor(Door);
+  FLock.Enter;
+  try
+    FSignals := ASignals;
+  finally
+    FLock.Leave;
+  end;
 end;
 
 procedure TPWebSocketBridge.GrantsChanged(const APrincipalId: Utf8String);
 var
   windows: array of Utf8String;
-  policy: TPWebCapabilityPolicy;
+  signals: TPWebSignalChannel;
   i, j: Integer;
   known: Boolean;
   caps: TPWebCapabilities;
 begin
   FLock.Enter;
   try
-    policy := FPolicy;
+    signals := FSignals;
     windows := nil;
     for i := 0 to High(FEntries) do
       if (FEntries[i].PrincipalId = APrincipalId) and
@@ -1975,13 +1980,13 @@ begin
   finally
     FLock.Leave;
   end;
-  if policy = nil then
+  if signals = nil then
     exit;
   for j := 0 to High(windows) do
   begin
-    // the POLICY answers whether network.socket survived; this door only
-    // acts on the answer
-    caps := policy.SnapshotCapabilities(APrincipalId, windows[j]);
+    // the POLICY answers whether network.socket survived - asked through the
+    // channel that owns its grants slot; this door only acts on the answer
+    caps := signals.SnapshotCapabilities(APrincipalId, windows[j]);
     if PWebCapabilityIn(caps, PWEB_CAP_NETWORK_SOCKET) then
       continue;
     FLock.Enter;

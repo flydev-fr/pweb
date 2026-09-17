@@ -280,7 +280,10 @@ $pairs = @(
     @('PWEB_METHOD_SOCKET_RECEIVE', 'PWEB_METHOD_SOCKET_RECEIVE'),
     @('PWEB_METHOD_SOCKET_CLOSE', 'PWEB_METHOD_SOCKET_CLOSE'),
     @('PWEB_CAP_NETWORK_SOCKET', 'PWEB_CAP_NETWORK_SOCKET'),
-    @('PWEB_SOCKET_MAX_WAIT_MS', 'PWEB_SOCKET_RECEIVE_WAIT_MS'),
+    # CAP-16 SUPERSESSION: the long-poll bound (PWEB_SOCKET_MAX_WAIT_MS /
+    # PWEB_SOCKET_RECEIVE_WAIT_MS) is retired, ledger 15CS-1; the keepalive
+    # cadence both SDKs receive on replaced it
+    @('PWEB_SOCKET_KEEPALIVE_MS', 'PWEB_SOCKET_KEEPALIVE_MS'),
     @('PWEB_SOCKET_MAX_MESSAGE', 'PWEB_SOCKET_MAX_MESSAGE'),
     @('PWEB_SOCKET_MAX_PROTOCOLS', 'PWEB_SOCKET_MAX_PROTOCOLS'),
     @('PWEB_SOCKET_MAX_REASON_BYTES', 'PWEB_SOCKET_MAX_REASON_BYTES'))
@@ -307,19 +310,26 @@ if ($qBytes -lt $maxMsg) { Violation "K5: PWEB_SOCKET_QUEUE_BYTES $qBytes < PWEB
 if ($reqBytes -lt ([int64][math]::Ceiling($maxMsg / 3.0) * 4 + 65536)) {
     Violation "K5: PWEB_SOCKET_REQUEST_BYTES $reqBytes cannot carry a base64 message of $maxMsg bytes"
 }
-if ([int64](PascalConst $decCode 'PWEB_SOCKET_MAX_WAIT_MS') -ge [int64](PascalConst $decCode 'PWEB_SOCKET_IDLE_MS')) {
-    Violation 'K5: the long-poll wait is not shorter than the idle bound - a page that polls could be closed as idle'
+if ((2 * [int64](PascalConst $decCode 'PWEB_SOCKET_KEEPALIVE_MS')) -ge [int64](PascalConst $decCode 'PWEB_SOCKET_IDLE_MS')) {
+    Violation 'K5: the keepalive is not under half the idle bound - a quiet socket could be closed as idle'
+}
+# and the retired bound is GONE, from the native unit and both SDKs
+foreach ($retired in 'PWEB_SOCKET_MAX_WAIT_MS', 'PWEB_SOCKET_RECEIVE_WAIT_MS', 'MaxWaitMs') {
+    if ($decCode.Contains($retired) -or $tsText.Contains($retired) -or $p2jCode.Contains($retired)) {
+        Violation "K5: the retired long-poll bound $retired is still spelled (CAP-16 supersession, 15CS-1)"
+    }
 }
 $report.Add("K5: $($pairs.Count) constants agree across the native unit, @pweb/runtime and the Pas2JS SDK; queue, request and idle bounds consistent")
 
 # --- K6: the templates -------------------------------------------------------------
 $programRequired = @('pweb.rpc.socket,', 'TPWebSocketBridge.Create(',
-    'PWebSocketNativeTransport', 'socketBridge.AttachPolicy(policy)',
+    'PWebSocketNativeTransport', 'socketBridge.AttachSignals(signals)',
     'options.MaxRequestBytes := PWEB_SOCKET_REQUEST_BYTES',
     'options.Workers := options.Workers + PWEB_SOCKET_MAX_SOCKETS',
     'options.MaxConcurrent := options.MaxConcurrent + PWEB_SOCKET_MAX_SOCKETS',
-    'options.DocumentReplacing := socketBridge.DocumentReplacing',
-    'options.BeforeDrain := socketBridge.BeforeDrain')
+    # CAP-16 SUPERSESSION: the door no longer takes the host's two seams; the
+    # signal channel owns them and hands them on (cap16-checkpoint1.md §5)
+    'options.Signals := signals')
 $doorRx = 'pweb\.rpc\.socket|TPWebSocket|PWEB_SOCKET_|socketBridge|PWebSocketNativeTransport|cocoa\.socket'
 foreach ($tpl in 'tools/templates/react/src/program.lpr',
                  'tools/templates/pas2js/src/program.lpr') {
@@ -380,7 +390,8 @@ $witness = Read_ 'test/cap15c/sockethost.pas'
 foreach ($needle in 'pweb.rpc.socket', 'pweb.platform.cocoa.socket',
                     'pweb.rpc.socket.mormot', '{$I app.network.inc}',
                     'TPWebSocketBridge.Create', 'PWebSocketNativeTransport',
-                    'APP_NETWORK_ORIGINS', 'AttachPolicy') {
+                    'APP_NETWORK_ORIGINS', 'AttachSignals', 'pweb.rpc.signal',
+                    'TPWebSignalChannel.Create') {
     if (-not $witness.Contains($needle)) {
         Violation ("K7: test/cap15c/sockethost.pas does not carry ${needle}: the " +
             'witness must compile what a generated host compiles')
@@ -400,7 +411,9 @@ if ($arm -lt 0 -or $guard -lt 0) {
     Violation 'K8: the document hook is not armed before the navigation guard is installed'
 }
 $disarm = IndexAfter $hostCode 'PWebNavTrustedDocumentHook := nil' $guard
-$drainCall = IndexAfter $hostCode 'Options.BeforeDrain()' $disarm
+# CAP-16 SUPERSESSION: the drain seam is the ONE owner the host derived -
+# the signal channel's when there is one, the composition's otherwise
+$drainCall = IndexAfter $hostCode 'beforeDrain()' $disarm
 $bindClose = IndexAfter $hostCode 'binding.Close' $drainCall
 $schedStop = IndexAfter $hostCode 'scheduler.Shutdown' $bindClose
 if ($disarm -lt 0 -or $drainCall -lt 0 -or $bindClose -lt 0 -or $schedStop -lt 0) {
@@ -947,7 +960,7 @@ $report.Add("K24: the Darwin release gives a scheduled close frame the mORMot tr
 $starveSrc = 'test/cap15c/socketstarve.pas'
 $starveCode = StripComments (Read_ $starveSrc)
 foreach ($needle in @(
-        'TInvocationScheduler\.Create\(\s*policyRef\s*,\s*doorRef\s*,\s*Workers\s*\)',
+        'TInvocationScheduler\.Create\(\s*policyRef\s*,\s*chain\s*,\s*Workers\s*\)',
         'limits\.MaxConcurrent\s*:=\s*Slots\s*;',
         'limits\.MaxQueueSize\s*:=\s*QueueBound\s*;')) {
     if ($starveCode -notmatch $needle) {

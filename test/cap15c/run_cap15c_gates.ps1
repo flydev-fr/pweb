@@ -14,10 +14,12 @@
 #        validation, the message and reassembly bounds, both wall-clock
 #        deadlines, backpressure with nothing dropped, the idle bound,
 #        revocation, document replacement and shutdown before the drain
-#   L2   the STARVATION, measured and not fixed: under the host defaults read
-#        from source, N = 0, 3, 4, 5 quiet sockets with parked receives and
-#        an unrelated invoke timed beside them - Windows and Linux, one typed
-#        row per N, the instrument's validity gated and its answer not
+#   L2   the STARVATION, CLOSED BY CAP-16: under the host defaults read from
+#        source, N = 0, 3, 4, 5, 8 quiet sockets on the signal loop and an
+#        unrelated invoke timed beside them - Windows and Linux, one typed
+#        row per N, and GATED now: every N served under 5 ms with nothing in
+#        flight, the retired waitMs refused, an echo through signal then
+#        receive
 #
 # Emits build/cap15c/cli-<target>.json for the CAP-7F aggregation.
 #
@@ -158,27 +160,30 @@ function Show-CrashReport([string]$Name, [datetime]$Since) {
     }
 }
 
-# --- L2: the starvation, MEASURED AND NOT FIXED -----------------------------------
+# --- L2: the starvation, CLOSED ---------------------------------------------------
 #
-# `pweb.socketReceive` waits on the scheduler worker that runs it. Under the
-# ratified host defaults, do N quiet sockets with parked receive loops starve an
-# unrelated invocation? test/cap15c/socketstarve.pas answers for N = 0, 3, 4
-# and 5 with one TYPED row each; this runner hands it the defaults READ FROM
-# SOURCE, so the measurement follows PWebDefaultHostOptions wherever it goes and
-# can never quietly run at a number the host does not ship. Nothing here is
-# gated on the answer - "starved" and "not starved" are both findings. What is
-# gated is that the instrument measured what its rows say it measured.
+# CAP-15C MEASURED it: `pweb.socketReceive` waited on the scheduler worker that
+# ran it, and four quiet sockets held an unrelated invocation for a whole 25 s
+# long-poll (ledger 15CS-1). CAP-16 retired the wait: a receive answers at once
+# and a page learns of a queued event from the signal channel. The SAME
+# instrument, test/cap15c/socketstarve.pas, now drives the signal loop for
+# N = 0, 3, 4, 5 and 8 quiet sockets and this runner GATES its answer: every N
+# served under 5 ms, nothing in flight, the retired waitMs refused, and one
+# echo round-tripped through signal then receive. The host numbers are still
+# READ FROM SOURCE, so the proof follows PWebDefaultHostOptions wherever it goes.
 #
 # Windows and Linux only: the scheduler is platform-independent, and those are
 # the two targets whose socket transport is the mORMot one the program
 # composes. The macOS legs say `not_applicable` by name.
 $decoratorUnit = 'src/rpc/pweb.rpc.socket.pas'
 $starveFields = @('socket_starvation_n0', 'socket_starvation_n3',
-    'socket_starvation_n4', 'socket_starvation_n5')
-$starveKinds = 'served_beside_parked_polls|served_after_a_parked_poll_returned|not_answered|refused_[a-z_:]+'
-$starveShape = "^($starveKinds) latency_ms=\d+\.\d{3} within_long_poll_bound=(true|false) " +
-    'result=\S+ opened=(\d+)/(\d+) open_refused=\S+ parked=(\d+) parked_for_ms=\d+\.\d{3} ' +
-    'active=-?\d+ queued=-?\d+$'
+    'socket_starvation_n4', 'socket_starvation_n5', 'socket_starvation_n8')
+$starveKinds = 'served|not_answered|refused_[a-z_:]+'
+$starveShape = "^($starveKinds) latency_ms=(\d+\.\d{3}) result=(\S+) " +
+    'opened=(\d+)/(\d+) open_refused=\S+ in_flight=(-?\d+) socket_bound=(\d+) ' +
+    'waitms=(\S+) echo=(\S+)$'
+# the gated bound on an unrelated invocation beside N quiet sockets
+$starveBoundMs = 5.0
 function Get-HostDefaults {
     $hostUnit = 'src/webview/pweb.webview.host.pas'
     $text = [System.IO.File]::ReadAllText((Join-Path $repoRoot $hostUnit))
@@ -427,22 +432,19 @@ Require ($rows['raw_frame_standard_server'] -eq 'true') 'L1: raw-frame interop w
 # --- L2: the starvation rows ------------------------------------------------------
 if ($IsMacOS) {
     foreach ($k in $starveFields) { Row $k 'not_applicable' }
+    Row 'socket_starvation_max_ms' 'not_applicable'
 } else {
     $starveOut = Join-Path $work "starve-$target.json"
     Row 'socket_starvation_exit' "$starveExit"
     Row 'socket_starvation_host_defaults' $starveDefaults
     Require ($starveExit -eq 0) 'L2: the starvation instrument reported a failure of its own'
-    # the ratified host bound on sockets, read from the one constants home
-    $sb = [regex]::Match([System.IO.File]::ReadAllText((Join-Path $repoRoot $decoratorUnit)),
-        '(?m)^\s*PWEB_SOCKET_MAX_SOCKETS\s*=\s*(\d+)\s*;')
-    Require $sb.Success "L2: $decoratorUnit no longer states PWEB_SOCKET_MAX_SOCKETS as a literal"
-    $starveSocketBound = if ($sb.Success) { [int]$sb.Groups[1].Value } else { 0 }
     $starve = @{}
     if (Test-Path $starveOut) {
         $starve = Get-Content $starveOut -Raw | ConvertFrom-Json -AsHashtable
     } else {
         Require $false 'L2: the starvation instrument wrote no evidence'
     }
+    $starveMax = 0.0
     foreach ($k in $starveFields) {
         $v = if ($starve.ContainsKey($k)) { "$($starve[$k])" } else { 'missing' }
         Row $k $v
@@ -450,30 +452,32 @@ if ($IsMacOS) {
         $m = [regex]::Match($v, $starveShape)
         Require $m.Success "L2: $k is not a typed starvation row: '$v'"
         if (-not $m.Success) { continue }
-        # the row names its own N, opened what the host bound allows, and every
-        # socket that opened had a receive parked when the Add was enqueued
-        $want = [math]::Min($n, $starveSocketBound)
-        Require ([int]$m.Groups[4].Value -eq $n) "L2: $k reports N=$($m.Groups[4].Value)"
-        Require ([int]$m.Groups[3].Value -eq $want) "L2: $k opened $($m.Groups[3].Value) socket(s), not $want"
-        Require ([int]$m.Groups[5].Value -eq $want) "L2: $k parked $($m.Groups[5].Value) receive(s), not $want"
-        if ($m.Groups[1].Value -like 'served_*') {
-            Require ($v -match ' result=42 ') "L2: $k was served and did not answer 42"
-        }
-        # a socket past the host bound is refused by name, never opened
-        if ($n -gt $starveSocketBound) {
-            Require ($v -match ' open_refused=service_error:socket_limit ') `
-                "L2: $k asked for more sockets than the host bound and was not refused socket_limit"
+        # the row names its own N and opened N sockets under the instrument's
+        # raised socket bound; nothing was in flight beside them
+        Require ([int]$m.Groups[5].Value -eq $n) "L2: $k reports N=$($m.Groups[5].Value)"
+        Require ([int]$m.Groups[4].Value -eq $n) "L2: $k opened $($m.Groups[4].Value) socket(s), not $n"
+        Require ([int]$m.Groups[7].Value -ge 8) "L2: $k ran with a socket bound under 8"
+        Require ([int]$m.Groups[6].Value -eq 0) "L2: $k had $($m.Groups[6].Value) invocation(s) in flight beside quiet sockets"
+        # THE GATE: served, 42, under the bound
+        Require ($m.Groups[1].Value -eq 'served') "L2: $k was not served: $($m.Groups[1].Value)"
+        Require ($m.Groups[3].Value -eq '42') "L2: $k did not answer 42"
+        $ms = [double]::Parse($m.Groups[2].Value, [System.Globalization.CultureInfo]::InvariantCulture)
+        if ($ms -gt $starveMax) { $starveMax = $ms }
+        Require ($ms -lt $starveBoundMs) "L2: $k answered in $ms ms, not under $starveBoundMs ms"
+        # the retired wait refused, and the loop still delivering
+        if ($n -gt 0) {
+            Require ($m.Groups[8].Value -eq 'invalid_request') "L2: $k did not refuse waitMs 25000"
+            Require ($m.Groups[9].Value -eq 'signalled') "L2: $k did not echo through signal then receive"
+        } else {
+            Require ($m.Groups[8].Value -eq 'not_applicable' -and $m.Groups[9].Value -eq 'not_applicable') `
+                "L2: the control (no socket) claims a socket row"
         }
     }
-    Require ("$($rows['socket_starvation_n0'])" -like 'served_beside_parked_polls *') `
-        'L2: the control (no socket at all) was not served beside zero parked polls'
-    # the verdict is LOGGED for this target and never gated: the ledger entry is
-    # written from the hosted rows of both legs
-    $starved = ("$($rows['socket_starvation_n3'])" -like 'served_beside_parked_polls *') -and
-        ("$($rows['socket_starvation_n4'])" -like 'served_after_a_parked_poll_returned *') -and
-        ("$($rows['socket_starvation_n5'])" -like 'served_after_a_parked_poll_returned *')
-    Write-Host ("[CAP-15C] starvation under $starveDefaults on ${target}: " +
-        $(if ($starved) { 'CONFIRMED - an unrelated invoke waited for a parked receive to give back its worker and slot' } else { 'NOT CONFIRMED as stated' }))
+    # invariant culture: a row is data, and a comma decimal is not
+    $starveMaxText = $starveMax.ToString('0.000', [System.Globalization.CultureInfo]::InvariantCulture)
+    Row 'socket_starvation_max_ms' $starveMaxText
+    Write-Host ("[CAP-15C] starvation under $starveDefaults on ${target}: CLOSED - " +
+        "N = 0, 3, 4, 5, 8 quiet sockets, the slowest unrelated invoke $starveMaxText ms")
 }
 
 # --- the rows the SUITE decided, read back from its corpus ---------------------

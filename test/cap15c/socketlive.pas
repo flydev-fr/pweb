@@ -44,6 +44,7 @@ uses
   mormot.crypt.core,
   pweb.rpc.intf,
   pweb.rpc.support,
+  pweb.rpc.signal,
   pweb.rpc.socket,
   {$ifdef DARWIN}
   pweb.platform.cocoa.socket,
@@ -271,7 +272,11 @@ type
   end;
   TLiveEvents = array of TLiveEvent;
 
-// one receive; appends what it got, answers the verdict
+// one receive, and - when WaitMs > 0 - the page's patience played here:
+// receive again every 5 ms until something arrives or WaitMs has passed.
+// CAP-16: the DOOR never waits, and a page learns of a queued event from the
+// signal channel; this program measures the TRANSPORT, so it polls instead.
+// Appends what it got, answers the verdict
 function ReceiveInto(D: TPWebSocketBridge; const Id: RawUtf8; WaitMs: Integer;
   var Events: TLiveEvents): RawUtf8;
 var
@@ -280,9 +285,18 @@ var
   list, item: PDocVariantData;
   i: Integer;
   ev: TLiveEvent;
+  deadline: Int64;
 begin
-  r := Invoke(D, PWEB_METHOD_SOCKET_RECEIVE,
-    '{"id":' + QuotedStrJson(Id) + ',"waitMs":' + RawUtf8(IntToStr(WaitMs)) + '}');
+  deadline := GetTickCount64 + WaitMs;
+  repeat
+    r := Invoke(D, PWEB_METHOD_SOCKET_RECEIVE,
+      '{"id":' + QuotedStrJson(Id) + '}');
+    if (WaitMs <= 0) or
+       (r.Kind <> prkSuccess) or
+       (Pos('"events":[]', RawUtf8(r.Value)) = 0) then
+      break;
+    Sleep(5);
+  until GetTickCount64 > deadline;
   Result := Verdict(r);
   if r.Kind <> prkSuccess then
     exit;
@@ -670,6 +684,8 @@ var
   t0: Int64;
   policy: TPWebCapabilityPolicy;
   policyRef: ICapabilityPolicy;
+  signals: TPWebSignalChannel;
+  signalsRef: IInvocationBridge;
   builder: TPWebCapabilityPolicyBuilder;
   events: TLiveEvents;
 begin
@@ -705,7 +721,12 @@ begin
   policyRef := policy;
   d := NewDoor(Bounds);
   keep := d;
-  d.AttachPolicy(policy);
+  // CAP-16: the signal channel owns the policy's grants slot, and the door
+  // hears the revocation through it - the host's own wiring
+  signals := TPWebSignalChannel.Create(TInner.Create, []);
+  signalsRef := signals;
+  d.AttachSignals(signals);
+  signals.AttachPolicy(policy);
   r := Open(d, Ws('/echo?row=l_revoke'));
   id := IdOf(r);
   WaitEvent(d, id, 'open', 3000, ev);
@@ -732,6 +753,7 @@ begin
   RowInt('live_before_drain_open_after', d.OpenCount);
   Require(d.OpenCount = 0, 'L19: a socket survived BeforeDrain');
   keep := nil;
+  signalsRef := nil;
   policyRef := nil;
 
   // L20 latency after an idle socket
