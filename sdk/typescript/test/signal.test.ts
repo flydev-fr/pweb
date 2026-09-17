@@ -13,6 +13,7 @@ import {
 import {
   PWEB_METHOD_SOCKET_OPEN,
   PWEB_METHOD_SOCKET_RECEIVE,
+  PWEB_SOCKET_KEEPALIVE_MS,
   PWebSocket,
 } from "../src/socket.js";
 import { InvokeArgs, JsonValue } from "../src/types.js";
@@ -212,8 +213,8 @@ test("the socket loop receives on the signal, never waits natively, and unsubscr
     await tick();
   }
   assert.deepEqual(got, ["open", "hello"]);
-  // every receive carried the id and nothing else: the retired wait is gone
-  // from the argument set (K7 sweeps this file for its name, comments and all)
+  // every receive carried the id and nothing else: waitMs is retired, so the
+  // loop can only ask for what is queued now
   for (const c of captured.filter((x) => x.method === PWEB_METHOD_SOCKET_RECEIVE)) {
     assert.deepEqual(Object.keys(c.args as object), ["id"]);
   }
@@ -229,4 +230,55 @@ test("the socket loop receives on the signal, never waits natively, and unsubscr
   assert.equal(captured.filter((c) => c.method === PWEB_METHOD_SIGNAL_UNSUBSCRIBE).length, 1,
     "a closed socket left its topic subscribed");
   assert.equal(lastSeq(PWEB_SIGNAL_TOPIC_SOCKET), undefined);
+});
+
+// THE KEEPALIVE IS WHAT KEEPS A QUIET SOCKET ALIVE. Nothing waits natively
+// any more, so the door closes a socket it has not been polled from for
+// PWEB_SOCKET_IDLE_MS, and the only thing that polls it is this timer. The
+// test above proves a quiet socket does NOT receive early; this one proves it
+// receives once the keepalive is due, with the clock under the test's control.
+test("a quiet socket receives when the keepalive falls due", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const queue: JsonValue[][] = [[{ type: "open", protocol: "" }]];
+  installFake(async (method) => {
+    if (method === PWEB_METHOD_SOCKET_OPEN) {
+      return { id: "s-keepalive" };
+    }
+    if (method === PWEB_METHOD_SIGNAL_SUBSCRIBE) {
+      return { topic: PWEB_SIGNAL_TOPIC_SOCKET, seq: 0 };
+    }
+    if (method === PWEB_METHOD_SOCKET_RECEIVE) {
+      return { events: queue.shift() ?? [] };
+    }
+    return {};
+  });
+  // the fake answers on microtasks, so draining them is what advances the loop
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 50; i++) {
+      await Promise.resolve();
+    }
+  };
+  const opened: string[] = [];
+  const s = new PWebSocket("socket-url-under-test");
+  s.onopen = (): void => {
+    opened.push("open");
+  };
+  await settle();
+  assert.deepEqual(opened, ["open"]);
+  const quiet = captured.filter((c) => c.method === PWEB_METHOD_SOCKET_RECEIVE).length;
+  // one millisecond short of the keepalive: still nothing
+  t.mock.timers.tick(PWEB_SOCKET_KEEPALIVE_MS - 1);
+  await settle();
+  assert.equal(captured.filter((c) => c.method === PWEB_METHOD_SOCKET_RECEIVE).length, quiet,
+    "a socket received before its keepalive was due");
+  t.mock.timers.tick(1);
+  await settle();
+  const after = captured.filter((c) => c.method === PWEB_METHOD_SOCKET_RECEIVE);
+  assert.equal(after.length, quiet + 1,
+    "the keepalive did not receive: the door would close this socket as idle");
+  const last = after[after.length - 1];
+  assert.ok(last !== undefined);
+  assert.deepEqual(Object.keys(last.args as object), ["id"]);
+  s.close();
+  t.mock.timers.reset();
 });

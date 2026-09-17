@@ -316,13 +316,22 @@ $report.Add("K6: $waitCount wait(s) in the decorator units, all in thread bodies
 if ($socketCode -notmatch "(?s)if a\[sanWaitMs\]\.Kind <> sakAbsent then\s*if not ArgInteger\(a\[sanWaitMs\], waitMs\) or\s*\(waitMs <> 0\) then\s*exit\(Invalid\('waitMs is retired") {
     Violation 'K7: the socket door does not refuse a nonzero waitMs'
 }
-foreach ($f in @(& git ls-files -- sdk | Where-Object { $_ -match '\.(ts|pas)$' })) {
+# THE SHIPPED SDK, not its suite. The claim is that neither SDK SENDS the
+# argument, and a test that proves the door refuses it - or a comment that
+# says what replaced it - has to be able to spell the name. Everything a
+# consumer compiles is swept; `test/` is where the retirement is asserted.
+$sdkShipped = @(& git ls-files -- sdk |
+    Where-Object { $_ -match '\.(ts|pas)$' -and $_ -notmatch '(^|/)test/' })
+foreach ($f in $sdkShipped) {
     if ((Read_ $f) -match 'waitMs') {
         Violation "K7: $f still names waitMs - neither SDK sends it"
     }
 }
+if ($sdkShipped.Count -lt 4) {
+    Violation "K7: the shipped-SDK sweep covered only $($sdkShipped.Count) file(s)"
+}
 $cliContract = Read_ 'docs/cli-contract.md'
-foreach ($phrase in 'waitMs is retired', 'pweb.socket', 'PWEB_SOCKET_KEEPALIVE_MS') {
+foreach ($phrase in '`waitMs` is retired', 'pweb.socket', 'PWEB_SOCKET_KEEPALIVE_MS') {
     if (-not $cliContract.Contains($phrase)) { Violation "K7: docs/cli-contract.md does not record: $phrase" }
 }
 $report.Add('K7: socket_receive_waitms=removed - the door refuses it, neither SDK names it, the contract records it')

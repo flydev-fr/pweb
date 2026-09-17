@@ -236,8 +236,13 @@ Row 'signal_flood_sent' "$floodSent"
 Row 'signal_flood_scripts' "$floodEvals"
 Row 'signal_flood_evals_per_s' ([double]$eps).ToString('0.###', [System.Globalization.CultureInfo]::InvariantCulture)
 Require ($floodSent -ge 10000) "L1: the flood sent only $floodSent signals - the bound is not proven against a flood"
-Require ($floodEvals -ge 1 -and $floodEvals * 1000 -le $floodMs * $ticksPerSecond) `
-    "L1: $floodEvals scripts while the flood ran $floodMs ms - more than $ticksPerSecond a second"
+# THE RATIFIED BOUND IS R A SECOND PLUS ONE, and the `plus one` is arithmetic
+# rather than slack: a drain can land on each end of a half-open window, so a
+# 3 s flood at R = 20 admits 61 rather than 60 (checkpoint 1, section 9). Both
+# targets measure exactly 60; a gate written at 60 would go red on the run
+# that happens to fit the extra tick
+Require ($floodEvals -ge 1 -and ($floodEvals - 1) * 1000 -le $floodMs * $ticksPerSecond) `
+    "L1: $floodEvals scripts while the flood ran $floodMs ms - more than $ticksPerSecond a second plus one"
 Require ([int64](Get-Field $lp 'floodLastSeq') -eq $floodSent) 'L1: the page did not end the flood on its last sequence'
 $ji = Get-Field $lp 'jitterIdle'
 $jf = Get-Field $lp 'jitterFlood'
@@ -250,7 +255,13 @@ $resub = [int64](Get-Field $lp 'resubscribed')
 $recovered = Get-Field $lp 'recovered'
 Row 'signal_navigation' "subscriptions_after=$(Get-Field $lp 'subsAtPhase2') lost=$(Get-Field $recovered 'missed') recovered_seq=$(Get-Field $lp 'phase2Seq')"
 Require ("$(Get-Field $lp 'subsAtPhase2')" -eq '0') 'L1: a replaced document kept a subscription'
-Require ([int64](Get-Field $recovered 'missed') -eq 5 -and [int64](Get-Field $lp 'phase2Seq') -eq $resub + 5) `
+# THE INVARIANT, not the race: what the design promises is that whatever the
+# replaced document lost is recovered by the re-read, and the re-read reaches
+# the sequence the new subscription starts from. HOW MANY were lost depends on
+# how long the reload took against the emitter's 150 ms - five is what both
+# targets measure, and it stays a row rather than a gate
+$missed = [int64](Get-Field $recovered 'missed')
+Require ($missed -ge 1 -and [int64](Get-Field $lp 'phase2Seq') -eq $resub + $missed) `
     "L1: the signals lost across the reload were not recovered by the re-read: $($rows['signal_navigation'])"
 Row 'socket_signal_echo' "$(Get-Field $lp 'socketEcho')"
 Require ($rows['socket_signal_echo'] -eq 'cap16-echo') "L1: the socket did not echo through the migrated loop: $($rows['socket_signal_echo'])"

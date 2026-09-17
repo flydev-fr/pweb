@@ -1216,6 +1216,7 @@ var
   pRef: ICapabilityPolicy;
   door: TFakeDoor;
   seen: Integer;
+  other: TInvocationContext;
 begin
   ViewReset;
   ch := NewChannel(['jobs']);
@@ -1245,7 +1246,21 @@ begin
     Check(Pos('main|', ScriptAt(0)) = 0, 'a replaced document was sent a script');
     // the new document subscribes again and reads the current sequence
     CheckEqual(SeqOf(Sub(ch, 'jobs')), 1);
-    Record_('document-replacing|subscriptions-and-queue-gone|other-window-kept|door-told-after');
+    // AND THE PRINCIPAL BINDING WENT WITH THE SUBSCRIPTIONS. A window whose
+    // next document belongs to another principal is answered by the POLICY,
+    // not refused for the life of the process by a name the channel kept
+    ch.DocumentReplacing('main');
+    CheckEqual(ch.SubscriptionCount('main'), 0);
+    other := Ctx('main');
+    other.PrincipalId := 'window:main-after-navigation';
+    CheckEqual(SeqOf(Call(ch, PWEB_METHOD_SIGNAL_SUBSCRIBE,
+      '{"topic":"jobs"}', other)), 1,
+      'a replaced document could not rebind its window to another principal');
+    // and while THAT one holds it, the first principal is refused again
+    CheckEqual(ErrorCodeOf(Sub(ch, 'jobs')), 'forbidden',
+      'two principals shared one window');
+    Record_('document-replacing|subscriptions-and-queue-gone|other-window-kept|door-told-after|' +
+      'principal-rebinds-on-the-next-document');
     ch.BeforeDrain;
   finally
     keep := nil;
@@ -1475,7 +1490,20 @@ begin
     CheckEqual(ErrorCodeOf(Call(ch, PWEB_METHOD_HANDSHAKE, 'null', Ctx)), 'internal_error');
     inner.Answer := '"not-an-object"';
     CheckEqual(RawUtf8(Call(ch, PWEB_METHOD_HANDSHAKE, 'null', Ctx).Value), '"not-an-object"');
-    Record_('handshake|features-signal-appended|error-and-non-object-untouched|protocol-unchanged');
+    // ONE features MEMBER, EVER: an answer that already carries the name is
+    // MERGED rather than given a second member, because a reader keeps
+    // whichever it saw last
+    inner.Answer := '{"protocol":1,"features":["console"]}';
+    CheckEqual(RawUtf8(Call(ch, PWEB_METHOD_HANDSHAKE, 'null', Ctx).Value),
+      '{"protocol":1,"features":["signal","console"]}');
+    inner.Answer := '{"protocol":1,"features":[]}';
+    CheckEqual(RawUtf8(Call(ch, PWEB_METHOD_HANDSHAKE, 'null', Ctx).Value),
+      '{"protocol":1,"features":["signal"]}');
+    inner.Answer := '{"protocol":1,"features":["signal"]}';
+    CheckEqual(RawUtf8(Call(ch, PWEB_METHOD_HANDSHAKE, 'null', Ctx).Value),
+      '{"protocol":1,"features":["signal"]}');
+    Record_('handshake|features-signal-appended|merged-into-an-existing-array|never-twice|' +
+      'error-and-non-object-untouched|protocol-unchanged');
     ch.BeforeDrain;
   finally
     keep := nil;
@@ -1748,6 +1776,7 @@ procedure TTestPWebSignalSocket.RevocationAndReplacementThroughTheChannel;
 var
   rig: TSocketRig;
   a, b: RawUtf8;
+  seqBefore: Int64;
 begin
   ViewReset;
   rig := TSocketRig.Create(PWebSocketDefaultBounds);
@@ -1758,12 +1787,22 @@ begin
     Sub(rig.Channel, 'jobs');
     CheckEqual(rig.Door.OpenCount, 1);
     // revoke network.socket: the socket AND its topic go before the call returns
+    seqBefore := rig.Channel.TopicSeq(PWEB_SIGNAL_TOPIC_SOCKET);
     rig.Policy.SetRuntimeGrants('window:main', ['signal.jobs']);
     CheckEqual(rig.Door.OpenCount, 0, 'a revoked socket survived the revoking call');
     CheckEqual(rig.Channel.SubscriptionCount('main'), 1, 'the wrong subscription went');
     CheckEqual(Verdict(Call(rig.Chain, PWEB_METHOD_SOCKET_SEND,
       '{"id":' + QuotedStrJson(a) + ',"text":"x"}', Ctx)), 'service_error:socket_not_found');
-    Record_('socket|revoke|socket-closed|topic-dropped|other-topic-kept|before-return');
+    // AND NOTHING IS DELIVERED AFTERWARDS, which is the whole of the
+    // revocation rule: the subscription went with the capability, so no
+    // later pair for this topic can reach this window. The page's loop
+    // therefore learns on its next keepalive receive, which answers
+    // socket_not_found - the one latency the migration adds (ledger 16-10)
+    CheckEqual(rig.Channel.PendingCount('main'), 0);
+    CheckEqual(rig.Channel.TopicSeq(PWEB_SIGNAL_TOPIC_SOCKET), seqBefore,
+      'a revoked window was still signalled');
+    Record_('socket|revoke|socket-closed|topic-dropped|other-topic-kept|before-return|' +
+      'nothing-delivered-after|page-learns-on-its-next-receive');
     // document replacement through the host's seam - the channel's
     rig.Policy.ClearRuntimeGrants('window:main');
     b := OpenSock(rig.Chain);

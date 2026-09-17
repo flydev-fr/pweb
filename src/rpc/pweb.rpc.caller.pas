@@ -76,8 +76,12 @@ begin
     mime := PWEB_BLOB_FALLBACK_TYPE;
   if not PWebBlobPut(Store, owner, Content, mime, token, Ceiling) then
     exit;
-  Handle := '{"token":"' + token + '"' +
-    ',"url":"' + PWebBlobUrl(token) + '"' +
+  // EVERY string member through the encoder, including the two the store
+  // mints. They are 32 hex characters today and a raw concatenation would
+  // read the same; this is the documented producer an application service
+  // calls, and one widened grammar later the difference is malformed JSON
+  Handle := '{"token":' + QuotedStrJson(token) +
+    ',"url":' + QuotedStrJson(PWebBlobUrl(token)) +
     ',"size":' + RawUtf8(IntToStr(Length(Content))) +
     ',"type":' + QuotedStrJson(mime) + '}';
   Result := True;

@@ -1316,6 +1316,14 @@ begin
     E.SendCloseFrame := True;
     E.CloseFrameCode := PWEB_SOCKET_NATIVE_CLOSE_CODE;
   end;
+  // A SOCKET MADE GONE TELLS THE PAGE NOTHING, and cannot: the three paths
+  // that make one gone - revocation, document replacement, shutdown - each
+  // take the window's `pweb.socket` subscription with them (the channel drops
+  // it BEFORE it tells this door), so a signal issued here would be delivered
+  // to nobody. The page's loop learns on its next keepalive receive, which
+  // answers `socket_not_found`; for a replaced document and for shutdown
+  // there is no page left to tell. Measured by the suite, recorded as a
+  // known limitation of the migration (ledger 16-10)
   Wake;
 end;
 

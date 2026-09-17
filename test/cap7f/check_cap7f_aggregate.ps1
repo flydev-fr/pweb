@@ -2385,8 +2385,10 @@ foreach ($t in $evidence.Keys) {
     }
     if ("$($e.signal_flood_evals_per_s)" -cnotmatch '^\d+(\.\d{1,3})?$' -or
         -not [double]::TryParse("$($e.signal_flood_evals_per_s)", [System.Globalization.NumberStyles]::Float, $invariant, [ref]$c16Rate) -or
-        $c16Rate -le 0 -or $c16Rate -gt $c16Ticks) {
-        $failures.Add("CAP-16 FLOOD: target=$t signal_flood_evals_per_s='$($e.signal_flood_evals_per_s)' -- not a rate within the pinned $c16Ticks scripts a second")
+        $c16Rate -le 0 -or $c16Rate -gt $c16Ticks + 1) {
+        # R a second plus one: a drain lands on each end of the flood's
+        # half-open window, so a three-second flood at R = 20 admits 61
+        $failures.Add("CAP-16 FLOOD: target=$t signal_flood_evals_per_s='$($e.signal_flood_evals_per_s)' -- not a rate within the pinned $c16Ticks scripts a second (plus the one an end-of-window drain adds)")
     }
     if ("$($e.signal_latency_ms)" -cnotmatch '^\d+(\.\d+)?$') {
         $failures.Add("CAP-16 OBSERVATION: target=$t signal_latency_ms='$($e.signal_latency_ms)' is not a number")
@@ -2394,7 +2396,7 @@ foreach ($t in $evidence.Keys) {
     if ("$($e.gui_jitter_ms)" -cnotmatch '^idle=\d+(\.\d+)? flood=\d+(\.\d+)?$') {
         $failures.Add("CAP-16 OBSERVATION: target=$t gui_jitter_ms='$($e.gui_jitter_ms)' is not the typed pair")
     }
-    if ("$($e.signal_navigation)" -cnotmatch '^subscriptions_after=0 lost=5 recovered_seq=\d+$') {
+    if ("$($e.signal_navigation)" -cnotmatch '^subscriptions_after=0 lost=[1-9]\d* recovered_seq=\d+$') {
         $failures.Add("CAP-16 NAVIGATION: target=$t signal_navigation='$($e.signal_navigation)' -- a reload kept a subscription or its losses were not recovered")
     }
     foreach ($f in 'starvation_n4_ms', 'starvation_n8_ms') {

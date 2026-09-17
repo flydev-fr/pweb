@@ -764,7 +764,7 @@ capability, `network.socket`:
 | --- | --- | --- |
 | `pweb.socketOpen` | `{url, protocols?, headers?}` | `{id}` |
 | `pweb.socketSend` | `{id, text}` or `{id, base64}` | `{}` |
-| `pweb.socketReceive` | `{id}` — **CAP-16: `waitMs is retired`**; `0` is accepted, any other value is `invalid_request` | `{events: [...]}`, at once |
+| `pweb.socketReceive` | `{id}` — **CAP-16: `waitMs` is retired**; `0` is accepted, any other value is `invalid_request` | `{events: [...]}`, at once |
 | `pweb.socketClose` | `{id, code?, reason?}` | `{}` |
 
 The method names are two segments, `Service.Method`, because the frozen method
@@ -856,7 +856,7 @@ slots alone leaves the same wait. Streaming was never the way out: CAP-12A
 measured that WebView2 withholds a streamed body from the page until it is
 complete — six `text/event-stream` events produced 150 ms apart arrived within
 0.1 ms of each other, 763 ms after the request — and ratified a data plane that
-is Range-based, not streaming-based (`docs/kernel.md`). So `waitMs is retired`:
+is Range-based, not streaming-based (`docs/kernel.md`). So `waitMs` is retired:
 a receive answers what is queued at once, every event the door queues signals
 the owning window's runtime topic `pweb.socket` through the signal channel below,
 and each SDK socket receives when that topic moves or every
@@ -867,6 +867,16 @@ under 5 ms on Windows and Linux). One topic for every socket of a window, rather
 than one per socket, because topics are declared at composition and an id on
 the channel would be a name; a signal makes each open socket of the page receive
 once. The SDK surface, the four method names and their capability are unchanged.
+
+**Upgrading an application generated before CAP-16.** The socket loop of both
+SDKs subscribes to `pweb.socket` before it receives, so a host whose
+`app.services.pas` does not register the two signal methods answers `forbidden`
+and every socket fails at open. A project created before CAP-16 adds, beside
+its other registrations, `RegisterZeroCapMethod(PWEB_METHOD_SIGNAL_SUBSCRIBE)`
+and `RegisterZeroCapMethod(PWEB_METHOD_SIGNAL_UNSUBSCRIBE)`, and composes
+`TPWebSignalChannel` as the generated `program.lpr` now does; `pweb create`
+writes both for a new project. The handshake's `features` member says whether a
+runtime has the channel at all.
 
 **The hooks.** The socket door no longer takes the policy's grants slot or the
 host's document and drain seams: it sits on the signal channel

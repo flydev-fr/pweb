@@ -816,6 +816,11 @@ begin
   FLock.Enter;
   try
     FView := Default(TPWebSignalView);
+    // AND THE FLAG WITH IT, so a rebuilt view can be attached again: the
+    // loop in AttachView that clears every target's Stalled exists for
+    // exactly that second attach, and a flag left standing made it
+    // unreachable
+    FViewAttached := False;
   finally
     FLock.Leave;
   end;
@@ -1119,6 +1124,13 @@ begin
       t := NewTargetLocked(RawUtf8(Context.WindowId),
         RawUtf8(Context.PrincipalId));
     end
+    else if t.PrincipalId = '' then
+    begin
+      // a window whose document was replaced and whose subscriptions went
+      // with it: the next principal to subscribe binds it again
+      t.PrincipalId := RawUtf8(Context.PrincipalId);
+      UniqueString(t.PrincipalId);
+    end
     else if t.PrincipalId <> RawUtf8(Context.PrincipalId) then
       exit(Refused);
     if not t.Subscribed[k] then
@@ -1180,6 +1192,27 @@ begin
   // ADDITIVE: the one member this channel adds, before the closing brace of
   // the object the runtime answered. Protocol v1 is unchanged
   value := RawUtf8(Result.Value);
+  // ONE `features` MEMBER, EVER. Nothing under this channel answers one
+  // today - the CAP-5 handshake corpus is pinned - but a second decorator
+  // that started to would leave two members in one object, and a JSON
+  // reader keeps whichever it saw last. So the name is looked for first,
+  // and the feature is spliced into the array that is already there.
+  i := PosEx('"features"', value);
+  if i > 0 then
+  begin
+    i := PosEx('[', value, i);
+    if (i = 0) or
+       (PosEx('"' + PWEB_SIGNAL_FEATURE + '"', value) > 0) then
+      exit;
+    // an empty array takes no separator
+    if (i < Length(value)) and
+       (value[i + 1] = ']') then
+      Insert('"' + PWEB_SIGNAL_FEATURE + '"', value, i + 1)
+    else
+      Insert('"' + PWEB_SIGNAL_FEATURE + '",', value, i + 1);
+    Result.Value := TPWebJson(value);
+    exit;
+  end;
   i := Length(value);
   while (i > 0) and
         (value[i] <= ' ') do
@@ -1259,8 +1292,17 @@ begin
       door := FDoor.DocumentReplacing;
     t := TargetLocked(AWindowId);
     if t <> nil then
+    begin
       for k := 0 to High(FTopics) do
         DropLocked(t, k);
+      // AND THE PRINCIPAL BINDING GOES WITH THEM. It exists so a second
+      // principal cannot join a window's LIVE subscriptions; with none
+      // left there is nothing to join, and a window whose next document
+      // belongs to another principal would otherwise be refused for the
+      // life of the process by a name the policy has nothing to say about
+      if t.SubscriptionCount = 0 then
+        t.PrincipalId := '';
+    end;
   finally
     FLock.Leave;
   end;

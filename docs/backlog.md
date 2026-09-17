@@ -1,7 +1,7 @@
 # The backlog
 
 `_bmad-output/implementation-artifacts/deferred-work.md` is append-only and
-carries **466 entries** from Phase 0 to CAP-16, the native signal channel.
+carries **469 entries** from Phase 0 to CAP-16, the native signal channel.
 It is a
 ledger: it records what was found, in the words of the shard that found it,
 and it never edits itself. That makes it excellent evidence and a poor
@@ -9,9 +9,9 @@ worklist — a reader who wants to know *what is still owed* has to resolve
 every supersession chain by hand, and four phase-closure artifacts answer
 that question for CAP-10, CAP-11 and CAP-12 only.
 
-This document is the worklist. Every one of the 466 entries is disposed of
+This document is the worklist. Every one of the 469 entries is disposed of
 exactly once, with one verdict, an owner and a reason. **Sixty-two are open,**
-**and those sixty-two are listed here in full**; the other 404 are in
+**and those sixty-two are listed here in full**; the other 407 are in
 `test/backlog/dispositions.tsv`, which is the table this document is written
 from and the one the gate reads.
 
@@ -20,7 +20,7 @@ from and the one the gate reads.
 | `FIX_NOW` | 4 | closed by this triage, one commit each, cited below |
 | `UPSTREAM` | 1 | the defect belongs to a third-party project and a report is written or owed. Three mORMot entries left this bucket on 2026-09-16, when upstream fixed all three and the pin moved onto the fixes |
 | `ROADMAP` | 57 | real work, deferred, with a named owner |
-| `ACCEPTED` | 131 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
+| `ACCEPTED` | 134 | a measured limitation, a ratification or a lesson — nothing is owed, and the record *is* the deliverable |
 | `CLOSED` | 273 | the thing the entry describes is done |
 
 `ACCEPTED` is not a synonym for ignored. It is the verdict for an entry whose
@@ -415,7 +415,7 @@ than appended to an append-only ledger:
 ## The open work, in full
 
 Sixty-two rows: the four `FIX_NOW` items this triage closed, the one
-`UPSTREAM` entry, and the fifty-seven on the roadmap. Everything else — 131
+`UPSTREAM` entry, and the fifty-seven on the roadmap. Everything else — 134
 `ACCEPTED` and 273 `CLOSED` — is in `test/backlog/dispositions.tsv`.
 
 | key | verdict | owner | reason |

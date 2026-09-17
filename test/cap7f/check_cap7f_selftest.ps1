@@ -2971,7 +2971,7 @@ foreach ($case in @(
         @{ n = 'cap16-script-lost'; leg = 'windows'; f = 'eval_received';
            v = '218/219'; p = 'CAP-16 ENGINE' },
         @{ n = 'cap16-flood-over-rate'; leg = 'windows'; f = 'signal_flood_evals_per_s';
-           v = '20.5'; p = 'CAP-16 FLOOD' },
+           v = '21.5'; p = 'CAP-16 FLOOD' },
         @{ n = 'cap16-flood-too-small'; leg = 'linux'; f = 'signal_flood_sent';
            v = '9999'; p = 'CAP-16 FLOOD' },
         @{ n = 'cap16-flood-comma'; leg = 'macos-arm64'; f = 'signal_flood_evals_per_s';
@@ -2987,7 +2987,7 @@ foreach ($case in @(
         @{ n = 'cap16-composition-two-templates'; leg = 'linux'; f = 'signal_composition_image_template';
            v = '2'; p = 'CAP-16 COMPOSITION' },
         @{ n = 'cap16-navigation-unrecovered'; leg = 'macos-x64'; f = 'signal_navigation';
-           v = 'subscriptions_after=0 lost=4 recovered_seq=10'; p = 'CAP-16 NAVIGATION' },
+           v = 'subscriptions_after=0 lost=0 recovered_seq=10'; p = 'CAP-16 NAVIGATION' },
         @{ n = 'cap16-jitter-untyped'; leg = 'linux'; f = 'gui_jitter_ms';
            v = 'idle=1,7 flood=1.5'; p = 'CAP-16 OBSERVATION' })) {
     Reset-Fixture
