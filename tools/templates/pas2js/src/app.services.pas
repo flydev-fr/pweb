@@ -35,6 +35,9 @@ uses
   mormot.core.interfaces,
   pweb.rpc.intf,
   pweb.rpc.support,
+  // CAP-16: the signal channel's two method names, spelled once for the
+  // whole product
+  pweb.rpc.signal,
   {$ifdef PWEB_NET}
   // CAP-15B: the door's method and capability names, spelled once for the
   // whole product. This unit is compiled with PWEB_NET only when this
@@ -90,6 +93,17 @@ type
       const Token: ICancellationToken): TPWebInvocationResult;
   end;
 
+/// the topics this application's native code may signal
+// - declared HERE, beside the services, and refused at startup when the
+// grammar refuses one: `[a-z0-9]+(.[a-z0-9]+)*`, at most 64 bytes, never
+// starting with `pweb.`
+// - signal one from any thread with PWebSignal('your.topic'); a page hears it
+// with onSignal / PWebOnSignal once BuildAppPolicy grants the capability
+// `signal.your.topic` - and then READS what changed through an ordinary
+// invocation, because a signal carries the topic and a counter, never data
+// - the scaffold declares none: what moves on its own schedule is yours
+function AppSignalTopics: TRawUtf8DynArray;
+
 /// the production capability policy of this application
 // - built ONLY from native Pascal at the trust level of the executable:
 // never from app.pwb, a manifest, JavaScript, the environment or any file
@@ -137,6 +151,12 @@ begin
     Result := FInner.Invoke(Context, Method, Args, Token);
 end;
 
+function AppSignalTopics: TRawUtf8DynArray;
+begin
+  Result := nil;
+  // for example: Result := ['jobs.status'];
+end;
+
 function BuildAppPolicy: TPWebCapabilityPolicy;
 var
   b: TPWebCapabilityPolicyBuilder;
@@ -179,6 +199,11 @@ begin
     // runtime-owned and application-owned methods that need no capability
     b.RegisterZeroCapMethod(PWEB_METHOD_HANDSHAKE);
     b.RegisterZeroCapMethod(APP_METHOD_READY);
+    // CAP-16: subscribing and unsubscribing are capability-FREE methods; the
+    // authority is per TOPIC - a page reads `your.topic` only when the sets
+    // above hold `signal.your.topic`, and the runtime checks that itself
+    b.RegisterZeroCapMethod(PWEB_METHOD_SIGNAL_SUBSCRIBE);
+    b.RegisterZeroCapMethod(PWEB_METHOD_SIGNAL_UNSUBSCRIBE);
     // DELIBERATELY ABSENT: pweb.openExternal. The runtime command layer is
     // installed, as it is in every PWeb host, but this application does not
     // authorize it - so handing a URI to the operating system is answered

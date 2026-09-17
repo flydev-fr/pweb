@@ -17,7 +17,8 @@ program {{PASCAL_PROGRAM}};
   What this file does own is the composition every application owns:
 
     the service catalogue      one in-process mORMot REST server
-    the bridge chain           application -> runtime commands -> mORMot
+    the bridge chain           application -> signal channel -> runtime
+                               commands -> mORMot
     the capability policy      app.services.BuildAppPolicy
     the window                 title and size
 
@@ -52,6 +53,7 @@ uses
   mormot.soa.server,
   pweb.rpc.intf,
   pweb.rpc.mormot,
+  pweb.rpc.signal,
   pweb.capabilities.policy,
   pweb.webview.host,
   {$ifdef PWEB_DEV}
@@ -119,6 +121,7 @@ var
   policy: TPWebCapabilityPolicy;
   policyRef: ICapabilityPolicy;
   options: TPWebHostOptions;
+  signals: TPWebSignalChannel;
   {$ifdef PWEB_NET}
   socketBridge: TPWebSocketBridge;
   {$endif PWEB_NET}
@@ -143,8 +146,9 @@ begin
       raise Exception.Create('unable to register CalculatorService');
 
     // the bridge chain, outermost first. The application decorator sees
-    // every arrival, the runtime command layer answers the methods the
-    // runtime owns, and everything else reaches mORMot
+    // every arrival, the signal channel answers its two subscription
+    // methods, the runtime command layer answers the methods the runtime
+    // owns, and everything else reaches mORMot
     realBridge := TMormotInvocationBridge.Create(server, True);
     server := nil; // ownership moved to the bridge
     runtimeBridge := PWebHostRuntimeBridge(realBridge);
@@ -172,6 +176,20 @@ begin
       APP_NETWORK_ALLOWLIST_DIGEST);
     Flush(Output);
     {$endif PWEB_NET}
+    // CAP-16: THE SIGNAL CHANNEL, in every host. Native code tells the page
+    // that a topic moved - PWebSignal(topic), from any thread - and the page
+    // reads what changed through invoke; nothing but the topic and a
+    // sequence number ever reaches the page this way. The topics are this
+    // application's, declared in app.services beside its services, and a
+    // page subscribes to one only under the capability signal.<topic>
+    signals := TPWebSignalChannel.Create(runtimeBridge, AppSignalTopics);
+    runtimeBridge := signals;
+    {$ifdef PWEB_NET}
+    // the socket door SITS ON the channel: every event it queues is a signal
+    // to its window, and it hears revocation, document replacement and the
+    // drain through the channel, which owns all three
+    socketBridge.AttachSignals(signals);
+    {$endif PWEB_NET}
     bridge := TAppBridge.Create(runtimeBridge, APP_NAME);
 
     // the policy is authoritative and runs at the scheduler, BEFORE the
@@ -180,18 +198,18 @@ begin
     policyRef := policy;
 
     options := PWebDefaultHostOptions(APP_TITLE, APP_NAME);
+    // CAP-16: the host gives the channel its view - the one script it ever
+    // evaluates - and the policy's grants slot, the document seam and the
+    // drain seam, which the channel hands on to the socket door
+    options.Signals := signals;
     {$ifdef PWEB_NET}
-    // CAP-15C: a revoked network.socket closes its sockets before the
-    // revoking call returns; a replaced document closes its window's
-    // sockets; the host releases them all before it drains. The request
-    // bound lets a 1 MiB message cross the binding, and every socket may
-    // hold one long-poll without taking a worker from anything else
-    socketBridge.AttachPolicy(policy);
+    // CAP-15C: the request bound lets a 1 MiB message cross the binding. A
+    // socket no longer holds a worker while it is quiet (CAP-16: a receive
+    // never waits); the four extra workers and slots stay for the opens and
+    // sends that run under their own 10 s wall-clock deadlines
     options.MaxRequestBytes := PWEB_SOCKET_REQUEST_BYTES;
     options.Workers := options.Workers + PWEB_SOCKET_MAX_SOCKETS;
     options.MaxConcurrent := options.MaxConcurrent + PWEB_SOCKET_MAX_SOCKETS;
-    options.DocumentReplacing := socketBridge.DocumentReplacing;
-    options.BeforeDrain := socketBridge.BeforeDrain;
     {$endif PWEB_NET}
     {$ifdef PWEB_DEV}
     // the development host: --pweb-dev-root=<dir> is REQUIRED, generation 1
