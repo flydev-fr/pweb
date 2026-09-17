@@ -6,11 +6,18 @@ v0.2.3). Checkpoint 1 is `cap16-checkpoint1.md`; every ruling below is the one
 it ratified, and the one departure from it is recorded there and as ledger
 `16-7`.
 
-Everything in this document was measured on this host — Windows 11 with
-WebView2 (Edg/153) and Ubuntu 24.04 under WSL with WebKitGTK 4.1 under Xvfb —
-or is named as a hosted-leg measurement that only the four-target run can make.
-**WKWebView is not reachable from this host**; the same probe, the same live
-program and the same gates run on both hosted macOS legs (ledger `16-4`).
+**CLOSED on hosted run 35267611946**, commit
+`d372e51290dcb7f8d98f5b7894486d5a58e28931` — the final HEAD of this branch.
+All six jobs green: the four platform legs, the macOS release inventory and
+`cap7 aggregate (windows = linux = macos-x64 = macos-arm64)`. The CAP-16 step
+itself reports `success` on every leg, `cap16_failures = 0` on all four, and
+the CAP-11A sequence gate measured the run's own step record at
+`steps=208 digest=b2f3790f…`.
+
+The measurements below were taken on this host — Windows 11 with WebView2
+(Edg/153) and Ubuntu 24.04 under WSL with WebKitGTK 4.1 under Xvfb — and the
+hosted run's four-target numbers, **WKWebView included**, are in
+"the hosted run" below.
 
 ---
 
@@ -342,11 +349,41 @@ the self-test **298 refusals fired** (floor 287), including all 12 starvation
 legs and all 27 CAP-16 legs. The Windows emitter was run for real and its
 `evidence.json` carries all 49 new fields.
 
-### macOS
+### the hosted run — four targets, run 35267611946 on `d372e51`
 
-Not reachable from this host. The probe, the live program and the gates run on
-both hosted legs; `eval_engine = wkwebview` there, the starvation rows are
-`not_applicable` by name, and the composition rows are `not_applicable`.
+| row | windows-x86_64 | linux-x86_64 | macos-x86_64 | macos-arm64 |
+|---|---|---|---|---|
+| `signal_suite` / `signal_contracts` | PASS | PASS | PASS | PASS |
+| `signal_corpus_digest` | `af08e222…` — **the same 42 decisions on four targets** ||||
+| `eval_sites_release` | 1 | 1 | 1 | 1 |
+| `eval_engine` | webview2 | webkitgtk | **wkwebview** | **wkwebview** |
+| `eval_under_csp` / `eval_page_csp` | true / eval, Function and inline all blocked ||||
+| `eval_received` | 219/219 | 219/219 | **219/219** | **219/219** |
+| `eval_ordering` | in_order / in_order | in_order / in_order | **in_order / in_order** | **in_order / in_order** |
+| `eval_hostile_exact` / `eval_hostile_ran` | 18/18 / False | 18/18 / False | **18/18 / False** | **18/18 / False** |
+| `eval_trusted_events` | 0 | 0 | 0 | 0 |
+| `signal_denied` | forbidden scripts=0 ||||
+| `signal_flood_sent` / `_scripts` / `_evals_per_s` | 30 000 / 60 / **20** | 30 000 / 60 / **20** | 30 000 / 60 / **20** | 29 999 / 60 / **20** |
+| `gui_jitter_ms` (observation) | idle=0.9 flood=1.6 | idle=2 flood=3 | idle=3 **flood=38** | idle=9 flood=8 |
+| `signal_latency_ms` (observation) | 6.3 | 6 | 6 | 21 |
+| `signal_revoke` / `signal_navigation` | subscriptions=0 delivered_after=0 / lost=5, recovered ||||
+| `socket_signal_echo` / `caller_principal_blob` | cap16-echo / true ||||
+| `starvation_n4_ms` / `_n8_ms` | **0.127 / 0.274** | **0.264 / 0.140** | not_applicable | not_applicable |
+| `socket_starvation_max_ms` | 0.289 | 0.269 | not_applicable | not_applicable |
+| `signal_composition` / `_updates` | not_applicable | **PASS / 26** | not_applicable | not_applicable |
+| `cap16_failures` | 0 | 0 | 0 | 0 |
+
+**WKWebView is measured**, and it answers as the other two engines do: a
+natively evaluated script runs under `PWEB_NATIVE_CSP` while the page's own
+`eval` stays refused, every script arrives, both orderings hold, and no hostile
+topic escapes its literal. Ledger `16-4` closes with it.
+
+Two honest per-target observations rather than gates: macOS x64's page timer
+was 38 ms late at worst under the flood (a shared-runner number on the slowest
+leg — the bound it exists beside, at most R scripts a second, held at 20 on all
+four), and macos-arm64's flood emitted 29 999 of 30 000 signals inside its
+three-second window. `capability_policy_digest`, `navigation_policy_digest` and
+`csp_policy_digest` are byte-identical to the CAP-15C closure on every leg.
 
 ## FREEZE
 
@@ -383,9 +420,8 @@ removes the subscription first, by the ruling's own order.
 
 ## KNOWN LIMITATIONS
 
-- **WKWebView is measured only on the hosted macOS legs** (`16-4`). The
-  indirect witness is that every macOS invocation since CAP-7M resolves
-  through `evaluateJavaScript:` under the same CSP.
+- **WKWebView is measured only on the hosted macOS legs** (`16-4`) — measured
+  there, on run 35267611946, and not reachable from a development host.
 - **A revoked subscription is not restored by a later grant** (`16-5`): the
   page subscribes again.
 - **QuickJS plugins have no signal channel** (`16-6`, `9A-2`).
@@ -412,10 +448,11 @@ removes the subscription first, by the ruling's own order.
 
 ## VERDICT
 
-Everything the brief asked for is built, measured and pinned on the two engines
-this host reaches, and the four-target run is the last thing outstanding: the
-CAP-16 step, its evidence fields, the moved `ci_sequence_digest` and the macOS
-rows have never executed on hosted CI. The PASS criteria require hosted CI
-green on the final HEAD.
+FR-M1 acceptance 1–10 is met on four targets; the starvation is under 5 ms at
+every N on both measuring legs; `waitMs` is retired with its supersession
+recorded; 12-5 is closed; the security ruling is pinned by gates proven to
+fire; every regression is green locally and on hosted run **35267611946**,
+commit `d372e51290dcb7f8d98f5b7894486d5a58e28931` — six jobs green, the
+aggregate included.
 
-**CAP-16 NOT READY**
+**CAP-16 PASS — SIGNAL CHANNEL FROZEN, STARVATION CLOSED**
