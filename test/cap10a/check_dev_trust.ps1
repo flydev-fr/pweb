@@ -602,6 +602,60 @@ foreach ($phrase in 'pweb.socketOpen', 'network.socket', 'Range-based, not strea
 }
 $report.Add('CAP-15C: the socket door has no development mode, spells no loopback authority, and is fenced beside fetch')
 
+# --- 8. CAP-16: THE ONE INJECTED SCRIPT ----------------------------------------
+#
+# Until CAP-16 the runtime wrote no script of its own into a privileged page.
+# The signal channel adds exactly one, and the trust claim is its whole shape:
+# one `webview_eval` call in src/**, one literal template whose only variable
+# part is JSON-encoded, and no development branch anywhere near either. A
+# development build carries the same channel and the same site: the dev host
+# reaches it only through PWebHostRun, and the console surface (section 5)
+# still names no webview_eval at all.
+$signalUnit = 'src/rpc/pweb.rpc.signal.pas'
+$hostUnitText = if (Test-Path 'src/webview/pweb.webview.host.pas') {
+    Strip15bComments ([System.IO.File]::ReadAllText('src/webview/pweb.webview.host.pas')) } else { '' }
+$ratifiedTemplate = 'window.dispatchEvent(new CustomEvent("pweb:signal",{detail:%}))'
+if (-not (Test-Path $signalUnit)) {
+    $violations.Add("CAP-16 signal surface is missing: $signalUnit")
+} else {
+    $signalCode = Strip15bComments ([System.IO.File]::ReadAllText($signalUnit))
+    $tm = [regex]::Match($signalCode, "PWEB_SIGNAL_EVAL_TEMPLATE\s*=\s*'([^']*)'\s*;")
+    if (-not $tm.Success -or $tm.Groups[1].Value -cne $ratifiedTemplate) {
+        $violations.Add(("the one injected script is not the ratified template: " +
+            "'$($tm.Groups[1].Value)'"))
+    }
+    if ($signalCode.Contains('PWEB_DEV')) {
+        $violations.Add("$signalUnit branches on PWEB_DEV: the channel has no development mode")
+    }
+}
+function Count16EvalCalls([string]$Code) {
+    return @([regex]::Matches($Code, '(?<![\w.])webview_eval\s*\(') | Where-Object {
+        $pre = $Code.Substring([math]::Max(0, $_.Index - 12), [math]::Min(12, $_.Index))
+        $pre -notmatch 'function\s+$' }).Count
+}
+$evalCallSites = 0
+foreach ($file in (Get-ChildItem src -Recurse -File -Include '*.pas', '*.inc', '*.pp')) {
+    $evalCallSites += Count16EvalCalls (Strip15bComments ([System.IO.File]::ReadAllText($file.FullName)))
+}
+if ($evalCallSites -ne 1) {
+    $violations.Add("src/** calls webview_eval $evalCallSites time(s): the release host has exactly one eval site")
+}
+if ($hostUnitText -notmatch '(?s)procedure PWebHostSignalEval\b.*?webview_eval\(') {
+    $violations.Add('the one eval site is not PWebHostSignalEval in the release host')
+}
+# the count is PROVEN to fire on a planted second site
+$planted16 = Count16EvalCalls ($hostUnitText + "`nprocedure P; begin webview_eval(nil, 'x'); end;`n")
+if ($planted16 -ne $evalCallSites + 1) {
+    $violations.Add("the eval-site count did not fire on a planted twin ($planted16)")
+}
+# and the security model says it, in its own section
+foreach ($phrase in '## The one injected script', $ratifiedTemplate, 'carries no authority') {
+    if (-not $modelText.Contains($phrase)) {
+        $violations.Add("security-model.md does not carry the CAP-16 wording: `"$phrase`" is absent")
+    }
+}
+$report.Add("CAP-16: eval_sites_release=$evalCallSites (planted twin $planted16); the one template is ratified and has no development branch")
+
 # --- verdict ----------------------------------------------------------------
 New-Item -ItemType Directory -Force build/cap10a | Out-Null
 $lines = New-Object System.Collections.Generic.List[string]
